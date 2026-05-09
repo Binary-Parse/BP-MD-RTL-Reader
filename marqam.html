@@ -1721,7 +1721,7 @@ function toggleInspector() {
 // =====================================================================
 function openModal(title, html) {
   modalTitle.textContent = title;
-  modalBody.innerHTML = html;
+  modalBody.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : html;
   modalOverlay.classList.add('open');
 }
 function closeModal() { modalOverlay.classList.remove('open'); }
@@ -1973,7 +1973,7 @@ h1,h2,h3 { font-weight: 600; line-height: 1.2; }
 a { color: #C0492C; }
 code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; }
 pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; overflow-x: auto; }
-blockquote { border-left: 3px solid #C0492C; padding: 8px 0 8px 20px; margin: 24px 0; font-style: italic; }
+blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding-inline-start: 20px; margin: 24px 0; font-style: italic; }
 </style>
 </head>
 <body>
@@ -2291,9 +2291,6 @@ async function openVault() {
       }
     }
     md.sort((a, b) => a.name.localeCompare(b.name));
-    for (const f of md) {
-      try { const file = await f.handle.getFile(); f.content = await file.text(); } catch(e) {}
-    }
     State.files = md;
     $('vaultName').textContent = handle.name;
     $('vaultName').classList.remove('empty');
@@ -2460,34 +2457,40 @@ window.loadDemo = loadDemo;
 // =====================================================================
 // SOURCE TEXTAREA INPUT
 // =====================================================================
+let _srcDebounce = null;
 function onSourceInput() {
   if (State.activeFile === null || !State.files[State.activeFile]) return;
   const f = State.files[State.activeFile];
   f.content = srcTextarea.value;
   f.dirty = true;
-  const html = parseMarkdown(f.content);
-  const wordCount = (f.content.match(/\S+/g) || []).length;
-  const readMin = Math.max(1, Math.round(wordCount / 220));
-  noteContent.innerHTML = `
-    <div class="doc-meta">
-      <span>note</span><span>·</span>
-      <span>${wordCount} words</span><span>·</span>
-      <span>${escapeHtml(f.path)}</span>
-      <span>·</span><span style="color: var(--accent);">● unsaved</span>
-    </div>
-    ${html}
-  `;
-  $('propWords').textContent = wordCount;
-  $('propRead').textContent = `≈ ${readMin} min`;
-  $('readTime').textContent = `≈ ${readMin} min read`;
-  $('wordCount').textContent = `${wordCount} words`;
+  renderTabs();
+  // Fast: cursor position update on every keystroke
   const pos = srcTextarea.selectionStart;
   const upto = srcTextarea.value.slice(0, pos);
   const ln = upto.split('\n').length;
   const col = pos - upto.lastIndexOf('\n');
   $('cursorPos').textContent = `ln ${ln} · col ${col}`;
-  renderTabs();
-  buildTOC();
+  // Heavy: markdown render debounced at 150ms
+  clearTimeout(_srcDebounce);
+  _srcDebounce = setTimeout(() => {
+    const html = parseMarkdown(f.content);
+    const wordCount = (f.content.match(/\S+/g) || []).length;
+    const readMin = Math.max(1, Math.round(wordCount / 220));
+    noteContent.innerHTML = `
+      <div class="doc-meta">
+        <span>note</span><span>·</span>
+        <span>${wordCount} words</span><span>·</span>
+        <span>${escapeHtml(f.path)}</span>
+        <span>·</span><span style="color: var(--accent);">● unsaved</span>
+      </div>
+      ${html}
+    `;
+    $('propWords').textContent = wordCount;
+    $('propRead').textContent = `≈ ${readMin} min`;
+    $('readTime').textContent = `≈ ${readMin} min read`;
+    $('wordCount').textContent = `${wordCount} words`;
+    buildTOC();
+  }, 150);
 }
 srcTextarea.addEventListener('input', onSourceInput);
 

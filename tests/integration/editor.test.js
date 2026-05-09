@@ -266,11 +266,15 @@ test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async
   await page.evaluate(() => window.toggleRTL());
   await page.waitForTimeout(50);
 
-  const htmlDir = await page.evaluate(() => document.documentElement.getAttribute('dir'));
-  expect(htmlDir).toBe('rtl');
+  // html element must NOT receive dir — scoping is to #srcTextarea and #editor only
+  const htmlDir = await page.locator('html').getAttribute('dir');
+  expect(htmlDir).toBeNull();
 
-  const appBodyDir = await page.evaluate(() => document.getElementById('appBody').getAttribute('dir'));
-  expect(appBodyDir).toBeNull();
+  const srcTextareaDir = await page.locator('#srcTextarea').getAttribute('dir');
+  expect(srcTextareaDir).toBe('auto');
+
+  const editorDir = await page.locator('#editor').getAttribute('dir');
+  expect(editorDir).toBe('rtl');
 
   const dirIndicator = await page.evaluate(() => document.getElementById('dirIndicator').textContent);
   expect(dirIndicator).toBe('RTL');
@@ -279,8 +283,8 @@ test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async
   await page.evaluate(() => window.toggleRTL());
   await page.waitForTimeout(50);
 
-  const htmlDir2 = await page.evaluate(() => document.documentElement.getAttribute('dir'));
-  expect(htmlDir2 === null || htmlDir2 === 'ltr').toBeTruthy();
+  const htmlDir2 = await page.locator('html').getAttribute('dir');
+  expect(htmlDir2).toBeNull();
 
   const dirIndicator2 = await page.evaluate(() => document.getElementById('dirIndicator').textContent);
   expect(dirIndicator2).toBe('LTR');

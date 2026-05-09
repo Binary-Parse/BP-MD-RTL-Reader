@@ -27,7 +27,7 @@ test.describe('visual regression @visual', () => {
     await page.waitForLoadState('networkidle');
     // Set ink theme via the theme button
     await page.evaluate(() => {
-      document.querySelector('.app').setAttribute('data-theme', 'ink');
+      document.documentElement.setAttribute('data-theme', 'ink');
     });
     await page.waitForTimeout(300);
     await expect(page).toHaveScreenshot('app-ink.png', {

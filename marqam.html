@@ -1280,6 +1280,38 @@ mark.find-hit.current { background: var(--accent); color: white; }
   .app-body { grid-template-columns: 220px 1fr 0; }
   .inspector { display: none; }
 }
+
+/* Electron native window overrides — removes card chrome */
+html.electron body {
+  background: var(--paper);
+  overflow: hidden;
+  padding: 0;
+  display: block;
+}
+html.electron .app {
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+html.electron .titlebar {
+  -webkit-app-region: drag;
+}
+html.electron .win-btn,
+html.electron .tb-menu-item,
+html.electron .tab,
+html.electron .header-actions,
+html.electron .tb-btn,
+html.electron .tb-search,
+html.electron .tb-menu-btn,
+html.electron .tab-add {
+  -webkit-app-region: no-drag;
+}
 </style>
 </head>
 <body>
@@ -2640,12 +2672,16 @@ palInput.addEventListener('input', () => filterPalette(palInput.value));
 // =====================================================================
 // WINDOW BUTTONS
 // =====================================================================
-function winMinimize() { showToast('Minimize (desktop-only)', 'info'); }
-function winMaximize() { showToast('Maximize (desktop-only)', 'info'); }
+function winMinimize() {
+  if (window.electronAPI) window.electronAPI.minimizeWindow();
+}
+function winMaximize() {
+  if (window.electronAPI) window.electronAPI.maximizeWindow();
+}
 function winClose() {
   const dirty = State.files.filter(f => f.dirty).length;
   if (dirty > 0) { if (!confirm(`${dirty} unsaved file${dirty === 1 ? '' : 's'}. Close anyway?`)) return; }
-  showToast('Would close window', 'info');
+  if (window.electronAPI) window.electronAPI.closeWindow();
 }
 
 // =====================================================================
@@ -2743,6 +2779,9 @@ document.addEventListener('click', e => {
 // INIT
 // =====================================================================
 (function init() {
+  // Detect Electron and apply native-window overrides
+  if (window.electronAPI) document.documentElement.classList.add('electron');
+
   const stored = localStorage.getItem('marqam-theme');
   if (stored && THEMES.includes(stored)) {
     State.theme = stored;

@@ -171,3 +171,154 @@ test('parseMarkdown via DOMPurify: no raw script tags survive', async ({ page })
   const xss = await page.evaluate(() => window.__XSS);
   expect(xss).toBeUndefined();
 });
+
+// =====================================================================
+// T1 — Electron no-drag: all interactive titlebar elements covered
+// =====================================================================
+test('[T1] electron no-drag rule covers .tb-btn, .tb-search, .tb-menu-btn, .tab-add', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  // Add the electron class to html so the scoped rules activate
+  await page.evaluate(() => {
+    document.documentElement.classList.add('electron');
+  });
+
+  const result = await page.evaluate(() => {
+    // Iterate all stylesheets and collect the full text of no-drag rules
+    const noDragSelectors = [];
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules || sheet.rules; } catch { continue; }
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule &&
+            rule.style.getPropertyValue('-webkit-app-region') === 'no-drag') {
+          // Split compound selector by comma and collect each part
+          rule.selectorText.split(',').forEach(s => noDragSelectors.push(s.trim()));
+        }
+      }
+    }
+    return noDragSelectors;
+  });
+
+  const joined = result.join(' ');
+  expect(joined).toContain('.tb-btn');
+  expect(joined).toContain('.tb-search');
+  expect(joined).toContain('.tb-menu-btn');
+  expect(joined).toContain('.tab-add');
+});
+
+// =====================================================================
+// T2 — Inspector panel grid collapse: no third track after collapse
+// =====================================================================
+test('[T2] toggleInspector() leaves appBody with two-column grid after collapse', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  // Initially three columns
+  const before = await page.evaluate(() => {
+    return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
+  });
+  const beforeCount = before.trim().split(/\s+(?=\d|auto|minmax|fr)/).length;
+  expect(beforeCount).toBe(3);
+
+  // Collapse inspector
+  await page.evaluate(() => window.toggleInspector());
+  await page.waitForTimeout(50);
+
+  const after = await page.evaluate(() => {
+    return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
+  });
+  // Exactly two column values (no trailing 0px track)
+  const cols = after.trim().split(/\s+(?=\d|auto|minmax|fr)/);
+  expect(cols).toHaveLength(2);
+
+  // Inspector element should be hidden
+  const inspVisible = await page.evaluate(() => {
+    const insp = document.querySelector('.inspector');
+    return getComputedStyle(insp).display;
+  });
+  expect(inspVisible).toBe('none');
+
+  // Re-expand restores three columns
+  await page.evaluate(() => window.toggleInspector());
+  await page.waitForTimeout(50);
+
+  const restored = await page.evaluate(() => {
+    return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
+  });
+  const restoredCols = restored.trim().split(/\s+(?=\d|auto|minmax|fr)/);
+  expect(restoredCols).toHaveLength(3);
+});
+
+// =====================================================================
+// T3 — RTL toggle: dir applied to documentElement, not appBody
+// =====================================================================
+test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  // Initial state: no dir on html element
+  const initialDir = await page.evaluate(() => document.documentElement.getAttribute('dir'));
+  expect(initialDir).not.toBe('rtl');
+
+  // Toggle RTL on
+  await page.evaluate(() => window.toggleRTL());
+  await page.waitForTimeout(50);
+
+  const htmlDir = await page.evaluate(() => document.documentElement.getAttribute('dir'));
+  expect(htmlDir).toBe('rtl');
+
+  const appBodyDir = await page.evaluate(() => document.getElementById('appBody').getAttribute('dir'));
+  expect(appBodyDir).toBeNull();
+
+  const dirIndicator = await page.evaluate(() => document.getElementById('dirIndicator').textContent);
+  expect(dirIndicator).toBe('RTL');
+
+  // Toggle RTL off
+  await page.evaluate(() => window.toggleRTL());
+  await page.waitForTimeout(50);
+
+  const htmlDir2 = await page.evaluate(() => document.documentElement.getAttribute('dir'));
+  expect(htmlDir2 === null || htmlDir2 === 'ltr').toBeTruthy();
+
+  const dirIndicator2 = await page.evaluate(() => document.getElementById('dirIndicator').textContent);
+  expect(dirIndicator2).toBe('LTR');
+});
+
+// =====================================================================
+// T4 — Find-hit click navigation: clicking a mark updates State.findIdx
+// =====================================================================
+test('[T4] clicking second mark.find-hit sets State.findIdx to 1', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  // Inject a file with three occurrences of 'hello'
+  await injectAndRender(page, 'find.md', 'hello world. hello again. hello third.');
+
+  // Open find bar and run search
+  await page.evaluate(() => {
+    if (typeof window.openFind === 'function') window.openFind();
+    window.runFind('hello');
+  });
+  await page.waitForTimeout(100);
+
+  const hitCount = await page.evaluate(() => window._marqamState.findHits.length);
+  expect(hitCount).toBe(3);
+
+  // Click the second mark
+  await page.locator('mark.find-hit').nth(1).click();
+  await page.waitForTimeout(50);
+
+  const findIdx = await page.evaluate(() => window._marqamState.findIdx);
+  expect(findIdx).toBe(1);
+
+  const secondHasCurrent = await page.evaluate(() => {
+    const marks = document.querySelectorAll('mark.find-hit');
+    return marks[1].classList.contains('current');
+  });
+  expect(secondHasCurrent).toBe(true);
+
+  const findInfo = await page.evaluate(() => document.getElementById('findInfo').textContent);
+  expect(findInfo).toBe('2/3');
+});

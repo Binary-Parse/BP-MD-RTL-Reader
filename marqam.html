@@ -328,6 +328,7 @@ body {
   overflow: hidden;
   background: var(--paper);
   position: relative;
+  direction: ltr;
 }
 .app-body.no-sidebar { grid-template-columns: 0 1fr 280px; }
 .app-body.no-inspector { grid-template-columns: 240px 1fr; }
@@ -707,11 +708,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
   line-height: 1.7;
   color: var(--ink);
 }
-.app-body[dir="rtl"] .editor {
+#editor[dir="rtl"] {
   font-family: var(--arabic);
   font-size: 19px;
   line-height: 1.95;
-  direction: rtl;
 }
 
 .editor h1 {
@@ -722,7 +722,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   letter-spacing: -0.02em;
   margin-bottom: 8px;
 }
-.app-body[dir="rtl"] .editor h1 { font-family: var(--arabic); font-weight: 700; font-size: 38px; letter-spacing: 0; }
+#editor[dir="rtl"] h1 { font-family: var(--arabic); font-weight: 700; font-size: 38px; letter-spacing: 0; }
 
 .editor .doc-meta {
   font-family: var(--mono);
@@ -737,7 +737,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   gap: 16px;
   flex-wrap: wrap;
 }
-.app-body[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 12px; }
+#editor[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 12px; }
 
 .editor h2 {
   font-family: var(--serif);
@@ -747,7 +747,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   letter-spacing: -0.015em;
   margin: 36px 0 16px;
 }
-.app-body[dir="rtl"] .editor h2 { font-family: var(--arabic); font-weight: 700; font-size: 26px; }
+#editor[dir="rtl"] h2 { font-family: var(--arabic); font-weight: 700; font-size: 26px; }
 
 .editor h3 {
   font-family: var(--serif);
@@ -755,11 +755,11 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-weight: 500;
   margin: 28px 0 12px;
 }
-.app-body[dir="rtl"] .editor h3 { font-family: var(--arabic); font-weight: 600; }
+#editor[dir="rtl"] h3 { font-family: var(--arabic); font-weight: 600; }
 
 .editor p { margin-bottom: 16px; }
 .editor p em { color: var(--plum); font-style: italic; }
-.app-body[dir="rtl"] .editor p em { font-style: normal; font-weight: 600; }
+#editor[dir="rtl"] p em { font-style: normal; font-weight: 600; }
 .editor p strong { font-weight: 600; }
 .editor a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .editor a:hover { color: var(--ink); }
@@ -786,7 +786,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   line-height: 1.6;
   color: var(--ink-soft);
 }
-.app-body[dir="rtl"] .editor blockquote {
+#editor[dir="rtl"] blockquote {
   padding-inline-start: 0;
   font-family: var(--arabic);
   font-style: normal;
@@ -1718,10 +1718,15 @@ function setTheme(t) {
 function toggleRTL() {
   const isRTL = State.direction === 'rtl';
   State.direction = isRTL ? 'ltr' : 'rtl';
+  const editorEl = $('editor');
   if (State.direction === 'rtl') {
-    document.documentElement.setAttribute('dir', 'rtl');
+    srcTextarea.setAttribute('dir', 'auto');
+    if (editorEl) editorEl.setAttribute('dir', 'rtl');
+    appBody._manualRTL = true;
   } else {
-    document.documentElement.removeAttribute('dir');
+    srcTextarea.removeAttribute('dir');
+    if (editorEl) editorEl.removeAttribute('dir');
+    appBody._manualRTL = false;
   }
   updateDirUI();
   showToast(`Direction: ${State.direction.toUpperCase()}`);
@@ -2203,13 +2208,16 @@ function renderFile(idx) {
   `;
 
   // Auto-RTL: detect Arabic-heavy content and flip layout
+  const editorEl = $('editor');
   if (isAr && State.direction !== 'rtl') {
     State.direction = 'rtl';
-    appBody.setAttribute('dir', 'rtl');
+    srcTextarea.setAttribute('dir', 'auto');
+    if (editorEl) editorEl.setAttribute('dir', 'rtl');
     updateDirUI();
   } else if (!isAr && State.direction === 'rtl' && !appBody._manualRTL) {
     State.direction = 'ltr';
-    appBody.removeAttribute('dir');
+    srcTextarea.removeAttribute('dir');
+    if (editorEl) editorEl.removeAttribute('dir');
     updateDirUI();
   }
 

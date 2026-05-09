@@ -777,7 +777,8 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 .editor blockquote {
   border-inline-start: 3px solid var(--accent);
-  padding: 8px 0 8px 24px;
+  padding-block: 8px;
+  padding-inline-start: 24px;
   margin: 24px 0;
   font-family: var(--serif);
   font-style: italic;
@@ -786,9 +787,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--ink-soft);
 }
 .app-body[dir="rtl"] .editor blockquote {
-  border-inline-start: none;
-  border-inline-end: 3px solid var(--accent);
-  padding: 8px 24px 8px 0;
+  padding-inline-start: 0;
   font-family: var(--arabic);
   font-style: normal;
   font-size: 21px;
@@ -2231,9 +2230,14 @@ function renderTree(entries) {
     const node = document.createElement('div');
     node.className = 'tree-node tree-indent';
     node.dataset.fileIdx = i;
+    node.setAttribute('role', 'treeitem');
+    node.setAttribute('tabindex', '0');
+    node.setAttribute('aria-label', entry.name);
     const nameIsAr = isArabicHeavy(entry.name);
     node.innerHTML = `<span class="tree-icon">¶</span><span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(entry.name)}</span>`;
-    node.addEventListener('click', () => openFromTree(i));
+    const activate = () => openFromTree(i);
+    node.addEventListener('click', activate);
+    node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
     treeEl.appendChild(node);
   });
   renderTags();

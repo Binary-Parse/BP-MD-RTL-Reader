@@ -558,6 +558,55 @@ body {
   text-align: center;
 }
 
+/* Find bar */
+.find-bar {
+  position: absolute;
+  top: 78px;
+  inset-inline-end: 290px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px -4px rgba(0,0,0,0.2);
+  padding: 8px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  z-index: 50;
+}
+.find-bar.open { display: flex; }
+.find-bar input {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+  width: 200px;
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.find-bar input:focus { border-color: var(--accent); }
+.find-info { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); padding: 0 6px; }
+.find-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+.find-btn:hover { background: var(--paper-edge); color: var(--ink); }
+
+mark.find-hit {
+  background: #FFE082;
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.find-hit.current { background: var(--accent); color: white; }
+
 /* ============ EDITOR ============ */
 .editor-wrap {
   background: var(--paper);
@@ -1394,6 +1443,15 @@ body {
           </article>
         </div>
       </div>
+
+      <!-- Find bar -->
+      <div class="find-bar" id="findBar">
+        <input type="text" id="findInput" placeholder="Find in note…">
+        <span class="find-info" id="findInfo">0/0</span>
+        <button class="find-btn" id="findPrevBtn" title="Previous">↑</button>
+        <button class="find-btn" id="findNextBtn" title="Next">↓</button>
+        <button class="find-btn" id="findCloseBtn" title="Close">×</button>
+      </div>
     </main>
 
     <aside class="inspector">
@@ -1563,6 +1621,21 @@ function escapeHtml(s) {
 function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // =====================================================================
+// ARABIC DETECTION (uses Unicode Script property — no legacy block range)
+// =====================================================================
+const ARABIC_RE = /\p{Script=Arabic}/u;
+function isArabicHeavy(text, threshold = 0.5) {
+  if (!text) return false;
+  const sample = text.slice(0, 500);
+  let letters = 0, arabic = 0;
+  for (const ch of sample) {
+    if (/\p{L}/u.test(ch)) { letters++; if (ARABIC_RE.test(ch)) arabic++; }
+  }
+  return letters > 0 && arabic / letters >= threshold;
+}
+window.isArabicHeavy = isArabicHeavy;
+
+// =====================================================================
 // TOAST
 // =====================================================================
 function showToast(msg, kind) {
@@ -1609,8 +1682,10 @@ function toggleRTL() {
   State.direction = isRTL ? 'ltr' : 'rtl';
   if (State.direction === 'rtl') {
     appBody.setAttribute('dir', 'rtl');
+    appBody._manualRTL = true;
   } else {
     appBody.removeAttribute('dir');
+    appBody._manualRTL = false;
   }
   updateDirUI();
   showToast(`Direction: ${State.direction.toUpperCase()}`);
@@ -1697,21 +1772,34 @@ const MENU_DEFS = {
       { kind: 'divider' },
       { kind: 'label', text: 'New' },
       { kind: 'item', icon: '+', name: 'New Note', shortcut: 'Ctrl+N', action: () => newNote() },
+      { kind: 'item', icon: '◷', name: 'New Daily Note', shortcut: 'Ctrl+Shift+N', action: () => newDailyNote() },
       { kind: 'divider' },
       { kind: 'item', icon: '↓', name: 'Save', shortcut: 'Ctrl+S', action: () => saveCurrent() },
       { kind: 'item', icon: '⇣', name: 'Save As…', shortcut: 'Ctrl+Shift+S', action: () => saveAs() },
       { kind: 'divider' },
+      { kind: 'item', icon: '⇪', name: 'Export HTML', action: () => exportHTML() },
+      { kind: 'divider' },
       { kind: 'item', icon: '★', name: 'Load Demo Notes', action: () => loadDemo() },
       { kind: 'divider' },
-      { kind: 'item', icon: '×', name: 'Close Tab', shortcut: 'Ctrl+W', action: () => { if (State.activeFile !== null) closeTab(State.activeFile); closeMenu(); } }
+      { kind: 'item', icon: '×', name: 'Close Tab', shortcut: 'Ctrl+W', action: () => { if (State.activeFile !== null) closeTab(State.activeFile); closeMenu(); } },
+      { kind: 'item', icon: '×', name: 'Close Window', shortcut: 'Alt+F4', action: () => winClose() }
     ]
   },
   edit: {
     x: 110,
     items: [
+      { kind: 'item', icon: '↶', name: 'Undo', shortcut: 'Ctrl+Z', action: () => execEditCmd('undo') },
+      { kind: 'item', icon: '↷', name: 'Redo', shortcut: 'Ctrl+Y', action: () => execEditCmd('redo') },
+      { kind: 'divider' },
+      { kind: 'item', icon: '✂', name: 'Cut', shortcut: 'Ctrl+X', action: () => execEditCmd('cut') },
+      { kind: 'item', icon: '⧉', name: 'Copy', shortcut: 'Ctrl+C', action: () => execEditCmd('copy') },
+      { kind: 'item', icon: '⎘', name: 'Paste', shortcut: 'Ctrl+V', action: () => execEditCmd('paste') },
+      { kind: 'item', icon: '⊟', name: 'Select All', shortcut: 'Ctrl+A', action: () => execEditCmd('selectAll') },
+      { kind: 'divider' },
+      { kind: 'item', icon: '⌕', name: 'Find…', shortcut: 'Ctrl+F', action: () => { closeMenu(); openFind(); } },
+      { kind: 'divider' },
       { kind: 'item', icon: 'B', name: 'Bold', shortcut: 'Ctrl+B', action: () => { closeMenu(); wrapSelection('**', '**'); } },
       { kind: 'item', icon: 'I', name: 'Italic', shortcut: 'Ctrl+I', action: () => { closeMenu(); wrapSelection('*', '*'); } },
-      { kind: 'divider' },
       { kind: 'item', icon: '∞', name: 'Insert Link', shortcut: 'Ctrl+L', action: () => { closeMenu(); insertText('[', '](url)'); } },
       { kind: 'item', icon: '[[', name: 'Insert Wikilink', action: () => { closeMenu(); insertText('[[', ']]'); } }
     ]
@@ -1742,7 +1830,10 @@ const MENU_DEFS = {
     x: 184,
     items: [
       { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
-      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout }
+      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout },
+      { kind: 'divider' },
+      { kind: 'item', icon: '?', name: 'Documentation', action: () => { closeMenu(); showToast('Docs would open at marqam.app/docs', 'info'); } },
+      { kind: 'item', icon: '✎', name: 'Report an Issue', action: () => { closeMenu(); showToast('Would open issue tracker', 'info'); } }
     ]
   }
 };
@@ -1792,6 +1883,136 @@ function buildMenu(name) {
 function closeMenu() {
   dropdown.classList.remove('open');
   document.querySelectorAll('.tb-menu-item').forEach(m => m.classList.remove('open-menu'));
+}
+
+// =====================================================================
+// FIND IN PAGE (Ctrl+F)
+// =====================================================================
+function openFind() {
+  const findBar = $('findBar');
+  findBar.classList.add('open');
+  setTimeout(() => $('findInput').focus(), 50);
+}
+function closeFind() {
+  const findBar = $('findBar');
+  findBar.classList.remove('open');
+  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
+    const text = document.createTextNode(m.textContent);
+    m.parentNode.replaceChild(text, m);
+  });
+  noteContent.normalize();
+  State.findHits = [];
+  $('findInfo').textContent = '0/0';
+}
+function runFind(q) {
+  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
+    const t = document.createTextNode(m.textContent);
+    m.parentNode.replaceChild(t, m);
+  });
+  noteContent.normalize();
+  State.findHits = [];
+  if (!q) { $('findInfo').textContent = '0/0'; return; }
+  const re = new RegExp(escapeReg(q), 'gi');
+  const walker = document.createTreeWalker(noteContent, NodeFilter.SHOW_TEXT, null);
+  const textNodes = [];
+  let n; while ((n = walker.nextNode())) textNodes.push(n);
+  textNodes.forEach(node => {
+    const txt = node.nodeValue;
+    if (!re.test(txt)) return;
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = re.exec(txt)) !== null) {
+      if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+      const mark = document.createElement('mark');
+      mark.className = 'find-hit';
+      mark.textContent = m[0];
+      frag.appendChild(mark);
+      State.findHits.push(mark);
+      last = m.index + m[0].length;
+    }
+    if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  });
+  State.findIdx = 0;
+  if (State.findHits.length) {
+    State.findHits[0].classList.add('current');
+    State.findHits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  $('findInfo').textContent = `${State.findHits.length ? 1 : 0}/${State.findHits.length}`;
+}
+function findStep(d) {
+  if (!State.findHits.length) return;
+  State.findHits[State.findIdx].classList.remove('current');
+  State.findIdx = (State.findIdx + d + State.findHits.length) % State.findHits.length;
+  State.findHits[State.findIdx].classList.add('current');
+  State.findHits[State.findIdx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  $('findInfo').textContent = `${State.findIdx + 1}/${State.findHits.length}`;
+}
+
+// =====================================================================
+// EXPORT HTML
+// =====================================================================
+function exportHTML() {
+  closeMenu();
+  if (State.activeFile === null || !State.files[State.activeFile]) {
+    showToast('No file to export', 'error'); return;
+  }
+  const f = State.files[State.activeFile];
+  const html = parseMarkdown(f.content || '');
+  const fullHtml = `<!DOCTYPE html>
+<html lang="${State.direction === 'rtl' ? 'ar' : 'en'}" dir="${State.direction}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(f.name.replace(/\.md$/, ''))}</title>
+<style>
+body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; }
+h1,h2,h3 { font-weight: 600; line-height: 1.2; }
+a { color: #C0492C; }
+code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; }
+pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; overflow-x: auto; }
+blockquote { border-left: 3px solid #C0492C; padding: 8px 0 8px 20px; margin: 24px 0; font-style: italic; }
+</style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+  const blob = new Blob([fullHtml], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = f.name.replace(/\.md$/, '.html');
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${a.download}`);
+}
+window.exportHTML = exportHTML;
+
+// =====================================================================
+// NEW DAILY NOTE
+// =====================================================================
+function newDailyNote() {
+  closeMenu();
+  const d = new Date();
+  const name = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.md`;
+  const existing = State.files.findIndex(f => f.name === name);
+  if (existing >= 0) { renderFile(existing); return; }
+  const dateStr = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  addFile({ name, path: name, handle: null, content: `# ${dateStr}\n\n`, dirty: true });
+}
+
+// =====================================================================
+// EDIT MENU COMMANDS
+// =====================================================================
+function execEditCmd(cmd) {
+  closeMenu();
+  if (State.editorMode === 'source' || State.editorMode === 'split') {
+    srcTextarea.focus();
+  }
+  try { document.execCommand(cmd); }
+  catch(e) { showToast('Command failed', 'error'); }
 }
 
 // =====================================================================
@@ -1918,18 +2139,30 @@ function renderFile(idx) {
   const html = parseMarkdown(file.content || '');
   const wordCount = (file.content.match(/\S+/g) || []).length;
   const readMin = Math.max(1, Math.round(wordCount / 220));
+  const isAr = isArabicHeavy(file.content || '');
 
   noteContent.innerHTML = `
     <div class="doc-meta">
-      <span>note</span>
+      <span>${isAr ? 'مقالة' : 'note'}</span>
       <span>·</span>
-      <span>${wordCount} words</span>
+      <span>${wordCount} ${isAr ? 'كلمة' : 'words'}</span>
       <span>·</span>
       <span>${escapeHtml(file.path)}</span>
       ${file.dirty ? '<span>·</span><span style="color: var(--accent);">● unsaved</span>' : ''}
     </div>
     ${html}
   `;
+
+  // Auto-RTL: detect Arabic-heavy content and flip layout
+  if (isAr && State.direction !== 'rtl') {
+    State.direction = 'rtl';
+    appBody.setAttribute('dir', 'rtl');
+    updateDirUI();
+  } else if (!isAr && State.direction === 'rtl' && !appBody._manualRTL) {
+    State.direction = 'ltr';
+    appBody.removeAttribute('dir');
+    updateDirUI();
+  }
 
   $('propFile').textContent = file.name;
   $('propWords').textContent = wordCount;
@@ -1988,7 +2221,8 @@ function renderTree(entries) {
     const node = document.createElement('div');
     node.className = 'tree-node tree-indent';
     node.dataset.fileIdx = i;
-    node.innerHTML = `<span class="tree-icon">¶</span><span class="tree-name">${escapeHtml(entry.name)}</span>`;
+    const nameIsAr = isArabicHeavy(entry.name);
+    node.innerHTML = `<span class="tree-icon">¶</span><span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(entry.name)}</span>`;
     node.addEventListener('click', () => openFromTree(i));
     treeEl.appendChild(node);
   });
@@ -2405,15 +2639,18 @@ document.addEventListener('keydown', e => {
   const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
 
   if (cmd && e.key.toLowerCase() === 'k' && !e.shiftKey) { e.preventDefault(); openPalette(); }
+  else if (cmd && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); openPalette(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleRTL(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); cycleTheme(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); toggleInspector(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openVault(); }
   else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openSingleFile(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newDailyNote(); }
   else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newNote(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAs(); }
   else if (cmd && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrent(); }
   else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'w') { e.preventDefault(); if (State.activeFile !== null) closeTab(State.activeFile); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); }
   else if (cmd && e.key === '\\') { e.preventDefault(); toggleSidebar(); }
   else if (cmd && e.key === '/') { e.preventDefault(); showShortcuts(); }
   else if (cmd && !inInput && e.key.toLowerCase() === 'b') { e.preventDefault(); wrapSelection('**', '**'); }
@@ -2421,6 +2658,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') {
     if (palOverlay.classList.contains('open')) closePalette();
     else if (modalOverlay.classList.contains('open')) closeModal();
+    else if ($('findBar').classList.contains('open')) closeFind();
     else if (dropdown.classList.contains('open')) closeMenu();
   }
 });
@@ -2473,6 +2711,12 @@ $('tbQuote').addEventListener('click', () => lineStart('> '));
 $('tbList').addEventListener('click', () => lineStart('- '));
 $('tbCode').addEventListener('click', () => wrapSelection('`', '`'));
 $('tbWikilink').addEventListener('click', () => insertText('[[', ']]'));
+
+// Find bar
+$('findInput').addEventListener('input', e => runFind(e.target.value));
+$('findPrevBtn').addEventListener('click', () => findStep(-1));
+$('findNextBtn').addEventListener('click', () => findStep(1));
+$('findCloseBtn').addEventListener('click', closeFind);
 
 document.addEventListener('click', e => {
   if (!e.target.closest('.tb-menu-item') && !e.target.closest('.dropdown') && !e.target.closest('.tb-menu-btn')) closeMenu();

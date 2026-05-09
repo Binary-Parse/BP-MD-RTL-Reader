@@ -1719,11 +1719,9 @@ function toggleRTL() {
   const isRTL = State.direction === 'rtl';
   State.direction = isRTL ? 'ltr' : 'rtl';
   if (State.direction === 'rtl') {
-    appBody.setAttribute('dir', 'rtl');
-    appBody._manualRTL = true;
+    document.documentElement.setAttribute('dir', 'rtl');
   } else {
-    appBody.removeAttribute('dir');
-    appBody._manualRTL = false;
+    document.documentElement.removeAttribute('dir');
   }
   updateDirUI();
   showToast(`Direction: ${State.direction.toUpperCase()}`);

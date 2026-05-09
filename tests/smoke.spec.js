@@ -86,20 +86,24 @@ test.describe('smoke tests', () => {
     await page.goto(MARQAM_URL);
     await page.waitForLoadState('networkidle');
 
-    const appBody = page.locator('#appBody');
+    const html = page.locator('html');
 
-    // Initially LTR (no dir attribute)
-    await expect(appBody).not.toHaveAttribute('dir', 'rtl');
+    // Initially LTR (no dir attribute on root element)
+    await expect(html).not.toHaveAttribute('dir', 'rtl');
 
-    // Toggle RTL on
+    // Toggle RTL on — dir must land on the <html> element
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
-    await expect(appBody).toHaveAttribute('dir', 'rtl');
+    await expect(html).toHaveAttribute('dir', 'rtl');
+
+    // #appBody must never receive a dir attribute
+    const appBody = page.locator('#appBody');
+    await expect(appBody).not.toHaveAttribute('dir', 'rtl');
 
     // Toggle RTL off
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
-    await expect(appBody).not.toHaveAttribute('dir', 'rtl');
+    await expect(html).not.toHaveAttribute('dir', 'rtl');
   });
 
   test('inject file via page.evaluate and verify render', async ({ page }) => {

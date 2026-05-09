@@ -330,8 +330,8 @@ body {
   position: relative;
 }
 .app-body.no-sidebar { grid-template-columns: 0 1fr 280px; }
-.app-body.no-inspector { grid-template-columns: 240px 1fr 0; }
-.app-body.no-sidebar.no-inspector { grid-template-columns: 0 1fr 0; }
+.app-body.no-inspector { grid-template-columns: 240px 1fr; }
+.app-body.no-sidebar.no-inspector { grid-template-columns: 0 1fr; }
 
 .sidebar {
   background: var(--paper-deep);
@@ -1752,6 +1752,7 @@ function toggleInspector() {
   closeMenu();
   showToast(`Inspector: ${State.inspectorVisible ? 'shown' : 'hidden'}`, 'info');
 }
+window.toggleInspector = toggleInspector;
 
 // =====================================================================
 // MODAL

@@ -1581,8 +1581,9 @@ const srcTextarea = $('srcTextarea');
 // MARKED.JS SETUP (wikilink extension)
 // =====================================================================
 if (typeof marked !== 'undefined') {
-  marked.use({ gfm: true, breaks: false });
   marked.use({
+    gfm: true,
+    breaks: false,
     extensions: [{
       name: 'wikilink',
       level: 'inline',

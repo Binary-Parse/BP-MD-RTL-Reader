@@ -87,23 +87,28 @@ test.describe('smoke tests', () => {
     await page.waitForLoadState('networkidle');
 
     const html = page.locator('html');
-
-    // Initially LTR (no dir attribute on root element)
-    await expect(html).not.toHaveAttribute('dir', 'rtl');
-
-    // Toggle RTL on — dir must land on the <html> element
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-    await expect(html).toHaveAttribute('dir', 'rtl');
-
-    // #appBody must never receive a dir attribute
+    const srcTextarea = page.locator('#srcTextarea');
+    const editor = page.locator('#editor');
     const appBody = page.locator('#appBody');
-    await expect(appBody).not.toHaveAttribute('dir', 'rtl');
 
-    // Toggle RTL off
+    // Initially LTR — html element must not have dir=rtl
+    await expect(html).not.toHaveAttribute('dir', 'rtl');
+
+    // Toggle RTL on — dir must land on #srcTextarea and #editor, NOT html
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
+    await expect(srcTextarea).toHaveAttribute('dir', 'auto');
+    await expect(editor).toHaveAttribute('dir', 'rtl');
+    // html element must NOT gain a dir attribute
     await expect(html).not.toHaveAttribute('dir', 'rtl');
+    // #appBody must never receive a dir attribute
+    await expect(appBody).not.toHaveAttribute('dir');
+
+    // Toggle RTL off — dir removed from content elements
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
+    await expect(srcTextarea).not.toHaveAttribute('dir');
+    await expect(editor).not.toHaveAttribute('dir');
   });
 
   test('inject file via page.evaluate and verify render', async ({ page }) => {

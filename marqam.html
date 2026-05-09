@@ -515,6 +515,7 @@ body {
   outline: none;
 }
 .search-input:focus { border-color: var(--accent); }
+.search-input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .search-input::placeholder { color: var(--ink-mute); }
 .search-input-wrap::before {
   content: '⌕';
@@ -586,6 +587,7 @@ body {
   color: var(--ink);
 }
 .find-bar input:focus { border-color: var(--accent); }
+.find-bar input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .find-info { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); padding: 0 6px; }
 .find-btn {
   width: 24px; height: 24px;
@@ -682,6 +684,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
   border: none;
   outline: none;
   resize: none;
+}
+.source-textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.source-textarea {
   padding: 56px 60px 120px;
   font-family: var(--mono);
   font-size: 14px;
@@ -1074,6 +1079,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--ink);
   font-family: var(--sans);
 }
+.pal-input:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 3px; }
 .pal-input::placeholder { color: var(--ink-mute); }
 .pal-results { padding: 6px; max-height: 360px; overflow-y: auto; }
 .pal-item {
@@ -1861,13 +1867,13 @@ function buildMenu(name) {
     else if (it.kind === 'divider') html += `<div class="dd-divider"></div>`;
     else if (it.kind === 'check') {
       const checked = it.checked ? it.checked() : false;
-      html += `<div class="dd-item${checked ? ' checked' : ''}" data-i="${i}">
+      html += `<div class="dd-item${checked ? ' checked' : ''}" data-i="${i}" role="menuitemcheckbox" aria-checked="${checked}" tabindex="0">
         <span class="dd-check">✓</span><span class="dd-icon">·</span>
         <span class="dd-name">${escapeHtml(it.name)}</span>
         ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
       </div>`;
     } else {
-      html += `<div class="dd-item${it.disabled ? ' disabled' : ''}" data-i="${i}">
+      html += `<div class="dd-item${it.disabled ? ' disabled' : ''}" data-i="${i}" role="menuitem"${it.disabled ? ' aria-disabled="true"' : ' tabindex="0"'}>
         <span class="dd-icon">${escapeHtml(it.icon || '·')}</span>
         <span class="dd-name">${escapeHtml(it.name)}</span>
         ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
@@ -1875,9 +1881,12 @@ function buildMenu(name) {
     }
   });
   dropdown.innerHTML = html;
+  dropdown.setAttribute('role', 'menu');
   dropdown.querySelectorAll('.dd-item:not(.disabled)').forEach(el => {
     const i = parseInt(el.dataset.i);
-    el.onclick = () => { try { def.items[i].action(); } catch(err) { console.error(err); } };
+    const activate = () => { try { def.items[i].action(); } catch(err) { console.error(err); } };
+    el.onclick = activate;
+    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } };
   });
 }
 

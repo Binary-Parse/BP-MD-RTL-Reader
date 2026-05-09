@@ -22,7 +22,7 @@ test.describe('reference baseline', () => {
     await page.goto(REFERENCE_URL);
     await page.waitForLoadState('networkidle');
     await page.evaluate(() => {
-      document.querySelector('#app').setAttribute('data-theme', 'ink');
+      document.documentElement.setAttribute('data-theme', 'ink');
     });
     await page.waitForTimeout(300);
     await expect(page).toHaveScreenshot('marqam-app-baseline-ink.png', {

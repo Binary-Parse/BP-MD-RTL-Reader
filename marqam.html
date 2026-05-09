@@ -1975,6 +1975,15 @@ function runFind(q) {
     node.parentNode.replaceChild(frag, node);
   });
   State.findIdx = 0;
+  State.findHits.forEach((mark, idx) => {
+    mark.addEventListener('click', () => {
+      State.findHits.forEach(m => m.classList.remove('current'));
+      State.findIdx = idx;
+      mark.classList.add('current');
+      $('findInfo').textContent = `${idx + 1}/${State.findHits.length}`;
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
   if (State.findHits.length) {
     State.findHits[0].classList.add('current');
     State.findHits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -2619,6 +2628,8 @@ function openPalette() {
 function closePalette() { palOverlay.classList.remove('open'); palInput.value = ''; }
 window.openPalette = openPalette;
 window.closePalette = closePalette;
+window.openFind = openFind;
+window.runFind = runFind;
 
 function filterPalette(q) {
   q = (q || '').trim().toLowerCase();

@@ -187,4 +187,61 @@ test.describe('smoke tests', () => {
     const editorArea = page.locator('#editorArea');
     await expect(editorArea).toHaveClass(/split/);
   });
+
+  // ----------------------------------------------------------------
+  // T5 smoke regressions — verify all five fix acceptance signals
+  // ----------------------------------------------------------------
+
+  test('[T5-a] #searchBtn click opens command palette', async ({ page }) => {
+    await page.goto(MARQAM_URL);
+    await page.waitForLoadState('networkidle');
+
+    const palOverlay = page.locator('#palOverlay');
+    await expect(palOverlay).not.toHaveClass(/open/);
+
+    await page.click('#searchBtn');
+    await page.waitForTimeout(100);
+
+    await expect(palOverlay).toHaveClass(/open/);
+  });
+
+  test('[T5-b] toggleInspector() leaves appBody with two-column grid', async ({ page }) => {
+    await page.goto(MARQAM_URL);
+    await page.waitForLoadState('networkidle');
+
+    await page.evaluate(() => window.toggleInspector());
+    await page.waitForTimeout(50);
+
+    const cols = await page.evaluate(() => {
+      return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
+    });
+    // Should have exactly two column values after collapse
+    const colCount = cols.trim().split(/\s+(?=\d|auto|minmax|fr)/).length;
+    expect(colCount).toBe(2);
+  });
+
+  test('[T5-c] find-hit click updates State.findIdx to 1 when second mark clicked', async ({ page }) => {
+    await page.goto(MARQAM_URL);
+    await page.waitForLoadState('networkidle');
+
+    // Inject a file with three hits
+    await page.evaluate(() => {
+      const state = window._marqamState;
+      state.files = [{ name: 'f.md', path: 'f.md', handle: null, content: 'the quick the brown the fox', dirty: false }];
+      window.renderFile(0);
+    });
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => {
+      window.openFind();
+      window.runFind('the');
+    });
+    await page.waitForTimeout(100);
+
+    await page.locator('mark.find-hit').nth(1).click();
+    await page.waitForTimeout(50);
+
+    const findIdx = await page.evaluate(() => window._marqamState.findIdx);
+    expect(findIdx).toBe(1);
+  });
 });

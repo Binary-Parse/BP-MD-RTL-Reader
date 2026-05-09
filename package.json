@@ -1,0 +1,14 @@
+{
+  "name": "marqam",
+  "version": "0.1.0",
+  "description": "Marqam markdown editor with RTL support",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test tests/smoke.spec.js",
+    "test:update-snapshots": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1"
+  }
+}

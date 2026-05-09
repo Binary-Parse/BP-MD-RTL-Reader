@@ -27,6 +27,9 @@
   --green: #6FB55C;
   --close-red: #E81123;
 
+  --statusbar-bg: var(--ink);
+  --statusbar-fg: var(--paper);
+
   --serif: 'Fraunces', Georgia, serif;
   --sans: 'Inter', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -46,6 +49,8 @@
   --gold: #D9B85C;
   --teal: #6FB594;
   --plum: #B582A0;
+  --statusbar-bg: var(--paper-deep);
+  --statusbar-fg: var(--ink);
 }
 
 [data-theme="sepia"] {
@@ -1015,8 +1020,8 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 /* statusbar */
 .statusbar {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--statusbar-bg);
+  color: var(--statusbar-fg);
   display: flex;
   align-items: center;
   padding-block: 0;

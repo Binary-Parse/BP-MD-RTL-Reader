@@ -403,6 +403,96 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   // ----------------------------------------------------------------
+  // AC6/AC7/AC8 shared fixture: Arabic markdown with h1, h2, h3
+  // ----------------------------------------------------------------
+
+  const RTL_HEADINGS_MD = [
+    '# عنوان رئيسي',
+    '',
+    'نص عربي.',
+    '',
+    '## عنوان ثانوي',
+    '',
+    'نص عربي.',
+    '',
+    '### عنوان ثالثي',
+    '',
+    'نص عربي.'
+  ].join('\n');
+
+  // ----------------------------------------------------------------
+  // AC6 — h1 text-align resolves to right/end in RTL mode
+  // ----------------------------------------------------------------
+
+  test('[AC6] h1 textAlign is right or end when #editor[dir=rtl]', async ({ page }) => {
+    await page.goto(MARQAM_URL);
+    await page.waitForLoadState('networkidle');
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
+
+    await injectMarkdown(page, RTL_HEADINGS_MD);
+    await page.waitForTimeout(200);
+
+    const textAlign = await page.evaluate(() => {
+      const h1 = document.querySelector('#noteContent h1');
+      if (!h1) return null;
+      return getComputedStyle(h1).textAlign;
+    });
+
+    expect(textAlign).not.toBeNull();
+    expect(['right', 'end']).toContain(textAlign);
+  });
+
+  // ----------------------------------------------------------------
+  // AC7 — h2 text-align resolves to right/end in RTL mode
+  // ----------------------------------------------------------------
+
+  test('[AC7] h2 textAlign is right or end when #editor[dir=rtl]', async ({ page }) => {
+    await page.goto(MARQAM_URL);
+    await page.waitForLoadState('networkidle');
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
+
+    await injectMarkdown(page, RTL_HEADINGS_MD);
+    await page.waitForTimeout(200);
+
+    const textAlign = await page.evaluate(() => {
+      const h2 = document.querySelector('#noteContent h2');
+      if (!h2) return null;
+      return getComputedStyle(h2).textAlign;
+    });
+
+    expect(textAlign).not.toBeNull();
+    expect(['right', 'end']).toContain(textAlign);
+  });
+
+  // ----------------------------------------------------------------
+  // AC8 — h3 text-align resolves to right/end in RTL mode
+  // ----------------------------------------------------------------
+
+  test('[AC8] h3 textAlign is right or end when #editor[dir=rtl]', async ({ page }) => {
+    await page.goto(MARQAM_URL);
+    await page.waitForLoadState('networkidle');
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
+
+    await injectMarkdown(page, RTL_HEADINGS_MD);
+    await page.waitForTimeout(200);
+
+    const textAlign = await page.evaluate(() => {
+      const h3 = document.querySelector('#noteContent h3');
+      if (!h3) return null;
+      return getComputedStyle(h3).textAlign;
+    });
+
+    expect(textAlign).not.toBeNull();
+    expect(['right', 'end']).toContain(textAlign);
+  });
+
+  // ----------------------------------------------------------------
   // AC5 — Console clean during RTL flows
   // ----------------------------------------------------------------
 

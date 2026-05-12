@@ -714,6 +714,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--ink);
 }
 #editor[dir="rtl"] {
+  direction: rtl;
   font-family: var(--arabic);
   font-size: 19px;
   line-height: 1.95;
@@ -764,6 +765,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 .editor p { margin-bottom: 16px; }
 .editor p em { color: var(--plum); font-style: italic; }
+#editor[dir="rtl"] p { text-align: end; }
 #editor[dir="rtl"] p em { font-style: normal; font-weight: 600; }
 .editor p strong { font-weight: 600; }
 .editor a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
@@ -793,6 +795,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 #editor[dir="rtl"] blockquote {
   padding-inline-start: 0;
+  padding-inline-end: 24px;
   font-family: var(--arabic);
   font-style: normal;
   font-size: 21px;

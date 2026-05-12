@@ -104,11 +104,23 @@ test.describe('smoke tests', () => {
     // #appBody must never receive a dir attribute
     await expect(appBody).not.toHaveAttribute('dir');
 
+    // Computed direction must be rtl (not just the attribute — catches the CSS bug)
+    const computedDirRTL = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('editor')).direction
+    );
+    expect(computedDirRTL).toBe('rtl');
+
     // Toggle RTL off — dir removed from content elements
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
     await expect(srcTextarea).not.toHaveAttribute('dir');
     await expect(editor).not.toHaveAttribute('dir');
+
+    // Computed direction must return to ltr after toggle off
+    const computedDirLTR = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('editor')).direction
+    );
+    expect(computedDirLTR).toBe('ltr');
   });
 
   test('inject file via page.evaluate and verify render', async ({ page }) => {

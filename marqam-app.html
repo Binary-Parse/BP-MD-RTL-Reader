@@ -1,0 +1,2617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Marqam</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+:root {
+  --paper: #FAF7F0;
+  --paper-deep: #F2EDE0;
+  --paper-edge: #E6DFCC;
+  --ink: #1F1B16;
+  --ink-soft: #4A413A;
+  --ink-mute: #877D6F;
+  --rule: #D6CDB6;
+  --accent: #C0492C;
+  --accent-soft: #E8C4B6;
+  --gold: #B7943A;
+  --teal: #2D5F4E;
+  --plum: #6B3E5E;
+  --green: #6FB55C;
+  --close-red: #E81123;
+
+  --serif: 'Fraunces', Georgia, serif;
+  --sans: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --arabic: 'IBM Plex Sans Arabic', 'Inter', sans-serif;
+}
+
+[data-theme="ink"] {
+  --paper: #16181C;
+  --paper-deep: #1E2126;
+  --paper-edge: #2A2F36;
+  --ink: #E8E2D5;
+  --ink-soft: #C4BCAB;
+  --ink-mute: #7A7263;
+  --rule: #2F343C;
+  --accent: #D9885F;
+  --accent-soft: #3A2A22;
+  --gold: #D9B85C;
+  --teal: #6FB594;
+  --plum: #B582A0;
+}
+
+[data-theme="sepia"] {
+  --paper: #F4E8D0;
+  --paper-deep: #ECDFC0;
+  --paper-edge: #DCC9A0;
+  --ink: #3D2B14;
+  --ink-soft: #5C4424;
+  --ink-mute: #8A704A;
+  --rule: #C9B284;
+  --accent: #A8512B;
+  --accent-soft: #E8C4A0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--ink);
+  background: #2A2620;
+  -webkit-font-smoothing: antialiased;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.app {
+  width: 100%;
+  max-width: 1480px;
+  height: calc(100vh - 48px);
+  max-height: 920px;
+  background: var(--paper);
+  border-radius: 8px;
+  box-shadow: 0 40px 100px -30px rgba(0,0,0,0.5), 0 20px 40px -20px rgba(0,0,0,0.3);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 36px 1fr 26px;
+  position: relative;
+}
+
+/* ============ TITLEBAR ============ */
+.titlebar {
+  background: var(--paper-deep);
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: stretch;
+  height: 36px;
+}
+.tb-brand { display: flex; align-items: center; padding: 0 10px 0 12px; gap: 8px; }
+.tb-menu-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent; border: none; cursor: pointer;
+  border-radius: 3px; color: var(--ink-soft);
+  font-size: 16px; line-height: 1;
+}
+.tb-menu-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.tb-menu-btn.open { background: var(--accent); color: white; }
+
+.tb-brand-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tb-brand-name::before { content: '◆'; color: var(--accent); font-size: 9px; }
+
+.tb-menubar { display: flex; align-items: stretch; padding-left: 4px; }
+.tb-menu-item {
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: var(--sans);
+  height: 100%;
+}
+.tb-menu-item:hover, .tb-menu-item.active { background: var(--paper-edge); color: var(--ink); }
+.tb-menu-item.open-menu { background: var(--accent); color: white; }
+.tb-menu-item u { text-decoration: underline; text-underline-offset: 2px; }
+
+.tabs {
+  display: flex;
+  align-items: end;
+  height: 100%;
+  padding: 6px 0 0 12px;
+  gap: 1px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  padding: 7px 14px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  font-size: 12px;
+  color: var(--ink-mute);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 200px;
+  position: relative;
+}
+.tab:hover { color: var(--ink); background: var(--paper-edge); }
+.tab.active {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--rule);
+  border-bottom: 1px solid var(--paper);
+  margin-bottom: -1px;
+  z-index: 1;
+}
+.tab .close {
+  width: 16px; height: 16px;
+  display: grid; place-items: center;
+  border-radius: 3px;
+  font-size: 14px;
+  color: var(--ink-mute);
+}
+.tab .close:hover { background: var(--rule); color: var(--ink); }
+.tab.dirty .close { color: var(--accent); }
+.tab-add {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  background: transparent; border: none;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 16px;
+  margin-bottom: 5px;
+  margin-left: 3px;
+  flex-shrink: 0;
+}
+.tab-add:hover { background: var(--paper-edge); color: var(--ink); }
+
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+}
+.tb-btn {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.tb-btn:hover { background: var(--paper-edge); border-color: var(--rule); color: var(--ink); }
+.tb-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+.tb-search {
+  height: 24px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-mute);
+  cursor: pointer;
+  width: 200px;
+}
+.tb-search:hover { border-color: var(--ink-mute); color: var(--ink-soft); }
+.tb-search .kbd-inline {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+.win-controls { display: flex; height: 36px; }
+.win-btn {
+  width: 46px; height: 36px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.win-btn svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1; }
+.win-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.win-btn.close:hover { background: var(--close-red); color: white; }
+
+/* ============ DROPDOWN MENU ============ */
+.dropdown {
+  position: absolute;
+  top: 36px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px -8px rgba(0,0,0,0.25);
+  min-width: 280px;
+  padding: 6px;
+  z-index: 200;
+  display: none;
+}
+.dropdown.open { display: block; }
+
+.dd-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px 7px 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+  position: relative;
+  white-space: nowrap;
+  gap: 12px;
+}
+.dd-item:hover { background: var(--accent); color: white; }
+.dd-item:hover .dd-shortcut, .dd-item:hover .dd-icon, .dd-item:hover .dd-check { color: rgba(255,255,255,0.85); }
+.dd-item .dd-icon {
+  position: absolute;
+  left: 10px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-mute);
+}
+.dd-item .dd-check {
+  position: absolute;
+  left: 12px;
+  font-size: 12px;
+  color: var(--accent);
+  display: none;
+}
+.dd-item.checked .dd-check { display: block; }
+.dd-item.checked .dd-icon { display: none; }
+.dd-item.disabled { color: var(--ink-mute); cursor: not-allowed; }
+.dd-item.disabled:hover { background: transparent; color: var(--ink-mute); }
+.dd-item.disabled:hover .dd-icon { color: var(--ink-mute); }
+.dd-name { flex: 1; }
+.dd-shortcut { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+.dd-divider { height: 1px; background: var(--rule); margin: 4px 0; }
+.dd-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-mute);
+  padding: 8px 12px 4px;
+  font-weight: 500;
+}
+
+/* ============ BODY ============ */
+.body {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  overflow: hidden;
+  background: var(--paper);
+  position: relative;
+}
+.body.no-sidebar { grid-template-columns: 0 1fr 280px; }
+.body.no-inspector { grid-template-columns: 240px 1fr 0; }
+.body.no-sidebar.no-inspector { grid-template-columns: 0 1fr 0; }
+.body.rtl-mode { direction: rtl; grid-template-columns: 280px 1fr 240px; }
+.body.rtl-mode.no-sidebar { grid-template-columns: 280px 1fr 0; }
+.body.rtl-mode.no-inspector { grid-template-columns: 0 1fr 240px; }
+
+.sidebar {
+  background: var(--paper-deep);
+  border-right: 1px solid var(--rule);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.body.rtl-mode .sidebar {
+  border-right: none;
+  border-left: 1px solid var(--rule);
+  order: 3;
+}
+.body.no-sidebar .sidebar { display: none; }
+
+.sb-header {
+  padding: 12px 12px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sb-vault-name {
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-vault-name::before { content: '⌂'; color: var(--accent); font-size: 13px; }
+.sb-vault-name.empty { color: var(--ink-mute); font-style: italic; font-weight: 400; }
+.sb-vault-name.empty::before { color: var(--ink-mute); }
+
+.sb-actions { display: flex; gap: 2px; }
+.sb-icon-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.sb-icon-btn:hover { background: var(--paper); border-color: var(--rule); color: var(--accent); }
+
+.sb-tabs {
+  display: flex;
+  padding: 0 10px;
+  gap: 2px;
+  border-bottom: 1px solid var(--rule);
+}
+.sb-tab {
+  padding: 7px 10px;
+  font-size: 10px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+.sb-tab:hover { color: var(--ink-soft); }
+.sb-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.sb-content { flex: 1; overflow-y: auto; padding: 6px 0; }
+.sb-content::-webkit-scrollbar { width: 6px; }
+.sb-content::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+
+.sb-pane { display: none; }
+.sb-pane.active { display: block; }
+
+.sb-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--ink-mute);
+}
+.sb-empty .ico {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 36px;
+  color: var(--accent);
+  opacity: 0.5;
+  margin-bottom: 12px;
+}
+.sb-empty .ttl {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.sb-empty p { font-size: 12px; line-height: 1.5; margin-bottom: 16px; }
+.sb-empty .actions { display: flex; flex-direction: column; gap: 6px; }
+.sb-empty button {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 8px 14px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+.sb-empty button:hover { background: var(--accent); color: white; border-color: var(--accent); }
+.sb-empty button .ic { font-family: var(--serif); font-style: italic; font-size: 14px; }
+
+.tree { padding: 0 6px; }
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+.tree-node:hover { background: var(--paper-edge); color: var(--ink); }
+.tree-node.active { background: var(--accent); color: white; font-weight: 500; }
+.tree-node.active .tree-icon { color: white; opacity: 0.9; }
+.tree-icon {
+  font-family: var(--serif);
+  font-size: 11px;
+  color: var(--ink-mute);
+  width: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-name.arabic { font-family: var(--arabic); font-size: 13px; direction: rtl; text-align: right; }
+.tree-indent { padding-left: 18px; }
+.body.rtl-mode .tree-indent { padding-left: 8px; padding-right: 18px; }
+
+/* Tags pane */
+.tags-pane { padding: 12px 14px; }
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
+.tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 3px 8px;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tag:hover { border-color: var(--accent); color: var(--accent); }
+.tag.active { background: var(--accent); color: white; border-color: var(--accent); }
+.tag .count { opacity: 0.6; font-size: 9px; }
+
+/* Search pane */
+.search-pane { padding: 10px 12px; }
+.search-input-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+.search-input {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 7px 12px 7px 28px;
+  font-size: 13px;
+  font-family: var(--sans);
+  color: var(--ink);
+  outline: none;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--ink-mute); }
+.search-input-wrap::before {
+  content: '⌕';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-mute);
+  font-size: 14px;
+}
+.search-results { font-size: 12px; }
+.search-result {
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--rule);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.search-result:hover { background: var(--paper); }
+.sr-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+.sr-snip {
+  color: var(--ink-mute);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.sr-snip mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.search-empty {
+  font-size: 12px;
+  color: var(--ink-mute);
+  font-style: italic;
+  padding: 16px 10px;
+  text-align: center;
+}
+
+/* ============ EDITOR ============ */
+.editor-wrap {
+  background: var(--paper);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.editor-wrap::-webkit-scrollbar { width: 8px; }
+.editor-wrap::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+
+.editor-toolbar {
+  height: 34px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-deep);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 3px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-shrink: 0;
+}
+.tool-btn {
+  min-width: 26px; height: 26px;
+  padding: 0 6px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 13px;
+}
+.tool-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.tool-btn.active { background: var(--accent); color: white; }
+.tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 5px; }
+.tool-spacer { flex: 1; }
+.read-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Editor split */
+.editor-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+.editor-source, .editor-preview {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+.editor-source::-webkit-scrollbar, .editor-preview::-webkit-scrollbar { width: 8px; }
+.editor-source::-webkit-scrollbar-thumb, .editor-preview::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+.editor-source { display: none; }
+.editor-area.split .editor-source { display: block; border-right: 1px solid var(--rule); }
+.editor-area.source .editor-source { display: block; }
+.editor-area.source .editor-preview { display: none; }
+.editor-area.split .editor-source { flex: 1; }
+.editor-area.split .editor-preview { flex: 1; }
+
+.editor-source-textarea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 56px 60px 120px;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.7;
+  background: var(--paper-deep);
+  color: var(--ink);
+  display: block;
+  min-height: 100%;
+}
+.body.rtl-mode .editor-source-textarea {
+  font-family: var(--mono);
+  direction: ltr;
+  text-align: left;
+}
+
+.editor {
+  padding: 56px 80px 120px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.body.rtl-mode .editor {
+  font-family: var(--arabic);
+  font-size: 19px;
+  line-height: 1.95;
+  direction: rtl;
+}
+
+.editor h1 {
+  font-family: var(--serif);
+  font-size: 42px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.body.rtl-mode .editor h1 { font-family: var(--arabic); font-weight: 700; font-size: 38px; letter-spacing: 0; text-align: right; }
+
+.editor .doc-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 36px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.body.rtl-mode .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 12px; text-align: right; flex-direction: row-reverse; }
+
+.editor h2 {
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 36px 0 16px;
+}
+.body.rtl-mode .editor h2 { font-family: var(--arabic); font-weight: 700; font-size: 26px; text-align: right; }
+
+.editor h3 {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  margin: 28px 0 12px;
+}
+.body.rtl-mode .editor h3 { font-family: var(--arabic); font-weight: 600; text-align: right; }
+
+.editor p { margin-bottom: 16px; }
+.editor p em { color: var(--plum); font-style: italic; }
+.body.rtl-mode .editor p em { font-style: normal; font-weight: 600; }
+.editor p strong { font-weight: 600; }
+.editor a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.editor a:hover { color: var(--ink); }
+
+.wikilink {
+  color: var(--accent) !important;
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none !important;
+}
+.wikilink:hover { background: var(--accent); color: white !important; }
+
+.editor blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 8px 0 8px 24px;
+  margin: 24px 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.body.rtl-mode .editor blockquote {
+  border-left: none;
+  border-right: 3px solid var(--accent);
+  padding: 8px 24px 8px 0;
+  font-family: var(--arabic);
+  font-style: normal;
+  font-size: 21px;
+}
+
+.editor ul, .editor ol { padding-left: 24px; margin-bottom: 16px; }
+.body.rtl-mode .editor ul, .body.rtl-mode .editor ol { padding-left: 0; padding-right: 24px; }
+.editor li { margin-bottom: 6px; }
+.editor li::marker { color: var(--accent); }
+
+.editor pre {
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin: 20px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: left;
+  color: var(--ink-soft);
+}
+.editor pre code { background: transparent; border: none; padding: 0; color: inherit; font-size: 13px; }
+.editor code {
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.editor hr {
+  border: none;
+  text-align: center;
+  margin: 40px 0;
+  font-family: var(--serif);
+  color: var(--accent);
+  font-style: italic;
+  font-size: 18px;
+  letter-spacing: 0.5em;
+}
+.editor hr::before { content: '⁂'; }
+
+.editor table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+.editor th, .editor td { border: 1px solid var(--rule); padding: 8px 12px; text-align: left; }
+.editor th { background: var(--paper-deep); font-weight: 600; }
+
+/* welcome */
+.editor-welcome {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 60px;
+  text-align: center;
+}
+.welcome-card { max-width: 520px; }
+.welcome-card .logo {
+  font-family: var(--serif);
+  font-size: 64px;
+  color: var(--accent);
+  font-style: italic;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+.welcome-card h1 {
+  font-family: var(--serif);
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.welcome-card h1 em { color: var(--accent); font-style: italic; }
+.welcome-card .lede {
+  font-size: 15px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+.welcome-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.welcome-btn {
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  padding: 16px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--sans);
+  color: var(--ink);
+}
+.welcome-btn:hover { background: var(--accent); border-color: var(--accent); color: white; }
+.welcome-btn:hover .wb-sub { color: rgba(255,255,255,0.8); }
+.welcome-btn:hover .wb-icon { color: white; }
+.welcome-btn:hover .wb-shortcut { color: rgba(255,255,255,0.7); }
+.welcome-btn .wb-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.welcome-btn .wb-icon {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--accent);
+}
+.welcome-btn .wb-shortcut {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+}
+.welcome-btn .wb-sub { font-size: 12px; color: var(--ink-mute); line-height: 1.4; }
+
+.recent-list { border-top: 1px solid var(--rule); padding-top: 20px; text-align: left; }
+.recent-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-mute);
+  margin-bottom: 10px;
+}
+.recent-empty { font-size: 12px; color: var(--ink-mute); font-style: italic; }
+.recent-item {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-bottom: 1px dashed var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.recent-item:hover { color: var(--accent); }
+.recent-item .r-ic { font-family: var(--serif); font-style: italic; color: var(--accent); }
+.recent-item .r-path {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+  margin-left: auto;
+}
+
+/* inspector */
+.inspector {
+  background: var(--paper-deep);
+  border-left: 1px solid var(--rule);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.body.rtl-mode .inspector {
+  border-left: none;
+  border-right: 1px solid var(--rule);
+  order: 1;
+}
+.body.no-inspector .inspector { display: none; }
+
+.insp-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.insp-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.insp-content { flex: 1; overflow-y: auto; padding: 0 0 20px; }
+.insp-content::-webkit-scrollbar { width: 6px; }
+.insp-content::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+.insp-section { padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+.insp-section:last-child { border-bottom: none; }
+.insp-section h4 {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-mute);
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+.toc-item {
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--ink-soft);
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.body.rtl-mode .toc-item { font-family: var(--arabic); border-left: none; border-right: 2px solid transparent; padding: 4px 12px 4px 0; }
+.toc-item:hover { color: var(--ink); border-left-color: var(--ink-mute); }
+.toc-item.active { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+.body.rtl-mode .toc-item.active { border-left-color: transparent; border-right-color: var(--accent); }
+.toc-item.h2 { padding-left: 24px; font-size: 12px; }
+.body.rtl-mode .toc-item.h2 { padding-left: 0; padding-right: 24px; }
+.toc-empty { font-size: 12px; color: var(--ink-mute); font-style: italic; padding: 4px 0; }
+
+.prop-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--rule);
+  font-size: 12px;
+  align-items: center;
+}
+.prop-row:last-child { border-bottom: none; }
+.prop-key {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+}
+.prop-val { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* statusbar */
+.statusbar {
+  background: var(--ink);
+  color: var(--paper);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sb-spacer { flex: 1; }
+.sb-stat { display: flex; align-items: center; gap: 5px; cursor: pointer; opacity: 0.85; }
+.sb-stat:hover { opacity: 1; }
+.sb-stat.ok::before { content: '●'; color: var(--green); font-size: 8px; }
+.sb-stat.dir { color: var(--accent-soft); font-weight: 600; }
+
+/* palette */
+.palette-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15,12,8,0.5);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+  z-index: 100;
+}
+.palette-overlay.open { display: flex; }
+.palette {
+  width: 580px;
+  max-width: 90%;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 30px 80px -10px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.pal-input-wrap {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pal-input-wrap::before {
+  content: '⌘';
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 20px;
+  color: var(--accent);
+}
+.pal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.pal-input::placeholder { color: var(--ink-mute); }
+.pal-results { padding: 6px; max-height: 360px; overflow-y: auto; }
+.pal-item {
+  display: flex;
+  align-items: center;
+  padding: 9px 13px;
+  gap: 12px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pal-item:hover, .pal-item.active { background: var(--accent-soft); color: var(--accent); }
+.pi-icon { font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink-mute); width: 20px; text-align: center; }
+.pal-item.active .pi-icon, .pal-item:hover .pi-icon { color: var(--accent); }
+.pi-name { flex: 1; font-size: 13px; color: var(--ink); }
+.pal-item.active .pi-name, .pal-item:hover .pi-name { color: var(--accent); }
+.pi-meta { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.08em; }
+.pi-shortcut { display: flex; gap: 3px; }
+.pi-shortcut .kbd {
+  font-family: var(--mono); font-size: 10px;
+  padding: 1px 5px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--ink-soft);
+  min-width: 18px;
+  text-align: center;
+}
+.pal-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-mute);
+  padding: 8px 14px 4px;
+  font-weight: 500;
+}
+.pal-footer {
+  padding: 9px 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-deep);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: flex;
+  gap: 16px;
+}
+.pal-footer .kbd {
+  font-family: var(--mono); font-size: 9px;
+  padding: 1px 5px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  margin-right: 4px;
+}
+
+/* Modal */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15,12,8,0.5);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 30px 80px -10px rgba(0,0,0,0.5);
+  width: 600px;
+  max-width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.modal-close {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ink-mute);
+  font-size: 16px;
+}
+.modal-close:hover { background: var(--paper-edge); color: var(--ink); border-color: var(--rule); }
+.modal-body {
+  padding: 22px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.modal-body h3 {
+  font-family: var(--serif);
+  font-size: 16px;
+  margin: 18px 0 10px;
+  color: var(--ink);
+}
+.modal-body h3:first-child { margin-top: 0; }
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--rule);
+  align-items: center;
+}
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-name { font-size: 13px; color: var(--ink); }
+.shortcut-keys { display: flex; gap: 3px; }
+.shortcut-keys .kbd {
+  font-family: var(--mono); font-size: 11px;
+  padding: 2px 6px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--ink-soft);
+  min-width: 22px;
+  text-align: center;
+}
+.about-logo {
+  font-family: var(--serif);
+  font-size: 56px;
+  color: var(--accent);
+  font-style: italic;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.about-name {
+  font-family: var(--serif);
+  font-size: 24px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.about-version {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  text-align: center;
+  margin-bottom: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.about-tagline {
+  text-align: center;
+  font-style: italic;
+  font-family: var(--serif);
+  font-size: 16px;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+
+/* Find bar */
+.find-bar {
+  position: absolute;
+  top: 78px;
+  right: 290px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px -4px rgba(0,0,0,0.2);
+  padding: 8px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  z-index: 50;
+}
+.find-bar.open { display: flex; }
+.find-bar input {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+  width: 200px;
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.find-bar input:focus { border-color: var(--accent); }
+.find-info { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); padding: 0 6px; }
+.find-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+.find-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.body.rtl-mode .find-bar { right: auto; left: 290px; }
+
+/* toast */
+.toast {
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 80%;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast::before { content: '✓'; color: var(--green); font-weight: 600; }
+.toast.error::before { content: '!'; color: #E27360; }
+.toast.info::before { content: 'i'; color: var(--gold); font-style: italic; font-family: var(--serif); }
+
+@media (max-width: 1100px) {
+  .body { grid-template-columns: 220px 1fr 0; }
+  .body.rtl-mode { grid-template-columns: 0 1fr 220px; }
+  .inspector { display: none; }
+}
+
+mark.find-hit {
+  background: #FFE082;
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.find-hit.current { background: var(--accent); color: white; }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- TITLEBAR -->
+  <div class="titlebar">
+    <div class="tb-brand">
+      <button class="tb-menu-btn" id="menuBtn" onclick="toggleSidebar()" title="Toggle Sidebar">≡</button>
+      <span class="tb-brand-name">Marqam</span>
+    </div>
+
+    <div class="tb-menubar">
+      <button class="tb-menu-item" data-menu="file" onclick="openMenu(event, 'file')"><u>F</u>ile</button>
+      <button class="tb-menu-item" data-menu="edit" onclick="openMenu(event, 'edit')"><u>E</u>dit</button>
+      <button class="tb-menu-item" data-menu="view" onclick="openMenu(event, 'view')"><u>V</u>iew</button>
+      <button class="tb-menu-item" data-menu="help" onclick="openMenu(event, 'help')"><u>H</u>elp</button>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab-add" id="tabAddBtn" onclick="newNote()" title="New tab (Ctrl+N)">+</button>
+    </div>
+
+    <div class="tb-actions">
+      <div class="tb-search" onclick="openPalette()">
+        <span style="font-family: var(--serif); font-style: italic;">⌘</span>
+        <span>Search files…</span>
+        <span class="kbd-inline">Ctrl+K</span>
+      </div>
+      <button class="tb-btn" id="rtlBtn" onclick="toggleRTL()" title="Flip direction (Ctrl+Shift+L)">⇄</button>
+      <button class="tb-btn" id="themeBtn" onclick="cycleTheme()" title="Cycle theme (Ctrl+Shift+D)">◐</button>
+    </div>
+
+    <div class="win-controls">
+      <button class="win-btn" onclick="winMinimize()" title="Minimize">
+        <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
+      </button>
+      <button class="win-btn" onclick="winMaximize()" title="Maximize">
+        <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+      </button>
+      <button class="win-btn close" onclick="winClose()" title="Close">
+        <svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- DROPDOWN MENU (single, content swapped) -->
+  <div class="dropdown" id="dropdown"></div>
+
+  <input type="file" id="fileInput" accept=".md,.markdown,text/markdown" style="display:none;" multiple>
+
+  <!-- BODY -->
+  <div class="body" id="body">
+
+    <aside class="sidebar">
+      <div class="sb-header">
+        <div class="sb-vault-name empty" id="vaultName">No folder opened</div>
+        <div class="sb-actions">
+          <button class="sb-icon-btn" onclick="openVault()" title="Open folder…">⌂</button>
+          <button class="sb-icon-btn" onclick="openSingleFile()" title="Open file…">¶</button>
+          <button class="sb-icon-btn" onclick="newNote()" title="New note">+</button>
+        </div>
+      </div>
+
+      <div class="sb-tabs">
+        <button class="sb-tab active" data-pane="files" onclick="switchSbPane('files')">Files</button>
+        <button class="sb-tab" data-pane="tags" onclick="switchSbPane('tags')">Tags</button>
+        <button class="sb-tab" data-pane="search" onclick="switchSbPane('search')">Search</button>
+      </div>
+
+      <div class="sb-content">
+        <!-- Files pane -->
+        <div class="sb-pane active" data-pane="files">
+          <div class="sb-empty" id="sbEmpty">
+            <div class="ico">⌂</div>
+            <div class="ttl">No folder opened</div>
+            <p>Open a folder of <code style="font-family: var(--mono); font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px;">.md</code> files, or open a single file.</p>
+            <div class="actions">
+              <button onclick="openVault()"><span class="ic">⌂</span> Open Folder…</button>
+              <button onclick="openSingleFile()"><span class="ic">¶</span> Open File…</button>
+              <button onclick="loadDemo()"><span class="ic">★</span> Try Demo Notes</button>
+            </div>
+          </div>
+          <div class="tree" id="tree" style="display: none;"></div>
+        </div>
+
+        <!-- Tags pane -->
+        <div class="sb-pane" data-pane="tags">
+          <div class="tags-pane" id="tagsPane">
+            <div class="search-empty">No tags yet. Open a folder to see tags.</div>
+          </div>
+        </div>
+
+        <!-- Search pane -->
+        <div class="sb-pane" data-pane="search">
+          <div class="search-pane">
+            <div class="search-input-wrap">
+              <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…" oninput="runSidebarSearch(this.value)">
+            </div>
+            <div class="search-results" id="searchResults">
+              <div class="search-empty">Type to search.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="editor-wrap">
+      <div class="editor-toolbar" id="editorToolbar" style="display:none;">
+        <button class="tool-btn active" id="modeLive" onclick="setEditorMode('live')" title="Live preview">¶</button>
+        <button class="tool-btn" id="modeSplit" onclick="setEditorMode('split')" title="Split view">‖</button>
+        <button class="tool-btn" id="modeSource" onclick="setEditorMode('source')" title="Source mode">&lt;/&gt;</button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" onclick="wrapSelection('**', '**')" title="Bold (Ctrl+B)" style="font-weight: 700;">B</button>
+        <button class="tool-btn" onclick="wrapSelection('*', '*')" title="Italic (Ctrl+I)" style="font-style: italic;">I</button>
+        <button class="tool-btn" onclick="wrapSelection('~~', '~~')" title="Strike" style="text-decoration: line-through;">S</button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" onclick="lineStart('# ')" title="Heading 1">H1</button>
+        <button class="tool-btn" onclick="lineStart('## ')" title="Heading 2">H2</button>
+        <button class="tool-btn" onclick="lineStart('### ')" title="Heading 3">H3</button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" onclick="insertText('[', '](url)')" title="Link">∞</button>
+        <button class="tool-btn" onclick="lineStart('> ')" title="Quote">”</button>
+        <button class="tool-btn" onclick="lineStart('- ')" title="Bulleted list">•</button>
+        <button class="tool-btn" onclick="lineStart('1. ')" title="Numbered list">1.</button>
+        <button class="tool-btn" onclick="wrapSelection('`', '`')" title="Inline code">{ }</button>
+        <button class="tool-btn" onclick="insertText('\n```\n', '\n```\n')" title="Code block">⌘</button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" onclick="insertText('[[', ']]')" title="Insert wikilink">[[ ]]</button>
+        <button class="tool-btn" onclick="insertText('---\n', '')" title="Horizontal rule">─</button>
+        <span class="tool-spacer"></span>
+        <span class="read-time" id="readTime">— min read</span>
+      </div>
+
+      <div class="editor-area" id="editorArea">
+        <div class="editor-source">
+          <textarea class="editor-source-textarea" id="srcTextarea" oninput="onSourceInput()" placeholder="# Start writing…"></textarea>
+        </div>
+        <div class="editor-preview">
+          <article class="editor" id="editor">
+            <div class="editor-welcome" id="welcome">
+              <div class="welcome-card">
+                <div class="logo">م</div>
+                <h1>Welcome to <em>Marqam</em></h1>
+                <p class="lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
+
+                <div class="welcome-actions">
+                  <button class="welcome-btn" onclick="openVault()">
+                    <div class="wb-title"><span class="wb-icon">⌂</span>Open Folder<span class="wb-shortcut">Ctrl+Shift+O</span></div>
+                    <div class="wb-sub">Pick a folder containing your markdown files.</div>
+                  </button>
+                  <button class="welcome-btn" onclick="openSingleFile()">
+                    <div class="wb-title"><span class="wb-icon">¶</span>Open File<span class="wb-shortcut">Ctrl+O</span></div>
+                    <div class="wb-sub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
+                  </button>
+                  <button class="welcome-btn" onclick="newNote()">
+                    <div class="wb-title"><span class="wb-icon">+</span>New Note<span class="wb-shortcut">Ctrl+N</span></div>
+                    <div class="wb-sub">Start a fresh note in a new tab.</div>
+                  </button>
+                  <button class="welcome-btn" onclick="loadDemo()">
+                    <div class="wb-title"><span class="wb-icon">★</span>Try Demo</div>
+                    <div class="wb-sub">Sample notes in English and Arabic.</div>
+                  </button>
+                </div>
+
+                <div class="recent-list">
+                  <div class="recent-label">Recent</div>
+                  <div class="recent-empty" id="recentEmpty">No recent files yet.</div>
+                  <div id="recentList"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="noteContent" style="display: none;"></div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Find bar -->
+      <div class="find-bar" id="findBar">
+        <input type="text" id="findInput" placeholder="Find in note…" oninput="runFind(this.value)">
+        <span class="find-info" id="findInfo">0/0</span>
+        <button class="find-btn" onclick="findStep(-1)" title="Previous">↑</button>
+        <button class="find-btn" onclick="findStep(1)" title="Next">↓</button>
+        <button class="find-btn" onclick="closeFind()" title="Close">×</button>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <div class="insp-header">
+        <span class="insp-title">Inspector</span>
+      </div>
+      <div class="insp-content">
+        <div class="insp-section">
+          <h4>Outline</h4>
+          <div id="tocList" class="toc-empty">No document opened.</div>
+        </div>
+        <div class="insp-section">
+          <h4>Properties</h4>
+          <div class="prop-row"><span class="prop-key">File</span><span class="prop-val" id="propFile">—</span></div>
+          <div class="prop-row"><span class="prop-key">Words</span><span class="prop-val" id="propWords">0</span></div>
+          <div class="prop-row"><span class="prop-key">Read</span><span class="prop-val" id="propRead">—</span></div>
+          <div class="prop-row"><span class="prop-key">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
+          <div class="prop-row"><span class="prop-key">Mode</span><span class="prop-val" id="propMode">Live</span></div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <div class="statusbar">
+    <span class="sb-stat ok" id="sbVault">no folder</span>
+    <span class="sb-stat">utf-8</span>
+    <span class="sb-stat">markdown</span>
+    <span class="sb-stat dir" id="dirIndicator">LTR</span>
+    <span class="sb-spacer"></span>
+    <span class="sb-stat" id="cursorPos">— · —</span>
+    <span class="sb-stat" id="wordCount">0 words</span>
+    <span class="sb-stat ok" id="sbSync">ready</span>
+  </div>
+
+  <!-- COMMAND PALETTE -->
+  <div class="palette-overlay" id="palOverlay" onclick="if(event.target===this) closePalette()">
+    <div class="palette">
+      <div class="pal-input-wrap">
+        <input class="pal-input" id="palInput" placeholder="Type a command, search files…" oninput="filterPalette(this.value)">
+      </div>
+      <div class="pal-results" id="palResults"></div>
+      <div class="pal-footer">
+        <span><span class="kbd">↑↓</span> navigate</span>
+        <span><span class="kbd">↵</span> open</span>
+        <span><span class="kbd">esc</span> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modalTitle">Modal</span>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Toast</div>
+
+</div>
+
+<script>
+'use strict';
+
+// =====================================================================
+// STATE
+// =====================================================================
+const State = {
+  files: [],            // [{name, path, handle, content, dirty}]
+  activeFile: null,
+  vaultName: null,
+  theme: 'paper',       // paper | ink | sepia
+  direction: 'ltr',
+  editorMode: 'live',   // live | split | source
+  recents: [],
+  sidebarVisible: true,
+  inspectorVisible: true,
+  findHits: [],
+  findIdx: 0
+};
+
+const THEMES = ['paper', 'ink', 'sepia'];
+
+const $ = id => document.getElementById(id);
+const body = $('body'), app = $('app');
+const tabsEl = $('tabs'), treeEl = $('tree');
+const sbEmpty = $('sbEmpty'), noteContent = $('noteContent'), welcome = $('welcome');
+const editorToolbar = $('editorToolbar'), tocList = $('tocList');
+const palOverlay = $('palOverlay'), palInput = $('palInput'), palResults = $('palResults');
+const dropdown = $('dropdown'), toast = $('toast'), fileInput = $('fileInput');
+const modalOverlay = $('modalOverlay'), modalTitle = $('modalTitle'), modalBody = $('modalBody');
+const editorArea = $('editorArea'), srcTextarea = $('srcTextarea');
+const findBar = $('findBar'), findInput = $('findInput'), findInfo = $('findInfo');
+
+// =====================================================================
+// TOAST
+// =====================================================================
+function showToast(msg, kind) {
+  toast.textContent = msg;
+  toast.classList.remove('error', 'info');
+  if (kind === 'error') toast.classList.add('error');
+  else if (kind === 'info') toast.classList.add('info');
+  toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+// =====================================================================
+// MARKDOWN (marked + custom wikilink)
+// =====================================================================
+if (typeof marked !== 'undefined') {
+  marked.setOptions({ breaks: false, gfm: true, mangle: false, headerIds: true });
+  marked.use({
+    extensions: [{
+      name: 'wikilink',
+      level: 'inline',
+      start(src) { return src.indexOf('[['); },
+      tokenizer(src) {
+        const m = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/.exec(src);
+        if (m) return { type: 'wikilink', raw: m[0], target: m[1].trim(), alias: (m[2] || m[1]).trim() };
+      },
+      renderer(t) {
+        const safe = t.target.replace(/'/g, "\\'");
+        return `<a class="wikilink" onclick="navWikilink('${safe}')">${t.alias}</a>`;
+      }
+    }]
+  });
+}
+
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function isArabicHeavy(text) {
+  if (!text) return false;
+  const sample = text.slice(0, 2000);
+  const ar = (sample.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
+  const lat = (sample.match(/[A-Za-z]/g) || []).length;
+  return ar > lat && ar > 20;
+}
+
+// =====================================================================
+// RENDER FILE
+// =====================================================================
+function renderFile(idx) {
+  const file = State.files[idx];
+  if (!file) return;
+  State.activeFile = idx;
+
+  welcome.style.display = 'none';
+  noteContent.style.display = 'block';
+  editorToolbar.style.display = 'flex';
+
+  // Update source textarea
+  srcTextarea.value = file.content || '';
+
+  // Render preview
+  let html = '';
+  try { html = (typeof marked !== 'undefined') ? marked.parse(file.content || '') : escapeHtml(file.content || ''); }
+  catch(e) { html = escapeHtml(file.content || ''); }
+
+  const wordCount = (file.content.match(/\S+/g) || []).length;
+  const readMin = Math.max(1, Math.round(wordCount / 220));
+  const isAr = isArabicHeavy(file.content);
+
+  noteContent.innerHTML = `
+    <div class="doc-meta">
+      <span>${isAr ? 'مقالة' : 'note'}</span>
+      <span>·</span>
+      <span>${wordCount} ${isAr ? 'كلمة' : 'words'}</span>
+      <span>·</span>
+      <span>${escapeHtml(file.path)}</span>
+      ${file.dirty ? '<span>·</span><span style="color: var(--accent);">● unsaved</span>' : ''}
+    </div>
+    ${html}
+  `;
+
+  // Auto-flip RTL
+  if (isAr && !body.classList.contains('rtl-mode')) { body.classList.add('rtl-mode'); State.direction = 'rtl'; }
+  else if (!isAr && body.classList.contains('rtl-mode')) { body.classList.remove('rtl-mode'); State.direction = 'ltr'; }
+  updateDirUI();
+
+  // Inspector
+  $('propFile').textContent = file.name;
+  $('propWords').textContent = wordCount;
+  $('propRead').textContent = `≈ ${readMin} min`;
+  $('readTime').textContent = `≈ ${readMin} min read`;
+  $('wordCount').textContent = `${wordCount} words`;
+  $('cursorPos').textContent = `ln 1 · col 1`;
+  $('propMode').textContent = State.editorMode.charAt(0).toUpperCase() + State.editorMode.slice(1);
+
+  buildTOC();
+  renderTabs();
+  highlightTreeActive();
+  pushRecent(file);
+
+  document.querySelector('.editor-wrap').scrollTop = 0;
+}
+
+function buildTOC() {
+  const headings = noteContent.querySelectorAll('h1, h2, h3');
+  if (!headings.length) {
+    tocList.className = 'toc-empty';
+    tocList.textContent = 'No headings.';
+    return;
+  }
+  tocList.className = '';
+  tocList.innerHTML = '';
+  headings.forEach((h, i) => {
+    const el = document.createElement('div');
+    el.className = 'toc-item' + (h.tagName === 'H1' ? '' : ' h2') + (i === 0 ? ' active' : '');
+    el.textContent = h.textContent;
+    el.onclick = () => h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    tocList.appendChild(el);
+  });
+}
+
+// =====================================================================
+// TABS
+// =====================================================================
+function renderTabs() {
+  tabsEl.querySelectorAll('.tab').forEach(t => t.remove());
+  const addBtn = $('tabAddBtn');
+  State.files.forEach((f, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '');
+    const isAr = isArabicHeavy(f.name);
+    const closeIcon = f.dirty ? '●' : '×';
+    tab.innerHTML = `<span class="tab-name" ${isAr ? 'style="font-family: var(--arabic);"' : ''}>${escapeHtml(f.name)}</span><span class="close">${closeIcon}</span>`;
+    tab.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(i); };
+    tab.onclick = () => renderFile(i);
+    tabsEl.insertBefore(tab, addBtn);
+  });
+}
+
+function closeTab(idx) {
+  const f = State.files[idx];
+  if (f.dirty) {
+    if (!confirm(`"${f.name}" has unsaved changes. Close anyway?`)) return;
+  }
+  State.files.splice(idx, 1);
+  if (State.files.length === 0) { State.activeFile = null; showWelcome(); return; }
+  if (State.activeFile === idx) renderFile(Math.max(0, idx - 1));
+  else { if (State.activeFile > idx) State.activeFile--; renderTabs(); }
+}
+
+function showWelcome() {
+  welcome.style.display = 'grid';
+  noteContent.style.display = 'none';
+  editorToolbar.style.display = 'none';
+  renderTabs();
+  $('propFile').textContent = '—';
+  $('propWords').textContent = '0';
+  $('propRead').textContent = '—';
+  $('readTime').textContent = '— min read';
+  $('wordCount').textContent = '0 words';
+  $('cursorPos').textContent = '— · —';
+  tocList.className = 'toc-empty';
+  tocList.textContent = 'No document opened.';
+  renderRecents();
+}
+
+// =====================================================================
+// TREE & TAGS
+// =====================================================================
+function highlightTreeActive() {
+  treeEl.querySelectorAll('.tree-node').forEach(n => {
+    n.classList.toggle('active', n.dataset.fileIdx == State.activeFile);
+  });
+}
+
+function renderTree(entries) {
+  treeEl.innerHTML = '';
+  treeEl.style.display = 'block';
+  sbEmpty.style.display = 'none';
+  entries.forEach((entry, i) => {
+    const node = document.createElement('div');
+    node.className = 'tree-node tree-indent';
+    node.dataset.fileIdx = i;
+    const isAr = isArabicHeavy(entry.name);
+    node.innerHTML = `<span class="tree-icon">¶</span><span class="tree-name${isAr ? ' arabic' : ''}">${escapeHtml(entry.name)}</span>`;
+    node.onclick = () => openFromTree(i);
+    treeEl.appendChild(node);
+  });
+  renderTags();
+}
+
+function renderTags() {
+  const tagsPane = $('tagsPane');
+  const tagMap = {};
+  State.files.forEach((f, i) => {
+    const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
+    let m;
+    while ((m = re.exec(f.content || '')) !== null) {
+      if (!tagMap[m[1]]) tagMap[m[1]] = [];
+      if (!tagMap[m[1]].includes(i)) tagMap[m[1]].push(i);
+    }
+  });
+  const tags = Object.entries(tagMap).sort((a,b) => b[1].length - a[1].length);
+  if (!tags.length) {
+    tagsPane.innerHTML = '<div class="search-empty">No tags found in this folder.<br><br>Use <code style="font-family: var(--mono); background: var(--paper); padding: 1px 5px; border-radius: 3px;">#tag</code> in your notes.</div>';
+    return;
+  }
+  tagsPane.innerHTML = `
+    <div class="tag-cloud">
+      ${tags.map(([t, files]) => `<span class="tag" onclick="filterByTag('${t.replace(/'/g,"\\'")}')">${escapeHtml(t)}<span class="count">${files.length}</span></span>`).join('')}
+    </div>
+  `;
+}
+
+function filterByTag(tag) {
+  // switch to search pane and run a #tag query
+  switchSbPane('search');
+  $('sbSearchInput').value = '#' + tag;
+  runSidebarSearch('#' + tag);
+}
+
+async function openFromTree(idx) {
+  const f = State.files[idx];
+  if (f.handle && !f.content) {
+    try { const file = await f.handle.getFile(); f.content = await file.text(); }
+    catch(e) { showToast('Could not read file', 'error'); return; }
+  }
+  renderFile(idx);
+}
+
+// =====================================================================
+// FILE / FOLDER OPENING
+// =====================================================================
+async function openVault() {
+  closeMenu();
+  if (!('showDirectoryPicker' in window)) {
+    showToast('Folder picker requires Chrome or Edge', 'error');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker();
+    State.vaultName = handle.name;
+    State.files = [];
+    const md = [];
+    for await (const entry of handle.values()) {
+      if (entry.kind === 'file' && /\.(md|markdown)$/i.test(entry.name)) {
+        md.push({ name: entry.name, path: entry.name, handle: entry, content: '', dirty: false });
+      }
+    }
+    md.sort((a,b) => a.name.localeCompare(b.name));
+    // pre-load all content for search/tags
+    for (const f of md) {
+      try { const file = await f.handle.getFile(); f.content = await file.text(); }
+      catch(e) {}
+    }
+    State.files = md;
+
+    $('vaultName').textContent = handle.name;
+    $('vaultName').classList.remove('empty');
+    $('sbVault').textContent = `folder: ${handle.name}`;
+
+    if (md.length === 0) {
+      sbEmpty.innerHTML = `<div class="ico">∅</div><div class="ttl">No .md files</div><p>This folder contains no markdown files.</p><div class="actions"><button onclick="openVault()"><span class="ic">⌂</span> Pick another folder</button></div>`;
+      treeEl.style.display = 'none';
+      sbEmpty.style.display = 'block';
+      showToast('Folder opened — no .md files found', 'info');
+    } else {
+      renderTree(md);
+      renderFile(0);
+      showToast(`Opened "${handle.name}" — ${md.length} note${md.length === 1 ? '' : 's'}`);
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') { console.error(e); showToast('Could not open folder', 'error'); }
+  }
+}
+
+async function openSingleFile() {
+  closeMenu();
+  if ('showOpenFilePicker' in window) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] }}]
+      });
+      const file = await handle.getFile();
+      const content = await file.text();
+      addFile({ name: file.name, path: file.name, handle, content, dirty: false });
+      showToast(`Opened ${file.name}`);
+    } catch(e) {
+      if (e.name !== 'AbortError') console.error(e);
+    }
+    return;
+  }
+  fileInput.click();
+}
+
+fileInput.addEventListener('change', async () => {
+  for (const file of fileInput.files) {
+    const content = await file.text();
+    addFile({ name: file.name, path: file.name, handle: null, content, dirty: false });
+  }
+  if (fileInput.files.length > 0) showToast(`Opened ${fileInput.files.length} file(s)`);
+  fileInput.value = '';
+});
+
+function addFile(f) {
+  const existing = State.files.findIndex(x => x.name === f.name && x.path === f.path);
+  if (existing >= 0) { State.files[existing] = f; renderFile(existing); }
+  else {
+    State.files.push(f);
+    if (State.vaultName) renderTree(State.files);
+    renderFile(State.files.length - 1);
+  }
+}
+
+function newNote() {
+  closeMenu();
+  const n = State.files.filter(f => f.name.startsWith('Untitled')).length;
+  const name = `Untitled${n > 0 ? '-' + n : ''}.md`;
+  addFile({ name, path: name, handle: null, content: `# Untitled\n\nStart writing…\n`, dirty: true });
+}
+
+async function saveCurrent() {
+  closeMenu();
+  if (State.activeFile === null) { showToast('No file to save', 'error'); return; }
+  const f = State.files[State.activeFile];
+  if (f.handle && f.handle.createWritable) {
+    try {
+      const w = await f.handle.createWritable();
+      await w.write(f.content); await w.close();
+      f.dirty = false; renderTabs();
+      showToast(`Saved ${f.name}`);
+    } catch(e) { showToast('Could not save', 'error'); }
+  } else {
+    const blob = new Blob([f.content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = f.name; a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Downloaded ${f.name}`);
+  }
+}
+
+async function saveAs() {
+  closeMenu();
+  if (State.activeFile === null) { showToast('No file to save', 'error'); return; }
+  const f = State.files[State.activeFile];
+  if ('showSaveFilePicker' in window) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: f.name,
+        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] }}]
+      });
+      const w = await handle.createWritable();
+      await w.write(f.content); await w.close();
+      f.handle = handle;
+      f.name = handle.name;
+      f.path = handle.name;
+      f.dirty = false;
+      renderTabs();
+      renderFile(State.activeFile);
+      showToast(`Saved as ${handle.name}`);
+    } catch(e) { if (e.name !== 'AbortError') showToast('Could not save', 'error'); }
+  } else {
+    saveCurrent();
+  }
+}
+
+// =====================================================================
+// RECENTS
+// =====================================================================
+function pushRecent(f) {
+  State.recents = [{ name: f.name, path: f.path }, ...State.recents.filter(r => r.path !== f.path)].slice(0, 5);
+  renderRecents();
+}
+function renderRecents() {
+  const list = $('recentList'), empty = $('recentEmpty');
+  if (!list) return;
+  if (State.recents.length === 0) { empty.style.display = 'block'; list.innerHTML = ''; return; }
+  empty.style.display = 'none';
+  list.innerHTML = State.recents.map(r => {
+    const isAr = isArabicHeavy(r.name);
+    return `<div class="recent-item" onclick="openRecent('${r.path.replace(/'/g,"\\'")}')"><span class="r-ic">¶</span><span ${isAr ? 'style="font-family: var(--arabic);"' : ''}>${escapeHtml(r.name)}</span><span class="r-path">${escapeHtml(r.path)}</span></div>`;
+  }).join('');
+}
+function openRecent(path) {
+  const idx = State.files.findIndex(f => f.path === path);
+  if (idx >= 0) renderFile(idx);
+}
+
+// =====================================================================
+// DEMO
+// =====================================================================
+function loadDemo() {
+  closeMenu();
+  const demos = [
+    { name: 'on-reading.md', path: 'essays/on-reading.md', dirty: false, handle: null,
+      content: `# On the act of reading\n\nThe page is not a screen. A reader does not scroll — they *turn*. Software that forgets this becomes hostile to the very thing it was meant to serve: the slow, patient, almost ceremonial act of moving through a text.\n\n**Slowness** is not the enemy of attention. It is its precondition. The fastest editor in the world cannot help a writer who is not, at some level, willing to wait.\n\n#reading #prose\n\n## A short list\n\n- Slow tools beget slow thought.\n- See [[the-quiet-page]] for further argument.\n- Reference: [Borges](#), *Labyrinths*, p. 48.\n\n> "A book is a thing among things, a volume lost among the volumes that populate the indifferent universe." — Borges\n\n## The argument, reduced\n\nMost software for writing tries to remove friction. This is, in nearly every case, a category error. A writer's resistance to the page is not friction to be eliminated — it is the very *medium* in which thought slows down enough to become writing.\n\nConsider the difference between a typewriter and a word processor. The typewriter punishes haste. The word processor rewards it. Neither is neutral.\n\n## Code, briefly\n\n\`\`\`js\n// not the speed of a screen\nconst reader = (words) => {\n  return words.slow().turn().return();\n};\n\nconst page = reader(text);\n// page is a place, not a stream\n\`\`\`\n\n---\n\nTo be continued. See also [[slow-tools]].`
+    },
+    { name: 'the-quiet-page.md', path: 'essays/the-quiet-page.md', dirty: false, handle: null,
+      content: `# The quiet page\n\nWhat if the most radical interface is the one that does almost nothing? Not minimalism as aesthetic — minimalism as *discipline*.\n\nThe quiet page does not autocomplete. It does not suggest. It does not summarize, restructure, or "improve." It receives.\n\n#prose #draft\n\n## Three properties\n\n1. **Receptivity.** The page absorbs without judgment.\n2. **Patience.** It does not interrupt.\n3. **Restraint.** It refuses to be helpful.\n\n> The page that helps you write is helping you not write.\n\nCompare [[on-reading]] for the symmetric argument from the reader's side.`
+    },
+    { name: 'slow-tools.md', path: 'essays/slow-tools.md', dirty: false, handle: null,
+      content: `# Slow tools\n\nA tool that makes a task faster is not always a better tool. Speed is a virtue only when speed is the constraint. For writing, it almost never is.\n\n#reading #tools\n\n## What slow tools do\n\nThey impose a rhythm. The pen, the typewriter, the printing press — each forces a different cadence on the writer. Each cadence shapes the prose.\n\nSee also [[on-reading]] and [[the-quiet-page]].`
+    },
+    { name: 'مقالة-القراءة.md', path: 'المسوّدات/مقالة-القراءة.md', dirty: false, handle: null,
+      content: `# في فعلِ القراءة\n\nالصفحةُ ليست شاشةً، والقارئُ لا *يُمرِّر* النصَّ بل *يقلِبُه*. حين ينسى البرنامجُ هذا، يصبحُ عدوّاً للنصِّ الذي يحملُه: عدوّاً لذلك الفعلِ البطيء الصبور، شبه الطقسيّ، الذي به نمضي في القراءة.\n\nالقراءة فعلٌ بطيءٌ بطبعِه. الصفحةُ ليست شاشةً تُمرَّر، بل *مَقامٌ* يُقام فيه.\n\n#قراءة #أدب\n\n## قائمةٌ موجزة\n\n- الأدواتُ البطيئة تولّدُ فكراً بطيئاً.\n- انظر [[الصفحة-الهادئة]] لمزيدٍ من التفصيل.\n- مرجع: [بورخيس](#)، *متاهات*، ص ٤٨.\n\n> "الكتابُ شيءٌ بين الأشياء، مُجلَّدٌ ضائعٌ بين المجلَّدات التي تسكنُ الكونَ اللامبالي." — بورخيس\n\n## الحُجّة، مختصرة\n\nأكثرُ برامج الكتابة تحاولُ *إزالةَ الاحتكاك*. وهذا في أغلبِ الأحوال خطأ في التصنيف. مقاومةُ الكاتبِ للصفحةِ ليست احتكاكاً يُزال، بل هي *الوسطُ* ذاتُه الذي فيه يبطُؤ الفكرُ حتى يصيرَ كتابة.\n\n## برمجةٌ موجزة\n\n\`\`\`js\n// ليست بسرعة الشاشة\nconst reader = (words) => {\n  return words.slow().turn().return();\n};\n\`\`\`\n\n---\n\nيُتبع. انظر أيضاً [[الأدوات-البطيئة]].`
+    }
+  ];
+  State.files = demos;
+  State.vaultName = 'demo';
+  $('vaultName').textContent = 'demo';
+  $('vaultName').classList.remove('empty');
+  $('sbVault').textContent = 'folder: demo';
+  renderTree(demos);
+  renderFile(0);
+  showToast('Demo notes loaded');
+}
+
+// =====================================================================
+// WIKILINKS
+// =====================================================================
+function navWikilink(target) {
+  const t = target.toLowerCase();
+  const idx = State.files.findIndex(f =>
+    f.name.replace(/\.md$/, '').toLowerCase() === t ||
+    f.name.replace(/\.md$/, '').toLowerCase() === t.replace(/-/g,' ')
+  );
+  if (idx >= 0) renderFile(idx);
+  else showToast(`No note found for "${target}"`, 'error');
+}
+
+// =====================================================================
+// EDITOR MODE (live / split / source)
+// =====================================================================
+function setEditorMode(mode) {
+  State.editorMode = mode;
+  editorArea.classList.remove('split', 'source');
+  if (mode === 'split') editorArea.classList.add('split');
+  else if (mode === 'source') editorArea.classList.add('source');
+
+  // toolbar buttons
+  $('modeLive').classList.toggle('active', mode === 'live');
+  $('modeSplit').classList.toggle('active', mode === 'split');
+  $('modeSource').classList.toggle('active', mode === 'source');
+
+  $('propMode').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+  showToast(`Mode: ${mode}`, 'info');
+}
+
+// when source textarea is edited, update file content + re-render preview
+function onSourceInput() {
+  if (State.activeFile === null) return;
+  const f = State.files[State.activeFile];
+  f.content = srcTextarea.value;
+  f.dirty = true;
+  // re-render preview only (not full renderFile to avoid losing cursor)
+  let html = '';
+  try { html = marked.parse(f.content || ''); } catch(e) { html = escapeHtml(f.content || ''); }
+  const wordCount = (f.content.match(/\S+/g) || []).length;
+  const readMin = Math.max(1, Math.round(wordCount / 220));
+  const isAr = isArabicHeavy(f.content);
+  noteContent.innerHTML = `
+    <div class="doc-meta">
+      <span>${isAr ? 'مقالة' : 'note'}</span>
+      <span>·</span>
+      <span>${wordCount} ${isAr ? 'كلمة' : 'words'}</span>
+      <span>·</span>
+      <span>${escapeHtml(f.path)}</span>
+      <span>·</span><span style="color: var(--accent);">● unsaved</span>
+    </div>
+    ${html}
+  `;
+  $('propWords').textContent = wordCount;
+  $('propRead').textContent = `≈ ${readMin} min`;
+  $('readTime').textContent = `≈ ${readMin} min read`;
+  $('wordCount').textContent = `${wordCount} words`;
+  // cursor pos
+  const pos = srcTextarea.selectionStart;
+  const upto = srcTextarea.value.slice(0, pos);
+  const ln = upto.split('\n').length;
+  const col = pos - upto.lastIndexOf('\n');
+  $('cursorPos').textContent = `ln ${ln} · col ${col}`;
+  // tabs (dirty indicator)
+  renderTabs();
+  buildTOC();
+}
+
+srcTextarea.addEventListener('keyup', () => {
+  const pos = srcTextarea.selectionStart;
+  const upto = srcTextarea.value.slice(0, pos);
+  const ln = upto.split('\n').length;
+  const col = pos - upto.lastIndexOf('\n');
+  $('cursorPos').textContent = `ln ${ln} · col ${col}`;
+});
+
+// Toolbar markdown helpers
+function ensureSourceFocus() {
+  if (State.editorMode === 'live') {
+    setEditorMode('source');
+    setTimeout(() => srcTextarea.focus(), 50);
+  } else {
+    srcTextarea.focus();
+  }
+}
+function wrapSelection(left, right) {
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const sel = ta.value.slice(start, end) || 'text';
+  ta.value = ta.value.slice(0, start) + left + sel + right + ta.value.slice(end);
+  ta.selectionStart = start + left.length;
+  ta.selectionEnd = start + left.length + sel.length;
+  onSourceInput();
+}
+function insertText(left, right) {
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const sel = ta.value.slice(start, end);
+  ta.value = ta.value.slice(0, start) + left + sel + right + ta.value.slice(end);
+  ta.selectionStart = ta.selectionEnd = start + left.length + sel.length;
+  onSourceInput();
+}
+function lineStart(prefix) {
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const start = ta.selectionStart;
+  const before = ta.value.slice(0, start);
+  const lineStart = before.lastIndexOf('\n') + 1;
+  ta.value = ta.value.slice(0, lineStart) + prefix + ta.value.slice(lineStart);
+  ta.selectionStart = ta.selectionEnd = start + prefix.length;
+  onSourceInput();
+}
+
+// =====================================================================
+// SIDEBAR PANE SWITCHING
+// =====================================================================
+function switchSbPane(name) {
+  document.querySelectorAll('.sb-tab').forEach(t => t.classList.toggle('active', t.dataset.pane === name));
+  document.querySelectorAll('.sb-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+  if (name === 'tags') renderTags();
+  if (name === 'search') setTimeout(() => $('sbSearchInput').focus(), 50);
+}
+
+// =====================================================================
+// SIDEBAR SEARCH
+// =====================================================================
+function runSidebarSearch(q) {
+  const out = $('searchResults');
+  q = q.trim();
+  if (!q) { out.innerHTML = '<div class="search-empty">Type to search.</div>'; return; }
+  const lower = q.toLowerCase();
+  const hits = [];
+  State.files.forEach((f, i) => {
+    const c = f.content || '';
+    const idx = c.toLowerCase().indexOf(lower);
+    if (idx >= 0 || f.name.toLowerCase().includes(lower)) {
+      let snip = '';
+      if (idx >= 0) {
+        const a = Math.max(0, idx - 30), b = Math.min(c.length, idx + q.length + 60);
+        const s = c.slice(a, b).replace(/\n+/g, ' ');
+        snip = (a > 0 ? '… ' : '') + escapeHtml(s).replace(new RegExp(escapeReg(q), 'gi'), m => `<mark>${m}</mark>`) + (b < c.length ? ' …' : '');
+      }
+      hits.push({ idx: i, name: f.name, snip });
+    }
+  });
+  if (!hits.length) {
+    out.innerHTML = `<div class="search-empty">No matches for "${escapeHtml(q)}".</div>`;
+    return;
+  }
+  out.innerHTML = hits.map(h => `
+    <div class="search-result" onclick="renderFile(${h.idx}); switchSbPane('files');">
+      <div class="sr-name${isArabicHeavy(h.name) ? '" style="font-family: var(--arabic)' : ''}">${escapeHtml(h.name)}</div>
+      <div class="sr-snip">${h.snip || '<em>name match</em>'}</div>
+    </div>
+  `).join('');
+}
+function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// =====================================================================
+// FIND IN PAGE (Ctrl+F)
+// =====================================================================
+function openFind() {
+  findBar.classList.add('open');
+  setTimeout(() => findInput.focus(), 50);
+}
+function closeFind() {
+  findBar.classList.remove('open');
+  // remove highlights
+  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
+    const text = document.createTextNode(m.textContent);
+    m.parentNode.replaceChild(text, m);
+  });
+  noteContent.normalize();
+  State.findHits = [];
+  findInfo.textContent = '0/0';
+}
+function runFind(q) {
+  // remove previous
+  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
+    const t = document.createTextNode(m.textContent);
+    m.parentNode.replaceChild(t, m);
+  });
+  noteContent.normalize();
+  State.findHits = [];
+
+  if (!q) { findInfo.textContent = '0/0'; return; }
+  const re = new RegExp(escapeReg(q), 'gi');
+  const walker = document.createTreeWalker(noteContent, NodeFilter.SHOW_TEXT, null);
+  const textNodes = [];
+  let n; while ((n = walker.nextNode())) textNodes.push(n);
+  textNodes.forEach(node => {
+    const txt = node.nodeValue;
+    if (!re.test(txt)) return;
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = re.exec(txt)) !== null) {
+      if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+      const mark = document.createElement('mark');
+      mark.className = 'find-hit';
+      mark.textContent = m[0];
+      frag.appendChild(mark);
+      State.findHits.push(mark);
+      last = m.index + m[0].length;
+    }
+    if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  });
+  State.findIdx = 0;
+  if (State.findHits.length) {
+    State.findHits[0].classList.add('current');
+    State.findHits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  findInfo.textContent = `${State.findHits.length ? 1 : 0}/${State.findHits.length}`;
+}
+function findStep(d) {
+  if (!State.findHits.length) return;
+  State.findHits[State.findIdx].classList.remove('current');
+  State.findIdx = (State.findIdx + d + State.findHits.length) % State.findHits.length;
+  State.findHits[State.findIdx].classList.add('current');
+  State.findHits[State.findIdx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  findInfo.textContent = `${State.findIdx + 1}/${State.findHits.length}`;
+}
+
+// =====================================================================
+// DIRECTION & THEME
+// =====================================================================
+function toggleRTL() {
+  body.classList.toggle('rtl-mode');
+  State.direction = body.classList.contains('rtl-mode') ? 'rtl' : 'ltr';
+  updateDirUI();
+  showToast(`Direction: ${State.direction.toUpperCase()}`);
+}
+function updateDirUI() {
+  const isRTL = State.direction === 'rtl';
+  $('dirIndicator').textContent = isRTL ? 'RTL' : 'LTR';
+  $('propDir').textContent = isRTL ? 'RTL' : 'LTR';
+  $('rtlBtn').classList.toggle('active', isRTL);
+}
+function cycleTheme() {
+  const i = THEMES.indexOf(State.theme);
+  State.theme = THEMES[(i + 1) % THEMES.length];
+  app.dataset.theme = State.theme;
+  $('themeBtn').classList.toggle('active', State.theme !== 'paper');
+  showToast(`Theme: ${State.theme.charAt(0).toUpperCase() + State.theme.slice(1)}`);
+}
+function setTheme(t) {
+  State.theme = t;
+  app.dataset.theme = t;
+  $('themeBtn').classList.toggle('active', t !== 'paper');
+  closeMenu();
+  showToast(`Theme: ${t.charAt(0).toUpperCase() + t.slice(1)}`);
+}
+
+// =====================================================================
+// SIDEBAR / INSPECTOR TOGGLE
+// =====================================================================
+function toggleSidebar() {
+  State.sidebarVisible = !State.sidebarVisible;
+  body.classList.toggle('no-sidebar', !State.sidebarVisible);
+  showToast(`Sidebar: ${State.sidebarVisible ? 'shown' : 'hidden'}`, 'info');
+}
+function toggleInspector() {
+  State.inspectorVisible = !State.inspectorVisible;
+  body.classList.toggle('no-inspector', !State.inspectorVisible);
+  showToast(`Inspector: ${State.inspectorVisible ? 'shown' : 'hidden'}`, 'info');
+  closeMenu();
+}
+
+// =====================================================================
+// MENUS (File / Edit / View / Help)
+// =====================================================================
+const MENU_DEFS = {
+  file: {
+    x: 76,
+    items: [
+      { kind: 'label', text: 'Open' },
+      { kind: 'item', icon: '⌂', name: 'Open Folder…', shortcut: 'Ctrl+Shift+O', action: openVault },
+      { kind: 'item', icon: '¶', name: 'Open File…', shortcut: 'Ctrl+O', action: openSingleFile },
+      { kind: 'divider' },
+      { kind: 'label', text: 'New' },
+      { kind: 'item', icon: '+', name: 'New Note', shortcut: 'Ctrl+N', action: newNote },
+      { kind: 'item', icon: '◷', name: 'New Daily Note', shortcut: 'Ctrl+Shift+N', action: () => newDailyNote() },
+      { kind: 'divider' },
+      { kind: 'item', icon: '↓', name: 'Save', shortcut: 'Ctrl+S', action: saveCurrent },
+      { kind: 'item', icon: '⇣', name: 'Save As…', shortcut: 'Ctrl+Shift+S', action: saveAs },
+      { kind: 'divider' },
+      { kind: 'item', icon: '★', name: 'Load Demo Notes', action: loadDemo },
+      { kind: 'divider' },
+      { kind: 'item', icon: '×', name: 'Close Tab', shortcut: 'Ctrl+W', action: () => { if (State.activeFile !== null) closeTab(State.activeFile); closeMenu(); } },
+      { kind: 'item', icon: '×', name: 'Close Window', shortcut: 'Alt+F4', action: winClose }
+    ]
+  },
+  edit: {
+    x: 110,
+    items: [
+      { kind: 'item', icon: '↶', name: 'Undo', shortcut: 'Ctrl+Z', action: () => execEditCmd('undo') },
+      { kind: 'item', icon: '↷', name: 'Redo', shortcut: 'Ctrl+Y', action: () => execEditCmd('redo') },
+      { kind: 'divider' },
+      { kind: 'item', icon: '✂', name: 'Cut', shortcut: 'Ctrl+X', action: () => execEditCmd('cut') },
+      { kind: 'item', icon: '⧉', name: 'Copy', shortcut: 'Ctrl+C', action: () => execEditCmd('copy') },
+      { kind: 'item', icon: '⎘', name: 'Paste', shortcut: 'Ctrl+V', action: () => execEditCmd('paste') },
+      { kind: 'item', icon: '⊟', name: 'Select All', shortcut: 'Ctrl+A', action: () => execEditCmd('selectAll') },
+      { kind: 'divider' },
+      { kind: 'item', icon: '⌕', name: 'Find…', shortcut: 'Ctrl+F', action: () => { closeMenu(); openFind(); } },
+      { kind: 'item', icon: '⇄', name: 'Find & Replace…', shortcut: 'Ctrl+H', action: () => { closeMenu(); openFind(); showToast('Replace UI not yet wired — finds work', 'info'); } },
+      { kind: 'divider' },
+      { kind: 'item', icon: 'B', name: 'Bold', shortcut: 'Ctrl+B', action: () => { closeMenu(); wrapSelection('**', '**'); } },
+      { kind: 'item', icon: 'I', name: 'Italic', shortcut: 'Ctrl+I', action: () => { closeMenu(); wrapSelection('*', '*'); } },
+      { kind: 'item', icon: '∞', name: 'Insert Link', shortcut: 'Ctrl+L', action: () => { closeMenu(); insertText('[', '](url)'); } },
+      { kind: 'item', icon: '[[', name: 'Insert Wikilink', shortcut: 'Ctrl+K Ctrl+W', action: () => { closeMenu(); insertText('[[', ']]'); } }
+    ]
+  },
+  view: {
+    x: 145,
+    items: [
+      { kind: 'label', text: 'Mode' },
+      { kind: 'check', name: 'Live Preview', checked: () => State.editorMode === 'live', action: () => { setEditorMode('live'); closeMenu(); } },
+      { kind: 'check', name: 'Split View', checked: () => State.editorMode === 'split', action: () => { setEditorMode('split'); closeMenu(); } },
+      { kind: 'check', name: 'Source Mode', checked: () => State.editorMode === 'source', action: () => { setEditorMode('source'); closeMenu(); } },
+      { kind: 'divider' },
+      { kind: 'label', text: 'Panels' },
+      { kind: 'check', name: 'Show Sidebar', shortcut: 'Ctrl+\\', checked: () => State.sidebarVisible, action: () => { toggleSidebar(); closeMenu(); } },
+      { kind: 'check', name: 'Show Inspector', shortcut: 'Ctrl+Shift+I', checked: () => State.inspectorVisible, action: toggleInspector },
+      { kind: 'divider' },
+      { kind: 'label', text: 'Theme' },
+      { kind: 'check', name: 'Paper (light)', checked: () => State.theme === 'paper', action: () => setTheme('paper') },
+      { kind: 'check', name: 'Ink (dark)', checked: () => State.theme === 'ink', action: () => setTheme('ink') },
+      { kind: 'check', name: 'Sepia', checked: () => State.theme === 'sepia', action: () => setTheme('sepia') },
+      { kind: 'divider' },
+      { kind: 'item', icon: '⇄', name: 'Flip Direction (RTL/LTR)', shortcut: 'Ctrl+Shift+L', action: () => { toggleRTL(); closeMenu(); } },
+      { kind: 'divider' },
+      { kind: 'item', icon: '⌘', name: 'Command Palette', shortcut: 'Ctrl+K', action: () => { closeMenu(); openPalette(); } }
+    ]
+  },
+  help: {
+    x: 184,
+    items: [
+      { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
+      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout },
+      { kind: 'divider' },
+      { kind: 'item', icon: '?', name: 'Documentation', action: () => { closeMenu(); showToast('Docs would open at marqam.app/docs', 'info'); } },
+      { kind: 'item', icon: '✎', name: 'Report an Issue', action: () => { closeMenu(); showToast('Would open issue tracker', 'info'); } }
+    ]
+  }
+};
+
+function openMenu(e, name) {
+  e.stopPropagation();
+  if (dropdown.classList.contains('open') && dropdown.dataset.menu === name) {
+    closeMenu();
+    return;
+  }
+  closeMenu();
+  buildMenu(name);
+  document.querySelectorAll('.tb-menu-item').forEach(m => m.classList.remove('open-menu'));
+  if (e.currentTarget.classList.contains('tb-menu-item')) e.currentTarget.classList.add('open-menu');
+  dropdown.classList.add('open');
+  dropdown.dataset.menu = name;
+  dropdown.style.left = MENU_DEFS[name].x + 'px';
+}
+
+function buildMenu(name) {
+  const def = MENU_DEFS[name];
+  let html = '';
+  def.items.forEach((it, i) => {
+    if (it.kind === 'label') html += `<div class="dd-section-label">${escapeHtml(it.text)}</div>`;
+    else if (it.kind === 'divider') html += `<div class="dd-divider"></div>`;
+    else if (it.kind === 'check') {
+      const checked = it.checked ? it.checked() : false;
+      html += `<div class="dd-item${checked ? ' checked' : ''}" data-i="${i}">
+        <span class="dd-check">✓</span>
+        <span class="dd-icon">·</span>
+        <span class="dd-name">${escapeHtml(it.name)}</span>
+        ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
+      </div>`;
+    } else {
+      html += `<div class="dd-item${it.disabled ? ' disabled' : ''}" data-i="${i}">
+        <span class="dd-icon">${escapeHtml(it.icon || '·')}</span>
+        <span class="dd-name">${escapeHtml(it.name)}</span>
+        ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
+      </div>`;
+    }
+  });
+  dropdown.innerHTML = html;
+  dropdown.querySelectorAll('.dd-item:not(.disabled)').forEach(el => {
+    const i = parseInt(el.dataset.i);
+    el.onclick = () => { try { def.items[i].action(); } catch(e) { console.error(e); } };
+  });
+}
+
+function closeMenu() {
+  dropdown.classList.remove('open');
+  document.querySelectorAll('.tb-menu-item').forEach(m => m.classList.remove('open-menu'));
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.tb-menu-item') && !e.target.closest('.dropdown') && !e.target.closest('.tb-menu-btn')) closeMenu();
+});
+
+// Edit-menu commands (use document.execCommand on whichever surface is focused)
+function execEditCmd(cmd) {
+  closeMenu();
+  if (State.editorMode === 'source' || State.editorMode === 'split') {
+    srcTextarea.focus();
+  }
+  try { document.execCommand(cmd); }
+  catch(e) { showToast('Command failed', 'error'); }
+}
+
+function newDailyNote() {
+  closeMenu();
+  const d = new Date();
+  const name = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.md`;
+  const existing = State.files.findIndex(f => f.name === name);
+  if (existing >= 0) { renderFile(existing); return; }
+  const dateStr = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  addFile({ name, path: name, handle: null, content: `# ${dateStr}\n\n`, dirty: true });
+}
+
+// =====================================================================
+// MODAL (Shortcuts / About)
+// =====================================================================
+function openModal(title, html) {
+  modalTitle.textContent = title;
+  modalBody.innerHTML = html;
+  modalOverlay.classList.add('open');
+}
+function closeModal() {
+  modalOverlay.classList.remove('open');
+}
+function showShortcuts() {
+  closeMenu();
+  const groups = [
+    ['File', [
+      ['Open Folder…', 'Ctrl+Shift+O'],
+      ['Open File…', 'Ctrl+O'],
+      ['New Note', 'Ctrl+N'],
+      ['Save', 'Ctrl+S'],
+      ['Save As…', 'Ctrl+Shift+S'],
+      ['Close Tab', 'Ctrl+W']
+    ]],
+    ['View', [
+      ['Toggle Sidebar', 'Ctrl+\\'],
+      ['Toggle Inspector', 'Ctrl+Shift+I'],
+      ['Cycle Theme', 'Ctrl+Shift+D'],
+      ['Flip Direction', 'Ctrl+Shift+L'],
+      ['Command Palette', 'Ctrl+K']
+    ]],
+    ['Edit', [
+      ['Bold', 'Ctrl+B'],
+      ['Italic', 'Ctrl+I'],
+      ['Find', 'Ctrl+F'],
+      ['Find & Replace', 'Ctrl+H']
+    ]],
+    ['Help', [
+      ['Keyboard Shortcuts', 'Ctrl+/']
+    ]]
+  ];
+  let html = '';
+  groups.forEach(([heading, rows]) => {
+    html += `<h3>${heading}</h3>`;
+    rows.forEach(([n, k]) => {
+      const keys = k.split('+').map(p => `<span class="kbd">${p}</span>`).join('');
+      html += `<div class="shortcut-row"><span class="shortcut-name">${n}</span><span class="shortcut-keys">${keys}</span></div>`;
+    });
+  });
+  openModal('Keyboard Shortcuts', html);
+}
+function showAbout() {
+  closeMenu();
+  const html = `
+    <div class="about-logo">م</div>
+    <div class="about-name">Marqam <em style="font-family: var(--arabic); color: var(--accent); font-style: normal;">مَرْقَم</em></div>
+    <div class="about-version">version 0.1 · prototype · ${new Date().getFullYear()}</div>
+    <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
+    <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
+      Bilingual to its core — first-class English and Arabic.<br>
+      Plain <code style="font-family: var(--mono); font-size: 12px; background: var(--paper-deep); padding: 1px 5px; border-radius: 3px;">.md</code> files on disk. No proprietary format.<br>
+      Slow tools beget slow thought.
+    </p>
+    <p style="text-align: center; margin-top: 20px; font-family: var(--mono); font-size: 10px; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.1em;">
+      Built with React · CodeMirror · Tauri
+    </p>
+  `;
+  openModal('About', html);
+}
+
+// =====================================================================
+// COMMAND PALETTE
+// =====================================================================
+const PALETTE_COMMANDS = [
+  { sec: 'Files', icon: '⌂', name: 'Open Folder…', meta: 'command', sk: 'Ctrl+⇧+O', act: openVault },
+  { sec: 'Files', icon: '¶', name: 'Open File…', meta: 'command', sk: 'Ctrl+O', act: openSingleFile },
+  { sec: 'Files', icon: '+', name: 'New Note', meta: 'command', sk: 'Ctrl+N', act: newNote },
+  { sec: 'Files', icon: '↓', name: 'Save', meta: 'command', sk: 'Ctrl+S', act: saveCurrent },
+  { sec: 'Files', icon: '★', name: 'Load demo notes', meta: 'command', act: loadDemo },
+  { sec: 'View', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
+  { sec: 'View', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },
+  { sec: 'View', icon: '<>', name: 'Mode: Source', meta: 'view', act: () => setEditorMode('source') },
+  { sec: 'View', icon: '⇄', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
+  { sec: 'View', icon: '◐', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
+  { sec: 'View', icon: '◐', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
+  { sec: 'View', icon: '◐', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
+  { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
+  { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
+  { sec: 'Help', icon: '⌨', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
+  { sec: 'Help', icon: 'i', name: 'About Marqam', meta: 'help', act: showAbout }
+];
+
+let palIdx = 0, palVisible = [];
+function openPalette() { palOverlay.classList.add('open'); palInput.value = ''; filterPalette(''); setTimeout(() => palInput.focus(), 50); }
+function closePalette() { palOverlay.classList.remove('open'); palInput.value = ''; }
+function filterPalette(q) {
+  q = (q || '').trim().toLowerCase();
+  // gather: commands + files
+  const items = [];
+  PALETTE_COMMANDS.forEach(c => {
+    if (!q || c.name.toLowerCase().includes(q)) items.push({...c, _kind: 'cmd'});
+  });
+  State.files.forEach((f, i) => {
+    if (!q || f.name.toLowerCase().includes(q)) {
+      items.push({ sec: 'Files in folder', icon: '¶', name: f.name, meta: f.path, _kind: 'file', _idx: i });
+    }
+  });
+  // group by section
+  const sections = {};
+  items.forEach(it => { sections[it.sec] = sections[it.sec] || []; sections[it.sec].push(it); });
+  let html = ''; palVisible = [];
+  Object.entries(sections).forEach(([sec, arr]) => {
+    html += `<div class="pal-section-label">${escapeHtml(sec)}</div>`;
+    arr.forEach(it => {
+      palVisible.push(it);
+      const sk = it.sk ? `<span class="pi-shortcut">${it.sk.split('+').map(p => `<span class="kbd">${p}</span>`).join('')}</span>` : '';
+      const isAr = isArabicHeavy(it.name);
+      html += `<div class="pal-item${palVisible.length === 1 ? ' active' : ''}" data-i="${palVisible.length - 1}">
+        <span class="pi-icon">${escapeHtml(it.icon)}</span>
+        <span class="pi-name"${isAr ? ' style="font-family: var(--arabic);"' : ''}>${escapeHtml(it.name)}</span>
+        <span class="pi-meta">${escapeHtml(it.meta || '')}</span>
+        ${sk}
+      </div>`;
+    });
+  });
+  if (!items.length) html = '<div class="search-empty" style="padding: 20px;">No matches.</div>';
+  palResults.innerHTML = html;
+  palIdx = 0;
+  palResults.querySelectorAll('.pal-item').forEach(el => {
+    el.onclick = () => {
+      const i = parseInt(el.dataset.i);
+      const it = palVisible[i];
+      closePalette();
+      if (it._kind === 'cmd') it.act();
+      else if (it._kind === 'file') renderFile(it._idx);
+    };
+  });
+}
+
+palInput.addEventListener('keydown', e => {
+  const items = palResults.querySelectorAll('.pal-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(palIdx + 1, items.length - 1); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); items[palIdx]?.scrollIntoView({block:'nearest'}); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(palIdx - 1, 0); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); }
+  else if (e.key === 'Enter') { e.preventDefault(); items[palIdx]?.click(); }
+  else if (e.key === 'Escape') closePalette();
+});
+
+// =====================================================================
+// WINDOW BUTTONS (visual only — would call OS APIs in Tauri)
+// =====================================================================
+function winMinimize() { showToast('Minimize (would call window.minimize() in desktop build)', 'info'); }
+function winMaximize() { showToast('Maximize (would call window.toggleMaximize() in desktop build)', 'info'); }
+function winClose() {
+  const dirty = State.files.filter(f => f.dirty).length;
+  if (dirty > 0) {
+    if (!confirm(`${dirty} unsaved file${dirty === 1 ? '' : 's'}. Close anyway?`)) return;
+  }
+  showToast('Would close window', 'info');
+}
+
+// =====================================================================
+// GLOBAL SHORTCUTS
+// =====================================================================
+document.addEventListener('keydown', e => {
+  const cmd = e.ctrlKey || e.metaKey;
+  // Don't intercept in palette/find/search inputs except for known keys
+  const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+
+  if (cmd && e.key.toLowerCase() === 'k' && !e.shiftKey) { e.preventDefault(); openPalette(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleRTL(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); cycleTheme(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); toggleInspector(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openVault(); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openSingleFile(); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newNote(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newDailyNote(); }
+  else if (cmd && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAs(); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrent(); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'w') { e.preventDefault(); if (State.activeFile !== null) closeTab(State.activeFile); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); }
+  else if (cmd && e.key === '\\') { e.preventDefault(); toggleSidebar(); }
+  else if (cmd && e.key === '/') { e.preventDefault(); showShortcuts(); }
+  else if (cmd && !inInput && e.key.toLowerCase() === 'b') { e.preventDefault(); wrapSelection('**', '**'); }
+  else if (cmd && !inInput && e.key.toLowerCase() === 'i') { e.preventDefault(); wrapSelection('*', '*'); }
+  else if (e.key === 'Escape') {
+    if (palOverlay.classList.contains('open')) closePalette();
+    else if (modalOverlay.classList.contains('open')) closeModal();
+    else if (findBar.classList.contains('open')) closeFind();
+    else if (dropdown.classList.contains('open')) closeMenu();
+  }
+});
+
+// =====================================================================
+// INIT
+// =====================================================================
+app.dataset.theme = 'paper';
+showWelcome();
+
+</script>
+
+</body>
+</html>

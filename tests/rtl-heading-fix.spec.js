@@ -477,7 +477,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await page.waitForTimeout(300);
 
     const h1 = page.locator('#noteContent h1');
-    await expect(h1).toHaveScreenshot('h1-rtl-paper-chromium-win32.png');
+    await expect(h1).toHaveScreenshot('h1-rtl-paper.png');
   });
 
   test('[AC8-ink] h1 RTL visual baseline -- theme=ink', async ({ page }) => {
@@ -493,7 +493,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await page.waitForTimeout(300);
 
     const h1 = page.locator('#noteContent h1');
-    await expect(h1).toHaveScreenshot('h1-rtl-ink-chromium-win32.png');
+    await expect(h1).toHaveScreenshot('h1-rtl-ink.png');
   });
 
   test('[AC8-sepia] h1 RTL visual baseline -- theme=sepia', async ({ page }) => {
@@ -509,7 +509,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await page.waitForTimeout(300);
 
     const h1 = page.locator('#noteContent h1');
-    await expect(h1).toHaveScreenshot('h1-rtl-sepia-chromium-win32.png');
+    await expect(h1).toHaveScreenshot('h1-rtl-sepia.png');
   });
 
   test('[AC8-doc-meta] .doc-meta RTL visual baseline -- theme=paper', async ({ page }) => {
@@ -525,7 +525,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await page.waitForTimeout(300);
 
     const docMeta = page.locator('#noteContent .doc-meta');
-    await expect(docMeta).toHaveScreenshot('doc-meta-rtl-paper-chromium-win32.png');
+    await expect(docMeta).toHaveScreenshot('doc-meta-rtl-paper.png');
   });
 
 });

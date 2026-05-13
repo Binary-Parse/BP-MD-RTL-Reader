@@ -1,12 +1,40 @@
 {
   "name": "marqam",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Marqam markdown editor with RTL support",
+  "main": "main.js",
   "private": true,
   "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
     "test": "playwright test",
     "test:smoke": "playwright test tests/smoke.spec.js",
     "test:update-snapshots": "playwright test --update-snapshots"
+  },
+  "build": {
+    "appId": "com.marqam.app",
+    "productName": "Marqam",
+    "files": [
+      "marqam.html",
+      "main.js",
+      "preload.js",
+      "icon.ico",
+      "icon.png",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

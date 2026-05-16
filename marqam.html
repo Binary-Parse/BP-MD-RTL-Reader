@@ -2145,6 +2145,7 @@ function execEditCmd(cmd) {
     return;
   }
 }
+window.execEditCmd = execEditCmd;
 
 // =====================================================================
 // SIDEBAR PANE SWITCHING
@@ -2252,6 +2253,7 @@ window.setEditorMode = setEditorMode;
 // ZOOM (Issue #5) — scoped to #editorArea only; chrome unaffected
 // =====================================================================
 function setZoom(factor) {
+  if (typeof factor !== 'number' || isNaN(factor)) return;
   const clamped = Math.min(2.0, Math.max(0.6, factor));
   State.zoomFactor = clamped;
   editorArea.style.zoom = clamped;
@@ -2388,7 +2390,14 @@ function buildTOC() {
     const el = document.createElement('div');
     el.className = 'toc-item' + (h.tagName === 'H1' ? '' : ' h2') + (i === 0 ? ' active' : '');
     el.textContent = h.textContent;
-    el.addEventListener('click', () => h.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    el.addEventListener('click', () => {
+      const pane = h.closest('.preview-pane');
+      if (pane) {
+        pane.scrollTo({ top: h.offsetTop - pane.offsetTop, behavior: 'smooth' });
+      } else {
+        h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
     tocList.appendChild(el);
   });
 }

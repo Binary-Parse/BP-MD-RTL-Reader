@@ -101,6 +101,24 @@ function registerIpcHandlers() {
     }
     return results;
   });
+
+  // ==== EDIT COMMAND IPC ====
+  // Uses Chromium's native webContents methods so clipboard ops work whether
+  // the user is in a source-mode textarea OR has text selected in the live
+  // preview DIV. These target the focused editable inside the renderer without
+  // depending on document.activeElement, which the menu click disrupts.
+  ipcMain.on('edit:command', (event, cmd) => {
+    const wc = event.sender;
+    if (!wc || wc.isDestroyed()) return;
+    try {
+      if (cmd === 'copy')           wc.copy();
+      else if (cmd === 'cut')       wc.cut();
+      else if (cmd === 'paste')     wc.paste();
+      else if (cmd === 'undo')      wc.undo();
+      else if (cmd === 'redo')      wc.redo();
+      else if (cmd === 'selectAll') wc.selectAll();
+    } catch (_) { /* no-op */ }
+  });
 }
 
 function createWindow() {

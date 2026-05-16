@@ -2223,6 +2223,17 @@ document.addEventListener('focusin', (e) => {
 }, true);
 
 function execEditCmd(cmd) {
+  // In packaged Electron, delegate to Chromium's native webContents methods.
+  // They target the focused editable inside the renderer and survive the focus
+  // shifts caused by opening the menu. Works for textarea, contenteditable,
+  // AND live-preview text selection without any JS-side juggling.
+  if (window.electronAPI && window.electronAPI.editCommand) {
+    closeMenu();
+    window.electronAPI.editCommand(cmd);
+    return;
+  }
+
+  // Browser fallback (Playwright tests, file://-loaded preview):
   // Prefer the most recently focused editable over document.activeElement,
   // because by the time this handler runs, focus has moved to the clicked
   // menu item (a DIV). Fall back to activeElement when no editable was tracked

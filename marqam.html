@@ -3259,6 +3259,19 @@ $('findPrevBtn').addEventListener('click', () => findStep(-1));
 $('findNextBtn').addEventListener('click', () => findStep(1));
 $('findCloseBtn').addEventListener('click', closeFind);
 
+// ==== EXTERNAL FILE OPEN (Windows file-association / macOS dock drop) ====
+// Main process sends this when the user launches Marqam by double-clicking a
+// .md file with Marqam set as the default handler. We add it as a tab and
+// render it immediately.
+function openExternalFile({ name, path: filePath, content }) {
+  if (!name || typeof content !== 'string') return;
+  addFile({ name, path: filePath || name, handle: null, content, dirty: false });
+}
+window.openExternalFile = openExternalFile;
+if (window.electronAPI && typeof window.electronAPI.onOpenFile === 'function') {
+  window.electronAPI.onOpenFile(openExternalFile);
+}
+
 document.addEventListener('click', e => {
   if (!e.target.closest('.tb-menu-item') && !e.target.closest('.dropdown') && !e.target.closest('.tb-menu-btn')) closeMenu();
 });

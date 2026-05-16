@@ -7,6 +7,48 @@ const fs = require('fs');
 // fs:readVault. The renderer cannot pass arbitrary paths.
 const allowedFolders = new Set();
 
+// ==== FILE ASSOCIATION ====
+// When the user double-clicks a .md file in Explorer (and Marqam is the
+// registered handler) Windows launches the app with the file path as argv[1].
+// Parse argv, validate the path is a real markdown file, read it in main
+// process (trusted side), and queue it to be sent to the renderer once the
+// window finishes loading.
+let pendingFileToOpen = null;
+const MAX_OPEN_FILE_BYTES = 10 * 1024 * 1024; // 10 MiB hard cap (same as readVault)
+
+function parseFileArg(argv) {
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (typeof a !== 'string') continue;
+    if (a.startsWith('-')) continue;                // skip flags like --inspect
+    if (!/\.(md|markdown|txt)$/i.test(a)) continue; // only markdown extensions
+    try {
+      // Resolve to a real absolute path; rejects relative-traversal trickery.
+      const real = fs.realpathSync(a);
+      const stat = fs.statSync(real);
+      if (!stat.isFile()) continue;
+      if (stat.size > MAX_OPEN_FILE_BYTES) continue;
+      return real;
+    } catch (_) { continue; }
+  }
+  return null;
+}
+
+function deliverPendingFile(win) {
+  if (!pendingFileToOpen || !win || win.isDestroyed()) return;
+  const filePath = pendingFileToOpen;
+  pendingFileToOpen = null;
+  try {
+    let content = fs.readFileSync(filePath, 'utf8');
+    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // strip BOM
+    win.webContents.send('open-external-file', {
+      name: path.basename(filePath),
+      path: filePath,
+      content
+    });
+  } catch (_) { /* silent — user just sees no file loaded */ }
+}
+
 // Resource bounds for fs:readVault (JB3)
 const MAX_FILES_PER_DIR = 5000;
 const MAX_FILE_BYTES    = 10 * 1024 * 1024;  // 10 MiB per file
@@ -141,6 +183,11 @@ function createWindow() {
 
   win.loadFile('marqam.html');
 
+  // Once renderer is ready, deliver any file that was passed on the command
+  // line. We listen for did-finish-load AND a renderer-side 'renderer-ready'
+  // event so the file shows up regardless of which one fires first.
+  win.webContents.on('did-finish-load', () => deliverPendingFile(win));
+
   // Window control IPC
   ipcMain.on('window-close',    () => win.close());
   ipcMain.on('window-minimize', () => win.minimize());
@@ -153,13 +200,46 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  registerIpcHandlers();
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// ==== SINGLE-INSTANCE LOCK ====
+// If the app is already running and the user double-clicks another .md, the
+// OS launches a second process. We hand off the file to the existing window
+// instead of opening a duplicate.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const file = parseFileArg(argv);
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length === 0) return;
+    const win = wins[0];
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    if (file) {
+      pendingFileToOpen = file;
+      deliverPendingFile(win);
+    }
   });
-});
+
+  app.whenReady().then(() => {
+    pendingFileToOpen = parseFileArg(process.argv);
+    registerIpcHandlers();
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  // macOS: user dropped a .md file on the dock icon
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    if (!filePath) return;
+    pendingFileToOpen = filePath;
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length > 0) deliverPendingFile(wins[0]);
+    // else: it'll be delivered when the window finishes loading
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

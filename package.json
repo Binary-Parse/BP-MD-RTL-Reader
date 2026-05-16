@@ -34,7 +34,11 @@
       "oneClick": true,
       "perMachine": false,
       "allowToChangeInstallationDirectory": false
-    }
+    },
+    "fileAssociations": [
+      { "ext": "md",       "name": "Markdown Document", "description": "Markdown Document", "role": "Editor", "icon": "icon.ico" },
+      { "ext": "markdown", "name": "Markdown Document", "description": "Markdown Document", "role": "Editor", "icon": "icon.ico" }
+    ]
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

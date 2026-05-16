@@ -2113,35 +2113,50 @@ function execEditCmd(cmd) {
   }
 
   if (cmd === 'copy') {
-    if (State.editorMode === 'live') {
-      const sel = window.getSelection();
-      const text = sel ? sel.toString() : '';
-      clipboardCopy(text);
+    const ae2 = document.activeElement;
+    let txt = '';
+    if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
+      txt = ae2.value.substring(ae2.selectionStart, ae2.selectionEnd);
     } else {
-      srcTextarea.focus();
-      // Let the browser handle copy natively on the focused textarea
-      document.execCommand('copy');
+      txt = window.getSelection().toString();
     }
+    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Copy failed', 'err'));
     return;
   }
 
   if (cmd === 'cut') {
-    if (State.editorMode === 'live') {
-      showToast('Switch to source mode for cut', 'info');
+    const ae2 = document.activeElement;
+    let txt = '';
+    if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
+      txt = ae2.value.substring(ae2.selectionStart, ae2.selectionEnd);
     } else {
-      srcTextarea.focus();
-      document.execCommand('cut');
+      txt = window.getSelection().toString();
+    }
+    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Copy failed', 'err'));
+    if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
+      const s = ae2.selectionStart, e = ae2.selectionEnd;
+      ae2.value = ae2.value.slice(0, s) + ae2.value.slice(e);
+      ae2.selectionStart = ae2.selectionEnd = s;
+      ae2.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      showToast('Cut not supported in preview', 'info');
     }
     return;
   }
 
   if (cmd === 'paste') {
-    if (State.editorMode === 'live') {
-      showToast('Switch to source mode for paste', 'info');
-    } else {
-      srcTextarea.focus();
-      document.execCommand('paste');
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      showToast('Paste not supported in this context', 'err'); return;
     }
+    navigator.clipboard.readText().then(txt => {
+      const ae2 = document.activeElement;
+      if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
+        const s = ae2.selectionStart, e = ae2.selectionEnd;
+        ae2.value = ae2.value.slice(0, s) + txt + ae2.value.slice(e);
+        ae2.selectionStart = ae2.selectionEnd = s + txt.length;
+        ae2.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }).catch(() => showToast('Paste failed', 'err'));
     return;
   }
 }

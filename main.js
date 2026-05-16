@@ -2,6 +2,16 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// ==== SECURITY: ALLOWLIST ====
+// JB1: Only paths that were returned by dialog:openFolder are allowed for
+// fs:readVault. The renderer cannot pass arbitrary paths.
+const allowedFolders = new Set();
+
+// Resource bounds for fs:readVault (JB3)
+const MAX_FILES_PER_DIR = 5000;
+const MAX_FILE_BYTES    = 10 * 1024 * 1024;  // 10 MiB per file
+const MAX_CUMULATIVE_BYTES = 100 * 1024 * 1024; // 100 MiB total
+
 // ==== IPC HANDLERS ====
 // Registered once at app.whenReady() — before createWindow() — so that
 // macOS dock re-activation (which re-calls createWindow) never triggers
@@ -18,6 +28,8 @@ function registerIpcHandlers() {
     if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
       return { canceled: true, folderPath: null };
     }
+    // JB1: register the dialog-returned path in the allowlist
+    allowedFolders.add(result.filePaths[0]);
     return { canceled: false, folderPath: result.filePaths[0] };
   });
 
@@ -27,15 +39,61 @@ function registerIpcHandlers() {
     if (!folderPath || typeof folderPath !== 'string') {
       throw new Error('Invalid folder path');
     }
+
+    // JB2: Reject UNC/network paths (prevents SMB-auth hash leak, CWE-918)
+    if (folderPath.startsWith('\\\\') || folderPath.startsWith('//')) {
+      return { error: 'network-path-not-allowed' };
+    }
+
+    // JB1: Path must have been returned by dialog:openFolder — renderer cannot
+    // supply arbitrary paths.
+    if (!allowedFolders.has(folderPath)) {
+      return { error: 'unauthorized-path' };
+    }
+
     const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+
+    // JB3: cap file count to prevent DoS via enormous directories
+    if (entries.length > MAX_FILES_PER_DIR) {
+      return { error: 'too-many-files' };
+    }
+
     const mdFiles = entries
-      .filter(e => e.isFile() && /\.(md|markdown)$/i.test(e.name))
+      .filter(e => (e.isFile() || e.isSymbolicLink()) && /\.(md|markdown)$/i.test(e.name))
       .map(e => e.name)
       .sort((a, b) => a.localeCompare(b));
 
     const results = [];
+    let cumulativeBytes = 0;
+
     for (const name of mdFiles) {
       const fullPath = path.join(folderPath, name);
+
+      // JB4: Symlink/realpath escape check — skip files that resolve outside folderPath
+      const lstat = await fs.promises.lstat(fullPath);
+      if (lstat.isSymbolicLink()) {
+        const real = await fs.promises.realpath(fullPath);
+        const rel = path.relative(folderPath, real);
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
+          continue; // symlink escape — skip silently
+        }
+      }
+
+      // JB3: per-file size cap (use lstat size for symlinks already resolved above;
+      // for regular files lstat and stat are equivalent)
+      const stat = lstat.isSymbolicLink()
+        ? await fs.promises.stat(fullPath)
+        : lstat;
+      if (stat.size > MAX_FILE_BYTES) {
+        continue; // skip oversized files silently
+      }
+
+      // JB3: cumulative bytes cap
+      cumulativeBytes += stat.size;
+      if (cumulativeBytes > MAX_CUMULATIVE_BYTES) {
+        return { error: 'cumulative-size-exceeded', partial: results };
+      }
+
       let content = await fs.promises.readFile(fullPath, 'utf8');
       // Strip BOM if present (matches browser File API behavior)
       if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);

@@ -2816,8 +2816,10 @@ function handleBlockquoteEnter(e) {
   const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
   const currentLine = val.slice(lineStart, pos);
 
-  // Detect blockquote prefix: one or more > characters possibly preceded by whitespace
-  const prefixMatch = /^(\s*>+\s*)/.exec(currentLine);
+  // Detect blockquote prefix: one or more ">", each optionally preceded by whitespace,
+  // followed by optional trailing whitespace. The non-capturing group (?:\s*>)+ ensures
+  // the full prefix for nested blockquotes (e.g., "> > > ") is captured correctly.
+  const prefixMatch = /^((?:\s*>)+\s*)/.exec(currentLine);
   if (!prefixMatch) return; // not a blockquote line — let default Enter run
 
   const prefix = prefixMatch[1];
@@ -2930,6 +2932,8 @@ window.openPalette = openPalette;
 window.closePalette = closePalette;
 window.openFind = openFind;
 window.runFind = runFind;
+window.findStep = findStep;
+window.closeFind = closeFind;
 
 function filterPalette(q) {
   q = (q || '').trim().toLowerCase();

@@ -2110,10 +2110,25 @@ async function clipboardCopy(text) {
   catch(e) { showToast('Clipboard write failed', 'error'); }
 }
 
+// Track the last-focused editable element (textarea or input). This is needed
+// because clicking the Edit menu blurs the textarea — by the time execEditCmd
+// runs, document.activeElement is the menu DIV, not the textarea.
+let _lastFocusedEditable = null;
+document.addEventListener('focusin', (e) => {
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) {
+    _lastFocusedEditable = t;
+  }
+}, true);
+
 function execEditCmd(cmd) {
-  // Bug 5 fix: capture activeElement BEFORE closeMenu() — closeMenu() triggers blur on
-  // the focused element, making document.activeElement resolve to body after the call.
-  const _savedEl = document.activeElement;
+  // Prefer the most recently focused editable over document.activeElement,
+  // because by the time this handler runs, focus has moved to the clicked
+  // menu item (a DIV). Fall back to activeElement when no editable was tracked
+  // (e.g. user issued the command via Ctrl+A directly on document.body).
+  const ae = document.activeElement;
+  const aeIsField = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT');
+  const _savedEl = aeIsField ? ae : (_lastFocusedEditable || ae);
   closeMenu();
   const inTextField = _savedEl && (_savedEl.tagName === 'TEXTAREA' || _savedEl.tagName === 'INPUT');
 

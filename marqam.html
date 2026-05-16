@@ -2028,7 +2028,9 @@ function runFind(q) {
 function scrollMarkIntoPane(mark) {
   const scrollEl = document.querySelector('.preview-pane');
   if (!scrollEl) {
-    mark.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    // .preview-pane always exists when find-marks are rendered; this branch
+    // is unreachable in practice. Return silently rather than calling
+    // mark.scrollIntoView() which would re-trigger the document-shift bug.
     return;
   }
   const markRect = mark.getBoundingClientRect();
@@ -2207,13 +2209,14 @@ function switchSbPane(name) {
 // SIDEBAR SEARCH
 // =====================================================================
 
+// ==== VAULT SEARCH ====
 // Pure search function — extracted for unit testing.
-// Returns [{name, fileIdx, hits:[{snippet}]}], max 5 hits per file.
-// Snippets are XSS-safe: HTML-escaped first, then <mark>-wrapped.
+// Returns [{name, fileIdx, hits:[{before, match, after, ellipsisBefore, ellipsisAfter}]}],
+// max 5 hits per file. Raw text segments — no HTML; rendering is done by runSidebarSearch
+// via DOM API to eliminate innerHTML injection risk.
 function vaultSearch(query) {
   if (!query || query.length < 2 || !State.files.length) return [];
   const lower = query.toLowerCase();
-  const escaped = escapeHtml(query);
   const results = [];
   State.files.forEach((f, fileIdx) => {
     const c = f.content || '';
@@ -2227,23 +2230,15 @@ function vaultSearch(query) {
       const a = Math.max(0, idx - 40);
       const b = Math.min(c.length, idx + query.length + 40);
       const raw = c.slice(a, b).replace(/\n+/g, ' ');
-      // Escape entire snippet first, then splice in <mark> tags
-      const safeFull = escapeHtml(raw);
-      // Re-find the match position within the escaped snippet
-      const safeQuery = escaped.toLowerCase();
-      const matchStart = safeFull.toLowerCase().indexOf(safeQuery);
-      let snippet;
-      if (matchStart >= 0) {
-        snippet =
-          (a > 0 ? '… ' : '') +
-          safeFull.slice(0, matchStart) +
-          '<mark>' + safeFull.slice(matchStart, matchStart + escaped.length) + '</mark>' +
-          safeFull.slice(matchStart + escaped.length) +
-          (b < c.length ? ' …' : '');
-      } else {
-        snippet = (a > 0 ? '… ' : '') + safeFull + (b < c.length ? ' …' : '');
-      }
-      hits.push({ snippet });
+      // Relative offset of the match within the snippet string
+      const relIdx = idx - a;
+      hits.push({
+        before: raw.slice(0, relIdx),
+        match: raw.slice(relIdx, relIdx + query.length),
+        after: raw.slice(relIdx + query.length),
+        ellipsisBefore: a > 0,
+        ellipsisAfter: b < c.length,
+      });
       searchFrom = idx + query.length;
     }
     if (hits.length > 0 || nameMatch) {
@@ -2254,28 +2249,61 @@ function vaultSearch(query) {
 }
 window.vaultSearch = vaultSearch;
 
+// ==== SIDEBAR SEARCH RENDERER ====
+// Builds result DOM entirely via createElement + textContent (no innerHTML injection).
 function runSidebarSearch(q) {
   const out = $('searchResults');
   q = q.trim();
   if (q.length < 2) {
-    out.innerHTML = '<div class="search-empty">Type to search.</div>';
+    out.textContent = '';
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = 'Type to search.';
+    out.appendChild(empty);
     return;
   }
   const results = vaultSearch(q);
+  out.textContent = ''; // clear previous results without innerHTML
   if (!results.length) {
-    out.innerHTML = `<div class="search-empty">No matches for "${escapeHtml(q)}".</div>`;
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = `No matches for "${q}".`;
+    out.appendChild(empty);
     return;
   }
-  out.innerHTML = results.map(r => `
-    <div class="search-result" data-file-idx="${r.fileIdx}">
-      <div class="sr-name">${escapeHtml(r.name)}</div>
-      ${r.hits.length > 0
-        ? r.hits.map(h => `<div class="sr-snip">${h.snippet}</div>`).join('')
-        : '<div class="sr-snip"><em>name match</em></div>'}
-    </div>
-  `).join('');
-  out.querySelectorAll('.search-result').forEach(el => {
-    el.addEventListener('click', () => { renderFile(parseInt(el.dataset.fileIdx)); switchSbPane('files'); });
+  results.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'search-result';
+    card.addEventListener('click', () => { renderFile(r.fileIdx); switchSbPane('files'); });
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'sr-name';
+    nameEl.textContent = r.name;
+    card.appendChild(nameEl);
+
+    if (r.hits.length > 0) {
+      r.hits.forEach(h => {
+        const snip = document.createElement('div');
+        snip.className = 'sr-snip';
+        if (h.ellipsisBefore) snip.appendChild(document.createTextNode('… '));
+        snip.appendChild(document.createTextNode(h.before));
+        const markEl = document.createElement('mark');
+        markEl.textContent = h.match;
+        snip.appendChild(markEl);
+        snip.appendChild(document.createTextNode(h.after));
+        if (h.ellipsisAfter) snip.appendChild(document.createTextNode(' …'));
+        card.appendChild(snip);
+      });
+    } else {
+      const snip = document.createElement('div');
+      snip.className = 'sr-snip';
+      const em = document.createElement('em');
+      em.textContent = 'name match';
+      snip.appendChild(em);
+      card.appendChild(snip);
+    }
+
+    out.appendChild(card);
   });
 }
 
@@ -2548,7 +2576,7 @@ async function openVault() {
         showToast(`Opened "${folderName}" — ${md.length} note${md.length === 1 ? '' : 's'}`);
       }
     } catch(e) {
-      if (e.name !== 'AbortError') { console.error(e); showToast('Could not open folder', 'error'); }
+      if (e.name !== 'AbortError') { showToast('Could not open folder', 'error'); }
     }
     return;
   }
@@ -2812,8 +2840,14 @@ function handleBlockquoteEnter(e) {
   const pos = ta.selectionStart;
   const val = ta.value;
 
-  // Find the start of the current line
+  // Find the start and end of the current line
   const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+  const lineEndRaw = val.indexOf('\n', pos);
+  const lineEnd = lineEndRaw < 0 ? val.length : lineEndRaw;
+  // Use the full line (not just up-to-cursor) to detect emptiness after prefix,
+  // so that a cursor sitting in the middle of "> " still triggers the exit path.
+  const fullLine = val.slice(lineStart, lineEnd);
+  // Also compute the cursor-relative line slice used for prefix detection
   const currentLine = val.slice(lineStart, pos);
 
   // Detect blockquote prefix: one or more ">", each optionally preceded by whitespace,
@@ -2823,7 +2857,8 @@ function handleBlockquoteEnter(e) {
   if (!prefixMatch) return; // not a blockquote line — let default Enter run
 
   const prefix = prefixMatch[1];
-  const body = currentLine.slice(prefix.length);
+  // Emptiness is determined against the full line (not just up-to-cursor slice)
+  const body = fullLine.slice(prefix.length);
 
   e.preventDefault();
 

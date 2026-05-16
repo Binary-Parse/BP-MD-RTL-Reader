@@ -110,4 +110,34 @@ function createStore(initial) {
   console.log('PASS: direction toggle logic correct');
 }
 
+// ============================================================
+// Test: State.zoomFactor — mutation and subscriber notification
+// ============================================================
+{
+  const { store, subscribe } = createStore({ zoomFactor: 1 });
+  const calls = [];
+  subscribe((key, val) => calls.push({ key, val }));
+
+  store.zoomFactor = 1.5;
+  assert.strictEqual(calls.length, 1, 'subscriber fires once for zoomFactor change');
+  assert.strictEqual(calls[0].key, 'zoomFactor', 'key is "zoomFactor"');
+  assert.strictEqual(calls[0].val, 1.5, 'value is 1.5');
+  assert.strictEqual(store.zoomFactor, 1.5, 'value retained in state');
+  console.log('PASS: State.zoomFactor mutation fires subscriber and retains value');
+}
+
+// ============================================================
+// Test: setZoom clamp logic
+// ============================================================
+{
+  function clampZoom(factor) {
+    return Math.min(2.0, Math.max(0.6, factor));
+  }
+  assert.strictEqual(clampZoom(0.1), 0.6,  'clamp below min returns 0.6');
+  assert.strictEqual(clampZoom(5.0), 2.0,  'clamp above max returns 2.0');
+  assert.strictEqual(clampZoom(1.0), 1.0,  'value in range returned as-is');
+  assert.strictEqual(clampZoom(1.5), 1.5,  'value in range returned as-is');
+  console.log('PASS: setZoom clamp logic [0.6, 2.0] correct');
+}
+
 console.log('\nAll state unit tests passed.');

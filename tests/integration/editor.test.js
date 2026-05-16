@@ -291,6 +291,85 @@ test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async
 });
 
 // =====================================================================
+// AC5 — Zoom shortcuts via keyboard
+// =====================================================================
+test('[AC5] Ctrl+= increases State.zoomFactor', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  const before = await page.evaluate(() => window._marqamState.zoomFactor);
+  await page.keyboard.press('Control+=');
+  await page.waitForTimeout(50);
+
+  const after = await page.evaluate(() => window._marqamState.zoomFactor);
+  expect(after).toBeGreaterThan(before);
+});
+
+test('[AC5] Ctrl+0 resets zoom to 1', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  // Zoom in first
+  await page.keyboard.press('Control+=');
+  await page.keyboard.press('Control+=');
+  await page.waitForTimeout(50);
+
+  // Reset
+  await page.keyboard.press('Control+0');
+  await page.waitForTimeout(50);
+
+  const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+  expect(factor).toBe(1);
+});
+
+test('[AC5] #statusbar zoom is unaffected after Ctrl+= zoom', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  await page.keyboard.press('Control+=');
+  await page.keyboard.press('Control+=');
+  await page.waitForTimeout(50);
+
+  const sbZoom = await page.evaluate(() => {
+    const sb = document.querySelector('.statusbar');
+    return window.getComputedStyle(sb).zoom;
+  });
+  // statusbar should not be affected — its zoom should be '1' or 'normal'
+  const editorFactor = await page.evaluate(() => window._marqamState.zoomFactor);
+  expect(editorFactor).toBeGreaterThan(1);
+  // statusbar must not inherit the editor zoom (it's outside #editorArea)
+  // Its computed zoom should be 1 (not > 1)
+  const parsed = parseFloat(sbZoom) || 1;
+  expect(parsed).toBeLessThanOrEqual(1);
+});
+
+// =====================================================================
+// AC8 — Select-All branching
+// =====================================================================
+test('[AC8] Ctrl+A in source mode selects all textarea text, not page body', async ({ page }) => {
+  await page.goto(FILE_URL);
+  await page.waitForSelector('.app', { state: 'visible' });
+
+  await injectAndRender(page, 'select-test.md', '# Title\n\nParagraph text.\n\nMore content.');
+
+  await page.evaluate(() => window.setEditorMode('source'));
+  await page.waitForTimeout(100);
+
+  // Focus textarea
+  await page.click('#srcTextarea');
+  await page.waitForTimeout(50);
+
+  await page.keyboard.press('Control+a');
+  await page.waitForTimeout(100);
+
+  const textareaSelected = await page.evaluate(() => {
+    const ta = document.getElementById('srcTextarea');
+    return ta.selectionStart === 0 && ta.selectionEnd === ta.value.length && ta.value.length > 0;
+  });
+  expect(textareaSelected).toBe(true);
+});
+
+// =====================================================================
 // T4 — Find-hit click navigation: clicking a mark updates State.findIdx
 // =====================================================================
 test('[T4] clicking second mark.find-hit sets State.findIdx to 1', async ({ page }) => {

@@ -170,6 +170,7 @@ body {
   font-weight: 500;
   white-space: nowrap;
   max-width: 200px;
+  min-width: 0;
   position: relative;
 }
 .tab:hover { color: var(--ink); background: var(--paper-edge); }
@@ -181,12 +182,20 @@ body {
   margin-bottom: -1px;
   z-index: 1;
 }
+.tab-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .tab .close {
   width: 16px; height: 16px;
   display: grid; place-items: center;
   border-radius: 3px;
   font-size: 14px;
   color: var(--ink-mute);
+  flex: 0 0 auto;
 }
 .tab .close:hover { background: var(--rule); color: var(--ink); }
 .tab.dirty .close { color: var(--accent); }
@@ -532,7 +541,7 @@ body {
   color: var(--ink-mute);
   font-size: 14px;
 }
-.search-results { font-size: 12px; }
+.search-results { font-size: 12px; overflow-wrap: anywhere; }
 .search-result {
   padding: 8px 10px;
   border-bottom: 1px dashed var(--rule);
@@ -556,6 +565,7 @@ body {
   color: var(--accent);
   padding: 0 2px;
   border-radius: 2px;
+  unicode-bidi: isolate;
 }
 .search-empty {
   font-size: 12px;
@@ -2002,21 +2012,38 @@ function runFind(q) {
       State.findIdx = idx;
       mark.classList.add('current');
       $('findInfo').textContent = `${idx + 1}/${State.findHits.length}`;
-      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Bug 6 fix: scroll only within the preview-pane container so statusbar never shifts
+      scrollMarkIntoPane(mark);
     });
   });
   if (State.findHits.length) {
     State.findHits[0].classList.add('current');
-    State.findHits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    scrollMarkIntoPane(State.findHits[0]);
   }
   $('findInfo').textContent = `${State.findHits.length ? 1 : 0}/${State.findHits.length}`;
 }
+
+// Bug 6 fix: manual scrollTop arithmetic confined to the .preview-pane scroll container.
+// This prevents document-level scrollIntoView from shifting the statusbar.
+function scrollMarkIntoPane(mark) {
+  const scrollEl = document.querySelector('.preview-pane');
+  if (!scrollEl) {
+    mark.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return;
+  }
+  const markRect = mark.getBoundingClientRect();
+  const paneRect = scrollEl.getBoundingClientRect();
+  const markTop = markRect.top - paneRect.top + scrollEl.scrollTop;
+  scrollEl.scrollTop = markTop - scrollEl.clientHeight / 2;
+}
+
 function findStep(d) {
   if (!State.findHits.length) return;
   State.findHits[State.findIdx].classList.remove('current');
   State.findIdx = (State.findIdx + d + State.findHits.length) % State.findHits.length;
   State.findHits[State.findIdx].classList.add('current');
-  State.findHits[State.findIdx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  // Bug 6 fix: use contained scroll instead of scrollIntoView
+  scrollMarkIntoPane(State.findHits[State.findIdx]);
   $('findInfo').textContent = `${State.findIdx + 1}/${State.findHits.length}`;
 }
 
@@ -2082,13 +2109,16 @@ async function clipboardCopy(text) {
 }
 
 function execEditCmd(cmd) {
+  // Bug 5 fix: capture activeElement BEFORE closeMenu() — closeMenu() triggers blur on
+  // the focused element, making document.activeElement resolve to body after the call.
+  const _savedEl = document.activeElement;
   closeMenu();
-  const ae = document.activeElement;
-  const inTextField = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT');
+  const inTextField = _savedEl && (_savedEl.tagName === 'TEXTAREA' || _savedEl.tagName === 'INPUT');
 
   if (cmd === 'undo' || cmd === 'redo') {
     // Undo/Redo: retain execCommand only for textarea (reliable in Chromium for textarea)
     if (inTextField) {
+      _savedEl.focus();
       try { document.execCommand(cmd); } catch(e) {}
     }
     return;
@@ -2096,7 +2126,8 @@ function execEditCmd(cmd) {
 
   if (cmd === 'selectAll') {
     if (inTextField) {
-      ae.select();
+      _savedEl.focus();
+      _savedEl.select();
     } else if (State.editorMode === 'live' || State.editorMode === 'split') {
       const sel = window.getSelection();
       if (sel && noteContent) {
@@ -2113,31 +2144,29 @@ function execEditCmd(cmd) {
   }
 
   if (cmd === 'copy') {
-    const ae2 = document.activeElement;
     let txt = '';
-    if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
-      txt = ae2.value.substring(ae2.selectionStart, ae2.selectionEnd);
+    if (_savedEl && (_savedEl.tagName === 'INPUT' || _savedEl.tagName === 'TEXTAREA')) {
+      txt = _savedEl.value.substring(_savedEl.selectionStart, _savedEl.selectionEnd);
     } else {
       txt = window.getSelection().toString();
     }
-    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Copy failed', 'err'));
+    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Copy failed', 'error'));
     return;
   }
 
   if (cmd === 'cut') {
-    const ae2 = document.activeElement;
     let txt = '';
-    if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
-      txt = ae2.value.substring(ae2.selectionStart, ae2.selectionEnd);
+    if (_savedEl && (_savedEl.tagName === 'INPUT' || _savedEl.tagName === 'TEXTAREA')) {
+      txt = _savedEl.value.substring(_savedEl.selectionStart, _savedEl.selectionEnd);
     } else {
       txt = window.getSelection().toString();
     }
-    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Copy failed', 'err'));
-    if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
-      const s = ae2.selectionStart, e = ae2.selectionEnd;
-      ae2.value = ae2.value.slice(0, s) + ae2.value.slice(e);
-      ae2.selectionStart = ae2.selectionEnd = s;
-      ae2.dispatchEvent(new Event('input', { bubbles: true }));
+    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Cut failed', 'error'));
+    if (_savedEl && (_savedEl.tagName === 'INPUT' || _savedEl.tagName === 'TEXTAREA')) {
+      const s = _savedEl.selectionStart, e = _savedEl.selectionEnd;
+      _savedEl.value = _savedEl.value.slice(0, s) + _savedEl.value.slice(e);
+      _savedEl.selectionStart = _savedEl.selectionEnd = s;
+      _savedEl.dispatchEvent(new Event('input', { bubbles: true }));
     } else {
       showToast('Cut not supported in preview', 'info');
     }
@@ -2146,17 +2175,19 @@ function execEditCmd(cmd) {
 
   if (cmd === 'paste') {
     if (!navigator.clipboard || !navigator.clipboard.readText) {
-      showToast('Paste not supported in this context', 'err'); return;
+      showToast('Paste not supported in this context', 'info'); return;
     }
+    // Capture the saved element in closure before the async gap
+    const targetEl = _savedEl;
     navigator.clipboard.readText().then(txt => {
-      const ae2 = document.activeElement;
-      if (ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA')) {
-        const s = ae2.selectionStart, e = ae2.selectionEnd;
-        ae2.value = ae2.value.slice(0, s) + txt + ae2.value.slice(e);
-        ae2.selectionStart = ae2.selectionEnd = s + txt.length;
-        ae2.dispatchEvent(new Event('input', { bubbles: true }));
+      if (targetEl && (targetEl.tagName === 'INPUT' || targetEl.tagName === 'TEXTAREA')) {
+        targetEl.focus();
+        const s = targetEl.selectionStart, e = targetEl.selectionEnd;
+        targetEl.value = targetEl.value.slice(0, s) + txt + targetEl.value.slice(e);
+        targetEl.selectionStart = targetEl.selectionEnd = s + txt.length;
+        targetEl.dispatchEvent(new Event('input', { bubbles: true }));
       }
-    }).catch(() => showToast('Paste failed', 'err'));
+    }).catch(() => showToast('Paste failed', 'error'));
     return;
   }
 }
@@ -2290,6 +2321,7 @@ function renderTabs() {
   State.files.forEach((f, i) => {
     const tab = document.createElement('div');
     tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '');
+    tab.title = f.name;
     const closeIcon = f.dirty ? '●' : '×';
     tab.innerHTML = `<span class="tab-name">${escapeHtml(f.name)}</span><span class="close">${closeIcon}</span>`;
     tab.querySelector('.close').addEventListener('click', e => { e.stopPropagation(); closeTab(i); });
@@ -2494,6 +2526,33 @@ function filterByTag(tag) {
 // =====================================================================
 async function openVault() {
   closeMenu();
+  // Branch 1: Electron IPC path — preferred in packaged builds (Bug 1 / AC1)
+  if (window.electronAPI && typeof window.electronAPI.openFolder === 'function') {
+    try {
+      const result = await window.electronAPI.openFolder();
+      if (result.canceled || !result.folderPath) return;
+      const folderPath = result.folderPath;
+      const entries = await window.electronAPI.readVault(folderPath);
+      const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
+      State.vaultName = folderName;
+      const md = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false }));
+      State.files = md;
+      $('vaultName').textContent = folderName;
+      $('vaultName').classList.remove('empty');
+      $('sbVault').textContent = `folder: ${folderName}`;
+      if (md.length === 0) {
+        showToast('Folder opened — no .md files found', 'info');
+      } else {
+        renderTree(md);
+        renderFile(0);
+        showToast(`Opened "${folderName}" — ${md.length} note${md.length === 1 ? '' : 's'}`);
+      }
+    } catch(e) {
+      if (e.name !== 'AbortError') { console.error(e); showToast('Could not open folder', 'error'); }
+    }
+    return;
+  }
+  // Branch 2: File System Access API (browser / dev mode)
   if ('showDirectoryPicker' in window) {
     try {
       const handle = await window.showDirectoryPicker();
@@ -2739,6 +2798,51 @@ function onSourceInput() {
   }, 150);
 }
 srcTextarea.addEventListener('input', onSourceInput);
+
+// Bug 7 fix: blockquote Enter handling.
+// - Empty blockquote line (body is whitespace-only): strip prefix, place cursor on blank line.
+// - Non-empty blockquote line: continue with the > prefix on the next line.
+// Only fires when cursor is on a blockquote line. Non-blockquote Enter passes through unmodified.
+function handleBlockquoteEnter(e) {
+  // Guard: ignore IME composition (prevents double-handling on CJK/Arabic input)
+  if (e.isComposing) return;
+  if (e.key !== 'Enter' || e.shiftKey) return;
+
+  const ta = srcTextarea;
+  const pos = ta.selectionStart;
+  const val = ta.value;
+
+  // Find the start of the current line
+  const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+  const currentLine = val.slice(lineStart, pos);
+
+  // Detect blockquote prefix: one or more > characters possibly preceded by whitespace
+  const prefixMatch = /^(\s*>+\s*)/.exec(currentLine);
+  if (!prefixMatch) return; // not a blockquote line — let default Enter run
+
+  const prefix = prefixMatch[1];
+  const body = currentLine.slice(prefix.length);
+
+  e.preventDefault();
+
+  if (body.trim() === '') {
+    // Empty blockquote line: strip the prefix, insert a blank non-blockquote line
+    const before = val.slice(0, lineStart);
+    const after = val.slice(pos);
+    ta.value = before + '\n' + after;
+    ta.selectionStart = ta.selectionEnd = lineStart + 1;
+  } else {
+    // Non-empty blockquote line: continue with the same prefix on the next line
+    const before = val.slice(0, pos);
+    const after = val.slice(pos);
+    ta.value = before + '\n' + prefix + after;
+    ta.selectionStart = ta.selectionEnd = pos + 1 + prefix.length;
+  }
+
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+srcTextarea.addEventListener('keydown', handleBlockquoteEnter);
 
 srcTextarea.addEventListener('keyup', () => {
   const pos = srcTextarea.selectionStart;

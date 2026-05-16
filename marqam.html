@@ -344,9 +344,39 @@ body {
   position: relative;
   direction: ltr;
 }
-.app-body.no-sidebar { grid-template-columns: 0 1fr 280px; }
+/* CSS Grid with display:none children leaves the remaining items to flow into
+   the first available columns. So the column tracks must match the count of
+   *visible* children, not the count of declared columns. */
+.app-body.no-sidebar { grid-template-columns: 1fr 280px; }
 .app-body.no-inspector { grid-template-columns: 240px 1fr; }
-.app-body.no-sidebar.no-inspector { grid-template-columns: 0 1fr; }
+.app-body.no-sidebar.no-inspector { grid-template-columns: 1fr; }
+
+/* Floating reveal strips: shown ONLY when matching panel is hidden. The strips
+   sit on the inside edge of the editor area so the user can re-open the panel
+   without going to the top bar. */
+.reveal-strip {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 60px;
+  display: none;            /* hidden by default */
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-edge);
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  z-index: 10;
+  transition: background 0.15s, color 0.15s;
+}
+.reveal-strip:hover { background: var(--accent); color: white; }
+.reveal-sidebar  { left: 0;  border-left: none;  border-radius: 0 6px 6px 0; }
+.reveal-inspector { right: 0; border-right: none; border-radius: 6px 0 0 6px; }
+.app-body.no-sidebar .reveal-sidebar { display: flex; }
+.app-body.no-inspector .reveal-inspector { display: flex; }
 
 .sidebar {
   background: var(--paper-deep);
@@ -1341,7 +1371,7 @@ html.electron .tab-add {
   <!-- TITLEBAR -->
   <div class="titlebar">
     <div class="tb-brand">
-      <button class="tb-menu-btn" id="menuBtn" title="Toggle Sidebar">≡</button>
+      <span class="tb-brand-mark">◆</span>
       <span class="tb-brand-name">Marqam</span>
     </div>
 
@@ -1387,8 +1417,13 @@ html.electron .tab-add {
   <!-- APP BODY -->
   <div class="app-body" id="appBody">
 
+    <!-- Floating reveal strips: only visible when the matching panel is hidden -->
+    <button class="reveal-strip reveal-sidebar" id="showSidebarStrip" title="Show sidebar (Ctrl+\)">›</button>
+    <button class="reveal-strip reveal-inspector" id="showInspectorStrip" title="Show inspector (Ctrl+Shift+I)">‹</button>
+
     <aside class="sidebar">
       <div class="sb-header">
+        <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)">‹</button>
         <div class="sb-vault-name empty" id="vaultName">No folder opened</div>
         <div class="sb-actions">
           <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…">⌂</button>
@@ -1513,6 +1548,7 @@ html.electron .tab-add {
 
     <aside class="inspector">
       <div class="insp-header">
+        <button class="sb-icon-btn insp-toggle" id="inspectorToggleBtn" title="Hide inspector (Ctrl+Shift+I)">›</button>
         <span class="insp-title">Inspector</span>
       </div>
       <div class="insp-content">
@@ -1791,9 +1827,38 @@ function closeModal() { modalOverlay.classList.remove('open'); }
 function showShortcuts() {
   closeMenu();
   const groups = [
-    ['File', [['Open Folder…','Ctrl+Shift+O'],['Open File…','Ctrl+O'],['New Note','Ctrl+N'],['Save','Ctrl+S'],['Close Tab','Ctrl+W']]],
-    ['View', [['Toggle Sidebar','Ctrl+\\'],['Toggle Inspector','Ctrl+Shift+I'],['Cycle Theme','Ctrl+Shift+D'],['Flip Direction','Ctrl+Shift+L'],['Command Palette','Ctrl+K']]],
-    ['Edit', [['Bold','Ctrl+B'],['Italic','Ctrl+I'],['Find','Ctrl+F']]],
+    ['File', [
+      ['Open Folder…','Ctrl+Shift+O'],
+      ['Open File…','Ctrl+O'],
+      ['New Note','Ctrl+N'],
+      ['New Daily Note','Ctrl+Shift+N'],
+      ['Save','Ctrl+S'],
+      ['Save As…','Ctrl+Shift+S'],
+      ['Close Tab','Ctrl+W']
+    ]],
+    ['Edit', [
+      ['Undo','Ctrl+Z'],
+      ['Redo','Ctrl+Y'],
+      ['Cut','Ctrl+X'],
+      ['Copy','Ctrl+C'],
+      ['Paste','Ctrl+V'],
+      ['Select All','Ctrl+A'],
+      ['Find','Ctrl+F'],
+      ['Bold','Ctrl+B'],
+      ['Italic','Ctrl+I'],
+      ['Link','Ctrl+L'],
+      ['Wikilink','Ctrl+K Ctrl+W']
+    ]],
+    ['View', [
+      ['Toggle Sidebar','Ctrl+\\'],
+      ['Toggle Inspector','Ctrl+Shift+I'],
+      ['Cycle Theme','Ctrl+Shift+D'],
+      ['Flip Direction','Ctrl+Shift+L'],
+      ['Zoom In','Ctrl+='],
+      ['Zoom Out','Ctrl+-'],
+      ['Reset Zoom','Ctrl+0'],
+      ['Command Palette','Ctrl+K']
+    ]],
     ['Help', [['Keyboard Shortcuts','Ctrl+/']]]
   ];
   let html = '';
@@ -1982,6 +2047,31 @@ function runFind(q) {
   });
   noteContent.normalize();
   State.findHits = [];
+  State.findSourceMatches = [];  // positions for source mode
+
+  // Source mode: search inside the textarea, since the preview is hidden.
+  if (State.editorMode === 'source') {
+    if (!q) { $('findInfo').textContent = '0/0'; return; }
+    const re = new RegExp(escapeReg(q), 'gi');
+    const val = srcTextarea.value;
+    let m, matches = [];
+    while ((m = re.exec(val)) !== null) {
+      matches.push({ start: m.index, end: m.index + m[0].length });
+      if (m.index === re.lastIndex) re.lastIndex++; // safety
+    }
+    State.findSourceMatches = matches;
+    State.findIdx = 0;
+    if (matches.length) {
+      srcTextarea.focus();
+      srcTextarea.setSelectionRange(matches[0].start, matches[0].end);
+      // Scroll the textarea to keep the selection visible without moving the
+      // statusbar — textareas handle this natively when setSelectionRange runs
+      // on a focused element, so no extra work needed.
+    }
+    $('findInfo').textContent = `${matches.length ? 1 : 0}/${matches.length}`;
+    return;
+  }
+
   if (!q) { $('findInfo').textContent = '0/0'; return; }
   const re = new RegExp(escapeReg(q), 'gi');
   const walker = document.createTreeWalker(noteContent, NodeFilter.SHOW_TEXT, null);
@@ -2040,6 +2130,17 @@ function scrollMarkIntoPane(mark) {
 }
 
 function findStep(d) {
+  // Source mode: navigate textarea match positions
+  if (State.editorMode === 'source') {
+    const matches = State.findSourceMatches || [];
+    if (!matches.length) return;
+    State.findIdx = (State.findIdx + d + matches.length) % matches.length;
+    const m = matches[State.findIdx];
+    srcTextarea.focus();
+    srcTextarea.setSelectionRange(m.start, m.end);
+    $('findInfo').textContent = `${State.findIdx + 1}/${matches.length}`;
+    return;
+  }
   if (!State.findHits.length) return;
   State.findHits[State.findIdx].classList.remove('current');
   State.findIdx = (State.findIdx + d + State.findHits.length) % State.findHits.length;
@@ -3092,7 +3193,10 @@ document.addEventListener('keydown', e => {
 // =====================================================================
 // EVENT WIRING
 // =====================================================================
-$('menuBtn').addEventListener('click', toggleSidebar);
+$('sidebarToggleBtn').addEventListener('click', toggleSidebar);
+$('inspectorToggleBtn').addEventListener('click', toggleInspector);
+$('showSidebarStrip').addEventListener('click', toggleSidebar);
+$('showInspectorStrip').addEventListener('click', toggleInspector);
 $('themeBtn').addEventListener('click', cycleTheme);
 $('rtlBtn').addEventListener('click', toggleRTL);
 $('tabAddBtn').addEventListener('click', newNote);

@@ -53,11 +53,19 @@ async function injectSample(page) {
 // 1 — Titlebar buttons
 // ===========================================================================
 test.describe('[CA1] Titlebar buttons', () => {
-  test('menuBtn toggles sidebar visibility state', async ({ page }) => {
+  test('sidebarToggleBtn toggles sidebar visibility state', async ({ page }) => {
     await goto(page);
     const before = await page.evaluate(() => window._marqamState.sidebarVisible);
-    await page.click('#menuBtn');
+    await page.click('#sidebarToggleBtn');
     const after = await page.evaluate(() => window._marqamState.sidebarVisible);
+    expect(after).toBe(!before);
+  });
+
+  test('inspectorToggleBtn toggles inspector visibility state', async ({ page }) => {
+    await goto(page);
+    const before = await page.evaluate(() => window._marqamState.inspectorVisible);
+    await page.click('#inspectorToggleBtn');
+    const after = await page.evaluate(() => window._marqamState.inspectorVisible);
     expect(after).toBe(!before);
   });
 
@@ -397,10 +405,10 @@ test.describe('[CA10] View menu zoom controls', () => {
     expect(zR).toBe(1);
   });
 
-  test('toggleSidebar via menuBtn click flips sidebarVisible', async ({ page }) => {
+  test('toggleSidebar via sidebarToggleBtn click flips sidebarVisible', async ({ page }) => {
     await goto(page);
     const b = await page.evaluate(() => window._marqamState.sidebarVisible);
-    await page.click('#menuBtn');
+    await page.click('#sidebarToggleBtn');
     const a = await page.evaluate(() => window._marqamState.sidebarVisible);
     expect(a).toBe(!b);
   });
@@ -587,7 +595,7 @@ test.describe('[CA18] Global pageerror sweep', () => {
     page.on('pageerror', e => errors.push({ id: 'unknown', msg: e.message }));
     await goto(page);
     const ids = [
-      'menuBtn', 'themeBtn', 'rtlBtn', 'tabAddBtn', 'searchBtn',
+      'sidebarToggleBtn', 'inspectorToggleBtn', 'themeBtn', 'rtlBtn', 'tabAddBtn', 'searchBtn',
       'wbOpenVault', 'wbOpenFile', 'wbNewNote', 'wbLoadDemo',
       'sbOpenVaultBtn', 'sbOpenFileBtn', 'sbNewNoteBtn',
       'modeLive', 'modeSplit', 'modeSource',

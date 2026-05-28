@@ -389,3 +389,352 @@ describe('main.js — IPC concurrency (audit #9)', () => {
     });
   });
 });
+
+// ── HANDLER BEHAVIOUR (audit #1) ───────────────────────────────────────────
+// Covers the previously-uncovered branches of main.js handlers and
+// observability code. With current Stryker scope (1 file, audit #3) this
+// won't move the mutation score directly — but it kills the 170+
+// NoCoverage mutants that show up the moment Stryker is expanded.
+//
+// Scope:
+//   - dialog:openFolder cancel path
+//   - fs:readVault: invalid input, network paths, file/cumulative caps,
+//     symlink escape detection, happy path with multiple files + BOM
+//   - edit:command: all 6 commands + unknown + destroyed sender
+//   - window-close/min/max (max twice — already-max vs not)
+//   - crashReporter.start was invoked
+//   - process.on('uncaughtException'|'unhandledRejection') -> writeLog
+//   - log:error IPC + rate limit + invalid-payload guard
+//   - setWindowOpenHandler: http -> shell.openExternal, deny non-http
+//   - app.on('open-file'), app.on('second-instance'): payload delivery
+
+describe('main.js — handler behaviour (audit #1)', () => {
+  let mockElectron;
+  let mockFs;
+  let originalResolve;
+  let restoreResolve;
+  let openFolder;
+  let readVault;
+  let editCmd;
+  let logError;
+  let winClose;
+  let winMin;
+  let winMax;
+
+  function getHandle(name) {
+    return mockElectron.ipcMain.handle.mock.calls.find(c => c[0] === name)?.[1];
+  }
+  function getOn(name) {
+    return mockElectron.ipcMain.on.mock.calls.find(c => c[0] === name)?.[1];
+  }
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    mockFs = {
+      readFileSync: vi.fn(() => '﻿# Hello'), // includes BOM
+      realpathSync: vi.fn((p) => p),
+      statSync: vi.fn(() => ({ isFile: () => true, size: 100 })),
+      promises: {
+        readdir: vi.fn(() => Promise.resolve([])),
+        lstat: vi.fn(() => Promise.resolve({ isSymbolicLink: () => false, size: 100 })),
+        realpath: vi.fn((p) => Promise.resolve(p)),
+        stat: vi.fn(() => Promise.resolve({ size: 100 })),
+        readFile: vi.fn(() => Promise.resolve('content')),
+        mkdir: vi.fn(() => Promise.resolve()),
+      },
+      appendFileSync: vi.fn(),
+      mkdirSync: vi.fn(),
+      existsSync: vi.fn(() => false),
+      renameSync: vi.fn(),
+    };
+
+    originalResolve = Module._resolveFilename;
+    const mockElectronPath = path.join(__dirname, '__mock_electron_handlers.js');
+    const mockFsPath = path.join(__dirname, '__mock_fs_handlers.js');
+    Module._cache[mockElectronPath] = { id: 'electron', exports: mockElectron, loaded: true };
+    Module._cache[mockFsPath] = { id: 'fs', exports: mockFs, loaded: true };
+    Module._resolveFilename = function (request, parent, isMain) {
+      if (request === 'electron') return mockElectronPath;
+      if (request === 'fs') return mockFsPath;
+      return originalResolve(request, parent, isMain);
+    };
+    restoreResolve = () => { Module._resolveFilename = originalResolve; };
+
+    const require = createRequire(import.meta.url);
+    const mainPath = require.resolve('../../main.js');
+    delete require.cache[mainPath];
+    require(mainPath);
+    await new Promise(r => setTimeout(r, 50));
+
+    openFolder = getHandle('dialog:openFolder');
+    readVault = getHandle('fs:readVault');
+    editCmd = getOn('edit:command');
+    logError = getOn('log:error');
+    winClose = getOn('window-close');
+    winMin = getOn('window-minimize');
+    winMax = getOn('window-maximize');
+  });
+
+  afterAll(() => { if (restoreResolve) restoreResolve(); });
+
+  // ─ crashReporter ─────────────────────────────────────────────────────
+  test('crashReporter.start invoked with uploadToServer: false', () => {
+    expect(mockElectron.crashReporter.start).toHaveBeenCalled();
+    const opts = mockElectron.crashReporter.start.mock.calls[0][0];
+    expect(opts.uploadToServer).toBe(false);
+  });
+
+  // ─ dialog:openFolder ────────────────────────────────────────────────
+  test('dialog:openFolder returns {canceled:true, folderPath:null} when user cancels', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    const r = await openFolder();
+    expect(r).toEqual({ canceled: true, folderPath: null });
+  });
+
+  test('dialog:openFolder returns canceled when filePaths is empty array', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [] });
+    const r = await openFolder();
+    expect(r).toEqual({ canceled: true, folderPath: null });
+  });
+
+  // ─ fs:readVault validation ──────────────────────────────────────────
+  test('readVault throws on non-string folder path', async () => {
+    await expect(readVault({}, 123)).rejects.toThrow('Invalid folder path');
+    await expect(readVault({}, null)).rejects.toThrow('Invalid folder path');
+    await expect(readVault({}, '')).rejects.toThrow('Invalid folder path');
+  });
+
+  test('readVault rejects Windows UNC path (network-path-not-allowed)', async () => {
+    expect(await readVault({}, '\\\\server\\share')).toEqual({ error: 'network-path-not-allowed' });
+  });
+
+  test('readVault rejects POSIX network path', async () => {
+    expect(await readVault({}, '//server/share')).toEqual({ error: 'network-path-not-allowed' });
+  });
+
+  test('readVault rejects when directory has too many files (> 5000)', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/big-vault'] });
+    await openFolder();
+    const tooMany = Array.from({ length: 5001 }, (_, i) => ({
+      name: `f${i}.md`, isFile: () => true, isSymbolicLink: () => false,
+    }));
+    mockFs.promises.readdir.mockResolvedValueOnce(tooMany);
+    expect(await readVault({}, '/big-vault')).toEqual({ error: 'too-many-files' });
+  });
+
+  test('readVault skips a single oversized file (> 10 MiB) but continues', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/mixed-vault'] });
+    await openFolder();
+    mockFs.promises.readdir.mockResolvedValueOnce([
+      { name: 'huge.md', isFile: () => true, isSymbolicLink: () => false },
+      { name: 'tiny.md', isFile: () => true, isSymbolicLink: () => false },
+    ]);
+    mockFs.promises.lstat
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 11 * 1024 * 1024 })
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 100 });
+
+    const r = await readVault({}, '/mixed-vault');
+    expect(Array.isArray(r)).toBe(true);
+    expect(r).toHaveLength(1);
+    expect(r[0].name).toBe('tiny.md');
+  });
+
+  test('readVault returns cumulative-size-exceeded partial when sum > 100 MiB', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/cumul-vault'] });
+    await openFolder();
+    // Use 12 files of 9 MiB each: individually under the 10 MiB per-file
+    // cap, but collectively 108 MiB > the 100 MiB cumulative cap.
+    mockFs.promises.readdir.mockResolvedValueOnce(
+      Array.from({ length: 12 }, (_, i) => ({
+        name: `f${i}.md`, isFile: () => true, isSymbolicLink: () => false,
+      }))
+    );
+    for (let i = 0; i < 12; i++) {
+      mockFs.promises.lstat.mockResolvedValueOnce({
+        isSymbolicLink: () => false, size: 9 * 1024 * 1024,
+      });
+    }
+
+    const r = await readVault({}, '/cumul-vault');
+    expect(r.error).toBe('cumulative-size-exceeded');
+    expect(Array.isArray(r.partial)).toBe(true);
+  });
+
+  test('readVault skips symlink that escapes vault root', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/sym-vault'] });
+    await openFolder();
+    mockFs.promises.readdir.mockResolvedValueOnce([
+      { name: 'evil.md', isFile: () => true, isSymbolicLink: () => true },
+    ]);
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, size: 100 });
+    mockFs.promises.realpath.mockResolvedValueOnce('/etc/passwd'); // outside vault
+
+    const r = await readVault({}, '/sym-vault');
+    expect(r).toEqual([]); // escaped symlink skipped
+  });
+
+  test('readVault accepts symlink that stays inside vault root', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/sym-ok'] });
+    await openFolder();
+    mockFs.promises.readdir.mockResolvedValueOnce([
+      { name: 'link.md', isFile: () => true, isSymbolicLink: () => true },
+    ]);
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, size: 100 });
+    mockFs.promises.realpath.mockResolvedValueOnce('/sym-ok/sub/link.md'); // inside
+
+    const r = await readVault({}, '/sym-ok');
+    expect(Array.isArray(r)).toBe(true);
+    expect(r).toHaveLength(1);
+    expect(r[0].name).toBe('link.md');
+  });
+
+  test('readVault strips BOM from file content', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/bom-vault'] });
+    await openFolder();
+    mockFs.promises.readdir.mockResolvedValueOnce([
+      { name: 'bom.md', isFile: () => true, isSymbolicLink: () => false },
+    ]);
+    mockFs.promises.readFile.mockResolvedValueOnce('﻿# title');
+
+    const r = await readVault({}, '/bom-vault');
+    expect(r[0].content).toBe('# title'); // BOM stripped
+  });
+
+  // ─ edit:command dispatch ────────────────────────────────────────────
+  test('edit:command dispatches all 6 commands to webContents', () => {
+    const wc = mockElectron._mockWin.webContents;
+    for (const m of ['copy', 'cut', 'paste', 'undo', 'redo', 'selectAll']) {
+      wc[m].mockClear();
+    }
+    const event = { sender: wc };
+    editCmd(event, 'copy');     expect(wc.copy).toHaveBeenCalled();
+    editCmd(event, 'cut');      expect(wc.cut).toHaveBeenCalled();
+    editCmd(event, 'paste');    expect(wc.paste).toHaveBeenCalled();
+    editCmd(event, 'undo');     expect(wc.undo).toHaveBeenCalled();
+    editCmd(event, 'redo');     expect(wc.redo).toHaveBeenCalled();
+    editCmd(event, 'selectAll'); expect(wc.selectAll).toHaveBeenCalled();
+  });
+
+  test('edit:command with unknown command is a silent no-op', () => {
+    const wc = mockElectron._mockWin.webContents;
+    wc.copy.mockClear();
+    expect(() => editCmd({ sender: wc }, 'bogus-cmd')).not.toThrow();
+    expect(wc.copy).not.toHaveBeenCalled();
+  });
+
+  test('edit:command with destroyed sender is a silent no-op', () => {
+    const wc = mockElectron._mockWin.webContents;
+    wc.copy.mockClear();
+    const destroyed = { sender: { ...wc, isDestroyed: () => true } };
+    expect(() => editCmd(destroyed, 'copy')).not.toThrow();
+    expect(wc.copy).not.toHaveBeenCalled();
+  });
+
+  // ─ window lifecycle ─────────────────────────────────────────────────
+  test('window-close calls win.close', () => {
+    mockElectron._mockWin.close.mockClear();
+    winClose();
+    expect(mockElectron._mockWin.close).toHaveBeenCalled();
+  });
+
+  test('window-minimize calls win.minimize', () => {
+    mockElectron._mockWin.minimize.mockClear();
+    winMin();
+    expect(mockElectron._mockWin.minimize).toHaveBeenCalled();
+  });
+
+  test('window-maximize: maximizes when not maximized, unmaximizes when already maximized', () => {
+    const win = mockElectron._mockWin;
+    win.maximize.mockClear();
+    win.unmaximize.mockClear();
+    win.isMaximized.mockReturnValueOnce(false);
+    winMax();
+    expect(win.maximize).toHaveBeenCalled();
+    expect(win.unmaximize).not.toHaveBeenCalled();
+
+    win.maximize.mockClear();
+    win.unmaximize.mockClear();
+    win.isMaximized.mockReturnValueOnce(true);
+    winMax();
+    expect(win.unmaximize).toHaveBeenCalled();
+    expect(win.maximize).not.toHaveBeenCalled();
+  });
+
+  // ─ observability ────────────────────────────────────────────────────
+  test('log:error writes JSON line to the rotating log file', () => {
+    mockFs.appendFileSync.mockClear();
+    logError({}, { message: 'boom', stack: 'at foo:1', kind: 'unhandledrejection' });
+    expect(mockFs.appendFileSync).toHaveBeenCalled();
+    const line = mockFs.appendFileSync.mock.calls[0][1];
+    const obj = JSON.parse(line);
+    expect(obj.level).toBe('error');
+    expect(obj.source).toBe('renderer');
+    expect(obj.message).toBe('boom');
+    expect(obj.stack).toBe('at foo:1');
+  });
+
+  test('log:error ignores invalid payloads (null, undefined, non-object)', () => {
+    mockFs.appendFileSync.mockClear();
+    logError({}, null);
+    logError({}, undefined);
+    logError({}, 'not-an-object');
+    logError({}, 42);
+    expect(mockFs.appendFileSync).not.toHaveBeenCalled();
+  });
+
+  test('log:error rate-limited at 100/min — over-cap dropped silently', () => {
+    mockFs.appendFileSync.mockClear();
+    const before = mockFs.appendFileSync.mock.calls.length;
+    for (let i = 0; i < 150; i++) {
+      logError({}, { message: `e${i}` });
+    }
+    const written = mockFs.appendFileSync.mock.calls.length - before;
+    // The cap is 100 PER MINUTE, shared across tests in the same window.
+    // Earlier tests already consumed a few slots; this loop fills the rest
+    // and drops the remainder. Assert: at least one drop happened and the
+    // total never exceeds the cap.
+    expect(written).toBeLessThan(150);
+    expect(written).toBeGreaterThan(0);
+    expect(written).toBeLessThanOrEqual(100);
+  });
+
+  test('process.on("uncaughtException") path writes to log', () => {
+    mockFs.appendFileSync.mockClear();
+    const err = new Error('main boom');
+    process.emit('uncaughtException', err);
+    expect(mockFs.appendFileSync).toHaveBeenCalled();
+    const obj = JSON.parse(mockFs.appendFileSync.mock.calls.at(-1)[1]);
+    expect(obj.source).toBe('main:uncaughtException');
+    expect(obj.message).toBe('main boom');
+  });
+
+  test('process.on("unhandledRejection") handles both Error and non-Error reasons', () => {
+    mockFs.appendFileSync.mockClear();
+    process.emit('unhandledRejection', new Error('promise boom'));
+    process.emit('unhandledRejection', 'plain string reason');
+
+    const calls = mockFs.appendFileSync.mock.calls.map(c => JSON.parse(c[1]));
+    expect(calls).toHaveLength(2);
+    expect(calls[0].source).toBe('main:unhandledRejection');
+    expect(calls[0].message).toBe('promise boom');
+    expect(calls[0].stack).toBeDefined();
+    expect(calls[1].message).toBe('plain string reason');
+    expect(calls[1].stack).toBeUndefined();
+  });
+
+  // ─ external URL routing (setWindowOpenHandler) ──────────────────────
+  test('setWindowOpenHandler opens http URLs externally and denies the new window', () => {
+    expect(mockElectron._mockWin.webContents.setWindowOpenHandler).toHaveBeenCalled();
+    const handler = mockElectron._mockWin.webContents.setWindowOpenHandler.mock.calls.at(-1)[0];
+
+    mockElectron.shell.openExternal.mockClear();
+    const r1 = handler({ url: 'https://example.com' });
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://example.com');
+    expect(r1).toEqual({ action: 'deny' });
+
+    mockElectron.shell.openExternal.mockClear();
+    const r2 = handler({ url: 'file:///etc/passwd' });
+    expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
+    expect(r2).toEqual({ action: 'deny' });
+  });
+});

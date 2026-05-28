@@ -1,14 +1,24 @@
 // Flat-config for ESLint 10 (security-focused).
-// Wires eslint-plugin-security + eslint-plugin-no-unsanitized.
+// Wires eslint-plugin-security + eslint-plugin-no-unsanitized + eslint-plugin-html
+// (the last monkey-patches ESLint at require-time to extract <script> blocks from
+// .html so SAST sees them — audit #11).
 // Run via: npm run lint:security
 
 import security from 'eslint-plugin-security';
 import noUnsanitized from 'eslint-plugin-no-unsanitized';
+import html from 'eslint-plugin-html';
 
 export default [
-  // Default: treat first-party JS as modern (ES2022)
+  // Activate the HTML plugin so <script> blocks in .html are extracted.
+  // Per README: just declare `plugins: { html }` on .html files; the plugin
+  // monkey-patches ESLint's Linter at load time and extracts scripts.
   {
-    files: ['main.js', 'preload.js', 'src/**/*.js'],
+    files: ['**/*.html'],
+    plugins: { html },
+  },
+  // First-party JS + extracted scripts from HTML
+  {
+    files: ['main.js', 'preload.js', 'src/**/*.js', '**/*.html'],
     plugins: {
       security,
       'no-unsanitized': noUnsanitized,

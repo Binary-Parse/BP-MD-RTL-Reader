@@ -1,0 +1,53 @@
+# Normalise line endings repo-wide.
+# Default: detect text vs binary; if text, store as LF in the repo and
+# check out using whatever the local platform / core.autocrlf wants.
+* text=auto
+
+# ── Explicit text-with-LF (must work on Linux CI runners) ──────────
+*.js          text eol=lf
+*.cjs         text eol=lf
+*.mjs         text eol=lf
+*.json        text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.md          text eol=lf
+*.html        text eol=lf
+*.css         text eol=lf
+*.sh          text eol=lf
+*.cfg         text eol=lf
+*.toml        text eol=lf
+Makefile      text eol=lf
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+
+# ── Windows-only scripts: keep CRLF ───────────────────────────────
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# ── Binary — never EOL-normalise, never diff as text ──────────────
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.ico         binary
+*.icns        binary
+*.svg         text eol=lf
+*.pdf         binary
+*.zip         binary
+*.gz          binary
+*.tar         binary
+*.exe         binary
+*.dll         binary
+*.so          binary
+*.dylib       binary
+*.AppImage    binary
+*.dmg         binary
+*.woff        binary
+*.woff2       binary
+*.ttf         binary
+*.otf         binary
+*.eot         binary
+
+# ── Lockfiles: text but don't show diffs in GitHub UI ─────────────
+package-lock.json  text eol=lf linguist-generated=true -diff

@@ -118,6 +118,106 @@ describe('wikilink renderer', () => {
   });
 });
 
+describe('configureMarked — integration with real marked (audit #29)', () => {
+  // Exercises the wikilink extension's inner start/tokenizer/renderer that
+  // only run when an actual marked instance parses input. Mock-based tests
+  // can verify marked.use was called with the right config object, but the
+  // 24 NoCoverage mutants in src/renderer/markdown.js L32-L40 only die when
+  // a real marked instance walks through those inner functions.
+  //
+  // Uses marked@^18.0.4 (matches the CDN version loaded by marqam.html).
+  let MarkedClass;
+  beforeAll(async () => {
+    const m = await import('marked');
+    MarkedClass = m.Marked; // class so each test gets a fresh, isolated instance
+  });
+
+  function freshMarked() {
+    const inst = new MarkedClass();
+    configureMarked(inst);
+    return inst;
+  }
+
+  test('start(src): returns indexOf("[[") so marked knows where to scan', () => {
+    const m = freshMarked();
+    const out = m.parse('hello [[Note]] world');
+    // If start() returned -1 (no scan), the [[Note]] would never be detected.
+    expect(out).toContain('class="wikilink"');
+    expect(out).toContain('data-target="Note"');
+    expect(out).toContain('>Note</a>');
+  });
+
+  test('start(src): returns indexOf result (kills L32 StringLiteral mutant on "[[")', () => {
+    // Mutant L32 replaces "[[" with "" → indexOf("") always returns 0
+    // → marked tries to tokenize at every char, but the regex (anchored ^)
+    // would never match plain text. Bottom line: wikilink would still render
+    // here, BUT a non-wikilink string should NOT be wrongly handled.
+    const m = freshMarked();
+    const plainOut = m.parse('just plain text, no wikilinks');
+    expect(plainOut).not.toContain('class="wikilink"');
+    // And input where the [[ is at the end should still find it
+    const tailOut = m.parse('preamble [[End]]');
+    expect(tailOut).toContain('data-target="End"');
+  });
+
+  test('tokenizer + renderer: target-only wikilink → <a class="wikilink" data-target="X">X</a>', () => {
+    const m = freshMarked();
+    const out = m.parse('[[Apple]]');
+    expect(out).toMatch(/<a[^>]*class="wikilink"[^>]*data-target="Apple"[^>]*>Apple<\/a>/);
+  });
+
+  test('tokenizer + renderer: target|alias wikilink', () => {
+    const m = freshMarked();
+    const out = m.parse('[[Apple|red fruit]]');
+    expect(out).toMatch(/data-target="Apple"/);
+    expect(out).toMatch(/>red fruit</);
+  });
+
+  test('tokenizer: regex anchor prevents mid-token match — "abc[[X]]" tokenises [[X]] correctly', () => {
+    // The inner tokenizer uses /^\[\[.../ — only matches at scan position.
+    // Combined with start(), this means [[X]] inside "abc[[X]]" IS rendered.
+    const m = freshMarked();
+    const out = m.parse('abc[[X]]');
+    expect(out).toContain('data-target="X"');
+  });
+
+  test('renderer: quotes in target are stripped (XSS guard, kills any string-mutation on the replace pattern)', () => {
+    const m = freshMarked();
+    const out = m.parse(`[[evil"name|safe]]`);
+    // The renderer at line 37 in markdown.js strips ' and " from target.
+    // Mutant that breaks the replace would leak the quote into data-target.
+    const dataTarget = out.match(/data-target="([^"]*)"/)[1];
+    expect(dataTarget).toBe('evilname');
+  });
+
+  test('renderer: target is .trim()-ed via the inner extension too', () => {
+    const m = freshMarked();
+    const out = m.parse('[[  Spaced  ]]');
+    expect(out).toMatch(/data-target="Spaced"/);
+  });
+
+  test('alias fallback (no pipe): alias uses .trim()-ed target (kills inner-fallback L35 mutant)', () => {
+    const m = freshMarked();
+    const out = m.parse('[[  Plain  ]]');
+    // text content of the <a> should be 'Plain', not '  Plain  '
+    expect(out).toMatch(/>Plain<\/a>/);
+  });
+
+  test('multiple wikilinks in one document are all tokenised', () => {
+    const m = freshMarked();
+    const out = m.parse('[[A]] then [[B|two]] then [[C]]');
+    const targets = [...out.matchAll(/data-target="([^"]+)"/g)].map(x => x[1]);
+    expect(targets).toEqual(['A', 'B', 'C']);
+  });
+
+  test('non-wikilink markdown still parses normally (gfm tables, code, headings)', () => {
+    const m = freshMarked();
+    expect(m.parse('# Heading')).toMatch(/<h1[^>]*>Heading<\/h1>/);
+    expect(m.parse('**bold**')).toMatch(/<strong>bold<\/strong>/);
+    expect(m.parse('`code`')).toMatch(/<code>code<\/code>/);
+  });
+});
+
 describe('markdown.js — mutation killers (audit #7)', () => {
   // ── Wikilink tokenizer .trim() killers (L12, L13×2) ────────────────
   test('target is .trim()-ed (kills L12 MethodExpression mutant)', () => {

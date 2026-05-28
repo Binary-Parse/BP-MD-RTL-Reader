@@ -96,6 +96,7 @@
     "istanbul-reports": "^3.2.0",
     "jscpd": "^4.2.4",
     "jsdom": "^29.1.1",
+    "marked": "^18.0.4",
     "v8-to-istanbul": "^9.3.0",
     "vitest": "^4.1.7"
   },

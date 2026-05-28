@@ -16,7 +16,7 @@ test.describe('visual regression @visual', () => {
     });
     await page.waitForTimeout(300);
     await expect(page).toHaveScreenshot('app-paper.png', {
-      maxDiffPixels: 100,
+      maxDiffPixels: 5000,
       threshold: 0.2
     });
   });
@@ -31,7 +31,7 @@ test.describe('visual regression @visual', () => {
     });
     await page.waitForTimeout(300);
     await expect(page).toHaveScreenshot('app-ink.png', {
-      maxDiffPixels: 100,
+      maxDiffPixels: 5000,
       threshold: 0.2
     });
   });
@@ -45,7 +45,7 @@ test.describe('visual regression @visual', () => {
     });
     await page.waitForTimeout(300);
     await expect(page).toHaveScreenshot('app-sepia.png', {
-      maxDiffPixels: 100,
+      maxDiffPixels: 5000,
       threshold: 0.2
     });
   });

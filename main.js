@@ -171,8 +171,30 @@ function registerIpcHandlers() {
   });
 
   // Renderer-side errors (window.onerror, unhandledrejection) → local log.
+  // Rate-limited (audit #27): a renderer error in a hot loop must not flood
+  // the main process. Counter resets every minute; over-cap messages are
+  // dropped, and a single "dropped N" summary is logged at the next rollover.
+  const LOG_RATE_LIMIT_PER_MIN = 100;
+  let logWindowStart = Date.now();
+  let logCount = 0;
+  let logDropped = 0;
   ipcMain.on('log:error', (_event, payload) => {
     if (!payload || typeof payload !== 'object') return;
+    const now = Date.now();
+    if (now - logWindowStart > 60_000) {
+      if (logDropped > 0) {
+        writeLog('warn', 'main:rateLimit',
+          `dropped ${logDropped} renderer log entries (cap ${LOG_RATE_LIMIT_PER_MIN}/min)`);
+      }
+      logWindowStart = now;
+      logCount = 0;
+      logDropped = 0;
+    }
+    if (logCount >= LOG_RATE_LIMIT_PER_MIN) {
+      logDropped++;
+      return;
+    }
+    logCount++;
     writeLog('error', 'renderer', payload.message, payload.stack);
   });
 }

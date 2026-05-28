@@ -118,6 +118,104 @@ describe('wikilink renderer', () => {
   });
 });
 
+describe('markdown.js — mutation killers (audit #7)', () => {
+  // ── Wikilink tokenizer .trim() killers (L12, L13×2) ────────────────
+  test('target is .trim()-ed (kills L12 MethodExpression mutant)', () => {
+    // Original: target: m[1].trim() — leading/trailing space removed
+    // Mutant `m[1]`: target keeps the spaces → 'foo' becomes '  foo  '
+    const tok = wikilinkTokenizer('[[  foo  ]]');
+    expect(tok).toBeDefined();
+    expect(tok.target).toBe('foo');
+  });
+
+  test('alias (explicit) is .trim()-ed (kills L13:14 MethodExpression mutant)', () => {
+    // Original: alias: m[2]?.trim() || ...
+    // Mutant `m[2]`: alias keeps the spaces
+    const tok = wikilinkTokenizer('[[foo|  bar  ]]');
+    expect(tok).toBeDefined();
+    expect(tok.alias).toBe('bar');
+  });
+
+  test('fallback alias (no pipe) is the .trim()-ed target (kills L13:30 mutant)', () => {
+    // Original: alias defaults to m[1].trim() when m[2] is absent or empty
+    // Mutant `m[1]` (no trim on fallback path): alias would be '  foo  '
+    const tok = wikilinkTokenizer('[[  foo  ]]');
+    expect(tok).toBeDefined();
+    expect(tok.alias).toBe('foo');
+  });
+
+  // ── configureMarked option-value killers (L27, L28, L31) ───────────
+  test('configureMarked passes gfm: true (kills L27 BooleanLiteral mutant)', () => {
+    const useFn = vi.fn();
+    configureMarked({ use: useFn });
+    const opts = useFn.mock.calls[0][0];
+    expect(opts.gfm).toBe(true);
+  });
+
+  test('configureMarked passes breaks: false (kills L28 BooleanLiteral mutant)', () => {
+    const useFn = vi.fn();
+    configureMarked({ use: useFn });
+    const opts = useFn.mock.calls[0][0];
+    expect(opts.breaks).toBe(false);
+  });
+
+  test('configureMarked wikilink extension has level: "inline" (kills L31 StringLiteral mutant)', () => {
+    const useFn = vi.fn();
+    configureMarked({ use: useFn });
+    const ext = useFn.mock.calls[0][0].extensions[0];
+    expect(ext.level).toBe('inline');
+  });
+
+  // ── parseMarkdown branch killers (L46, L49, L50) ───────────────────
+  test('parseMarkdown calls escapeHtml when marked is absent (kills L46 mutant)', () => {
+    // Original: escapeHtml ? escapeHtml(md) : String(md)
+    // Mutant `false`: always uses String(md), never invokes escapeHtml.
+    // Use a sentinel escapeHtml that returns a distinguishable string.
+    const customEscape = vi.fn(() => '__ESCAPED__');
+    const result = parseMarkdown('<x>', { escapeHtml: customEscape });
+    expect(customEscape).toHaveBeenCalledWith('<x>');
+    expect(result).toBe('__ESCAPED__');
+  });
+
+  test('parseMarkdown coerces null/undefined md to "" before marked.parse (kills L49 mutant)', () => {
+    // Original: marked.parse(md || '')
+    // Mutant: md || 'Stryker was here!' — null becomes the sentinel string.
+    const marked = { parse: vi.fn(() => '<p></p>') };
+    parseMarkdown(null, { marked });
+    expect(marked.parse).toHaveBeenCalledWith('');
+    parseMarkdown(undefined, { marked });
+    expect(marked.parse).toHaveBeenLastCalledWith('');
+  });
+
+  test('parseMarkdown does NOT touch DOMPurify when it is absent (kills L50 mutant)', () => {
+    // Original: if (DOMPurify && typeof DOMPurify.sanitize === 'function')
+    // Mutant `true`: always enters branch → accesses undefined.sanitize → TypeError.
+    // Original path returns raw marked output cleanly.
+    const marked = { parse: vi.fn(() => '<p>safe</p>') };
+    let result;
+    expect(() => { result = parseMarkdown('hello', { marked }); }).not.toThrow();
+    expect(result).toBe('<p>safe</p>');
+  });
+
+  test('parseMarkdown: marked.parse must be a function (kills L46 typeof-clause mutant)', () => {
+    // The L46 ConditionalExpression mutant likely replaces the second clause
+    // (typeof marked.parse !== 'function') with `false`, making the condition
+    // `!marked || false` = `!marked`. With an object whose .parse is NOT a
+    // function, original enters early-return; mutant tries to call a string.
+    expect(parseMarkdown('hello', { marked: { parse: 'not-a-function' } })).toBe('hello');
+  });
+
+  test('parseMarkdown: DOMPurify.sanitize must be a function (kills L50 typeof-clause mutant)', () => {
+    // The L50 mutant likely replaces (typeof DOMPurify.sanitize === 'function')
+    // with `true`, making `DOMPurify && true` = truthy when DOMPurify exists.
+    // With a DOMPurify whose .sanitize is NOT a function, original skips the
+    // branch and returns raw; mutant tries to call the string → throws.
+    const marked = { parse: vi.fn(() => '<p>raw</p>') };
+    expect(parseMarkdown('hello', { marked, DOMPurify: { sanitize: 'not-a-function' } }))
+      .toBe('<p>raw</p>');
+  });
+});
+
 describe('wikilinkTokenizer ReDoS defence (audit #19)', () => {
   // eslint-plugin-security flagged the wikilink regex as detect-unsafe-regex
   // due to lazy quantifiers on negated character classes. The classes exclude

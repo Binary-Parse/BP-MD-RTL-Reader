@@ -58,10 +58,8 @@ jobs:
       - name: E2E tests (Playwright, full sweep)
         run: npm run test:e2e
 
-      - name: Dependency audit (block on high+)
-        # Set --audit-level=moderate after the 2 known qs/typed-rest-client
-        # moderates are fixed (Gap #11 in AUDIT_REPORT_2026-05-28.md).
-        run: npm audit --audit-level=high
+      - name: Dependency audit (block on moderate+)
+        run: npm audit --audit-level=moderate
 
       - name: Upload Vitest coverage
         if: always()

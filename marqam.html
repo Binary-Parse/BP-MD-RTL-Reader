@@ -1614,11 +1614,45 @@ html.electron .tab-add {
 <script type="module">
 'use strict';
 
+import { isArabicHeavy, escapeHtml, escapeReg } from './src/renderer/i18n.js';
+import { THEMES, getNextTheme, clampZoom } from './src/renderer/theme.js';
+import { createState } from './src/renderer/state.js';
+import { vaultSearch as _vaultSearch } from './src/renderer/search.js';
+import { configureMarked, parseMarkdown as _parseMarkdown } from './src/renderer/markdown.js';
+
+// =====================================================================
+// OBSERVABILITY — renderer-side error capture (audit #25)
+// Forwards window.onerror + unhandledrejection to main process, which
+// writes them to <userData>/logs/marqam.log. Local-only. Optional-chain
+// against electronAPI so the page still works when opened outside
+// Electron (e.g. during Playwright file:// tests).
+// =====================================================================
+window.addEventListener('error', (e) => {
+  try {
+    window.electronAPI?.logError?.({
+      message: e.message,
+      stack: e.error?.stack,
+      source: e.filename,
+      line: e.lineno,
+      col: e.colno,
+    });
+  } catch (_) { /* never crash inside the crash handler */ }
+});
+window.addEventListener('unhandledrejection', (e) => {
+  try {
+    const reason = e.reason;
+    window.electronAPI?.logError?.({
+      message: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+      kind: 'unhandledrejection',
+    });
+  } catch (_) { /* never crash inside the crash handler */ }
+});
+
 // =====================================================================
 // PROXY-BASED OBSERVABLE STATE
 // =====================================================================
-const _listeners = new Set();
-const State = new Proxy({
+const { state: State, subscribe } = createState({
   files: [],
   activeFile: 0,
   theme: 'paper',
@@ -1631,14 +1665,7 @@ const State = new Proxy({
   findHits: [],
   findIdx: 0,
   zoomFactor: 1
-}, {
-  set(target, key, value) {
-    target[key] = value;
-    _listeners.forEach(fn => fn(key, value));
-    return true;
-  }
 });
-function subscribe(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
 // Export for testing via window (smoke tests only)
 window._marqamState = State;
@@ -1647,8 +1674,6 @@ window._marqamSubscribe = subscribe;
 // =====================================================================
 // CONSTANTS & DOM REFS
 // =====================================================================
-const THEMES = ['paper', 'ink', 'sepia'];
-
 const $ = id => document.getElementById(id);
 const appEl = $('app');
 const appBody = $('appBody');
@@ -1671,63 +1696,12 @@ const modalBody = $('modalBody');
 const editorArea = $('editorArea');
 const srcTextarea = $('srcTextarea');
 
-// =====================================================================
-// MARKED.JS SETUP (wikilink extension)
-// =====================================================================
-if (typeof marked !== 'undefined') {
-  marked.use({
-    gfm: true,
-    breaks: false,
-    extensions: [{
-      name: 'wikilink',
-      level: 'inline',
-      start(src) { return src.indexOf('[['); },
-      tokenizer(src) {
-        const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
-        if (m) return { type: 'wikilink', raw: m[0], target: m[1].trim(), alias: m[2]?.trim() || m[1].trim() };
-      },
-      renderer(t) {
-        const safe = t.target.replace(/['"]/g, '');
-        return `<a class="wikilink" data-target="${safe}">${t.alias}</a>`;
-      }
-    }]
-  });
-}
+configureMarked(marked);
 
 function parseMarkdown(md) {
-  if (typeof marked === 'undefined') return escapeHtml(md);
-  const raw = marked.parse(md || '');
-  if (typeof DOMPurify !== 'undefined') {
-    return DOMPurify.sanitize(raw, { ADD_ATTR: ['id', 'data-target'] });
-  }
-  return raw;
+  return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
 }
 
-// =====================================================================
-// UTILITIES
-// =====================================================================
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
-// =====================================================================
-// ARABIC DETECTION (uses Unicode Script property — no legacy block range)
-// =====================================================================
-const ARABIC_RE = /\p{Script=Arabic}/u;
-function isArabicHeavy(text, threshold = 0.5) {
-  if (!text) return false;
-  const sample = text.slice(0, 500);
-  let letters = 0, arabic = 0;
-  for (const ch of sample) {
-    if (/\p{L}/u.test(ch)) { letters++; if (ARABIC_RE.test(ch)) arabic++; }
-  }
-  return letters > 0 && arabic / letters >= threshold;
-}
 window.isArabicHeavy = isArabicHeavy;
 
 // =====================================================================
@@ -1748,8 +1722,7 @@ window.showToast = showToast;
 // THEME
 // =====================================================================
 function cycleTheme() {
-  const i = THEMES.indexOf(State.theme);
-  const next = THEMES[(i + 1) % THEMES.length];
+  const next = getNextTheme(State.theme);
   State.theme = next;
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('marqam-theme', next);
@@ -2342,37 +2315,7 @@ function switchSbPane(name) {
 // max 5 hits per file. Raw text segments — no HTML; rendering is done by runSidebarSearch
 // via DOM API to eliminate innerHTML injection risk.
 function vaultSearch(query) {
-  if (!query || query.length < 2 || !State.files.length) return [];
-  const lower = query.toLowerCase();
-  const results = [];
-  State.files.forEach((f, fileIdx) => {
-    const c = f.content || '';
-    const cl = c.toLowerCase();
-    const nameMatch = f.name.toLowerCase().includes(lower);
-    const hits = [];
-    let searchFrom = 0;
-    while (hits.length < 5) {
-      const idx = cl.indexOf(lower, searchFrom);
-      if (idx < 0) break;
-      const a = Math.max(0, idx - 40);
-      const b = Math.min(c.length, idx + query.length + 40);
-      const raw = c.slice(a, b).replace(/\n+/g, ' ');
-      // Relative offset of the match within the snippet string
-      const relIdx = idx - a;
-      hits.push({
-        before: raw.slice(0, relIdx),
-        match: raw.slice(relIdx, relIdx + query.length),
-        after: raw.slice(relIdx + query.length),
-        ellipsisBefore: a > 0,
-        ellipsisAfter: b < c.length,
-      });
-      searchFrom = idx + query.length;
-    }
-    if (hits.length > 0 || nameMatch) {
-      results.push({ name: f.name, fileIdx, hits: hits.length > 0 ? hits : [] });
-    }
-  });
-  return results;
+  return _vaultSearch(query, State.files);
 }
 window.vaultSearch = vaultSearch;
 
@@ -2438,6 +2381,7 @@ function runSidebarSearch(q) {
 // EDITOR MODE
 // =====================================================================
 function setEditorMode(mode) {
+  if (!mode || typeof mode !== 'string') return;
   State.editorMode = mode;
   editorArea.classList.remove('split', 'source');
   if (mode === 'split') editorArea.classList.add('split');
@@ -2455,7 +2399,7 @@ window.setEditorMode = setEditorMode;
 // =====================================================================
 function setZoom(factor) {
   if (typeof factor !== 'number' || isNaN(factor)) return;
-  const clamped = Math.min(2.0, Math.max(0.6, factor));
+  const clamped = clampZoom(factor);
   State.zoomFactor = clamped;
   editorArea.style.zoom = clamped;
 }
@@ -3096,6 +3040,12 @@ window.openFind = openFind;
 window.runFind = runFind;
 window.findStep = findStep;
 window.closeFind = closeFind;
+window.showShortcuts = showShortcuts;
+window.newDailyNote = newDailyNote;
+window.renderTree = renderTree;
+window.showWelcome = showWelcome;
+window.parseMarkdown = parseMarkdown;
+window.PALETTE_COMMANDS = PALETTE_COMMANDS;
 
 function filterPalette(q) {
   q = (q || '').trim().toLowerCase();
@@ -3313,6 +3263,8 @@ function initDragDrop() {
   });
 }
 window.initDragDrop = initDragDrop;
+window.renderTags = renderTags;
+window.escapeHtml = escapeHtml;
 
 // =====================================================================
 // INIT

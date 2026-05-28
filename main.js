@@ -1,38 +1,78 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const {
+  parseFileArg,
+  isAuthorizedPath,
+  isNetworkPath,
+  isTooManyFiles,
+  isOversizedFile,
+  wouldExceedCumulative,
+  isSymlinkEscape,
+  stripBOM,
+  filterAndSortMdFiles,
+} = require('./src/main-logic');
+
+// ==== OBSERVABILITY ====
+// Local-only crash + error capture. NO data leaves the user's machine
+// (uploadToServer: false). Minidumps land in app.getPath('crashDumps');
+// JS errors land in <userData>/logs/marqam.log (rotated at 1 MiB, keep 3).
+crashReporter.start({ uploadToServer: false, submitURL: '' });
+
+const LOG_MAX_BYTES = 1024 * 1024;
+const LOG_KEEP = 3;
+let logFilePath = null;
+
+function ensureLogPath() {
+  if (logFilePath) return logFilePath;
+  const dir = path.join(app.getPath('userData'), 'logs');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { /* ignore */ }
+  logFilePath = path.join(dir, 'marqam.log');
+  return logFilePath;
+}
+
+function rotateIfNeeded(p) {
+  try {
+    const st = fs.statSync(p);
+    if (st.size < LOG_MAX_BYTES) return;
+    for (let i = LOG_KEEP - 1; i >= 1; i--) {
+      const older = `${p}.${i + 1}`;
+      const newer = `${p}.${i}`;
+      if (fs.existsSync(newer)) fs.renameSync(newer, older);
+    }
+    fs.renameSync(p, `${p}.1`);
+  } catch (_) { /* file doesn't exist yet, or rotation failed — ignore */ }
+}
+
+function writeLog(level, source, message, stack) {
+  try {
+    const p = ensureLogPath();
+    rotateIfNeeded(p);
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      level,
+      source,
+      message: String(message ?? '').slice(0, 4000),
+      stack: stack ? String(stack).slice(0, 8000) : undefined,
+    }) + '\n';
+    fs.appendFileSync(p, line);
+  } catch (_) { /* never let logging crash the process */ }
+}
+
+process.on('uncaughtException', (err) => {
+  writeLog('error', 'main:uncaughtException', err?.message, err?.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stk = reason instanceof Error ? reason.stack : undefined;
+  writeLog('error', 'main:unhandledRejection', msg, stk);
+});
 
 // ==== SECURITY: ALLOWLIST ====
-// JB1: Only paths that were returned by dialog:openFolder are allowed for
-// fs:readVault. The renderer cannot pass arbitrary paths.
 const allowedFolders = new Set();
 
 // ==== FILE ASSOCIATION ====
-// When the user double-clicks a .md file in Explorer (and Marqam is the
-// registered handler) Windows launches the app with the file path as argv[1].
-// Parse argv, validate the path is a real markdown file, read it in main
-// process (trusted side), and queue it to be sent to the renderer once the
-// window finishes loading.
 let pendingFileToOpen = null;
-const MAX_OPEN_FILE_BYTES = 10 * 1024 * 1024; // 10 MiB hard cap (same as readVault)
-
-function parseFileArg(argv) {
-  for (let i = 1; i < argv.length; i++) {
-    const a = argv[i];
-    if (typeof a !== 'string') continue;
-    if (a.startsWith('-')) continue;                // skip flags like --inspect
-    if (!/\.(md|markdown|txt)$/i.test(a)) continue; // only markdown extensions
-    try {
-      // Resolve to a real absolute path; rejects relative-traversal trickery.
-      const real = fs.realpathSync(a);
-      const stat = fs.statSync(real);
-      if (!stat.isFile()) continue;
-      if (stat.size > MAX_OPEN_FILE_BYTES) continue;
-      return real;
-    } catch (_) { continue; }
-  }
-  return null;
-}
 
 function deliverPendingFile(win) {
   if (!pendingFileToOpen || !win || win.isDestroyed()) return;
@@ -40,27 +80,17 @@ function deliverPendingFile(win) {
   pendingFileToOpen = null;
   try {
     let content = fs.readFileSync(filePath, 'utf8');
-    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // strip BOM
+    content = stripBOM(content);
     win.webContents.send('open-external-file', {
       name: path.basename(filePath),
       path: filePath,
       content
     });
-  } catch (_) { /* silent — user just sees no file loaded */ }
+  } catch (_) { /* silent */ }
 }
 
-// Resource bounds for fs:readVault (JB3)
-const MAX_FILES_PER_DIR = 5000;
-const MAX_FILE_BYTES    = 10 * 1024 * 1024;  // 10 MiB per file
-const MAX_CUMULATIVE_BYTES = 100 * 1024 * 1024; // 100 MiB total
-
 // ==== IPC HANDLERS ====
-// Registered once at app.whenReady() — before createWindow() — so that
-// macOS dock re-activation (which re-calls createWindow) never triggers
-// the "attempted to register a second handler" fatal error.
 function registerIpcHandlers() {
-  // ==== OPEN FOLDER IPC ====
-  // Returns { canceled: boolean, folderPath: string|null }
   ipcMain.handle('dialog:openFolder', async () => {
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showOpenDialog(win, {
@@ -70,85 +100,63 @@ function registerIpcHandlers() {
     if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
       return { canceled: true, folderPath: null };
     }
-    // JB1: register the dialog-returned path in the allowlist
     allowedFolders.add(result.filePaths[0]);
     return { canceled: false, folderPath: result.filePaths[0] };
   });
 
-  // ==== READ VAULT IPC ====
-  // Returns [{ name, relPath, content }] for all .md/.markdown files in folderPath
   ipcMain.handle('fs:readVault', async (event, folderPath) => {
     if (!folderPath || typeof folderPath !== 'string') {
       throw new Error('Invalid folder path');
     }
 
-    // JB2: Reject UNC/network paths (prevents SMB-auth hash leak, CWE-918)
-    if (folderPath.startsWith('\\\\') || folderPath.startsWith('//')) {
+    if (isNetworkPath(folderPath)) {
       return { error: 'network-path-not-allowed' };
     }
 
-    // JB1: Path must have been returned by dialog:openFolder — renderer cannot
-    // supply arbitrary paths.
-    if (!allowedFolders.has(folderPath)) {
+    if (!isAuthorizedPath(folderPath, allowedFolders)) {
       return { error: 'unauthorized-path' };
     }
 
     const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
 
-    // JB3: cap file count to prevent DoS via enormous directories
-    if (entries.length > MAX_FILES_PER_DIR) {
+    if (isTooManyFiles(entries.length)) {
       return { error: 'too-many-files' };
     }
 
-    const mdFiles = entries
-      .filter(e => (e.isFile() || e.isSymbolicLink()) && /\.(md|markdown)$/i.test(e.name))
-      .map(e => e.name)
-      .sort((a, b) => a.localeCompare(b));
-
+    const mdFiles = filterAndSortMdFiles(entries);
     const results = [];
     let cumulativeBytes = 0;
 
     for (const name of mdFiles) {
       const fullPath = path.join(folderPath, name);
 
-      // JB4: Symlink/realpath escape check — skip files that resolve outside folderPath
       const lstat = await fs.promises.lstat(fullPath);
       if (lstat.isSymbolicLink()) {
         const real = await fs.promises.realpath(fullPath);
-        const rel = path.relative(folderPath, real);
-        if (rel.startsWith('..') || path.isAbsolute(rel)) {
-          continue; // symlink escape — skip silently
+        if (isSymlinkEscape(real, folderPath, path)) {
+          continue;
         }
       }
 
-      // JB3: per-file size cap (use lstat size for symlinks already resolved above;
-      // for regular files lstat and stat are equivalent)
       const stat = lstat.isSymbolicLink()
         ? await fs.promises.stat(fullPath)
         : lstat;
-      if (stat.size > MAX_FILE_BYTES) {
-        continue; // skip oversized files silently
+      if (isOversizedFile(stat.size)) {
+        continue;
       }
 
-      // JB3: cumulative bytes cap
       cumulativeBytes += stat.size;
-      if (cumulativeBytes > MAX_CUMULATIVE_BYTES) {
+      if (wouldExceedCumulative(cumulativeBytes, 0)) {
         return { error: 'cumulative-size-exceeded', partial: results };
       }
 
       let content = await fs.promises.readFile(fullPath, 'utf8');
-      // Strip BOM if present (matches browser File API behavior)
-      if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+      content = stripBOM(content);
       results.push({ name, relPath: name, content });
     }
     return results;
   });
 
-  // ==== EDIT COMMAND IPC ====
-  // Uses Chromium's native webContents methods so clipboard ops work whether
-  // the user is in a source-mode textarea OR has text selected in the live
-  // preview DIV. These target the focused editable inside the renderer without
-  // depending on document.activeElement, which the menu click disrupts.
   ipcMain.on('edit:command', (event, cmd) => {
     const wc = event.sender;
     if (!wc || wc.isDestroyed()) return;
@@ -161,6 +169,12 @@ function registerIpcHandlers() {
       else if (cmd === 'selectAll') wc.selectAll();
     } catch (_) { /* no-op */ }
   });
+
+  // Renderer-side errors (window.onerror, unhandledrejection) → local log.
+  ipcMain.on('log:error', (_event, payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    writeLog('error', 'renderer', payload.message, payload.stack);
+  });
 }
 
 function createWindow() {
@@ -171,7 +185,7 @@ function createWindow() {
     minHeight: 600,
     title: 'Marqam',
     icon: path.join(__dirname, 'icon.ico'),
-    backgroundColor: '#1A1713',   // matches the app's dark border/outer bg
+    backgroundColor: '#1A1713',
     frame: false,
     transparent: false,
     webPreferences: {
@@ -182,18 +196,12 @@ function createWindow() {
   });
 
   win.loadFile('marqam.html');
-
-  // Once renderer is ready, deliver any file that was passed on the command
-  // line. We listen for did-finish-load AND a renderer-side 'renderer-ready'
-  // event so the file shows up regardless of which one fires first.
   win.webContents.on('did-finish-load', () => deliverPendingFile(win));
 
-  // Window control IPC
   ipcMain.on('window-close',    () => win.close());
   ipcMain.on('window-minimize', () => win.minimize());
   ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
 
-  // Open external links in system browser
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
     return { action: 'deny' };
@@ -201,15 +209,12 @@ function createWindow() {
 }
 
 // ==== SINGLE-INSTANCE LOCK ====
-// If the app is already running and the user double-clicks another .md, the
-// OS launches a second process. We hand off the file to the existing window
-// instead of opening a duplicate.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    const file = parseFileArg(argv);
+    const file = parseFileArg(argv, fs);
     const wins = BrowserWindow.getAllWindows();
     if (wins.length === 0) return;
     const win = wins[0];
@@ -222,7 +227,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    pendingFileToOpen = parseFileArg(process.argv);
+    pendingFileToOpen = parseFileArg(process.argv, fs);
     registerIpcHandlers();
     createWindow();
     app.on('activate', () => {
@@ -230,14 +235,12 @@ if (!gotLock) {
     });
   });
 
-  // macOS: user dropped a .md file on the dock icon
   app.on('open-file', (event, filePath) => {
     event.preventDefault();
     if (!filePath) return;
     pendingFileToOpen = filePath;
     const wins = BrowserWindow.getAllWindows();
     if (wins.length > 0) deliverPendingFile(wins[0]);
-    // else: it'll be delivered when the window finishes loading
   });
 }
 

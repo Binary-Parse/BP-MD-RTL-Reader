@@ -15,4 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // (file association) or dropped one on the macOS dock. The renderer wraps
   // this in addFile() to surface the content immediately.
   onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
+  // One-way error reporter: forwards renderer-side errors (window.onerror,
+  // unhandledrejection) to the main process, which appends a JSON line to
+  // <userData>/logs/marqam.log. NO network, NO third party — local only.
+  logError: (payload) => ipcRenderer.send('log:error', payload),
 });

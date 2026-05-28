@@ -12,9 +12,8 @@ export default defineConfig({
     globals: true,
     include: ['tests/unit/**/*.test.js', 'tests/unit/**/*.spec.js'],
     exclude: [
-      'tests/unit/**/*.assert.test.js',
-      'tests/e2e/**',              // احتياطي
-      'tests/**/*.e2e.spec.js',    // احتياطي
+      'tests/e2e/**',              // safety: never let Playwright specs slip in
+      'tests/**/*.e2e.spec.js',    // safety: same
     ],
     deps: {
       inline: [/src\/main-logic\.js/],

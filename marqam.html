@@ -1619,6 +1619,7 @@ import { THEMES, getNextTheme, clampZoom } from './src/renderer/theme.js';
 import { createState } from './src/renderer/state.js';
 import { vaultSearch as _vaultSearch } from './src/renderer/search.js';
 import { configureMarked, parseMarkdown as _parseMarkdown } from './src/renderer/markdown.js';
+import { execEditCmd as _execEditCmdImpl } from './src/renderer/edit-commands.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -2196,102 +2197,24 @@ document.addEventListener('focusin', (e) => {
 }, true);
 
 function execEditCmd(cmd) {
-  // In packaged Electron, delegate to Chromium's native webContents methods.
-  // They target the focused editable inside the renderer and survive the focus
-  // shifts caused by opening the menu. Works for textarea, contenteditable,
-  // AND live-preview text selection without any JS-side juggling.
-  if (window.electronAPI && window.electronAPI.editCommand) {
-    closeMenu();
-    window.electronAPI.editCommand(cmd);
-    return;
-  }
-
-  // Browser fallback (Playwright tests, file://-loaded preview):
-  // Prefer the most recently focused editable over document.activeElement,
-  // because by the time this handler runs, focus has moved to the clicked
-  // menu item (a DIV). Fall back to activeElement when no editable was tracked
-  // (e.g. user issued the command via Ctrl+A directly on document.body).
-  const ae = document.activeElement;
-  const aeIsField = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT');
-  const _savedEl = aeIsField ? ae : (_lastFocusedEditable || ae);
-  closeMenu();
-  const inTextField = _savedEl && (_savedEl.tagName === 'TEXTAREA' || _savedEl.tagName === 'INPUT');
-
-  if (cmd === 'undo' || cmd === 'redo') {
-    // Undo/Redo: retain execCommand only for textarea (reliable in Chromium for textarea)
-    if (inTextField) {
-      _savedEl.focus();
-      try { document.execCommand(cmd); } catch(e) {}
-    }
-    return;
-  }
-
-  if (cmd === 'selectAll') {
-    if (inTextField) {
-      _savedEl.focus();
-      _savedEl.select();
-    } else if (State.editorMode === 'live' || State.editorMode === 'split') {
-      const sel = window.getSelection();
-      if (sel && noteContent) {
-        sel.removeAllRanges();
-        const range = document.createRange();
-        range.selectNodeContents(noteContent);
-        sel.addRange(range);
-      }
-    } else {
-      srcTextarea.focus();
-      srcTextarea.select();
-    }
-    return;
-  }
-
-  if (cmd === 'copy') {
-    let txt = '';
-    if (_savedEl && (_savedEl.tagName === 'INPUT' || _savedEl.tagName === 'TEXTAREA')) {
-      txt = _savedEl.value.substring(_savedEl.selectionStart, _savedEl.selectionEnd);
-    } else {
-      txt = window.getSelection().toString();
-    }
-    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Copy failed', 'error'));
-    return;
-  }
-
-  if (cmd === 'cut') {
-    let txt = '';
-    if (_savedEl && (_savedEl.tagName === 'INPUT' || _savedEl.tagName === 'TEXTAREA')) {
-      txt = _savedEl.value.substring(_savedEl.selectionStart, _savedEl.selectionEnd);
-    } else {
-      txt = window.getSelection().toString();
-    }
-    if (txt) navigator.clipboard.writeText(txt).catch(() => showToast('Cut failed', 'error'));
-    if (_savedEl && (_savedEl.tagName === 'INPUT' || _savedEl.tagName === 'TEXTAREA')) {
-      const s = _savedEl.selectionStart, e = _savedEl.selectionEnd;
-      _savedEl.value = _savedEl.value.slice(0, s) + _savedEl.value.slice(e);
-      _savedEl.selectionStart = _savedEl.selectionEnd = s;
-      _savedEl.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      showToast('Cut not supported in preview', 'info');
-    }
-    return;
-  }
-
-  if (cmd === 'paste') {
-    if (!navigator.clipboard || !navigator.clipboard.readText) {
-      showToast('Paste not supported in this context', 'info'); return;
-    }
-    // Capture the saved element in closure before the async gap
-    const targetEl = _savedEl;
-    navigator.clipboard.readText().then(txt => {
-      if (targetEl && (targetEl.tagName === 'INPUT' || targetEl.tagName === 'TEXTAREA')) {
-        targetEl.focus();
-        const s = targetEl.selectionStart, e = targetEl.selectionEnd;
-        targetEl.value = targetEl.value.slice(0, s) + txt + targetEl.value.slice(e);
-        targetEl.selectionStart = targetEl.selectionEnd = s + txt.length;
-        targetEl.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }).catch(() => showToast('Paste failed', 'error'));
-    return;
-  }
+  // All logic lives in src/renderer/edit-commands.js (testable + mutatable).
+  // This shim builds the deps object and forwards. Critically: selectAll is
+  // NEVER routed through electronAPI.editCommand because webContents.selectAll
+  // would select the entire renderer DOM (titlebar/sidebar/statusbar).
+  const deps = {
+    electronAPI: cmd === 'selectAll' ? null : (window.electronAPI || null),
+    getMode: () => State.editorMode,
+    getSrcTextarea: () => srcTextarea,
+    getNoteContent: () => noteContent,
+    getLastFocusedEditable: () => _lastFocusedEditable,
+    getActiveElement: () => document.activeElement,
+    getSelection: () => window.getSelection(),
+    createRange: () => document.createRange(),
+    clipboard: (navigator && navigator.clipboard) || null,
+    showToast: (m, l) => showToast(m, l),
+    closeMenu: () => closeMenu(),
+  };
+  return _execEditCmdImpl(cmd, deps);
 }
 window.execEditCmd = execEditCmd;
 

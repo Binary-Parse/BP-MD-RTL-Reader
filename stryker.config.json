@@ -14,7 +14,8 @@
     "src/renderer/markdown.js",
     "src/renderer/search.js",
     "src/renderer/state.js",
-    "src/renderer/theme.js"
+    "src/renderer/theme.js",
+    "src/renderer/edit-commands.js"
   ],
   "thresholds": {
     "high": 95,

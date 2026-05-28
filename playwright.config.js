@@ -4,6 +4,7 @@ const path = require('path');
 
 module.exports = defineConfig({
   testDir: './tests',
+  testIgnore: ['**/unit/**', '**/integration/**'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -19,7 +20,10 @@ module.exports = defineConfig({
 
   use: {
     viewport: { width: 1440, height: 900 },
-    headless: true
+    headless: true,
+    launchOptions: {
+      args: ['--allow-file-access-from-files']
+    }
   },
 
   projects: [

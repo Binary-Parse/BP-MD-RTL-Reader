@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test (unit + E2E + mutation + audit)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Unit tests + coverage (Vitest)
+        run: npm run test:unit:coverage
+
+      - name: Mutation tests (Stryker)
+        run: npm run test:mutation
+
+      - name: E2E tests (Playwright, full sweep)
+        run: npm run test:e2e
+
+      - name: Dependency audit (block on high+)
+        # Set --audit-level=moderate after the 2 known qs/typed-rest-client
+        # moderates are fixed (Gap #11 in AUDIT_REPORT_2026-05-28.md).
+        run: npm audit --audit-level=high
+
+      - name: Upload Vitest coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-node
+          path: coverage/node/
+          retention-days: 14
+
+      - name: Upload Stryker mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 14
+
+      - name: Upload Playwright failure artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

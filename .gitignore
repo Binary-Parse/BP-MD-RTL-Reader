@@ -1,0 +1,45 @@
+# ── Build / packaging ──────────────────────────────────────────────
+node_modules/
+dist/
+*.exe
+*.AppImage
+
+# ── Test outputs (regenerated on every run) ────────────────────────
+coverage/
+reports/
+test-results/
+test-results.json
+test-output*.txt
+test-run-output.txt
+test-verifier-output.txt
+test-verify.log
+test_output_full.txt
+act-output.txt
+CI test result.txt
+
+# ── Logs ───────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Per-machine virtualenv / tool scratch ──────────────────────────
+.venv/
+.audit-tmp/
+.binary-parse-backup/
+.playwright-mcp/
+
+# ── Local screenshot scratch (not tracked assets) ──────────────────
+marqam-ink.png
+marqam-live.png
+marqam-ref.png
+
+# ── BINARY PARSE / Claude Code — pipeline + per-machine settings ───
+.claudedoc/
+.claude/
+
+# ── OS / editor noise ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.vs/

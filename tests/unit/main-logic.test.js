@@ -6,8 +6,11 @@
 import { describe, test, expect, vi } from 'vitest';
 import pathModule from 'path';
 
-const mainLogic = await import('../../src/main-logic.js');
-const {
+// Static import so v8 coverage instruments main-logic.js correctly.
+// (Previously: `const mainLogic = await import('../../src/main-logic.js')`
+//  caused v8 to under-count statement/branch coverage by ~10 pp even
+//  though mutation score on this file is 100 %.)
+import {
   parseFileArg,
   isAuthorizedPath,
   isNetworkPath,
@@ -21,7 +24,7 @@ const {
   MAX_FILES_PER_DIR,
   MAX_FILE_BYTES,
   MAX_CUMULATIVE_BYTES,
-} = mainLogic.default || mainLogic;
+} from '../../src/main-logic.js';
 
 describe('parseFileArg()', () => {
   test('returns null for empty argv', () => {
@@ -333,6 +336,18 @@ describe('filterAndSortMdFiles()', () => {
 });
 
 describe('parseFileArg() mutant killers', () => {
+  test('mutation killer: argv[0] is always skipped (kills L20 slice(1) removal)', () => {
+    // Mutant `Array.from(argv)` (no slice) would treat argv[0] as a candidate.
+    // Test: pass a valid .md path at index 0. Original skips → null; mutant
+    // returns the resolved path.
+    const fs = {
+      realpathSync: vi.fn(() => '/abs/file.md'),
+      statSync: vi.fn(() => ({ isFile: () => true, size: 100 }))
+    };
+    expect(parseFileArg(['file.md'], fs)).toBeNull();
+    expect(fs.realpathSync).not.toHaveBeenCalled();
+  });
+
   test('kills mutant: i <= argv.length with array-like object', () => {
     const fs = {
       realpathSync: vi.fn((p) => `/abs/${p}`),

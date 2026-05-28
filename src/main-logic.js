@@ -15,21 +15,19 @@ const MAX_CUMULATIVE_BYTES = 100 * 1024 * 1024;
  * @returns {string|null}
  */
 function parseFileArg(argv, fs) {
-  for (let i = 1; i < argv.length; i++) {
-    const a = argv[i];
-    if (typeof a !== 'string') continue;
-    if (a.startsWith('-')) continue;
-    if (!/\.(md|markdown|txt)$/i.test(a)) continue;
-    let real;
+  // Array.from normalises array-like objects (e.g. Electron second-instance
+  // argv); honours .length so out-of-bounds indices are not visited.
+  const candidates = Array.from(argv).slice(1).filter(a =>
+    typeof a === 'string' &&
+    !a.startsWith('-') &&
+    /\.(md|markdown|txt)$/i.test(a)
+  );
+  for (const a of candidates) {
     try {
-      real = fs.realpathSync(a);
+      const real = fs.realpathSync(a);
       const stat = fs.statSync(real);
-      if (!stat.isFile()) continue;
-      if (stat.size > MAX_OPEN_FILE_BYTES) continue;
-    } catch (_) {
-      continue;
-    }
-    return real;
+      if (stat.isFile() && stat.size <= MAX_OPEN_FILE_BYTES) return real;
+    } catch (_) { /* try next candidate */ }
   }
   return null;
 }
@@ -114,7 +112,11 @@ function stripBOM(content) {
  */
 function filterAndSortMdFiles(entries) {
   return entries
-    .filter(e => (e.isFile() || e.isSymbolicLink()) && /\.(md|markdown)$/i.test(e.name))
+    .filter(e => {
+      // Split to give v8 distinct branch counters per clause.
+      if (!e.isFile() && !e.isSymbolicLink()) return false;
+      return /\.(md|markdown)$/i.test(e.name);
+    })
     .map(e => e.name)
     .sort((a, b) => a.localeCompare(b));
 }

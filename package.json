@@ -17,7 +17,8 @@
     "test:mutation": "stryker run",
     "test:watch": "vitest",
     "coverage": "npm run test:unit:coverage && npm run test:e2e:coverage",
-    "report:merge": "node scripts/merge-coverage.js"
+    "report:merge": "node scripts/merge-coverage.js",
+    "lint:security": "eslint main.js preload.js \"src/**/*.js\""
   },
   "build": {
     "appId": "com.marqam.app",

@@ -195,9 +195,15 @@ describe('preload.js', () => {
     if (restoreResolve) restoreResolve();
   });
 
-  test('exposes 7 electronAPI methods', () => {
+  // Helper: pull the live electronAPI object out of the captured
+  // contextBridge.exposeInMainWorld call.
+  function getApi() {
+    return mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
+  }
+
+  test('exposes 8 electronAPI methods (incl. logError from #15)', () => {
     expect(mockElectron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('electronAPI', expect.any(Object));
-    const api = mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
+    const api = getApi();
     expect(typeof api.closeWindow).toBe('function');
     expect(typeof api.minimizeWindow).toBe('function');
     expect(typeof api.maximizeWindow).toBe('function');
@@ -205,31 +211,143 @@ describe('preload.js', () => {
     expect(typeof api.readVault).toBe('function');
     expect(typeof api.editCommand).toBe('function');
     expect(typeof api.onOpenFile).toBe('function');
+    expect(typeof api.logError).toBe('function');
   });
 
+  // ─ window controls (kills NoCoverage on preload.js L4-L6) ──────────
   test('closeWindow sends window-close IPC', () => {
-    const api = mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
-    api.closeWindow();
+    mockElectron.ipcRenderer.send.mockClear();
+    getApi().closeWindow();
     expect(mockElectron.ipcRenderer.send).toHaveBeenCalledWith('window-close');
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledTimes(1);
   });
 
-  test('readVault invokes fs:readVault', () => {
-    const api = mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
-    api.readVault('/vault');
+  test('minimizeWindow sends window-minimize IPC', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    getApi().minimizeWindow();
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledWith('window-minimize');
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledTimes(1);
+  });
+
+  test('maximizeWindow sends window-maximize IPC', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    getApi().maximizeWindow();
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledWith('window-maximize');
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledTimes(1);
+  });
+
+  // ─ invokes (kills L8, L9) ──────────────────────────────────────────
+  test('openFolder invokes dialog:openFolder (no args)', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    getApi().openFolder();
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledWith('dialog:openFolder');
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  test('readVault invokes fs:readVault with folderPath argument', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    getApi().readVault('/vault');
     expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledWith('fs:readVault', '/vault');
   });
 
-  test('onOpenFile registers callback and forwards data', () => {
-    const api = mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
-    const cb = vi.fn();
-    api.onOpenFile(cb);
+  test('readVault passes through whatever folderPath is given (no normalisation)', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    getApi().readVault('\\\\server\\share');           // UNC
+    getApi().readVault('//server/share');               // POSIX net
+    getApi().readVault('C:\\Users\\Legend\\notes');     // local Windows
+    const calls = mockElectron.ipcRenderer.invoke.mock.calls
+      .filter(c => c[0] === 'fs:readVault')
+      .map(c => c[1]);
+    expect(calls).toEqual(['\\\\server\\share', '//server/share', 'C:\\Users\\Legend\\notes']);
+  });
 
+  // ─ editCommand (kills L13) ─────────────────────────────────────────
+  test('editCommand sends edit:command with the given cmd string', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    getApi().editCommand('copy');
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledWith('edit:command', 'copy');
+  });
+
+  test('editCommand forwards each of the 6 valid cmd strings unchanged', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    const api = getApi();
+    for (const cmd of ['copy', 'cut', 'paste', 'undo', 'redo', 'selectAll']) {
+      api.editCommand(cmd);
+    }
+    const cmdsSent = mockElectron.ipcRenderer.send.mock.calls
+      .filter(c => c[0] === 'edit:command')
+      .map(c => c[1]);
+    expect(cmdsSent).toEqual(['copy', 'cut', 'paste', 'undo', 'redo', 'selectAll']);
+  });
+
+  test('editCommand passes through unknown cmds (preload does not validate)', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    getApi().editCommand('bogus-cmd');
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledWith('edit:command', 'bogus-cmd');
+  });
+
+  // ─ onOpenFile (kills L17 callback path) ────────────────────────────
+  test('onOpenFile registers callback and forwards data on event', () => {
+    const cb = vi.fn();
+    getApi().onOpenFile(cb);
     const handlerCall = mockElectron.ipcRenderer.on.mock.calls.find(c => c[0] === 'open-external-file');
     expect(handlerCall).toBeDefined();
-
     const handler = handlerCall[1];
     handler({}, { name: 'test.md', path: '/test.md', content: '# Hello' });
     expect(cb).toHaveBeenCalledWith({ name: 'test.md', path: '/test.md', content: '# Hello' });
+  });
+
+  test('onOpenFile DOES NOT leak the IpcRendererEvent to the callback', () => {
+    const cb = vi.fn();
+    getApi().onOpenFile(cb);
+    const handlers = mockElectron.ipcRenderer.on.mock.calls
+      .filter(c => c[0] === 'open-external-file').map(c => c[1]);
+    const latest = handlers[handlers.length - 1];
+    const fakeEvent = { sender: 'should-not-be-exposed' };
+    latest(fakeEvent, { name: 'x.md' });
+    // Callback must have been invoked with ONLY the payload, never with the event.
+    expect(cb).toHaveBeenLastCalledWith({ name: 'x.md' });
+    // Defensive: check none of the call args ever included an object with a .sender field
+    for (const args of cb.mock.calls) {
+      for (const a of args) {
+        expect(a && typeof a === 'object' && 'sender' in a).toBeFalsy();
+      }
+    }
+  });
+
+  // ─ logError (kills L21) ────────────────────────────────────────────
+  test('logError sends log:error with the given payload', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    const payload = { message: 'boom', stack: 'at foo:1', source: 'file.js', line: 42 };
+    getApi().logError(payload);
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalledWith('log:error', payload);
+  });
+
+  test('logError is fire-and-forget — uses send, not invoke', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    mockElectron.ipcRenderer.invoke.mockClear();
+    getApi().logError({ message: 'x' });
+    expect(mockElectron.ipcRenderer.send).toHaveBeenCalled();
+    expect(mockElectron.ipcRenderer.invoke).not.toHaveBeenCalled();
+  });
+
+  test('logError passes any payload through unchanged (validation is main-side)', () => {
+    mockElectron.ipcRenderer.send.mockClear();
+    const api = getApi();
+    api.logError(null);
+    api.logError(undefined);
+    api.logError('not-an-object');
+    api.logError(42);
+    api.logError({ message: 'real' });
+    const payloads = mockElectron.ipcRenderer.send.mock.calls
+      .filter(c => c[0] === 'log:error').map(c => c[1]);
+    expect(payloads).toEqual([null, undefined, 'not-an-object', 42, { message: 'real' }]);
+  });
+
+  // ─ contextBridge.exposeInMainWorld arity ───────────────────────────
+  test('contextBridge.exposeInMainWorld called exactly once with "electronAPI"', () => {
+    expect(mockElectron.contextBridge.exposeInMainWorld).toHaveBeenCalledTimes(1);
+    expect(mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][0]).toBe('electronAPI');
   });
 });
 

@@ -1,23 +1,16 @@
-// Unit tests for theme cycling and persistence
-// Run via: node tests/unit/theme.test.js
+/**
+ * Unit tests for theme cycling and persistence logic
+ */
 
-'use strict';
+import { describe, test, expect, beforeEach } from 'vitest';
+import { THEMES, getNextTheme, clampZoom } from '../../src/renderer/theme.js';
 
-const assert = require('assert');
-
-// ============================================================
-// Simulate cycleTheme with localStorage
-// ============================================================
-const THEMES = ['paper', 'ink', 'sepia'];
-
-// Mock localStorage
-const mockStorage = {};
+let mockStorage = {};
 const localStorage = {
   getItem: (k) => mockStorage[k] || null,
   setItem: (k, v) => { mockStorage[k] = v; }
 };
 
-// Mock documentElement
 let currentTheme = 'paper';
 const documentElement = {
   getAttribute: (attr) => attr === 'data-theme' ? currentTheme : null,
@@ -26,72 +19,91 @@ const documentElement = {
 
 function cycleTheme() {
   const current = documentElement.getAttribute('data-theme') || 'paper';
-  const next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length];
+  const next = getNextTheme(current);
   documentElement.setAttribute('data-theme', next);
   localStorage.setItem('marqam-theme', next);
   return next;
 }
 
-// ============================================================
-// Test: cycleTheme paper -> ink
-// ============================================================
-{
-  currentTheme = 'paper';
-  const next = cycleTheme();
-  assert.strictEqual(next, 'ink', 'paper cycles to ink');
-  assert.strictEqual(documentElement.getAttribute('data-theme'), 'ink', 'data-theme attribute updated');
-  assert.strictEqual(localStorage.getItem('marqam-theme'), 'ink', 'localStorage updated');
-  console.log('PASS: cycleTheme paper -> ink');
-}
-
-// ============================================================
-// Test: cycleTheme ink -> sepia
-// ============================================================
-{
-  currentTheme = 'ink';
-  const next = cycleTheme();
-  assert.strictEqual(next, 'sepia', 'ink cycles to sepia');
-  assert.strictEqual(localStorage.getItem('marqam-theme'), 'sepia', 'localStorage stores sepia');
-  console.log('PASS: cycleTheme ink -> sepia');
-}
-
-// ============================================================
-// Test: cycleTheme sepia -> paper (wraps)
-// ============================================================
-{
-  currentTheme = 'sepia';
-  const next = cycleTheme();
-  assert.strictEqual(next, 'paper', 'sepia cycles to paper');
-  console.log('PASS: cycleTheme sepia -> paper (wrap)');
-}
-
-// ============================================================
-// Test: FOUC prevention — reads localStorage and sets data-theme
-// ============================================================
-{
-  // Simulate FOUC prevention script logic
-  function foucPreventionLogic(storedTheme) {
-    const VALID_THEMES = ['paper', 'ink', 'sepia'];
-    if (storedTheme && VALID_THEMES.includes(storedTheme)) {
-      return storedTheme;
-    }
-    return 'paper';
+function foucPreventionLogic(storedTheme) {
+  const VALID_THEMES = ['paper', 'ink', 'sepia'];
+  if (storedTheme && VALID_THEMES.includes(storedTheme)) {
+    return storedTheme;
   }
-
-  assert.strictEqual(foucPreventionLogic('ink'), 'ink', 'valid stored theme applied');
-  assert.strictEqual(foucPreventionLogic('sepia'), 'sepia', 'sepia restored');
-  assert.strictEqual(foucPreventionLogic(null), 'paper', 'null falls back to paper');
-  assert.strictEqual(foucPreventionLogic('invalid'), 'paper', 'invalid theme falls back to paper');
-  console.log('PASS: FOUC prevention logic validates and applies stored theme');
+  return 'paper';
 }
 
-// ============================================================
-// Test: Theme names are exactly ['paper', 'ink', 'sepia']
-// ============================================================
-{
-  assert.deepStrictEqual(THEMES, ['paper', 'ink', 'sepia'], 'exact 3 themes in correct order');
-  assert.strictEqual(THEMES.length, 3, 'exactly 3 themes');
-  console.log('PASS: theme array has correct members');
-}
+describe('cycleTheme', () => {
+  beforeEach(() => {
+    mockStorage = {};
+    currentTheme = 'paper';
+  });
 
-console.log('\nAll theme unit tests passed.');
+  test('paper -> ink', () => {
+    const next = cycleTheme();
+    expect(next).toBe('ink');
+    expect(documentElement.getAttribute('data-theme')).toBe('ink');
+    expect(localStorage.getItem('marqam-theme')).toBe('ink');
+  });
+
+  test('ink -> sepia', () => {
+    currentTheme = 'ink';
+    const next = cycleTheme();
+    expect(next).toBe('sepia');
+    expect(localStorage.getItem('marqam-theme')).toBe('sepia');
+  });
+
+  test('sepia -> paper (wraps)', () => {
+    currentTheme = 'sepia';
+    const next = cycleTheme();
+    expect(next).toBe('paper');
+  });
+});
+
+describe('getNextTheme pure logic', () => {
+  test('cycles through all 3 themes', () => {
+    expect(getNextTheme('paper')).toBe('ink');
+    expect(getNextTheme('ink')).toBe('sepia');
+    expect(getNextTheme('sepia')).toBe('paper');
+  });
+
+  test('handles unknown theme by falling back via indexOf', () => {
+    expect(getNextTheme('unknown')).toBe('paper');
+  });
+});
+
+describe('FOUC prevention', () => {
+  test('valid stored theme applied', () => {
+    expect(foucPreventionLogic('ink')).toBe('ink');
+    expect(foucPreventionLogic('sepia')).toBe('sepia');
+  });
+
+  test('null falls back to paper', () => {
+    expect(foucPreventionLogic(null)).toBe('paper');
+  });
+
+  test('invalid theme falls back to paper', () => {
+    expect(foucPreventionLogic('invalid')).toBe('paper');
+    expect(foucPreventionLogic('')).toBe('paper');
+  });
+});
+
+describe('theme constants', () => {
+  test('exact 3 themes in correct order', () => {
+    expect(THEMES).toEqual(['paper', 'ink', 'sepia']);
+  });
+});
+
+describe('clampZoom', () => {
+  test('clamps to bounds', () => {
+    expect(clampZoom(0.1)).toBe(0.6);
+    expect(clampZoom(5.0)).toBe(2.0);
+    expect(clampZoom(1.0)).toBe(1.0);
+    expect(clampZoom(1.5)).toBe(1.5);
+  });
+
+  test('boundary values', () => {
+    expect(clampZoom(0.6)).toBe(0.6);
+    expect(clampZoom(2.0)).toBe(2.0);
+  });
+});

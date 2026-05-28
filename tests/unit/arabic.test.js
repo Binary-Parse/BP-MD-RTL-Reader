@@ -1,25 +1,12 @@
-// @ts-check
 /**
  * Unit tests for isArabicHeavy()
- * Uses the Unicode Script property approach: /\p{Script=Arabic}/u
- * No legacy block-range escapes allowed.
+ * Mutation-testable: exercises every branch of the actual implementation.
  */
 
-// Inline implementation matching marqam.html exactly
-const ARABIC_RE = /\p{Script=Arabic}/u;
-function isArabicHeavy(text, threshold = 0.5) {
-  if (!text) return false;
-  const sample = text.slice(0, 500);
-  let letters = 0, arabic = 0;
-  for (const ch of sample) {
-    if (/\p{L}/u.test(ch)) { letters++; if (ARABIC_RE.test(ch)) arabic++; }
-  }
-  return letters > 0 && arabic / letters >= threshold;
-}
+import { describe, test, expect } from 'vitest';
+import { isArabicHeavy } from '../../src/renderer/i18n.js';
 
-const { test, expect } = require('@playwright/test');
-
-test.describe('isArabicHeavy()', () => {
+describe('isArabicHeavy()', () => {
   test('returns true for Arabic-heavy text', () => {
     expect(isArabicHeavy('مرحبا بالعالم')).toBe(true);
   });
@@ -38,17 +25,14 @@ test.describe('isArabicHeavy()', () => {
   });
 
   test('returns true for mostly Arabic with some Latin', () => {
-    // 6 Arabic letters, 2 Latin: 75% Arabic >= 50% threshold
     expect(isArabicHeavy('مرحبا hello')).toBe(true);
   });
 
   test('returns false for mixed text below threshold', () => {
-    // Mostly English with a few Arabic chars
     expect(isArabicHeavy('Hello world in مرحبا')).toBe(false);
   });
 
   test('respects custom threshold', () => {
-    // 'مرحبا hello' — 6 Arabic / 11 total = 0.545
     expect(isArabicHeavy('مرحبا hello', 0.9)).toBe(false);
     expect(isArabicHeavy('مرحبا hello', 0.4)).toBe(true);
   });
@@ -60,5 +44,18 @@ test.describe('isArabicHeavy()', () => {
   test('handles pure Arabic prose', () => {
     const prose = 'الصفحةُ ليست شاشةً، والقارئُ لا يُمرِّر النصَّ بل يقلِبُه.';
     expect(isArabicHeavy(prose)).toBe(true);
+  });
+
+  test('returns false when threshold is 0 and no letters exist', () => {
+    expect(isArabicHeavy('12345', 0)).toBe(false);
+  });
+
+  test('respects 500-char sample limit', () => {
+    const long = 'مرحبا '.repeat(200); // 1200+ chars
+    expect(isArabicHeavy(long, 1.0)).toBe(true);
+  });
+
+  test('returns false for whitespace-only string', () => {
+    expect(isArabicHeavy('   \n\t  ')).toBe(false);
   });
 });

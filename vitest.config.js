@@ -1,5 +1,9 @@
 import { defineConfig } from 'vitest/config';
-import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+// ✅ الحل البديل لـ __dirname في ESM
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
@@ -7,7 +11,11 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/unit/**/*.test.js', 'tests/unit/**/*.spec.js'],
-    exclude: ['tests/unit/**/*.assert.test.js'],
+    exclude: [
+      'tests/unit/**/*.assert.test.js',
+      'tests/e2e/**',              // احتياطي
+      'tests/**/*.e2e.spec.js',    // احتياطي
+    ],
     deps: {
       inline: [/src\/main-logic\.js/],
     },
@@ -21,7 +29,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      electron: path.resolve(__dirname, '__mocks__/electron.cjs'),
+      // ✅ استخدم resolve بدلاً من path.resolve
+      electron: resolve(__dirname, '__mocks__/electron.cjs'),
     },
   },
 });

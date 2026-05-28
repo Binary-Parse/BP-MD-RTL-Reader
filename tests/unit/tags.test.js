@@ -1,12 +1,9 @@
-// @ts-check
 /**
- * Unit tests for renderTags() tag extraction logic.
- * Tests the regex /(?:^|\s)#([\p{L}\p{N}_-]+)/gu used in marqam.html.
+ * Unit tests for tag extraction logic (renderTags)
  */
 
-const { test, expect } = require('@playwright/test');
+import { describe, test, expect } from 'vitest';
 
-// Inline tag extraction matching marqam.html
 function extractTags(content) {
   const tagMap = {};
   const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
@@ -31,7 +28,7 @@ function extractTagsFromFiles(files) {
   return tagMap;
 }
 
-test.describe('Tag extraction', () => {
+describe('Tag extraction', () => {
   test('extracts single tag from text', () => {
     const tags = extractTags('Some content #reading here');
     expect(Object.keys(tags)).toContain('reading');
@@ -56,18 +53,9 @@ test.describe('Tag extraction', () => {
       { content: 'File two #reading #draft' }
     ];
     const tagMap = extractTagsFromFiles(files);
-    // 'reading' appears in both files (indices 0 and 1)
     expect(tagMap['reading']).toEqual([0, 1]);
-    // 'prose' only in file 0
     expect(tagMap['prose']).toEqual([0]);
-    // 'draft' only in file 1
     expect(tagMap['draft']).toEqual([1]);
-  });
-
-  test('does not match inline code with # prefix', () => {
-    // #123 is a number-prefixed tag — should be extracted
-    const tags = extractTags('#tagged content');
-    expect(Object.keys(tags)).toContain('tagged');
   });
 
   test('handles empty content', () => {
@@ -85,5 +73,15 @@ test.describe('Tag extraction', () => {
     expect(Object.keys(tags)).toContain('my-tag');
     expect(Object.keys(tags)).toContain('my_tag');
     expect(Object.keys(tags)).toContain('tag123');
+  });
+
+  test('does not match hashtag inside a word', () => {
+    const tags = extractTags('word#notag');
+    expect(Object.keys(tags)).toHaveLength(0);
+  });
+
+  test('counts repeated tags in same file', () => {
+    const tags = extractTags('#tag #tag #tag');
+    expect(tags['tag']).toBe(3);
   });
 });

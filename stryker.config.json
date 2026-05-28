@@ -1,5 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "main.js and preload.js are intentionally excluded from `mutate` (audit #28). Their tests use a Module._cache + Module._resolveFilename hijack to inject mock 'electron' and 'fs' — Stryker's per-test coverage instrumentation cannot trace coverage through that hijack, so every mutant on those files would be reported as NoCoverage regardless of test quality. Behavioral safety is instead locked in by: (a) Vitest line coverage main.js 99.4 % stmts / 91 % branches; preload.js 100 % stmts / 100 % funcs, (b) tests/ipc-security.spec.js JB1-JB4 paths via the live Electron renderer, (c) tests/smoke.spec.js boot-time integration. Re-enable both files in `mutate` once tests are refactored away from the hijack pattern.",
   "packageManager": "npm",
   "reporters": ["html", "clear-text", "json"],
   "testRunner": "vitest",
@@ -8,8 +9,6 @@
   },
   "coverageAnalysis": "perTest",
   "mutate": [
-    "main.js",
-    "preload.js",
     "src/main-logic.js",
     "src/renderer/i18n.js",
     "src/renderer/markdown.js",
@@ -18,8 +17,8 @@
     "src/renderer/theme.js"
   ],
   "thresholds": {
-    "high": 90,
-    "low": 80,
-    "break": null
+    "high": 95,
+    "low": 85,
+    "break": 90
   }
 }

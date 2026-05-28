@@ -738,3 +738,252 @@ describe('main.js — handler behaviour (audit #1)', () => {
     expect(r2).toEqual({ action: 'deny' });
   });
 });
+
+// ── APP LIFECYCLE + FILE ASSOCIATION + LOG ROTATION (audit #1, follow-up) ─
+// Covers the remaining uncovered branches in main.js after db3cd46:
+//   - deliverPendingFile (guard, happy path, fs throws)
+//   - did-finish-load handler invocation
+//   - app.whenReady().then() — pendingFileToOpen seed from argv, createWindow,
+//     activate handler registration
+//   - app.on('activate') — recreates window when none
+//   - app.on('open-file') — preventDefault + deliver path
+//   - app.on('window-all-closed') — quits when platform !== 'darwin'
+//   - app.on('second-instance') — focuses existing, restores if minimised
+//   - rotateIfNeeded — actually fires its rename loop when size >= 1 MiB
+//   - log:error — minute-window rollover with logDropped > 0 emits summary
+//
+// Each test triggers exactly one branch by manipulating the mocks. The
+// handlers/captured listeners are kept on a fresh main.js load so module
+// state (pendingFileToOpen, logCount, logFilePath) starts clean.
+
+describe('main.js — lifecycle + file-association + log rotation (audit #1)', () => {
+  let mockElectron;
+  let mockFs;
+  let originalResolve;
+  let restoreResolve;
+  let mockAppListeners;
+  let didFinishLoadHandler;
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    // buildMockElectron doesn't expose isMinimized; add it so the
+    // second-instance handler can call it.
+    mockElectron._mockWin.isMinimized = vi.fn(() => false);
+    // Capture app.on listeners (buildMockElectron's app.on is vi.fn but doesn't
+    // record them; wrap to record into a local map).
+    mockAppListeners = {};
+    mockElectron.app.on.mockImplementation((event, fn) => {
+      mockAppListeners[event] = fn;
+    });
+    // Capture webContents.on('did-finish-load', cb) for later invocation.
+    mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
+      if (event === 'did-finish-load') didFinishLoadHandler = fn;
+    });
+
+    mockFs = {
+      readFileSync: vi.fn(() => '﻿# Pending'), // includes BOM
+      realpathSync: vi.fn((p) => p),
+      statSync: vi.fn(() => ({ isFile: () => true, size: 100 })),
+      promises: {
+        readdir: vi.fn(() => Promise.resolve([])),
+        lstat: vi.fn(() => Promise.resolve({ isSymbolicLink: () => false, size: 100 })),
+        realpath: vi.fn((p) => Promise.resolve(p)),
+        stat: vi.fn(() => Promise.resolve({ size: 100 })),
+        readFile: vi.fn(() => Promise.resolve('content')),
+        mkdir: vi.fn(() => Promise.resolve()),
+      },
+      appendFileSync: vi.fn(),
+      mkdirSync: vi.fn(),
+      existsSync: vi.fn(() => false),
+      renameSync: vi.fn(),
+    };
+
+    // Seed process.argv with a recognised .md path so app.whenReady continuation
+    // sets pendingFileToOpen and the did-finish-load + deliverPendingFile path
+    // is exercised end-to-end.
+    process.argv = ['node', 'main.js', 'pending.md'];
+
+    originalResolve = Module._resolveFilename;
+    const mockElectronPath = path.join(__dirname, '__mock_electron_lifecycle.js');
+    const mockFsPath = path.join(__dirname, '__mock_fs_lifecycle.js');
+    Module._cache[mockElectronPath] = { id: 'electron', exports: mockElectron, loaded: true };
+    Module._cache[mockFsPath] = { id: 'fs', exports: mockFs, loaded: true };
+    Module._resolveFilename = function (request, parent, isMain) {
+      if (request === 'electron') return mockElectronPath;
+      if (request === 'fs') return mockFsPath;
+      return originalResolve(request, parent, isMain);
+    };
+    restoreResolve = () => { Module._resolveFilename = originalResolve; };
+
+    const require = createRequire(import.meta.url);
+    const mainPath = require.resolve('../../main.js');
+    delete require.cache[mainPath];
+    require(mainPath);
+    await new Promise(r => setTimeout(r, 50));
+  });
+
+  afterAll(() => { if (restoreResolve) restoreResolve(); });
+
+  // ─ app.whenReady continuation ──────────────────────────────────────
+  test('app.whenReady() runs createWindow and registers activate handler', () => {
+    expect(mockElectron.BrowserWindow).toHaveBeenCalled();
+    expect(mockAppListeners.activate).toBeInstanceOf(Function);
+  });
+
+  test('app.whenReady() seeds pendingFileToOpen from process.argv .md path', () => {
+    // Indirect assertion: triggering did-finish-load now should deliver the
+    // pending file via webContents.send('open-external-file', ...).
+    expect(typeof didFinishLoadHandler).toBe('function');
+    mockElectron._mockWin.webContents.send.mockClear();
+    didFinishLoadHandler();
+    expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledWith(
+      'open-external-file',
+      expect.objectContaining({ name: 'pending.md', content: '# Pending' /* BOM stripped */ })
+    );
+  });
+
+  // ─ deliverPendingFile guards ───────────────────────────────────────
+  test('deliverPendingFile: did-finish-load no-op when no pending file (already delivered above)', () => {
+    // Previous test consumed the pending file. Another did-finish-load
+    // tick must be a silent no-op (early-return on !pendingFileToOpen).
+    mockElectron._mockWin.webContents.send.mockClear();
+    didFinishLoadHandler();
+    expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
+  });
+
+  test('deliverPendingFile: silent catch when fs.readFileSync throws', () => {
+    // Re-seed a pending file via open-file event, then make read throw.
+    // Must ensure getAllWindows returns a window so deliverPendingFile
+    // actually fires and consumes the throwing mockImplementationOnce
+    // (otherwise the throw would leak into the next test).
+    mockFs.readFileSync.mockImplementationOnce(() => { throw new Error('ENOENT'); });
+    mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([mockElectron._mockWin]);
+    mockElectron._mockWin.webContents.send.mockClear();
+
+    const openFileEvent = { preventDefault: vi.fn() };
+    mockAppListeners['open-file'](openFileEvent, '/some/path.md');
+
+    // preventDefault always called; send NOT called because readFileSync threw
+    expect(openFileEvent.preventDefault).toHaveBeenCalled();
+    expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
+  });
+
+  // ─ app.on('activate') — recreates window when none ─────────────────
+  test('app.on("activate") creates a new window when no windows are open', () => {
+    mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([]);
+    const before = mockElectron.BrowserWindow.mock.calls.length;
+    mockAppListeners.activate();
+    expect(mockElectron.BrowserWindow.mock.calls.length).toBe(before + 1);
+  });
+
+  test('app.on("activate") does NOT create a window when one exists', () => {
+    mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([mockElectron._mockWin]);
+    const before = mockElectron.BrowserWindow.mock.calls.length;
+    mockAppListeners.activate();
+    expect(mockElectron.BrowserWindow.mock.calls.length).toBe(before);
+  });
+
+  // ─ app.on('open-file') ─────────────────────────────────────────────
+  test('app.on("open-file") with empty path is a no-op after preventDefault', () => {
+    const ev = { preventDefault: vi.fn() };
+    mockElectron._mockWin.webContents.send.mockClear();
+    mockAppListeners['open-file'](ev, '');
+    expect(ev.preventDefault).toHaveBeenCalled();
+    expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
+  });
+
+  // ─ app.on('second-instance') — focus + restore + deliver ───────────
+  test('app.on("second-instance"): existing window is focused and restored', () => {
+    const win = mockElectron._mockWin;
+    win.focus.mockClear();
+    win.restore.mockClear();
+    win.isMinimized.mockReturnValueOnce(true);
+    mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+    mockAppListeners['second-instance']({}, ['node', 'main.js']);
+    expect(win.restore).toHaveBeenCalled();
+    expect(win.focus).toHaveBeenCalled();
+  });
+
+  test('app.on("second-instance") with file arg in argv delivers the file', () => {
+    const win = mockElectron._mockWin;
+    win.webContents.send.mockClear();
+    win.isMinimized.mockReturnValueOnce(false);
+    mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+    // realpathSync returns the path as-is; statSync says it's a 100-byte file.
+    mockAppListeners['second-instance']({}, ['node', 'main.js', 'second.md']);
+    expect(win.webContents.send).toHaveBeenCalledWith(
+      'open-external-file',
+      expect.objectContaining({ name: 'second.md' })
+    );
+  });
+
+  test('app.on("second-instance") with no windows is a no-op', () => {
+    mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([]);
+    expect(() => mockAppListeners['second-instance']({}, ['node', 'main.js'])).not.toThrow();
+  });
+
+  // ─ app.on('window-all-closed') ─────────────────────────────────────
+  test('app.on("window-all-closed") quits when platform is not darwin', () => {
+    const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    mockElectron.app.quit.mockClear();
+    mockAppListeners['window-all-closed']();
+    expect(mockElectron.app.quit).toHaveBeenCalled();
+    Object.defineProperty(process, 'platform', origPlatform);
+  });
+
+  test('app.on("window-all-closed") does NOT quit on darwin', () => {
+    const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    mockElectron.app.quit.mockClear();
+    mockAppListeners['window-all-closed']();
+    expect(mockElectron.app.quit).not.toHaveBeenCalled();
+    Object.defineProperty(process, 'platform', origPlatform);
+  });
+
+  // ─ rotateIfNeeded — fires its rename loop ──────────────────────────
+  test('writeLog triggers rotateIfNeeded when log file size exceeds 1 MiB', () => {
+    // First make statSync claim the file is over the rotation cap, and pretend
+    // the previous rotation files (.1, .2) exist so the loop body executes.
+    mockFs.statSync.mockReturnValueOnce({ size: 2 * 1024 * 1024 });
+    mockFs.existsSync.mockImplementation(() => true);
+    mockFs.renameSync.mockClear();
+
+    // Trigger writeLog by emitting uncaughtException (a path bound to writeLog
+    // at top of main.js). Any one writeLog call goes through rotateIfNeeded.
+    process.emit('uncaughtException', new Error('trigger rotation'));
+
+    // Expect a chain of renames:
+    //   .2 -> .3, .1 -> .2, then the current file -> .1
+    const renameTargets = mockFs.renameSync.mock.calls.map(c => c[1]);
+    expect(renameTargets.some(t => /\.1$/.test(t))).toBe(true);
+  });
+
+  // ─ log:error minute-window rollover with summary ───────────────────
+  test('log:error rollover writes a "dropped N" summary when window expires', () => {
+    const logError = mockElectron.ipcMain.on.mock.calls.find(c => c[0] === 'log:error')[1];
+
+    // Phase 1: fill the cap to overflow so logDropped > 0
+    mockFs.appendFileSync.mockClear();
+    for (let i = 0; i < 200; i++) logError({}, { message: `e${i}` });
+    const writtenInPhase1 = mockFs.appendFileSync.mock.calls.length;
+    expect(writtenInPhase1).toBeGreaterThan(0);
+    expect(writtenInPhase1).toBeLessThanOrEqual(100); // cap enforced
+
+    // Phase 2: jump Date.now() forward past 60s so the window rolls over.
+    const realNow = Date.now;
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(realNow() + 70_000);
+    mockFs.appendFileSync.mockClear();
+
+    logError({}, { message: 'after rollover' });
+
+    // After rollover we expect TWO writes: the "dropped N" summary, then the
+    // new event itself.
+    const linesAfter = mockFs.appendFileSync.mock.calls.map(c => JSON.parse(c[1]));
+    expect(linesAfter.length).toBeGreaterThanOrEqual(2);
+    expect(linesAfter.some(l => l.source === 'main:rateLimit' && /^dropped \d+/.test(l.message))).toBe(true);
+    expect(linesAfter.some(l => l.message === 'after rollover')).toBe(true);
+
+    spy.mockRestore();
+  });
+});

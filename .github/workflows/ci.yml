@@ -44,22 +44,32 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
 
-      - name: Install Playwright Chromium (browser only, no deps)
+      - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         timeout-minutes: 10
         run: npx playwright install chromium
 
+      # ✅ تشغيل Vitest مع --config صراحةً
       - name: Unit tests + coverage (Vitest)
-        run: npm run test:unit:coverage
+        run: npx vitest run --config vitest.config.js --coverage
 
       - name: Mutation tests (Stryker)
-        run: npm run test:mutation
+        run: npx stryker run
 
-      - name: E2E tests (Playwright, full sweep)
-        run: npm run test:e2e
+      # ✅ تشغيل Playwright مع --config صراحةً
+      - name: E2E tests (Playwright)
+        run: npx playwright test --config playwright.config.js
 
-      - name: Dependency audit (block on moderate+)
+      - name: Dependency audit
         run: npm audit --audit-level=moderate
+
+      # ✅ إنشاء المجلدات قبل رفعها
+      - name: Ensure report directories exist
+        if: always()
+        run: |
+          mkdir -p coverage/node
+          mkdir -p reports/mutation
+          mkdir -p test-results
 
       - name: Upload Vitest coverage
         if: always()
@@ -77,8 +87,8 @@ jobs:
           path: reports/mutation/
           retention-days: 14
 
-      - name: Upload Playwright failure artefacts
-        if: failure()
+      - name: Upload Playwright artefacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results

@@ -13,6 +13,7 @@
     "test:e2e": "playwright test --config playwright.config.js",
     "test:e2e:coverage": "playwright test tests/coverage-collector.spec.js && node scripts/generate-renderer-coverage.js",
     "test:smoke": "playwright test tests/smoke.spec.js",
+    "test:integration": "playwright test tests/integration",
     "test:update-snapshots": "playwright test --update-snapshots",
     "test:mutation": "stryker run",
     "test:watch": "vitest --config vitest.config.js",

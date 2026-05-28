@@ -4,7 +4,10 @@ const path = require('path');
 
 module.exports = defineConfig({
   testDir: './tests',
-  testIgnore: ['**/unit/**', '**/integration/**'],
+  // Only Vitest unit tests are excluded — Playwright integration tests
+  // (tests/integration/*.test.js) target marqam.html via file:// like the
+  // rest of the E2E sweep, so they belong in test:e2e.
+  testIgnore: ['**/unit/**'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

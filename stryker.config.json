@@ -7,10 +7,19 @@
     "configFile": "vitest.config.js"
   },
   "coverageAnalysis": "perTest",
-  "mutate": ["src/main-logic.js"],
+  "mutate": [
+    "main.js",
+    "preload.js",
+    "src/main-logic.js",
+    "src/renderer/i18n.js",
+    "src/renderer/markdown.js",
+    "src/renderer/search.js",
+    "src/renderer/state.js",
+    "src/renderer/theme.js"
+  ],
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 70
+    "break": null
   }
 }

@@ -232,3 +232,160 @@ describe('preload.js', () => {
     expect(cb).toHaveBeenCalledWith({ name: 'test.md', path: '/test.md', content: '# Hello' });
   });
 });
+
+// ── IPC CONCURRENCY (audit #9) ─────────────────────────────────────────────
+// main.js holds `allowedFolders` as a module-level Set mutated by
+// dialog:openFolder and read by fs:readVault. These tests exercise the
+// handlers under parallel invocations to verify that:
+//   - concurrent openFolder calls don't lose paths (Set.add is atomic in JS)
+//   - readVault racing with openFolder produces deterministic results
+//     (authorised or unauthorised, never a partial / inconsistent state)
+//   - unauthorised paths stay rejected even under load
+// JavaScript is single-threaded, but async/await interleaving between an
+// `await` and the next sync line is the equivalent of a race window. These
+// tests are the regression net for any future change that adds a remove
+// path or makes openFolder's await-then-Set.add no longer atomic.
+
+describe('main.js — IPC concurrency (audit #9)', () => {
+  let mockElectron;
+  let originalResolve;
+  let restoreResolve;
+  let openFolderHandler;
+  let readVaultHandler;
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+
+    // CJS-require mock for 'fs' — readVault runs fs.promises.* on the
+    // injected path; the real fs would throw ENOENT. Always returns an
+    // empty directory so a successful readVault yields [].
+    const mockFs = {
+      readFileSync: () => '# Hello',
+      realpathSync: (p) => p,
+      statSync: () => ({ isFile: () => true, size: 100 }),
+      promises: {
+        readdir: () => Promise.resolve([]),
+        lstat: () => Promise.resolve({ isSymbolicLink: () => false, size: 100 }),
+        realpath: (p) => Promise.resolve(p),
+        stat: () => Promise.resolve({ size: 100 }),
+        readFile: () => Promise.resolve('content'),
+        mkdir: () => Promise.resolve(undefined),
+      },
+      appendFileSync: () => undefined,
+      mkdirSync: () => undefined,
+      existsSync: () => false,
+      renameSync: () => undefined,
+    };
+
+    originalResolve = Module._resolveFilename;
+    const mockElectronPath = path.join(__dirname, '__mock_electron_concurrency.js');
+    const mockFsPath = path.join(__dirname, '__mock_fs_concurrency.js');
+    Module._cache[mockElectronPath] = { id: 'electron', exports: mockElectron, loaded: true };
+    Module._cache[mockFsPath] = { id: 'fs', exports: mockFs, loaded: true };
+    Module._resolveFilename = function (request, parent, isMain) {
+      if (request === 'electron') return mockElectronPath;
+      if (request === 'fs') return mockFsPath;
+      return originalResolve(request, parent, isMain);
+    };
+    restoreResolve = () => { Module._resolveFilename = originalResolve; };
+
+    const require = createRequire(import.meta.url);
+    const mainPath = require.resolve('../../main.js');
+    delete require.cache[mainPath];
+    require(mainPath);
+    await new Promise(r => setTimeout(r, 50));
+
+    openFolderHandler = mockElectron.ipcMain.handle.mock.calls
+      .find(c => c[0] === 'dialog:openFolder')[1];
+    readVaultHandler = mockElectron.ipcMain.handle.mock.calls
+      .find(c => c[0] === 'fs:readVault')[1];
+  });
+
+  afterAll(() => {
+    if (restoreResolve) restoreResolve();
+  });
+
+  test('parallel dialog:openFolder calls both add their paths', async () => {
+    let n = 0;
+    mockElectron.dialog.showOpenDialog.mockImplementation(() =>
+      Promise.resolve({ canceled: false, filePaths: [`/parallel-vault-${++n}`] })
+    );
+
+    const [a, b] = await Promise.all([openFolderHandler(), openFolderHandler()]);
+    expect(a.canceled).toBe(false);
+    expect(b.canceled).toBe(false);
+    expect([a.folderPath, b.folderPath].sort()).toEqual(
+      ['/parallel-vault-1', '/parallel-vault-2']
+    );
+
+    // Both paths must now pass the allowlist check.
+    const r1 = await readVaultHandler({}, a.folderPath);
+    const r2 = await readVaultHandler({}, b.folderPath);
+    expect(r1).not.toMatchObject({ error: 'unauthorized-path' });
+    expect(r2).not.toMatchObject({ error: 'unauthorized-path' });
+  });
+
+  test('cancelled openFolder does NOT pollute allowedFolders', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: true,
+      filePaths: [],
+    });
+    const r = await openFolderHandler();
+    expect(r).toEqual({ canceled: true, folderPath: null });
+
+    // A path that was never added must remain unauthorised.
+    expect(await readVaultHandler({}, '/never-added-vault')).toMatchObject({
+      error: 'unauthorized-path',
+    });
+  });
+
+  test('10 parallel readVault calls on same allowlisted folder all succeed', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ['/concurrent-vault'],
+    });
+    await openFolderHandler();
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => readVaultHandler({}, '/concurrent-vault'))
+    );
+    for (const r of results) {
+      expect(Array.isArray(r)).toBe(true);
+      expect(r).toEqual([]);
+    }
+  });
+
+  test('readVault racing with openFolder is deterministic', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ['/race-vault'],
+    });
+
+    const [openResult, readResult] = await Promise.all([
+      openFolderHandler(),
+      readVaultHandler({}, '/race-vault'),
+    ]);
+
+    expect(openResult).toEqual({ canceled: false, folderPath: '/race-vault' });
+
+    // readResult is one of:
+    //   1. [] (run after openFolder finished its Set.add)
+    //   2. { error: 'unauthorized-path' } (run before)
+    // Anything else = race-condition bug.
+    const isAuthorised = Array.isArray(readResult) && readResult.length === 0;
+    const isRejected = readResult && readResult.error === 'unauthorized-path';
+    expect(isAuthorised || isRejected).toBe(true);
+  });
+
+  test('readVault rejects unauthorised path even under load', async () => {
+    let n = 0;
+    mockElectron.dialog.showOpenDialog.mockImplementation(() =>
+      Promise.resolve({ canceled: false, filePaths: [`/load-vault-${++n}`] })
+    );
+    await Promise.all(Array.from({ length: 5 }, () => openFolderHandler()));
+
+    expect(await readVaultHandler({}, '/totally-not-allowed')).toMatchObject({
+      error: 'unauthorized-path',
+    });
+  });
+});

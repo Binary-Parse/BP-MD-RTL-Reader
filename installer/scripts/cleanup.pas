@@ -8,8 +8,8 @@
 
   NOTE on user-data scope: a per-machine uninstall runs as the elevated user,
   so the roaming/local AppData paths resolve to *that* account. On a normal
-  single-user PC this is the right profile. See INSTALLER_VERIFICATION.md for
-  the documented multi-user caveat.
+  single-user PC this is the right profile; on a shared/multi-user machine a
+  per-machine uninstall only clears the uninstalling user's data (known caveat).
   ============================================================================ }
 
 { Delete a directory tree if it exists (files + subdirs). Safe no-op if absent. }

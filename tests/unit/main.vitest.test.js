@@ -81,6 +81,8 @@ function buildMockElectron() {
   const ipcMain = { handle: vi.fn(), on: vi.fn() };
   const ipcRenderer = { send: vi.fn(), invoke: vi.fn(() => Promise.resolve()), on: vi.fn() };
   const contextBridge = { exposeInMainWorld: vi.fn() };
+  const menuPopup = vi.fn();
+  const Menu = { buildFromTemplate: vi.fn(() => ({ popup: menuPopup })), _popup: menuPopup };
 
   return {
     app: mockApp,
@@ -91,6 +93,7 @@ function buildMockElectron() {
     shell: { openExternal: vi.fn() },
     dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
     crashReporter,
+    Menu,
     _mockWin: mockWin,
   };
 }
@@ -1103,5 +1106,79 @@ describe('main.js — lifecycle + file-association + log rotation (audit #1)', (
     expect(linesAfter.some(l => l.message === 'after rollover')).toBe(true);
 
     spy.mockRestore();
+  });
+});
+
+// ── RIGHT-CLICK CONTEXT MENU (Edit-menu fix) ───────────────────────────────
+// main.js registers webContents.on('context-menu', …) and pops up a native
+// role-based menu (undo/redo/cut/copy/paste/selectAll) gated by params.
+describe('main.js — right-click context menu', () => {
+  let mockElectron;
+  let originalResolve;
+  let restoreResolve;
+  let ctxHandler;
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    // Capture the context-menu listener so we can invoke it directly.
+    mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
+      if (event === 'context-menu') ctxHandler = fn;
+    });
+
+    originalResolve = Module._resolveFilename;
+    const mockElectronPath = path.join(__dirname, '__mock_electron_ctxmenu.js');
+    Module._cache[mockElectronPath] = { id: 'electron', exports: mockElectron, loaded: true };
+    Module._resolveFilename = function (request, parent, isMain) {
+      if (request === 'electron') return mockElectronPath;
+      return originalResolve(request, parent, isMain);
+    };
+    restoreResolve = () => { Module._resolveFilename = originalResolve; };
+
+    const require = createRequire(import.meta.url);
+    const mainPath = require.resolve('../../main.js');
+    delete require.cache[mainPath];
+    require(mainPath);
+    await new Promise(r => setTimeout(r, 50));
+  });
+
+  afterAll(() => { if (restoreResolve) restoreResolve(); });
+
+  test('registers a context-menu handler', () => {
+    expect(typeof ctxHandler).toBe('function');
+  });
+
+  test('editable field → full edit menu with roles, enabled per editFlags', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.Menu._popup.mockClear();
+    ctxHandler({}, {
+      isEditable: true,
+      selectionText: 'sel',
+      editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: false, canSelectAll: true },
+    });
+    expect(mockElectron.Menu.buildFromTemplate).toHaveBeenCalledTimes(1);
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    expect(tpl.filter(i => i.role).map(i => i.role)).toEqual(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(byRole.undo).toBe(true);
+    expect(byRole.redo).toBe(false);   // canRedo:false → disabled
+    expect(byRole.paste).toBe(false);  // canPaste:false → disabled
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
+  });
+
+  test('non-editable WITH selection → Copy + Select All only', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.Menu._popup.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: 'hello', editFlags: { canCopy: true, canSelectAll: true } });
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    expect(tpl.filter(i => i.role).map(i => i.role)).toEqual(['copy', 'selectAll']);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
+  });
+
+  test('non-editable, no selection → no menu shown', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.Menu._popup.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '   ', editFlags: {} });
+    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
+    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
   });
 });

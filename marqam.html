@@ -1985,6 +1985,9 @@ function buildMenu(name) {
   dropdown.querySelectorAll('.dd-item:not(.disabled)').forEach(el => {
     const i = parseInt(el.dataset.i);
     const activate = () => { try { def.items[i].action(); } catch(err) { console.error(err); } };
+    // Don't let mousedown blur the editor before the action runs — Copy/Cut/Undo
+    // need the textarea to stay focused with its selection intact.
+    el.addEventListener('mousedown', e => e.preventDefault());
     el.onclick = activate;
     el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } };
   });
@@ -2857,20 +2860,14 @@ function handleBlockquoteEnter(e) {
   e.preventDefault();
 
   if (body.trim() === '') {
-    // Empty blockquote line: strip the prefix, insert a blank non-blockquote line
-    const before = val.slice(0, lineStart);
-    const after = val.slice(pos);
-    ta.value = before + '\n' + after;
+    // Empty blockquote line: replace the prefix with a blank non-blockquote line.
+    replaceInTextarea(ta, lineStart, pos, '\n');
     ta.selectionStart = ta.selectionEnd = lineStart + 1;
   } else {
-    // Non-empty blockquote line: continue with the same prefix on the next line
-    const before = val.slice(0, pos);
-    const after = val.slice(pos);
-    ta.value = before + '\n' + prefix + after;
+    // Non-empty blockquote line: continue with the same prefix on the next line.
+    replaceInTextarea(ta, pos, pos, '\n' + prefix);
     ta.selectionStart = ta.selectionEnd = pos + 1 + prefix.length;
   }
-
-  ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 srcTextarea.addEventListener('keydown', handleBlockquoteEnter);
@@ -2887,11 +2884,25 @@ srcTextarea.addEventListener('keyup', () => {
 // TOOLBAR MARKDOWN HELPERS
 // =====================================================================
 function ensureSourceFocus() {
-  if (State.editorMode === 'live') {
-    setEditorMode('source');
-    setTimeout(() => srcTextarea.focus(), 50);
-  } else {
-    srcTextarea.focus();
+  // Switch to source mode if needed, then focus SYNCHRONOUSLY so the
+  // execCommand-based edits below run against a focused, editable textarea.
+  if (State.editorMode === 'live') setEditorMode('source');
+  srcTextarea.focus();
+}
+// Replace [start,end) in the textarea with `text` while keeping it on the NATIVE
+// undo stack (execCommand('insertText')), so Ctrl+Z and Undo (Edit menu +
+// right-click) can reverse toolbar/blockquote edits. execCommand fires a native
+// 'input' event, which drives onSourceInput. Falls back to a value-splice (with
+// a manual 'input' dispatch) only if execCommand can't run in this context.
+function replaceInTextarea(ta, start, end, text) {
+  ta.focus();
+  ta.setSelectionRange(start, end);
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, text); } catch (_) { ok = false; }
+  if (!ok) {
+    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + text.length;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
 function wrapSelection(left, right) {
@@ -2899,19 +2910,17 @@ function wrapSelection(left, right) {
   const ta = srcTextarea;
   const start = ta.selectionStart, end = ta.selectionEnd;
   const sel = ta.value.slice(start, end) || 'text';
-  ta.value = ta.value.slice(0, start) + left + sel + right + ta.value.slice(end);
+  replaceInTextarea(ta, start, end, left + sel + right);
   ta.selectionStart = start + left.length;
   ta.selectionEnd = start + left.length + sel.length;
-  onSourceInput();
 }
 function insertText(left, right) {
   ensureSourceFocus();
   const ta = srcTextarea;
   const start = ta.selectionStart, end = ta.selectionEnd;
   const sel = ta.value.slice(start, end);
-  ta.value = ta.value.slice(0, start) + left + sel + right + ta.value.slice(end);
+  replaceInTextarea(ta, start, end, left + sel + right);
   ta.selectionStart = ta.selectionEnd = start + left.length + sel.length;
-  onSourceInput();
 }
 function lineStart(prefix) {
   ensureSourceFocus();
@@ -2919,9 +2928,8 @@ function lineStart(prefix) {
   const start = ta.selectionStart;
   const before = ta.value.slice(0, start);
   const ls = before.lastIndexOf('\n') + 1;
-  ta.value = ta.value.slice(0, ls) + prefix + ta.value.slice(ls);
+  replaceInTextarea(ta, ls, ls, prefix);
   ta.selectionStart = ta.selectionEnd = start + prefix.length;
-  onSourceInput();
 }
 
 // =====================================================================
@@ -3093,6 +3101,9 @@ $('modalOverlay').addEventListener('click', e => { if (e.target === modalOverlay
 $('palOverlay').addEventListener('click', e => { if (e.target === palOverlay) closePalette(); });
 
 document.querySelectorAll('.tb-menu-item').forEach(btn => {
+  // Keep the editor focused/selected when opening a menu — a mousedown would
+  // otherwise blur the textarea, breaking Copy/Cut/Undo run from the Edit menu.
+  btn.addEventListener('mousedown', e => e.preventDefault());
   btn.addEventListener('click', e => openMenu(e, btn.dataset.menu));
 });
 document.querySelectorAll('.sb-tab').forEach(btn => {

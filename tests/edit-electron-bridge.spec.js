@@ -51,7 +51,6 @@ test.describe('[EB] Electron edit-command bridge', () => {
     ['Paste', 'paste'],
     ['Undo', 'undo'],
     ['Redo', 'redo'],
-    ['Select All', 'selectAll'],
   ]) {
     test(`Edit→${label} dispatches editCommand("${cmd}") via electronAPI`, async ({ page }) => {
       await gotoWithElectronMock(page);
@@ -60,6 +59,19 @@ test.describe('[EB] Electron edit-command bridge', () => {
       expect(calls).toContain(cmd);
     });
   }
+
+  // Select All is intentionally NEVER routed through the IPC bridge:
+  // webContents.selectAll() would select the ENTIRE renderer DOM
+  // (titlebar/sidebar/statusbar). It is scoped to the editor in the renderer
+  // instead (see edit-commands.js selectAll() + the execEditCmd shim, which
+  // passes electronAPI:null for selectAll). So even with electronAPI present,
+  // editCommand('selectAll') must NOT be dispatched.
+  test('Edit→Select All does NOT use the IPC bridge (renderer-scoped)', async ({ page }) => {
+    await gotoWithElectronMock(page);
+    await clickEditMenuItem(page, 'Select All');
+    const calls = await page.evaluate(() => window.__editCommandCalls);
+    expect(calls).not.toContain('selectAll');
+  });
 
   test('editCommand is NOT called when electronAPI is absent (browser fallback)', async ({ page }) => {
     await page.goto(FILE_URL);

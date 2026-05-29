@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const {
@@ -227,6 +227,32 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // ==== RIGHT-CLICK CONTEXT MENU ====
+  // Native editing roles (undo/redo/cut/copy/paste/selectAll) run on the focused
+  // element with correct timing — far more reliable than routing through IPC.
+  // Items + enabled state come from Chromium via params.editFlags / isEditable,
+  // so this works in the source textarea AND for copy in the live-preview div.
+  win.webContents.on('context-menu', (_event, params) => {
+    const f = params.editFlags || {};
+    const template = [];
+    if (params.isEditable) {
+      template.push({ role: 'undo', enabled: !!f.canUndo });
+      template.push({ role: 'redo', enabled: !!f.canRedo });
+      template.push({ type: 'separator' });
+      template.push({ role: 'cut', enabled: !!f.canCut });
+      template.push({ role: 'copy', enabled: !!f.canCopy });
+      template.push({ role: 'paste', enabled: !!f.canPaste });
+      template.push({ type: 'separator' });
+      template.push({ role: 'selectAll', enabled: !!f.canSelectAll });
+    } else if (params.selectionText && params.selectionText.trim() !== '') {
+      // Non-editable surface (e.g. live preview): offer Copy + Select All.
+      template.push({ role: 'copy', enabled: !!f.canCopy });
+      template.push({ role: 'selectAll', enabled: !!f.canSelectAll });
+    }
+    if (template.length === 0) return;
+    Menu.buildFromTemplate(template).popup({ window: win });
   });
 }
 

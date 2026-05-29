@@ -20,7 +20,7 @@ CI test result.txt
 # ── Installer build/test scratch ───────────────────────────────────
 installer/Output/
 tests/installer/*.out.txt
-tests/installer/Marqam-SelfTest.exe
+tests/installer/BP-MD-RTL-Reader-SelfTest.exe
 tests/installer/selftest.log
 tests/installer/selftest-result.txt
 
@@ -35,9 +35,9 @@ logs/
 .playwright-mcp/
 
 # ── Local screenshot scratch (not tracked assets) ──────────────────
-marqam-ink.png
-marqam-live.png
-marqam-ref.png
+bpmd-ink.png
+bpmd-live.png
+bpmd-ref.png
 
 # ── BINARY PARSE / Claude Code — pipeline + per-machine settings ───
 .claudedoc/

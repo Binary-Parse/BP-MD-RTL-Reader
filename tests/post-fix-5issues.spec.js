@@ -21,7 +21,7 @@ async function goto(page) {
 
 async function injectFile(page, content) {
   await page.evaluate((c) => {
-    window._marqamState.files = [{ name: 'a.md', path: 'a.md', handle: null, content: c, dirty: false }];
+    window._appState.files = [{ name: 'a.md', path: 'a.md', handle: null, content: c, dirty: false }];
     window.renderFile(0);
   }, content);
   await page.waitForTimeout(150);
@@ -110,7 +110,7 @@ test.describe('[F3] Layout — both panels hidden does not blank the editor', ()
     await injectFile(page, '# heading\n\nbody');
     // Hide both
     await page.evaluate(() => {
-      if (window._marqamState.sidebarVisible)   window.toggleSidebar = window.toggleSidebar || (()=>{});
+      if (window._appState.sidebarVisible)   window.toggleSidebar = window.toggleSidebar || (()=>{});
       // Use button clicks for reliability
     });
     await page.click('#sidebarToggleBtn');
@@ -201,7 +201,7 @@ test.describe('[F4] Reveal strips appear when panel is hidden', () => {
     await page.waitForTimeout(100);
     await page.click('#showSidebarStrip');
     await page.waitForTimeout(100);
-    const visible = await page.evaluate(() => window._marqamState.sidebarVisible);
+    const visible = await page.evaluate(() => window._appState.sidebarVisible);
     expect(visible).toBe(true);
   });
 
@@ -211,7 +211,7 @@ test.describe('[F4] Reveal strips appear when panel is hidden', () => {
     await page.waitForTimeout(100);
     await page.click('#showInspectorStrip');
     await page.waitForTimeout(100);
-    const visible = await page.evaluate(() => window._marqamState.inspectorVisible);
+    const visible = await page.evaluate(() => window._appState.inspectorVisible);
     expect(visible).toBe(true);
   });
 });

@@ -2,8 +2,8 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../index.html');
-const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
+const INDEX_PATH = path.resolve(__dirname, '../index.html');
+const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 test.describe('smoke tests', () => {
   test('app element is visible and no console errors', async ({ page }) => {
@@ -13,7 +13,7 @@ test.describe('smoke tests', () => {
     });
     page.on('pageerror', err => errors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const app = page.locator('.app');
@@ -31,24 +31,24 @@ test.describe('smoke tests', () => {
   });
 
   test('titlebar and statusbar are visible', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await expect(page.locator('.titlebar')).toBeVisible();
     await expect(page.locator('.statusbar')).toBeVisible();
   });
 
   test('sidebar is visible with file navigation', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await expect(page.locator('.sidebar')).toBeVisible();
     await expect(page.locator('.sb-tabs')).toBeVisible();
   });
 
   test('inspector is visible', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await expect(page.locator('.inspector')).toBeVisible();
   });
 
   test('welcome screen shown on initial load', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await expect(page.locator('#welcome')).toBeVisible();
   });
 
@@ -56,7 +56,7 @@ test.describe('smoke tests', () => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Default theme is 'paper' (no data-theme attribute or paper)
@@ -83,7 +83,7 @@ test.describe('smoke tests', () => {
   });
 
   test('toggle RTL via button', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const html = page.locator('html');
@@ -129,13 +129,13 @@ test.describe('smoke tests', () => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Inject a file via State proxy
     await page.evaluate(() => {
-      const state = window._marqamState;
-      if (!state) throw new Error('_marqamState not exposed');
+      const state = window._appState;
+      if (!state) throw new Error('_appState not exposed');
       state.files = [{
         name: 'test-note.md',
         path: 'test-note.md',
@@ -165,7 +165,7 @@ test.describe('smoke tests', () => {
   });
 
   test('command palette opens with Ctrl+K and closes with Escape', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const palOverlay = page.locator('#palOverlay');
@@ -183,12 +183,12 @@ test.describe('smoke tests', () => {
   });
 
   test('split-view mode shows both source and preview panes', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Load a file first
     await page.evaluate(() => {
-      const state = window._marqamState;
+      const state = window._appState;
       if (state) {
         state.files = [{ name: 'test.md', path: 'test.md', handle: null, content: '# Test\n\nContent.', dirty: false }];
         if (typeof window.renderFile === 'function') window.renderFile(0);
@@ -210,7 +210,7 @@ test.describe('smoke tests', () => {
   // ----------------------------------------------------------------
 
   test('[T5-a] #searchBtn click opens command palette', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const palOverlay = page.locator('#palOverlay');
@@ -223,7 +223,7 @@ test.describe('smoke tests', () => {
   });
 
   test('[T5-b] toggleInspector() leaves appBody with two-column grid', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => window.toggleInspector());
@@ -245,7 +245,7 @@ test.describe('smoke tests', () => {
     page.on('pageerror', err => errors.push(err.message));
     page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Remove FSA APIs to simulate unsupported environment
@@ -277,7 +277,7 @@ test.describe('smoke tests', () => {
   });
 
   test('[AC1] vaultSearch exported on window for unit test access', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const exported = await page.evaluate(() => typeof window.vaultSearch === 'function');
@@ -285,12 +285,12 @@ test.describe('smoke tests', () => {
   });
 
   test('[T5-c] find-hit click updates State.findIdx to 1 when second mark clicked', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Inject a file with three hits
     await page.evaluate(() => {
-      const state = window._marqamState;
+      const state = window._appState;
       state.files = [{ name: 'f.md', path: 'f.md', handle: null, content: 'the quick the brown the fox', dirty: false }];
       window.renderFile(0);
     });
@@ -305,7 +305,7 @@ test.describe('smoke tests', () => {
     await page.locator('mark.find-hit').nth(1).click();
     await page.waitForTimeout(50);
 
-    const findIdx = await page.evaluate(() => window._marqamState.findIdx);
+    const findIdx = await page.evaluate(() => window._appState.findIdx);
     expect(findIdx).toBe(1);
   });
 });

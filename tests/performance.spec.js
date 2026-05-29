@@ -24,7 +24,7 @@ test.describe('Performance budgets', () => {
     const content = '# Title\n\n' + 'word '.repeat(10000);
     const elapsed = await page.evaluate((md) => {
       const t0 = performance.now();
-      window._marqamState.files = [{ name: 'big.md', content: md, path: 'big.md', dirty: false }];
+      window._appState.files = [{ name: 'big.md', content: md, path: 'big.md', dirty: false }];
       window.renderFile(0);
       return performance.now() - t0;
     }, content);
@@ -37,7 +37,7 @@ test.describe('Performance budgets', () => {
     const content = Array.from({ length: 100 }, (_, i) => `## Heading ${i}\n\nparagraph ${i}\n`).join('\n');
     const elapsed = await page.evaluate((md) => {
       const t0 = performance.now();
-      window._marqamState.files = [{ name: 'headings.md', content: md, path: 'headings.md', dirty: false }];
+      window._appState.files = [{ name: 'headings.md', content: md, path: 'headings.md', dirty: false }];
       window.renderFile(0);
       return performance.now() - t0;
     }, content);
@@ -66,10 +66,10 @@ test.describe('Performance budgets', () => {
     const growth = await page.evaluate(() => {
       const counts = [];
       for (let i = 0; i < 10; i++) {
-        window._marqamState.files = [{ name: `f${i}.md`, content: `# ${i}\n\ntext`, path: `f${i}.md`, dirty: false }];
+        window._appState.files = [{ name: `f${i}.md`, content: `# ${i}\n\ntext`, path: `f${i}.md`, dirty: false }];
         window.renderFile(0);
         counts.push(document.querySelectorAll('*').length);
-        window._marqamState.files = [];
+        window._appState.files = [];
         window.showWelcome();
       }
       // After cleanup, node count should not grow unboundedly

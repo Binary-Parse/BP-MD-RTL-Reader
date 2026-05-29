@@ -38,7 +38,7 @@ async function goto(page) {
 
 async function injectSample(page) {
   await page.evaluate(() => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = [
       { name: 'one.md',   path: 'one.md',   handle: null, content: '# Heading One\n\nBody with #alpha tag.\n\n> blockquote line', dirty: false },
       { name: 'two.md',   path: 'two.md',   handle: null, content: '# Heading Two\n\nAnother body with the word body and #beta.', dirty: false },
@@ -55,41 +55,41 @@ async function injectSample(page) {
 test.describe('[CA1] Titlebar buttons', () => {
   test('sidebarToggleBtn toggles sidebar visibility state', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.sidebarVisible);
+    const before = await page.evaluate(() => window._appState.sidebarVisible);
     await page.click('#sidebarToggleBtn');
-    const after = await page.evaluate(() => window._marqamState.sidebarVisible);
+    const after = await page.evaluate(() => window._appState.sidebarVisible);
     expect(after).toBe(!before);
   });
 
   test('inspectorToggleBtn toggles inspector visibility state', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.inspectorVisible);
+    const before = await page.evaluate(() => window._appState.inspectorVisible);
     await page.click('#inspectorToggleBtn');
-    const after = await page.evaluate(() => window._marqamState.inspectorVisible);
+    const after = await page.evaluate(() => window._appState.inspectorVisible);
     expect(after).toBe(!before);
   });
 
   test('themeBtn cycles State.theme', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.theme);
+    const before = await page.evaluate(() => window._appState.theme);
     await page.click('#themeBtn');
-    const after = await page.evaluate(() => window._marqamState.theme);
+    const after = await page.evaluate(() => window._appState.theme);
     expect(after).not.toBe(before);
   });
 
   test('rtlBtn flips State.direction', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.direction);
+    const before = await page.evaluate(() => window._appState.direction);
     await page.click('#rtlBtn');
-    const after = await page.evaluate(() => window._marqamState.direction);
+    const after = await page.evaluate(() => window._appState.direction);
     expect(after).not.toBe(before);
   });
 
   test('tabAddBtn creates a new untitled note', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.files.length);
+    const before = await page.evaluate(() => window._appState.files.length);
     await page.click('#tabAddBtn');
-    const after = await page.evaluate(() => window._marqamState.files.length);
+    const after = await page.evaluate(() => window._appState.files.length);
     expect(after).toBe(before + 1);
   });
 
@@ -147,9 +147,9 @@ test.describe('[CA2] Welcome screen entry cards', () => {
 
   test('wbNewNote creates a new untitled note', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.files.length);
+    const before = await page.evaluate(() => window._appState.files.length);
     await page.click('#wbNewNote');
-    const after = await page.evaluate(() => window._marqamState.files.length);
+    const after = await page.evaluate(() => window._appState.files.length);
     expect(after).toBe(before + 1);
   });
 
@@ -157,7 +157,7 @@ test.describe('[CA2] Welcome screen entry cards', () => {
     await goto(page);
     await page.click('#wbLoadDemo');
     await page.waitForTimeout(200);
-    const count = await page.evaluate(() => window._marqamState.files.length);
+    const count = await page.evaluate(() => window._appState.files.length);
     expect(count).toBeGreaterThan(0);
   });
 });
@@ -201,9 +201,9 @@ test.describe('[CA4] Sidebar empty-state buttons', () => {
 
   test('sbNewNoteBtn creates a new note', async ({ page }) => {
     await goto(page);
-    const before = await page.evaluate(() => window._marqamState.files.length);
+    const before = await page.evaluate(() => window._appState.files.length);
     await page.click('#sbNewNoteBtn');
-    const after = await page.evaluate(() => window._marqamState.files.length);
+    const after = await page.evaluate(() => window._appState.files.length);
     expect(after).toBe(before + 1);
   });
 });
@@ -217,7 +217,7 @@ test.describe('[CA5] Editor mode buttons', () => {
     await injectSample(page);
     for (const mode of ['live', 'split', 'source']) {
       await page.click(`#mode${mode.charAt(0).toUpperCase() + mode.slice(1)}`);
-      const cur = await page.evaluate(() => window._marqamState.editorMode);
+      const cur = await page.evaluate(() => window._appState.editorMode);
       expect(cur).toBe(mode);
     }
   });
@@ -295,7 +295,7 @@ test.describe('[CA7] Find bar controls', () => {
     await injectSample(page);
     // Inject a file with multiple "body" occurrences and render it as active
     await page.evaluate(() => {
-      window._marqamState.files[0] = {
+      window._appState.files[0] = {
         name: 'multi.md', path: 'multi.md', handle: null,
         content: 'body one\n\nbody two\n\nbody three\n\nbody four',
         dirty: false
@@ -306,12 +306,12 @@ test.describe('[CA7] Find bar controls', () => {
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'body');
     await page.waitForTimeout(300);
-    const hitCount = await page.evaluate(() => window._marqamState.findHits.length);
+    const hitCount = await page.evaluate(() => window._appState.findHits.length);
     expect(hitCount).toBeGreaterThan(1);
-    const initial = await page.evaluate(() => window._marqamState.findIdx);
+    const initial = await page.evaluate(() => window._appState.findIdx);
     await page.click('#findNextBtn');
     await page.waitForTimeout(100);
-    const afterNext = await page.evaluate(() => window._marqamState.findIdx);
+    const afterNext = await page.evaluate(() => window._appState.findIdx);
     expect(afterNext).not.toBe(initial);
   });
 
@@ -391,33 +391,33 @@ test.describe('[CA9] Edit menu items', () => {
 test.describe('[CA10] View menu zoom controls', () => {
   test('zoomIn / zoomOut / zoomReset adjust State.zoomFactor', async ({ page }) => {
     await goto(page);
-    const base = await page.evaluate(() => window._marqamState.zoomFactor);
+    const base = await page.evaluate(() => window._appState.zoomFactor);
     await page.evaluate(() => window.zoomIn());
-    const zIn = await page.evaluate(() => window._marqamState.zoomFactor);
+    const zIn = await page.evaluate(() => window._appState.zoomFactor);
     expect(zIn).toBeGreaterThan(base);
 
     await page.evaluate(() => window.zoomOut());
-    const zOut = await page.evaluate(() => window._marqamState.zoomFactor);
+    const zOut = await page.evaluate(() => window._appState.zoomFactor);
     expect(zOut).toBeLessThan(zIn);
 
     await page.evaluate(() => window.zoomReset());
-    const zR = await page.evaluate(() => window._marqamState.zoomFactor);
+    const zR = await page.evaluate(() => window._appState.zoomFactor);
     expect(zR).toBe(1);
   });
 
   test('toggleSidebar via sidebarToggleBtn click flips sidebarVisible', async ({ page }) => {
     await goto(page);
-    const b = await page.evaluate(() => window._marqamState.sidebarVisible);
+    const b = await page.evaluate(() => window._appState.sidebarVisible);
     await page.click('#sidebarToggleBtn');
-    const a = await page.evaluate(() => window._marqamState.sidebarVisible);
+    const a = await page.evaluate(() => window._appState.sidebarVisible);
     expect(a).toBe(!b);
   });
 
   test('toggleInspector via View menu flips inspectorVisible', async ({ page }) => {
     await goto(page);
-    const b = await page.evaluate(() => window._marqamState.inspectorVisible);
+    const b = await page.evaluate(() => window._appState.inspectorVisible);
     await page.evaluate(() => window.toggleInspector());
-    const a = await page.evaluate(() => window._marqamState.inspectorVisible);
+    const a = await page.evaluate(() => window._appState.inspectorVisible);
     expect(a).toBe(!b);
   });
 });
@@ -452,7 +452,7 @@ test.describe('[CA12] File tab clicks', () => {
     const tabs = await page.$$('.tab');
     expect(tabs.length).toBeGreaterThanOrEqual(2);
     await tabs[0].click();
-    const active = await page.evaluate(() => window._marqamState.activeFile);
+    const active = await page.evaluate(() => window._appState.activeFile);
     expect(active).toBe(0);
   });
 
@@ -460,13 +460,13 @@ test.describe('[CA12] File tab clicks', () => {
     await goto(page);
     await injectSample(page);
     await page.waitForTimeout(100);
-    const before = await page.evaluate(() => window._marqamState.files.length);
+    const before = await page.evaluate(() => window._appState.files.length);
     // Click the close button on the first tab (skip dirty prompt by not editing)
     const closeBtns = await page.$$('.tab .close');
     expect(closeBtns.length).toBeGreaterThan(0);
     await closeBtns[0].click();
     await page.waitForTimeout(100);
-    const after = await page.evaluate(() => window._marqamState.files.length);
+    const after = await page.evaluate(() => window._appState.files.length);
     expect(after).toBe(before - 1);
   });
 });
@@ -515,7 +515,7 @@ test.describe('[CA15] Search results', () => {
     expect(results.length).toBeGreaterThan(0);
     await results[0].click();
     await page.waitForTimeout(200);
-    const visibleTab = await page.evaluate(() => window._marqamState.activeFile);
+    const visibleTab = await page.evaluate(() => window._appState.activeFile);
     expect(visibleTab).not.toBeNull();
   });
 });

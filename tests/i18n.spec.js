@@ -17,7 +17,7 @@ test.describe('I18N & Localization', () => {
 
   test('UTF-8 Arabic content renders without mojibake', async ({ page }) => {
     const text = await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'ar.md', content: '# مرحبا بالعالم\n\nهذا نص عربي.', path: 'ar.md', dirty: false }];
+      window._appState.files = [{ name: 'ar.md', content: '# مرحبا بالعالم\n\nهذا نص عربي.', path: 'ar.md', dirty: false }];
       window.renderFile(0);
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? h1.textContent : null;
@@ -27,7 +27,7 @@ test.describe('I18N & Localization', () => {
 
   test('Emoji in markdown renders without crash', async ({ page }) => {
     const text = await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'emoji.md', content: '# Hello 🌍\n\n😀 🎉 👍', path: 'emoji.md', dirty: false }];
+      window._appState.files = [{ name: 'emoji.md', content: '# Hello 🌍\n\n😀 🎉 👍', path: 'emoji.md', dirty: false }];
       window.renderFile(0);
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? h1.textContent : null;
@@ -38,7 +38,7 @@ test.describe('I18N & Localization', () => {
   test('Surrogate pair characters do not crash renderFile', async ({ page }) => {
     const result = await page.evaluate(() => {
       try {
-        window._marqamState.files = [{ name: 'sp.md', content: '# 𝄞 Music\n\n𐍈 rune', path: 'sp.md', dirty: false }];
+        window._appState.files = [{ name: 'sp.md', content: '# 𝄞 Music\n\n𐍈 rune', path: 'sp.md', dirty: false }];
         window.renderFile(0);
         return { ok: true };
       } catch (e) {
@@ -50,7 +50,7 @@ test.describe('I18N & Localization', () => {
 
   test('CJK characters render correctly', async ({ page }) => {
     const text = await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'cjk.md', content: '# 日本語テスト\n\n中文内容', path: 'cjk.md', dirty: false }];
+      window._appState.files = [{ name: 'cjk.md', content: '# 日本語テスト\n\n中文内容', path: 'cjk.md', dirty: false }];
       window.renderFile(0);
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? h1.textContent : null;
@@ -72,7 +72,7 @@ test.describe('I18N & Localization', () => {
 
   test('Mixed RTL/LTR content does not corrupt layout', async ({ page }) => {
     const result = await page.evaluate(() => {
-      window._marqamState.files = [{
+      window._appState.files = [{
         name: 'mixed.md',
         content: '# English Title\n\nSome English text.\n\nنص عربي هنا.\n\nMore English.',
         path: 'mixed.md', dirty: false
@@ -88,7 +88,7 @@ test.describe('I18N & Localization', () => {
   test('Locale-specific date in daily note uses toLocaleDateString', async ({ page }) => {
     const content = await page.evaluate(() => {
       window.newDailyNote();
-      return window._marqamState.files[0].content;
+      return window._appState.files[0].content;
     });
     // Should contain a date heading like "# Monday, June 1, 2026" or "# 1 June 2026" depending on locale
     expect(content).toMatch(/^# .+\d{4}/);
@@ -99,7 +99,7 @@ test.describe('I18N & Localization', () => {
     await page.waitForTimeout(200);
     const emptyText = await page.evaluate(() => {
       // Force empty tags by clearing files then switching pane
-      window._marqamState.files = [];
+      window._appState.files = [];
       document.querySelector('.sb-tab[data-pane="tags"]').click();
       const pane = document.getElementById('tagsPane');
       return pane ? pane.textContent : '';
@@ -117,7 +117,7 @@ test.describe('I18N & Localization', () => {
       ];
       // Simulate the sorting logic used inside openVault()
       files.sort((a, b) => a.name.localeCompare(b.name));
-      window._marqamState.files = files;
+      window._appState.files = files;
       window.renderTree(files);
       return Array.from(document.querySelectorAll('.tree-name')).map(el => el.textContent);
     });

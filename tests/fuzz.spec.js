@@ -57,7 +57,7 @@ test.describe('Fuzzing — parsers & validators', () => {
     const fileA = randomString(200, null);
     const fileB = randomString(200, null);
     const result = await page.evaluate(([qs, fa, fb]) => {
-      window._marqamState.files = [
+      window._appState.files = [
         { name: 'a.md', content: fa, path: 'a.md' },
         { name: 'b.md', content: fb, path: 'b.md' },
       ];
@@ -128,7 +128,7 @@ test.describe('Fuzzing — parsers & validators', () => {
       for (let i = 0; i < 100; i++) {
         try {
           window.cycleTheme();
-          const t = window._marqamState.theme;
+          const t = window._appState.theme;
           if (!themes.includes(t)) return { ok: false, theme: t, iter: i };
         } catch (e) {
           return { ok: false, err: e.message, iter: i };
@@ -146,7 +146,7 @@ test.describe('Fuzzing — parsers & validators', () => {
         window.zoomOut();
       }
       window.zoomReset();
-      return window._marqamState.zoomFactor === 1.0;
+      return window._appState.zoomFactor === 1.0;
     });
     expect(result).toBe(true);
   });

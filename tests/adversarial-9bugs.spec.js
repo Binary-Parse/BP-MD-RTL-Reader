@@ -27,7 +27,7 @@ async function goto(page) {
 
 async function injectFile(page, name, content) {
   await page.evaluate(({ name, content }) => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     window.renderFile(0);
   }, { name, content });
@@ -36,7 +36,7 @@ async function injectFile(page, name, content) {
 
 async function injectFiles(page, files) {
   await page.evaluate((files) => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = files.map(f => ({ name: f.name, path: f.name, handle: null, content: f.content, dirty: false }));
     window.renderFile(0);
   }, files);
@@ -128,7 +128,7 @@ test.describe('[AC1] openVault feature-detect', () => {
     await page.waitForTimeout(400);
 
     // State.files should be empty
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
 
     // An info toast should appear (not an error)
@@ -188,12 +188,12 @@ test.describe('[AC2] Vault-wide search', () => {
   test('[AC2-happy] 2-file vault returns >= 2 results with <mark> element per snippet', async ({ page }) => {
     await goto(page);
     await injectFiles(page, [
-      { name: 'alpha.md', content: '# Alpha\n\nThis has the keyword marqam in it.' },
-      { name: 'beta.md',  content: '# Beta\n\nAlso has marqam mentioned here.' }
+      { name: 'alpha.md', content: '# Alpha\n\nThis has the keyword bpmd in it.' },
+      { name: 'beta.md',  content: '# Beta\n\nAlso has bpmd mentioned here.' }
     ]);
 
     await switchToSearch(page);
-    await page.fill('#sbSearchInput', 'marqam');
+    await page.fill('#sbSearchInput', 'bpmd');
     await page.waitForTimeout(200);
 
     const resultCount = await page.locator('.search-result').count();
@@ -268,7 +268,7 @@ test.describe('[AC2] Vault-wide search', () => {
     await results.nth(1).click();
     await page.waitForTimeout(200);
 
-    const activeIdx = await page.evaluate(() => window._marqamState.activeFile);
+    const activeIdx = await page.evaluate(() => window._appState.activeFile);
     expect(activeIdx).toBe(1);
   });
 });
@@ -492,7 +492,7 @@ test.describe('[AC5] Zoom controls', () => {
     await page.keyboard.press('Control+=');
     await page.waitForTimeout(50);
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeGreaterThan(1);
     expect(factor).toBeCloseTo(1.1, 1);
   });
@@ -503,7 +503,7 @@ test.describe('[AC5] Zoom controls', () => {
     await page.keyboard.press('Control+-');
     await page.waitForTimeout(50);
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeLessThan(1);
   });
 
@@ -515,21 +515,21 @@ test.describe('[AC5] Zoom controls', () => {
     await page.keyboard.press('Control+0');
     await page.waitForTimeout(50);
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(1);
   });
 
   test('[AC5-boundary] zoom clamped at 2.0 upper bound', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(999));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(2.0);
   });
 
   test('[AC5-boundary] zoom clamped at 0.6 lower bound', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(0.01));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(0.6);
   });
 
@@ -607,7 +607,7 @@ test.describe('[AC5] Zoom controls', () => {
     await page.evaluate(() => window.zoomReset());
     // Call setZoom with NaN
     await page.evaluate(() => window.setZoom(NaN));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     // Should remain a valid number (1.0 default or clamped), not NaN
     expect(typeof factor).toBe('number');
     expect(isNaN(factor)).toBe(false);
@@ -617,7 +617,7 @@ test.describe('[AC5] Zoom controls', () => {
   test('[AC5-wb-infinity] setZoom(Infinity) clamps to 2.0', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(Infinity));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(2.0);
   });
 
@@ -625,7 +625,7 @@ test.describe('[AC5] Zoom controls', () => {
   test('[AC5-wb-neg-infinity] setZoom(-Infinity) clamps to 0.6', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(-Infinity));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(0.6);
   });
 });
@@ -643,7 +643,7 @@ test.describe('[AC6] Source mode toggle', () => {
     await page.click('#modeSource');
     await page.waitForTimeout(100);
 
-    const mode = await page.evaluate(() => window._marqamState.editorMode);
+    const mode = await page.evaluate(() => window._appState.editorMode);
     expect(mode).toBe('source');
   });
 
@@ -699,10 +699,10 @@ test.describe('[AC7] Drag-drop file loading', () => {
       { name: 'dropped.md', content: '# Dropped Note\n\nThis was drag-dropped.', type: 'text/markdown' }
     ]);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
 
-    const name = await page.evaluate(() => window._marqamState.files[0].name);
+    const name = await page.evaluate(() => window._appState.files[0].name);
     expect(name).toBe('dropped.md');
 
     const heading = await page.locator('#noteContent h1').textContent();
@@ -715,7 +715,7 @@ test.describe('[AC7] Drag-drop file loading', () => {
       { name: 'notes.markdown', content: '# Notes\n\nMarkdown file.', type: 'text/markdown' }
     ]);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
   });
 
@@ -725,7 +725,7 @@ test.describe('[AC7] Drag-drop file loading', () => {
       { name: 'plain.txt', content: 'Plain text content.', type: 'text/plain' }
     ]);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
   });
 
@@ -735,7 +735,7 @@ test.describe('[AC7] Drag-drop file loading', () => {
       { name: 'image.png', content: 'fake png bytes', type: 'image/png' }
     ]);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
 
     const toastVisible = await page.evaluate(() => {
@@ -760,7 +760,7 @@ test.describe('[AC7] Drag-drop file loading', () => {
     });
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
 
     // Toast should appear (error or info)
@@ -810,7 +810,7 @@ test.describe('[AC7] Drag-drop file loading', () => {
       { name: 'b.md', content: '# B', type: 'text/markdown' }
     ]);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(2);
   });
 
@@ -851,9 +851,9 @@ test.describe('[AC7] Drag-drop file loading', () => {
     });
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1); // Only good.md loaded
-    expect(await page.evaluate(() => window._marqamState.files[0].name)).toBe('good.md');
+    expect(await page.evaluate(() => window._appState.files[0].name)).toBe('good.md');
   });
 });
 
@@ -1113,7 +1113,7 @@ test.describe('[ADV] Adversarial tests', () => {
       { name: 'empty.md', content: '', type: 'text/markdown' }
     ]);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1); // Empty file is still a valid file
 
     const jsErrors = errors.filter(e =>
@@ -1175,7 +1175,7 @@ test.describe('[ADV] Adversarial tests', () => {
 
     // Inject a file with a dangerous name
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [{ name: '<img src=x onerror="window.__filenameXss=true">.md', path: 'evil.md', handle: null, content: '# Evil', dirty: false }];
       window.renderFile(0);
     });
@@ -1189,14 +1189,14 @@ test.describe('[ADV] Adversarial tests', () => {
   test('[ADV-zoom-boundary-exact] setZoom(0.6) stores exactly 0.6', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(0.6));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(0.6);
   });
 
   test('[ADV-zoom-boundary-exact] setZoom(2.0) stores exactly 2.0', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(2.0));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(2.0);
   });
 
@@ -1204,7 +1204,7 @@ test.describe('[ADV] Adversarial tests', () => {
   test('[ADV-zoom-just-below-min] setZoom(0.599) clamped to 0.6', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(0.599));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(0.6);
   });
 
@@ -1212,7 +1212,7 @@ test.describe('[ADV] Adversarial tests', () => {
   test('[ADV-zoom-just-above-max] setZoom(2.001) clamped to 2.0', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(2.001));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(2.0);
   });
 
@@ -1229,7 +1229,7 @@ test.describe('[ADV] Adversarial tests', () => {
     });
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
   });
 
@@ -1251,7 +1251,7 @@ test.describe('[ADV] Adversarial tests', () => {
     // At exactly 10MB (not exceeding), behavior depends on implementation.
     // The spec says "> 10 MB" triggers rejection (file.size > MAX_SIZE).
     // Exactly 10 MB (10485760) is NOT > 10485760, so should be ACCEPTED.
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1); // exactly 10 MB should be accepted (not > MAX_SIZE)
   });
 
@@ -1328,7 +1328,7 @@ test.describe('[ADV] Adversarial tests', () => {
     });
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
   });
 
@@ -1345,7 +1345,7 @@ test.describe('[ADV] Adversarial tests', () => {
     });
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
   });
 
@@ -1358,7 +1358,7 @@ test.describe('[ADV] Adversarial tests', () => {
       await page.evaluate(() => window.zoomIn());
     }
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeLessThanOrEqual(2.0);
     expect(factor).toBeGreaterThan(1.0);
   });
@@ -1372,7 +1372,7 @@ test.describe('[ADV] Adversarial tests', () => {
       await page.evaluate(() => window.zoomOut());
     }
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeGreaterThanOrEqual(0.6);
     expect(factor).toBeLessThan(1.0);
   });
@@ -1425,13 +1425,13 @@ test.describe('[MUT] Mutation detection tests', () => {
   test('[MUT3] Ctrl+= (without Shift) triggers zoom (catches negated shiftKey condition)', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.zoomReset());
-    const before = await page.evaluate(() => window._marqamState.zoomFactor);
+    const before = await page.evaluate(() => window._appState.zoomFactor);
 
     // Press Ctrl+= without Shift
     await page.keyboard.press('Control+=');
     await page.waitForTimeout(50);
 
-    const after = await page.evaluate(() => window._marqamState.zoomFactor);
+    const after = await page.evaluate(() => window._appState.zoomFactor);
     expect(after).toBeGreaterThan(before);
   });
 
@@ -1439,7 +1439,7 @@ test.describe('[MUT] Mutation detection tests', () => {
   test('[MUT-clamp-inclusive] zoom exactly at 0.6 is not further clamped', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(0.6));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     // If the clamp used > 0.6 instead of >= 0.6, this would be rejected and clamped higher
     expect(factor).toBe(0.6);
   });

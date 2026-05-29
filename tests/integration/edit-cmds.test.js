@@ -12,7 +12,7 @@ const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replac
 
 async function injectAndRender(page, content = '# Test\n\nSome **bold** text here.') {
   await page.evaluate((content) => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = [{ name: 'edit-test.md', path: 'edit-test.md', handle: null, content, dirty: false }];
     window.renderFile(0);
   }, content);
@@ -145,7 +145,7 @@ test.describe('Edit commands (Issue #8)', () => {
   test('computed font-size of .tag is >= 13px', async ({ page }) => {
     // Inject a file with a tag so the tag cloud renders
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [{ name: 'tags.md', path: 'tags.md', handle: null, content: '# Test\n\nA note with #reading tag.', dirty: false }];
       window.renderFile(0);
     });
@@ -165,7 +165,7 @@ test.describe('Edit commands (Issue #8)', () => {
   test('computed font-size of .sr-snip is >= 13px', async ({ page }) => {
     // Inject two files so search results render
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [
         { name: 'a.md', path: 'a.md', handle: null, content: 'hello world content here', dirty: false },
         { name: 'b.md', path: 'b.md', handle: null, content: 'hello another file', dirty: false }
@@ -189,7 +189,7 @@ test.describe('Edit commands (Issue #8)', () => {
 
   test('computed font-size of .toc-item.h2 is >= 13px', async ({ page }) => {
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [{ name: 'headings.md', path: 'headings.md', handle: null, content: '# H1\n\n## H2 Section\n\nContent.', dirty: false }];
       window.renderFile(0);
     });

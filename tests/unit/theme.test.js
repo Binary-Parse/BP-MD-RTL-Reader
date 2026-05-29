@@ -21,7 +21,7 @@ function cycleTheme() {
   const current = documentElement.getAttribute('data-theme') || 'paper';
   const next = getNextTheme(current);
   documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('marqam-theme', next);
+  localStorage.setItem('bpmdrtlreader-theme', next);
   return next;
 }
 
@@ -43,14 +43,14 @@ describe('cycleTheme', () => {
     const next = cycleTheme();
     expect(next).toBe('ink');
     expect(documentElement.getAttribute('data-theme')).toBe('ink');
-    expect(localStorage.getItem('marqam-theme')).toBe('ink');
+    expect(localStorage.getItem('bpmdrtlreader-theme')).toBe('ink');
   });
 
   test('ink -> sepia', () => {
     currentTheme = 'ink';
     const next = cycleTheme();
     expect(next).toBe('sepia');
-    expect(localStorage.getItem('marqam-theme')).toBe('sepia');
+    expect(localStorage.getItem('bpmdrtlreader-theme')).toBe('sepia');
   });
 
   test('sepia -> paper (wraps)', () => {

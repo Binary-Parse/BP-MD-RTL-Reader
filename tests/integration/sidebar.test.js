@@ -2,12 +2,12 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../../index.html');
-const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
+const INDEX_PATH = path.resolve(__dirname, '../../index.html');
+const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 test.describe('Sidebar integration tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
   });
 
@@ -130,7 +130,7 @@ test.describe('Sidebar integration tests', () => {
   test('[AC2] vault search: 2-file query returns >= 2 results with <mark> snippets', async ({ page }) => {
     // Inject two files that both contain the word 'quantum'
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [
         { name: 'alpha.md', path: 'alpha.md', handle: null, content: '# Alpha\n\nThis discusses quantum physics in detail.', dirty: false },
         { name: 'beta.md',  path: 'beta.md',  handle: null, content: '# Beta\n\nQuantum mechanics is fascinating.', dirty: false }
@@ -162,7 +162,7 @@ test.describe('Sidebar integration tests', () => {
 
   test('[AC2] vault search: clicking result navigates to that file', async ({ page }) => {
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [
         { name: 'first.md',  path: 'first.md',  handle: null, content: '# First File\n\nContains unicorn content.', dirty: false },
         { name: 'second.md', path: 'second.md', handle: null, content: '# Second File\n\nAlso has unicorn mention.', dirty: false }
@@ -185,7 +185,7 @@ test.describe('Sidebar integration tests', () => {
     await page.waitForTimeout(200);
 
     // Should have navigated to that file (activeFile index 1)
-    const activeIdx = await page.evaluate(() => window._marqamState.activeFile);
+    const activeIdx = await page.evaluate(() => window._appState.activeFile);
     expect(activeIdx).toBe(1);
   });
 
@@ -208,7 +208,7 @@ test.describe('Sidebar integration tests', () => {
     // File with 10 occurrences of the query
     const content = Array.from({ length: 10 }, (_, i) => `Paragraph ${i}: target word here.`).join('\n\n');
     await page.evaluate((content) => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [{ name: 'many.md', path: 'many.md', handle: null, content, dirty: false }];
       window.renderFile(0);
     }, content);

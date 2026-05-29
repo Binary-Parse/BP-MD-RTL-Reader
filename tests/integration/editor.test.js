@@ -20,8 +20,8 @@ const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replac
 async function injectAndRender(page, name, content) {
   await page.evaluate(({ name, content }) => {
     // Access the Proxy State exported on window by index.html
-    const S = window._marqamState;
-    if (!S) throw new Error('window._marqamState not found — T1 State export missing');
+    const S = window._appState;
+    if (!S) throw new Error('window._appState not found — T1 State export missing');
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     // renderFile is exported on window by index.html
     if (typeof window.renderFile !== 'function') {
@@ -297,11 +297,11 @@ test('[AC5] Ctrl+= increases State.zoomFactor', async ({ page }) => {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
 
-  const before = await page.evaluate(() => window._marqamState.zoomFactor);
+  const before = await page.evaluate(() => window._appState.zoomFactor);
   await page.keyboard.press('Control+=');
   await page.waitForTimeout(50);
 
-  const after = await page.evaluate(() => window._marqamState.zoomFactor);
+  const after = await page.evaluate(() => window._appState.zoomFactor);
   expect(after).toBeGreaterThan(before);
 });
 
@@ -318,7 +318,7 @@ test('[AC5] Ctrl+0 resets zoom to 1', async ({ page }) => {
   await page.keyboard.press('Control+0');
   await page.waitForTimeout(50);
 
-  const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+  const factor = await page.evaluate(() => window._appState.zoomFactor);
   expect(factor).toBe(1);
 });
 
@@ -335,7 +335,7 @@ test('[AC5] #statusbar zoom is unaffected after Ctrl+= zoom', async ({ page }) =
     return window.getComputedStyle(sb).zoom;
   });
   // statusbar should not be affected — its zoom should be '1' or 'normal'
-  const editorFactor = await page.evaluate(() => window._marqamState.zoomFactor);
+  const editorFactor = await page.evaluate(() => window._appState.zoomFactor);
   expect(editorFactor).toBeGreaterThan(1);
   // statusbar must not inherit the editor zoom (it's outside #editorArea)
   // Its computed zoom should be 1 (not > 1)
@@ -386,14 +386,14 @@ test('[T4] clicking second mark.find-hit sets State.findIdx to 1', async ({ page
   });
   await page.waitForTimeout(100);
 
-  const hitCount = await page.evaluate(() => window._marqamState.findHits.length);
+  const hitCount = await page.evaluate(() => window._appState.findHits.length);
   expect(hitCount).toBe(3);
 
   // Click the second mark
   await page.locator('mark.find-hit').nth(1).click();
   await page.waitForTimeout(50);
 
-  const findIdx = await page.evaluate(() => window._marqamState.findIdx);
+  const findIdx = await page.evaluate(() => window._appState.findIdx);
   expect(findIdx).toBe(1);
 
   const secondHasCurrent = await page.evaluate(() => {

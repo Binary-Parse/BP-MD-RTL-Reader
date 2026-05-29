@@ -3,8 +3,8 @@ const { test, expect } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
 
-const MARQAM_PATH = path.resolve(__dirname, '../index.html');
-const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
+const INDEX_PATH = path.resolve(__dirname, '../index.html');
+const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 /** Read computed direction of #editor via page.evaluate */
 async function getEditorComputedDirection(page) {
@@ -16,7 +16,7 @@ async function getEditorComputedDirection(page) {
 /** Inject markdown content and call renderFile(0) */
 async function injectMarkdown(page, content) {
   return page.evaluate((md) => {
-    window._marqamState.files = [{
+    window._appState.files = [{
       name: 'fixture.md', path: 'fixture.md',
       handle: null, content: md, dirty: false
     }];
@@ -38,7 +38,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[RTL-scope] after #rtlBtn click, #srcTextarea gets dir=auto', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -48,7 +48,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[RTL-scope] after #rtlBtn click, #editor gets dir=rtl', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -58,7 +58,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[RTL-scope] after #rtlBtn click, html element does NOT get dir attribute', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -68,7 +68,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[RTL-scope] after #rtlBtn click, #appBody does NOT get dir attribute', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -78,7 +78,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[RTL-grid] .app-body computed direction is always ltr', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // LTR state
@@ -98,26 +98,26 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[RTL-toggle-clean] toggle on then off leaves State.direction as ltr', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Toggle on
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
 
-    const rtlState = await page.evaluate(() => window._marqamState.direction);
+    const rtlState = await page.evaluate(() => window._appState.direction);
     expect(rtlState).toBe('rtl');
 
     // Toggle off
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
 
-    const ltrState = await page.evaluate(() => window._marqamState.direction);
+    const ltrState = await page.evaluate(() => window._appState.direction);
     expect(ltrState).toBe('ltr');
   });
 
   test('[RTL-toggle-clean] toggle on then off removes dir from #srcTextarea', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -129,7 +129,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[RTL-toggle-clean] toggle on then off removes dir from #editor', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -145,7 +145,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[Theme-html] data-theme is set on html element after #themeBtn click', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
@@ -155,7 +155,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[Theme-html] #app element does NOT receive data-theme attribute', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
@@ -165,7 +165,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[Theme-html] three theme button clicks cycle paper→ink→sepia→paper on html', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const html = page.locator('html');
@@ -188,7 +188,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[Statusbar-ink] statusbar has dark background in ink theme', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Cycle to ink theme
@@ -212,7 +212,7 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   test('[Statusbar-paper] statusbar has dark background in paper (default) theme', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const bgColor = await page.evaluate(() => {
@@ -233,7 +233,7 @@ test.describe('RTL and theme bug fixes', () => {
 
   test('[Visual] LTR + paper theme at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(300);
 
@@ -245,7 +245,7 @@ test.describe('RTL and theme bug fixes', () => {
 
   test('[Visual] LTR + ink theme at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
@@ -259,7 +259,7 @@ test.describe('RTL and theme bug fixes', () => {
 
   test('[Visual] RTL + paper theme at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -273,7 +273,7 @@ test.describe('RTL and theme bug fixes', () => {
 
   test('[Visual] RTL + ink theme at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
@@ -292,7 +292,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[AC1] computed direction=rtl on #editor after toggle with Arabic content', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Toggle RTL manually first (sets _manualRTL=true, dir=rtl on #editor)
@@ -316,7 +316,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[AC2] computed direction returns to ltr after toggle off with English content', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
@@ -341,7 +341,7 @@ test.describe('RTL and theme bug fixes', () => {
 
   test('[AC3] visual RTL+Arabic+paper baseline at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Toggle RTL manually first, then inject Arabic (prevents auto-RTL toggle conflict)
@@ -383,7 +383,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[AC4] RTL computed direction persists after switching files', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Set RTL manually (_manualRTL = true, persists across file loads)
@@ -431,7 +431,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[AC6] h1 textAlign is right or end when #editor[dir=rtl]', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -455,7 +455,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[AC7] h2 textAlign is right or end when #editor[dir=rtl]', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -479,7 +479,7 @@ test.describe('RTL and theme bug fixes', () => {
   // ----------------------------------------------------------------
 
   test('[AC8] h3 textAlign is right or end when #editor[dir=rtl]', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -525,7 +525,7 @@ test.describe('RTL and theme bug fixes', () => {
       rtlErrors.push(err.message);
     });
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_CONTENT);

@@ -76,7 +76,7 @@ describe('observability — writeLog path + JSON line shape (L38-72)', () => {
     await new Promise(r => setTimeout(r, 50));
   });
 
-  test('writeLog appends to a path ending logs/marqam.log and mkdirs it recursively', () => {
+  test('writeLog appends to a path ending logs/bpmdrtlreader.log and mkdirs it recursively', () => {
     mockFs.appendFileSync.mockClear();
     mockFs.mkdirSync.mockClear();
 
@@ -85,8 +85,8 @@ describe('observability — writeLog path + JSON line shape (L38-72)', () => {
 
     expect(mockFs.appendFileSync).toHaveBeenCalledTimes(1);
     const writtenPath = normSep(mockFs.appendFileSync.mock.calls[0][0]);
-    // Kills StringLiteral mutants on 'logs' and 'marqam.log'.
-    expect(writtenPath.endsWith('logs/marqam.log')).toBe(true);
+    // Kills StringLiteral mutants on 'logs' and 'bpmdrtlreader.log'.
+    expect(writtenPath.endsWith('logs/bpmdrtlreader.log')).toBe(true);
 
     // mkdirSync called for the logs dir with { recursive: true } (ObjectLiteral
     // + BooleanLiteral mutants die: a missing/false flag would change the arg).

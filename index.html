@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BP MD RTL Reader</title>
-<script>(function(){const t=localStorage.getItem('marqam-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+<script>(function(){const t=localStorage.getItem('bpmdrtlreader-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;1,300&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=IBM+Plex+Sans+Arabic:wght@400;500&display=swap">
@@ -1624,7 +1624,7 @@ import { execEditCmd as _execEditCmdImpl } from './src/renderer/edit-commands.js
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
 // Forwards window.onerror + unhandledrejection to main process, which
-// writes them to <userData>/logs/marqam.log. Local-only. Optional-chain
+// writes them to <userData>/logs/bpmdrtlreader.log. Local-only. Optional-chain
 // against electronAPI so the page still works when opened outside
 // Electron (e.g. during Playwright file:// tests).
 // =====================================================================
@@ -1669,8 +1669,8 @@ const { state: State, subscribe } = createState({
 });
 
 // Export for testing via window (smoke tests only)
-window._marqamState = State;
-window._marqamSubscribe = subscribe;
+window._appState = State;
+window._appSubscribe = subscribe;
 
 // =====================================================================
 // CONSTANTS & DOM REFS
@@ -1726,7 +1726,7 @@ function cycleTheme() {
   const next = getNextTheme(State.theme);
   State.theme = next;
   document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('marqam-theme', next);
+  localStorage.setItem('bpmdrtlreader-theme', next);
   $('themeBtn').classList.toggle('active', next !== 'paper');
   if ($('themeLabel')) $('themeLabel').textContent = next;
   showToast(`Theme: ${next.charAt(0).toUpperCase() + next.slice(1)}`, 'info');
@@ -1736,7 +1736,7 @@ window.cycleTheme = cycleTheme;
 function setTheme(t) {
   State.theme = t;
   document.documentElement.setAttribute('data-theme', t);
-  localStorage.setItem('marqam-theme', t);
+  localStorage.setItem('bpmdrtlreader-theme', t);
   $('themeBtn').classList.toggle('active', t !== 'paper');
   if ($('themeLabel')) $('themeLabel').textContent = t;
   closeMenu();
@@ -3147,8 +3147,8 @@ $('findNextBtn').addEventListener('click', () => findStep(1));
 $('findCloseBtn').addEventListener('click', closeFind);
 
 // ==== EXTERNAL FILE OPEN (Windows file-association / macOS dock drop) ====
-// Main process sends this when the user launches Marqam by double-clicking a
-// .md file with Marqam set as the default handler. We add it as a tab and
+// Main process sends this when the user launches BP MD RTL Reader by double-clicking a
+// .md file with BP MD RTL Reader set as the default handler. We add it as a tab and
 // render it immediately.
 function openExternalFile({ name, path: filePath, content }) {
   if (!name || typeof content !== 'string') return;
@@ -3210,7 +3210,7 @@ window.escapeHtml = escapeHtml;
   // Detect Electron and apply native-window overrides
   if (window.electronAPI) document.documentElement.classList.add('electron');
 
-  const stored = localStorage.getItem('marqam-theme');
+  const stored = localStorage.getItem('bpmdrtlreader-theme');
   if (stored && THEMES.includes(stored)) {
     State.theme = stored;
     document.documentElement.setAttribute('data-theme', stored);

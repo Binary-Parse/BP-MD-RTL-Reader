@@ -6,12 +6,12 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 
-const MARQAM_PATH = path.resolve(process.cwd(), 'index.html');
-const MARQAM_URL = 'file:///' + MARQAM_PATH.replace(/\\/g, '/');
+const INDEX_PATH = path.resolve(process.cwd(), 'index.html');
+const INDEX_URL = 'file:///' + INDEX_PATH.replace(/\\/g, '/');
 
 test.describe('index.html — ALL exported functions', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
   });
 
@@ -66,7 +66,7 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.vaultSearch — finds matches', async ({ page }) => {
     const result = await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'a.md', content: 'hello world', path: 'a.md' }];
+      window._appState.files = [{ name: 'a.md', content: 'hello world', path: 'a.md' }];
       return window.vaultSearch('hello');
     });
     expect(result.length).toBeGreaterThan(0);
@@ -75,7 +75,7 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.vaultSearch — hit cap ≤ 5', async ({ page }) => {
     const result = await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'a.md', content: 'hello hello hello hello hello hello hello', path: 'a.md' }];
+      window._appState.files = [{ name: 'a.md', content: 'hello hello hello hello hello hello hello', path: 'a.md' }];
       return window.vaultSearch('hello');
     });
     expect(result[0].hits.length).toBeLessThanOrEqual(5);
@@ -83,9 +83,9 @@ test.describe('index.html — ALL exported functions', () => {
 
   // === STATE / UI FUNCTIONS ===
 
-  test('window._marqamState exists and is a Proxy', async ({ page }) => {
+  test('window._appState exists and is a Proxy', async ({ page }) => {
     const result = await page.evaluate(() => {
-      const s = window._marqamState;
+      const s = window._appState;
       return { exists: !!s, hasFiles: Array.isArray(s.files) };
     });
     expect(result.exists).toBe(true);
@@ -164,11 +164,11 @@ test.describe('index.html — ALL exported functions', () => {
   test('window.setZoom clamps to [0.6, 2.0]', async ({ page }) => {
     const result = await page.evaluate(() => {
       window.setZoom(0.1);
-      const min = window._marqamState.zoomFactor;
+      const min = window._appState.zoomFactor;
       window.setZoom(5.0);
-      const max = window._marqamState.zoomFactor;
+      const max = window._appState.zoomFactor;
       window.setZoom(1.0);
-      const mid = window._marqamState.zoomFactor;
+      const mid = window._appState.zoomFactor;
       return { min, max, mid };
     });
     expect(result.min).toBe(0.6);
@@ -180,7 +180,7 @@ test.describe('index.html — ALL exported functions', () => {
     const result = await page.evaluate(() => {
       window.setZoom(1.0);
       window.zoomIn();
-      return window._marqamState.zoomFactor;
+      return window._appState.zoomFactor;
     });
     expect(result).toBeGreaterThan(1.0);
   });
@@ -189,7 +189,7 @@ test.describe('index.html — ALL exported functions', () => {
     const result = await page.evaluate(() => {
       window.setZoom(1.0);
       window.zoomOut();
-      return window._marqamState.zoomFactor;
+      return window._appState.zoomFactor;
     });
     expect(result).toBeLessThan(1.0);
   });
@@ -198,7 +198,7 @@ test.describe('index.html — ALL exported functions', () => {
     const result = await page.evaluate(() => {
       window.setZoom(1.5);
       window.zoomReset();
-      return window._marqamState.zoomFactor;
+      return window._appState.zoomFactor;
     });
     expect(result).toBe(1.0);
   });
@@ -207,13 +207,13 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.newNote creates a new file', async ({ page }) => {
     await page.evaluate(() => window.newNote());
-    const files = await page.evaluate(() => window._marqamState.files);
+    const files = await page.evaluate(() => window._appState.files);
     expect(files.length).toBeGreaterThan(0);
   });
 
   test('window.newDailyNote creates dated file', async ({ page }) => {
     await page.evaluate(() => window.newDailyNote());
-    const files = await page.evaluate(() => window._marqamState.files);
+    const files = await page.evaluate(() => window._appState.files);
     const lastFile = files[files.length - 1];
     expect(lastFile.name).toContain(new Date().toISOString().slice(0, 10));
   });
@@ -225,13 +225,13 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.loadDemo populates files', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    const files = await page.evaluate(() => window._marqamState.files);
+    const files = await page.evaluate(() => window._appState.files);
     expect(files.length).toBeGreaterThan(0);
   });
 
   test('window.openExternalFile adds file', async ({ page }) => {
     await page.evaluate(() => window.openExternalFile({ name: 'test.md', content: '# Test', path: 'test.md' }));
-    const files = await page.evaluate(() => window._marqamState.files);
+    const files = await page.evaluate(() => window._appState.files);
     expect(files.some(f => f.name === 'test.md')).toBe(true);
   });
 
@@ -239,7 +239,7 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.renderFile renders markdown', async ({ page }) => {
     await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'a.md', content: '# Hello', path: 'a.md' }];
+      window._appState.files = [{ name: 'a.md', content: '# Hello', path: 'a.md' }];
       window.renderFile(0);
     });
     const html = await page.evaluate(() => document.getElementById('editor').innerHTML);
@@ -256,7 +256,7 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.renderTags renders tags', async ({ page }) => {
     await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'a.md', content: '#tag1 #tag2', path: 'a.md' }];
+      window._appState.files = [{ name: 'a.md', content: '#tag1 #tag2', path: 'a.md' }];
       window.renderTags();
     });
     const tags = await page.locator('.tag').count();
@@ -303,7 +303,7 @@ test.describe('index.html — ALL exported functions', () => {
 
   test('window.closeFind clears marks', async ({ page }) => {
     await page.evaluate(() => {
-      window._marqamState.files = [{ name: 'a.md', content: 'hello world', path: 'a.md' }];
+      window._appState.files = [{ name: 'a.md', content: 'hello world', path: 'a.md' }];
       window.renderFile(0);
       window.openFind();
       window.runFind('hello');

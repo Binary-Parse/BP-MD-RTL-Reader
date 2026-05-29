@@ -25,8 +25,8 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../rtl-heading-fixture.html');
-const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
+const INDEX_PATH = path.resolve(__dirname, '../rtl-heading-fixture.html');
+const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -34,7 +34,7 @@ const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
 
 /**
  * Inject rendered markdown HTML directly into #noteContent.
- * rtl-heading-fixture.html does not expose window._marqamState, so we use marked.parse()
+ * rtl-heading-fixture.html does not expose window._appState, so we use marked.parse()
  * directly. A stub .doc-meta div is prepended to match the production DOM
  * structure that renderFile() produces.
  */
@@ -148,7 +148,7 @@ const ENGLISH_HEADINGS_MD = [
 test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode', () => {
 
   test('[AC1] h1 has text-align: right when div#body has rtl-mode class', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await activateRTL(page);
@@ -170,7 +170,7 @@ test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode',
   });
 
   test('[AC2a] h2 has text-align: right when div#body has rtl-mode class', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await activateRTL(page);
@@ -187,7 +187,7 @@ test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode',
   });
 
   test('[AC2b] h3 has text-align: right when div#body has rtl-mode class', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await activateRTL(page);
@@ -212,7 +212,7 @@ test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode',
 test.describe('[AC3] .doc-meta computed-style in RTL mode', () => {
 
   test('[AC3] .doc-meta has text-align: right and flex-direction: row-reverse in RTL mode', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await activateRTL(page);
@@ -244,7 +244,7 @@ test.describe('[AC4] Physical geometry: h1 flush-right in RTL mode', () => {
 
   test('[AC4] h1 text is physically flush-RIGHT in RTL mode (geometry check)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await activateRTL(page);
@@ -270,7 +270,7 @@ test.describe('[AC4] Physical geometry: h1 flush-right in RTL mode', () => {
 test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode', () => {
 
   test('[AC5a] h1 text-align is start/left in LTR mode (div#body has no rtl-mode class)', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Do NOT activate RTL -- stay in LTR default
@@ -294,7 +294,7 @@ test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode
   });
 
   test('[AC5b] h2 text-align is start/left in LTR mode', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
@@ -312,7 +312,7 @@ test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode
   });
 
   test('[AC5c] h3 text-align is start/left in LTR mode', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
@@ -338,7 +338,7 @@ test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode
 test.describe('[AC6] Toggle reversibility: RTL on then off restores LTR alignment', () => {
 
   test('[AC6] toggling RTL on then off via #rtlBtn restores h1 to start/left', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Step 1: Activate RTL
@@ -388,7 +388,7 @@ test.describe('[AC7] Theme cross-product: RTL heading alignment across all theme
 
     test(`[AC7] h1/h2/h3/.doc-meta aligned right in RTL mode with theme="${theme}"`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto(MARQAM_URL);
+      await page.goto(INDEX_URL);
       await page.waitForLoadState('networkidle');
 
       // Set theme directly on #app element
@@ -432,7 +432,7 @@ test.describe('[AC7] Theme cross-product: RTL heading alignment across all theme
 
     test(`[AC7-geo] h1 physically flush-right in RTL mode with theme="${theme}"`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto(MARQAM_URL);
+      await page.goto(INDEX_URL);
       await page.waitForLoadState('networkidle');
 
       await page.evaluate((t) => {
@@ -466,7 +466,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
 
   test('[AC8-paper] h1 RTL visual baseline -- theme=paper', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {
@@ -482,7 +482,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
 
   test('[AC8-ink] h1 RTL visual baseline -- theme=ink', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {
@@ -498,7 +498,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
 
   test('[AC8-sepia] h1 RTL visual baseline -- theme=sepia', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {
@@ -514,7 +514,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
 
   test('[AC8-doc-meta] .doc-meta RTL visual baseline -- theme=paper', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {

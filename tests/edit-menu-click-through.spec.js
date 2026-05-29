@@ -19,7 +19,7 @@ async function setupWithText(page, text) {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
   await page.evaluate(() => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = [{ name: 'edit.md', path: 'edit.md', handle: null, content: '', dirty: false }];
     window.renderFile(0);
     window.setEditorMode('source');

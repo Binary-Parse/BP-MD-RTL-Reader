@@ -26,7 +26,7 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
     // One-way error reporter: forwards renderer-side errors (window.onerror,
     // unhandledrejection) to the main process, which appends a JSON line to
-    // <userData>/logs/marqam.log. NO network, NO third party — local only.
+    // <userData>/logs/bpmdrtlreader.log. NO network, NO third party — local only.
     logError: (payload) => ipcRenderer.send('log:error', payload),
   });
 }

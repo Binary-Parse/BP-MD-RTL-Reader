@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Marqam</title>
+<title>BP MD RTL Reader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1300,7 +1300,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   <div class="titlebar">
     <div class="tb-brand">
       <button class="tb-menu-btn" id="menuBtn" onclick="toggleSidebar()" title="Toggle Sidebar">≡</button>
-      <span class="tb-brand-name">Marqam</span>
+      <span class="tb-brand-name">BP MD RTL Reader</span>
     </div>
 
     <div class="tb-menubar">
@@ -1434,7 +1434,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
             <div class="editor-welcome" id="welcome">
               <div class="welcome-card">
                 <div class="logo">م</div>
-                <h1>Welcome to <em>Marqam</em></h1>
+                <h1>Welcome to <em>BP MD RTL Reader</em></h1>
                 <p class="lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
 
                 <div class="welcome-actions">
@@ -2334,9 +2334,9 @@ const MENU_DEFS = {
     x: 184,
     items: [
       { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
-      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout },
+      { kind: 'item', icon: 'i', name: 'About BP MD RTL Reader', action: showAbout },
       { kind: 'divider' },
-      { kind: 'item', icon: '?', name: 'Documentation', action: () => { closeMenu(); showToast('Docs would open at marqam.app/docs', 'info'); } },
+      { kind: 'item', icon: '?', name: 'Documentation', action: () => { closeMenu(); showToast('Docs would open at bpmdrtlreader docs', 'info'); } },
       { kind: 'item', icon: '✎', name: 'Report an Issue', action: () => { closeMenu(); showToast('Would open issue tracker', 'info'); } }
     ]
   }
@@ -2468,7 +2468,7 @@ function showAbout() {
   closeMenu();
   const html = `
     <div class="about-logo">م</div>
-    <div class="about-name">Marqam <em style="font-family: var(--arabic); color: var(--accent); font-style: normal;">مَرْقَم</em></div>
+    <div class="about-name">BP MD RTL Reader</div>
     <div class="about-version">version 0.1 · prototype · ${new Date().getFullYear()}</div>
     <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
     <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
@@ -2502,7 +2502,7 @@ const PALETTE_COMMANDS = [
   { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
   { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
   { sec: 'Help', icon: '⌨', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
-  { sec: 'Help', icon: 'i', name: 'About Marqam', meta: 'help', act: showAbout }
+  { sec: 'Help', icon: 'i', name: 'About BP MD RTL Reader', meta: 'help', act: showAbout }
 ];
 
 let palIdx = 0, palVisible = [];

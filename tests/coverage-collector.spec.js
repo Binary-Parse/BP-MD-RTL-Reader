@@ -8,8 +8,8 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-const MARQAM_PATH = path.resolve(process.cwd(), 'index.html');
-const MARQAM_URL = 'file:///' + MARQAM_PATH.replace(/\\/g, '/');
+const INDEX_PATH = path.resolve(process.cwd(), 'index.html');
+const INDEX_URL = 'file:///' + INDEX_PATH.replace(/\\/g, '/');
 const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 
 if (!fs.existsSync(COVERAGE_DIR)) {
@@ -31,7 +31,7 @@ test.describe('Renderer coverage collector', () => {
   });
 
   test('welcome + demo + core functions', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.click('#emptyLoadDemo');
     await page.waitForSelector('.tree-node', { state: 'visible' });
@@ -51,7 +51,7 @@ test.describe('Renderer coverage collector', () => {
   });
 
   test('RTL + theme + editor modes', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.click('#emptyLoadDemo');
     await page.evaluate(() => {
@@ -68,7 +68,7 @@ test.describe('Renderer coverage collector', () => {
   });
 
   test('find bar + search + toast', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.click('#emptyLoadDemo');
     await page.evaluate(() => {
@@ -83,7 +83,7 @@ test.describe('Renderer coverage collector', () => {
   });
 
   test('palette + inspector + new note', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.evaluate(() => {
       window.openPalette();
@@ -96,14 +96,14 @@ test.describe('Renderer coverage collector', () => {
   });
 
   test('vault search + tags + export', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.evaluate(() => {
-      window._marqamState.files = [
+      window._appState.files = [
         { name: 'a.md', content: 'hello world #tag1', path: 'a.md' },
         { name: 'b.md', content: 'hello again #tag2', path: 'b.md' },
       ];
-      window.renderTree(window._marqamState.files);
+      window.renderTree(window._appState.files);
       window.renderTags();
       window.renderFile(0);
       window.vaultSearch('hello');
@@ -113,7 +113,7 @@ test.describe('Renderer coverage collector', () => {
   });
 
   test('file operations + drag drop + external', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.evaluate(() => {
       window.openExternalFile({ name: 'test.md', content: '# Hello', path: 'test.md' });

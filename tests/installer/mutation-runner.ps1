@@ -61,7 +61,7 @@ function Get-OccurrenceIndices {
 function Test-Mutant {
     # Returns $true if the mutant is KILLED (>=1 test failed).
     param([string]$MutatedSource)
-    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('marqam-mut-' + [System.IO.Path]::GetRandomFileName())
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('bpmdrtl-mut-' + [System.IO.Path]::GetRandomFileName())
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
         Set-Content -Path (Join-Path $tmp 'logic-sim.ps1') -Value $MutatedSource -Encoding UTF8

@@ -22,7 +22,7 @@ const reports = require('istanbul-reports');
 
 const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 const REPORT_DIR = path.join(process.cwd(), 'coverage', 'renderer-report');
-const MARQAM_HTML = path.join(process.cwd(), 'index.html');
+const INDEX_HTML = path.join(process.cwd(), 'index.html');
 
 // Regression guard (audit #11): if this report ever drops back to the narrow
 // "collector-only" footprint, fail loudly instead of silently shipping a
@@ -117,7 +117,7 @@ async function main() {
     for (const entry of raw) {
       if (!entry || typeof entry.url !== 'string' || !entry.url.includes('index.html')) continue;
 
-      const converter = v8toIstanbul(MARQAM_HTML, 0, {
+      const converter = v8toIstanbul(INDEX_HTML, 0, {
         source: entry.source,
       });
       await converter.load();
@@ -130,7 +130,7 @@ async function main() {
 
         // Ensure all required keys exist and are truthy
         const standard = {
-          path: (rest.path && rest.path !== '') ? rest.path : MARQAM_HTML,
+          path: (rest.path && rest.path !== '') ? rest.path : INDEX_HTML,
           statementMap: rest.statementMap || {},
           s: rest.s || {},
           fnMap: rest.fnMap || {},

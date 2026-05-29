@@ -13,8 +13,8 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../index.html');
-const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
+const INDEX_PATH = path.resolve(__dirname, '../index.html');
+const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -28,7 +28,7 @@ async function getEditorComputedDirection(page) {
 
 async function injectMarkdown(page, content) {
   return page.evaluate((md) => {
-    window._marqamState.files = [{
+    window._appState.files = [{
       name: 'fixture.md', path: 'fixture.md',
       handle: null, content: md, dirty: false
     }];
@@ -83,7 +83,7 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     // SPEC says ">40%" but IMPLEMENTATION uses default threshold=0.5 (50%).
     // This test documents the gap: content between 40-50% Arabic will NOT
     // auto-trigger RTL in the current implementation.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, FORTY_FOUR_PCT_ARABIC);
@@ -101,7 +101,7 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
   });
 
   test('[A2] exactly 50% Arabic content (at impl threshold boundary) triggers RTL', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, FIFTY_PCT_ARABIC);
@@ -113,7 +113,7 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
   });
 
   test('[A3] isArabicHeavy exposed on window returns true for heavy Arabic', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const result = await page.evaluate((text) => {
@@ -123,7 +123,7 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
   });
 
   test('[A4] isArabicHeavy with only punctuation and numbers returns false (no crash)', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const result = await page.evaluate(() => {
@@ -133,7 +133,7 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
   });
 
   test('[A5] empty string content does not crash renderFile or auto-trigger RTL', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Should not throw; computed direction should remain ltr
@@ -165,7 +165,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     // The plan says .editor pre { direction:ltr } should win because it's
     // an explicit declaration vs inherited. This test catches the regression
     // if that analysis was wrong.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -187,7 +187,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     // In RTL mode, border-inline-start maps to the RIGHT physical side.
     // The blockquote should have its accent border on the right in RTL.
     // We verify via getBoundingClientRect comparison of blockquote border widths.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -223,7 +223,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     // and padding-inline-end (=paddingLeft) is 0 by default.
     // This means blockquote text in RTL hugs the LEFT edge with no breathing room.
     // This test documents whether that gap exists.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -258,7 +258,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     // In RTL mode this should map to RIGHT-side padding, not left.
     const arabicWithList = `# قائمة\n\n- عنصر أول\n- عنصر ثاني\n- عنصر ثالث\n`;
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -289,7 +289,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     // We use a text-node geometry approach: create a Range over the first
     // paragraph's text and compare its bounding rect to the paragraph's rect.
     // In RTL, the text should be flush against the right edge of the container.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -346,7 +346,7 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
   test('[C1] loading Arabic-heavy content auto-applies computed direction:rtl', async ({ page }) => {
     // AC1 in the existing suite ALWAYS manually toggles first, then injects Arabic.
     // This test exercises the pure auto-RTL path: no manual click, just load Arabic.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Do NOT click #rtlBtn — let renderFile auto-detect
@@ -361,7 +361,7 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
   test('[C2] auto-RTL does NOT set _manualRTL flag', async ({ page }) => {
     // When auto-RTL fires, _manualRTL must remain false/undefined.
     // If it were set to true, loading an English file next would fail to revert.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_HEAVY);
@@ -376,7 +376,7 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
 
   test('[C3] after auto-RTL, loading English content auto-reverts to LTR', async ({ page }) => {
     // Without _manualRTL being set, switching to English file should revert direction
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Step 1: auto-RTL
@@ -396,7 +396,7 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
   test('[C4] auto-RTL followed by manual toggle-OFF correctly clears _manualRTL', async ({ page }) => {
     // Sequence: auto-RTL fires → user clicks RTL off manually.
     // After toggle-off, _manualRTL should be false.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_HEAVY);
@@ -417,7 +417,7 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
     // If _manualRTL=true and we load Arabic content, the auto-RTL branch
     // (isAr && State.direction !== 'rtl') is FALSE because direction is already rtl.
     // _manualRTL must remain true so the next English file load does not auto-revert.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Set manual RTL
@@ -450,10 +450,10 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
   test('[D1] direction does NOT persist via localStorage across page reloads', async ({ page }) => {
     // SPEC DEVIATION: spec.md §Conventions states direction should persist,
     // but implementation does NOT save to localStorage (no
-    // localStorage.setItem('marqam-direction', ...) call in toggleRTL).
+    // localStorage.setItem('bpmdrtlreader-direction', ...) call in toggleRTL).
     // This is documented tech debt — RTL persistence is not yet implemented.
     // Verify this: toggle RTL, reload, check direction is back to LTR.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -465,7 +465,7 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     await page.waitForLoadState('networkidle');
 
     // After reload, direction should be LTR (no persistence)
-    const stateDir = await page.evaluate(() => window._marqamState.direction);
+    const stateDir = await page.evaluate(() => window._appState.direction);
     expect(stateDir).toBe('ltr');
 
     // #editor should not have dir="rtl" after reload
@@ -475,7 +475,7 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
   test('[D2] rapid toggle (10 clicks) leaves direction in consistent state', async ({ page }) => {
     // Mutation test: rapid clicks could cause state to desync if there is a
     // race or if the toggle reads stale state.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     for (let i = 0; i < 10; i++) {
@@ -484,7 +484,7 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     await page.waitForTimeout(300);
 
     // 10 clicks = 5 on/off cycles → final state should be LTR (same as initial)
-    const stateDir = await page.evaluate(() => window._marqamState.direction);
+    const stateDir = await page.evaluate(() => window._appState.direction);
     expect(stateDir).toBe('ltr');
 
     const computedDir = await getEditorComputedDirection(page);
@@ -496,7 +496,7 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
   test('[D3] Ctrl+Shift+L keyboard shortcut triggers RTL toggle', async ({ page }) => {
     // spec.md mentions Ctrl+Shift+L in the keyboard handler. No existing test
     // covers this code path (only the #rtlBtn click is tested).
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Initial state: LTR
@@ -513,14 +513,14 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
 
   test('[D4] State.direction proxy change fires listeners', async ({ page }) => {
     // Verify the Proxy subscription system is wired: a listener registered
-    // with _marqamSubscribe should receive 'direction' key changes.
-    await page.goto(MARQAM_URL);
+    // with _appSubscribe should receive 'direction' key changes.
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const notified = await page.evaluate(() => {
       return new Promise((resolve) => {
         const received = [];
-        window._marqamSubscribe((key, value) => {
+        window._appSubscribe((key, value) => {
           if (key === 'direction') received.push(value);
           if (received.length >= 1) resolve(received);
         });
@@ -533,7 +533,7 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
 
   test('[D5] #dirIndicator text reflects current direction', async ({ page }) => {
     // updateDirUI() must update #dirIndicator. No existing test verifies this.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Initial state
@@ -565,7 +565,7 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     // spec.md §Failure Modes item 2: toggling must NOT flip toolbar/sidebar.
     // Existing tests check #appBody doesn't get dir attr, but don't check
     // computed direction on the toolbar itself.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -593,7 +593,7 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
   test('[E2] RTL toggle while in split-mode does not break layout', async ({ page }) => {
     // White-box branch: toggleRTL() is called while editorArea has class 'split'.
     // The editor element must still get dir=rtl and correct computed direction.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
@@ -620,7 +620,7 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     // This is tested in [RTL-scope] but that test only checks after a click.
     // Here we verify it stays 'auto' (not 'rtl') even when re-checked after
     // injecting Arabic content that auto-triggers RTL.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Auto-RTL path
@@ -639,7 +639,7 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     // newNote() creates LTR English content ("# Untitled\n\nStart writing...").
     // If _manualRTL=true, renderFile will NOT auto-revert because of the
     // !appBody._manualRTL guard. RTL direction should persist.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Set manual RTL
@@ -658,7 +658,7 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
   test('[E5] theme cycling while RTL is active does not alter editor direction', async ({ page }) => {
     // Cycling themes calls setTheme() which only touches data-theme on html.
     // Direction must remain RTL throughout theme changes.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -695,11 +695,11 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     const xssErrors = [];
     page.on('pageerror', err => xssErrors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {
-      window._marqamState.files = [{
+      window._appState.files = [{
         name: 'xss.md',
         path: '<img src=x onerror="window.__xss_fired=true">',
         handle: null,
@@ -731,7 +731,7 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Access renderTree via the internal scope using the function reference
@@ -762,7 +762,7 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     // character. isArabicHeavy should not count it as Arabic.
     const rtlOverrideContent = '‮This text has a RTL override character but no Arabic.';
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, rtlOverrideContent);
@@ -772,7 +772,7 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     const computedDir = await getEditorComputedDirection(page);
     expect(computedDir).toBe('ltr');
 
-    const stateDir = await page.evaluate(() => window._marqamState.direction);
+    const stateDir = await page.evaluate(() => window._appState.direction);
     expect(stateDir).toBe('ltr');
   });
 
@@ -783,7 +783,7 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     const xssErrors = [];
     page.on('pageerror', err => xssErrors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, scriptInjection);
@@ -799,7 +799,7 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     // Generate a 1000-char Arabic document: the first 500 must be Arabic-heavy.
     const longArabic = 'مرحباً بالعالم '.repeat(40); // ~600 Arabic chars
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, longArabic);
@@ -816,7 +816,7 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     const arabicSuffix = 'مرحباً بالعالم '.repeat(40);
     const mixedContent = englishPrefix + arabicSuffix;
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, mixedContent);
@@ -839,7 +839,7 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
     // Mutation: if someone changed #editor[dir="rtl"] to #editor[dir] (matches any dir),
     // then even dir="ltr" or dir="auto" would get direction:rtl.
     // This test verifies the selector is truly gated on dir="rtl".
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // No toggle, no injection — #editor has no dir attribute at all
@@ -858,7 +858,7 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
     // Without it, loading English after manual RTL would revert direction.
     // This test directly verifies the guard is effective:
     // manual RTL + English content = RTL must persist.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -876,7 +876,7 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
     // Mutation: flip isAr check to !isAr in the auto-RTL branch.
     // Result: English would auto-trigger RTL. This test verifies the correct behavior:
     // pure English content must NOT trigger auto-RTL.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
@@ -885,7 +885,7 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
     const computedDir = await getEditorComputedDirection(page);
     expect(computedDir).toBe('ltr');
 
-    const stateDir = await page.evaluate(() => window._marqamState.direction);
+    const stateDir = await page.evaluate(() => window._appState.direction);
     expect(stateDir).toBe('ltr');
   });
 

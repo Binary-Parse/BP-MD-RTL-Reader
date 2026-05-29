@@ -80,13 +80,13 @@ await page.waitForSelector('.app', { state: 'visible' });
 await page.waitForLoadState('networkidle');
 // Wait for the renderer module to expose its debug hooks before injecting content.
 await page.waitForFunction(
-  () => !!window._marqamState && typeof window.renderFile === 'function',
+  () => !!window._appState && typeof window.renderFile === 'function',
   null,
   { timeout: 20000 },
 );
 
 await page.evaluate(({ en, ar }) => {
-  const s = window._marqamState;
+  const s = window._appState;
   s.files = [
     { name: 'the-slow-web.md', path: 'the-slow-web.md', handle: null, content: en, dirty: false },
     { name: 'مقالة-القراءة.md', path: 'مقالة-القراءة.md', handle: null, content: ar, dirty: false },

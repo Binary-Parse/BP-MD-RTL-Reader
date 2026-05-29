@@ -33,7 +33,7 @@ test.describe('[FA] File association — open .md from Explorer', () => {
     });
     await page.waitForTimeout(200);
     const state = await page.evaluate(() => {
-      const s = window._marqamState;
+      const s = window._appState;
       return {
         count: s.files.length,
         firstName: s.files[0] && s.files[0].name,
@@ -71,9 +71,9 @@ test.describe('[FA] File association — open .md from Explorer', () => {
       window.openExternalFile({ name: 'two.md', path: '/p/two.md', content: '# Two' });
     });
     await page.waitForTimeout(150);
-    const names = await page.evaluate(() => window._marqamState.files.map(f => f.name));
+    const names = await page.evaluate(() => window._appState.files.map(f => f.name));
     expect(names).toEqual(['one.md', 'two.md']);
-    const active = await page.evaluate(() => window._marqamState.activeFile);
+    const active = await page.evaluate(() => window._appState.activeFile);
     expect(active).toBe(1);
   });
 
@@ -88,8 +88,8 @@ test.describe('[FA] File association — open .md from Explorer', () => {
     });
     await page.waitForTimeout(150);
     const result = await page.evaluate(() => ({
-      count: window._marqamState.files.length,
-      content: window._marqamState.files[0].content
+      count: window._appState.files.length,
+      content: window._appState.files[0].content
     }));
     expect(result.count).toBe(1);
     expect(result.content).toMatch(/Updated/);
@@ -103,7 +103,7 @@ test.describe('[FA] File association — open .md from Explorer', () => {
       window.openExternalFile({ name: 'bad.md' }); // no content
     });
     await page.waitForTimeout(150);
-    const count = await page.evaluate(() => window._marqamState.files.length);
+    const count = await page.evaluate(() => window._appState.files.length);
     expect(count).toBe(0);
     expect(errors).toEqual([]);
   });

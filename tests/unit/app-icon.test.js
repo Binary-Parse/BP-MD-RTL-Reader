@@ -8,7 +8,7 @@
  *                                    electron-builder (build.win.icon / nsis), fileAssociations
  *   - installer/assets/icon.ico  — the same icon, used by Inno SetupIconFile
  *
- * These assertions go RED against the previous (Marqam placeholder) icons:
+ * These assertions go RED against the previous (placeholder) icons:
  *   • the old icon.ico's 256 entry and old icon.png were different PNGs, and
  *   • the old icon was not the black-background / green-text "BP MD RTL Reader" design.
  *

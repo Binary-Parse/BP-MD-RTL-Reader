@@ -20,8 +20,8 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../index.html');
-const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
+const INDEX_PATH = path.resolve(__dirname, '../index.html');
+const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 // ---------------------------------------------------------------------------
 // Shared helpers (mirrors rtl-fixes.spec.js + rtl-adversarial.spec.js)
@@ -29,7 +29,7 @@ const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
 
 async function injectMarkdown(page, content) {
   return page.evaluate((md) => {
-    window._marqamState.files = [{
+    window._appState.files = [{
       name: 'fixture.md', path: 'fixture.md',
       handle: null, content: md, dirty: false
     }];
@@ -137,7 +137,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
     // BUG PROBE: if gapRight is large and gapLeft is ~0, the heading is
     // actually left-aligned despite the CSS keyword.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -157,7 +157,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
 
   test('[H2] h2 text is physically flush-RIGHT in RTL mode (geometry check)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -174,7 +174,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
 
   test('[H3] h3 text is physically flush-RIGHT in RTL mode (geometry check)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -193,7 +193,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
     // .doc-meta also received text-align: end in this run.
     // Verify the geometry, not just the keyword.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -230,7 +230,7 @@ test.describe('[I-Series] Heading inside blockquote in RTL mode', () => {
     // The CSS selector #editor[dir="rtl"] h1 matches h1 at ANY nesting depth,
     // including inside a blockquote. This test verifies that nesting does not
     // strip the rule.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -249,7 +249,7 @@ test.describe('[I-Series] Heading inside blockquote in RTL mode', () => {
   });
 
   test('[I2] h2 inside blockquote has text-align right or end in RTL mode', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -271,7 +271,7 @@ test.describe('[I-Series] Heading inside blockquote in RTL mode', () => {
     // BUG PROBE: blockquote has its own direction/padding rules. The h1 inside
     // may inherit conflicting values. Physical geometry exposes this.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -298,7 +298,7 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
   test('[J1] h1 in LTR mode has text-align start (NOT right/end)', async ({ page }) => {
     // The selector #editor[dir="rtl"] h1 must be fully scoped.
     // In LTR mode (#editor has no dir attr), h1 must NOT be right-aligned.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Do NOT toggle RTL — stay in LTR
@@ -320,7 +320,7 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
   });
 
   test('[J2] h2 in LTR mode has text-align start (NOT right/end)', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
@@ -339,7 +339,7 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
   });
 
   test('[J3] h3 in LTR mode has text-align start (NOT right/end)', async ({ page }) => {
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
@@ -365,7 +365,7 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
     // Setup order: toggle RTL FIRST (sets _manualRTL=true), THEN inject Arabic content.
     // This matches AC1/AC6 setup: toggle precedes inject so auto-RTL does not
     // interfere with the manual toggle state.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Step 1: Toggle RTL on manually (before any content — no auto-RTL conflict)
@@ -397,7 +397,7 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
   test('[J5] h1 in LTR mode is physically flush-LEFT (geometry check)', async ({ page }) => {
     // Complementary geometry check: in LTR, text must be flush left, not right.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
@@ -423,7 +423,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     // A heading that contains both Arabic and English text.
     // The CSS selector applies when #editor[dir="rtl"], regardless of heading content.
     // The CSS should apply the same as for pure Arabic headings.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -444,7 +444,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
   test('[K2] heading with only ASCII digits in RTL mode has text-align right/end', async ({ page }) => {
     // Digits-only heading: "## 42" — not Arabic script but inside RTL editor.
     // The CSS selector is on the ancestor (#editor[dir="rtl"]), not the heading content.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -469,7 +469,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -495,7 +495,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -528,7 +528,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
   test('[L1] heading font-family switches to Arabic font when in RTL mode', async ({ page }) => {
     // The CSS also sets font-family: var(--arabic). Verify it is actually applied.
     // This is separate from alignment — the font change must not affect alignment.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -553,7 +553,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
 
   test('[L2] heading font-family reverts to serif when RTL mode is toggled off', async ({ page }) => {
     // After toggling RTL off, h1 should revert to the .editor h1 font-family (serif).
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Get LTR font first
@@ -594,7 +594,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
   test('[L3] h1 letter-spacing resets to 0 in RTL mode (no decorative Latin spacing)', async ({ page }) => {
     // The LTR .editor h1 has letter-spacing: -0.02em.
     // The RTL rule overrides it to letter-spacing: 0 (Arabic doesn't use tracking).
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -617,7 +617,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
 
   test('[L4] h1 font-size is 38px in RTL mode (reduced from 42px LTR)', async ({ page }) => {
     // The RTL rule sets font-size: 38px (vs. 42px LTR). Verify the exact value.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -646,7 +646,7 @@ test.describe('[M-Series] Mutation walk-through — heading alignment guards', (
     // Mutation: if someone changed the selector to #editor[dir] (any dir attr),
     // h1 in LTR (#editor[dir="ltr"]) would incorrectly get text-align: end.
     // Verify that an explicit dir="ltr" on #editor does NOT produce right-aligned h1.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Force dir="ltr" on #editor directly (simulating what would happen if JS
@@ -680,7 +680,7 @@ test.describe('[M-Series] Mutation walk-through — heading alignment guards', (
     // return 'start' not 'right'/'end', causing AC6 to fail.
     // Verify the guard: manually override h1's text-align to 'start' and
     // confirm getComputedStyle returns 'start' (AC6 would fail).
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
@@ -710,7 +710,7 @@ test.describe('[M-Series] Mutation walk-through — heading alignment guards', (
     // Mutation: negate the toggleRTL function so it never sets dir=rtl.
     // If dir attribute is absent, #editor[dir="rtl"] rule does not match.
     // h1 must revert to start alignment.
-    await page.goto(MARQAM_URL);
+    await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // Set RTL first

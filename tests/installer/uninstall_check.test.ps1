@@ -3,9 +3,9 @@
     Part 1 (always): logic tests for the keep-notes rule and the cleanup target
                      set (mirror of cleanup.pas).
     Part 2 (opt-in): real post-uninstall filesystem/registry verification. These
-                     run only when $env:MARQAM_UNINSTALL_TEST is set (after an
+                     run only when $env:BPMDRTL_UNINSTALL_TEST is set (after an
                      actual install+uninstall on a Windows machine/VM), and they
-                     read $env:MARQAM_INSTALL_DIR for the program path.
+                     read $env:BPMDRTL_INSTALL_DIR for the program path.
 #>
 
 BeforeAll {
@@ -63,9 +63,9 @@ Describe 'Cleanup target set (Get-UninstallTargets)' {
     }
 }
 
-Describe 'Post-uninstall machine state' -Skip:(-not $env:MARQAM_UNINSTALL_TEST) {
+Describe 'Post-uninstall machine state' -Skip:(-not $env:BPMDRTL_UNINSTALL_TEST) {
     It 'program directory is gone' {
-        Test-Path $env:MARQAM_INSTALL_DIR | Should -BeFalse
+        Test-Path $env:BPMDRTL_INSTALL_DIR | Should -BeFalse
     }
     It 'roaming app-data is gone (full uninstall)' {
         Test-Path (Join-Path $env:APPDATA 'BP MD RTL Reader') | Should -BeFalse

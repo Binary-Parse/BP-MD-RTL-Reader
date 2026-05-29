@@ -73,9 +73,9 @@ test.describe('Property-based tests', () => {
   test.describe('vaultSearch properties', () => {
     test('inverse: empty query or empty files always returns []', async ({ page }) => {
       const result = await page.evaluate(() => {
-        window._marqamState.files = [];
+        window._appState.files = [];
         const r1 = window.vaultSearch('test');
-        window._marqamState.files = [{ name: 'a.md', content: 'hello' }];
+        window._appState.files = [{ name: 'a.md', content: 'hello' }];
         const r2 = window.vaultSearch('');
         const r3 = window.vaultSearch('x'); // < 2 chars
         return r1.length === 0 && r2.length === 0 && r3.length === 0;
@@ -85,7 +85,7 @@ test.describe('Property-based tests', () => {
 
     test('no-throw-for-valid: any string query with valid files does not crash', async ({ page }) => {
       const result = await page.evaluate(() => {
-        window._marqamState.files = [
+        window._appState.files = [
           { name: 'a.md', content: 'hello world' },
           { name: 'b.md', content: 'foo bar baz' },
         ];
@@ -100,7 +100,7 @@ test.describe('Property-based tests', () => {
 
     test('hit cap invariant: no file has more than 5 hits', async ({ page }) => {
       const result = await page.evaluate(() => {
-        window._marqamState.files = [
+        window._appState.files = [
           { name: 'a.md', content: 'test test test test test test test test test test' },
         ];
         const r = window.vaultSearch('test');
@@ -111,9 +111,9 @@ test.describe('Property-based tests', () => {
 
     test('monotonic: adding files never decreases result count', async ({ page }) => {
       const result = await page.evaluate(() => {
-        window._marqamState.files = [{ name: 'a.md', content: 'hello world' }];
+        window._appState.files = [{ name: 'a.md', content: 'hello world' }];
         const r1 = window.vaultSearch('hello').length;
-        window._marqamState.files.push({ name: 'b.md', content: 'hello again' });
+        window._appState.files.push({ name: 'b.md', content: 'hello again' });
         const r2 = window.vaultSearch('hello').length;
         return r2 >= r1;
       });
@@ -122,7 +122,7 @@ test.describe('Property-based tests', () => {
 
     test('idempotency: repeated identical queries yield identical results', async ({ page }) => {
       const result = await page.evaluate(() => {
-        window._marqamState.files = [
+        window._appState.files = [
           { name: 'a.md', content: 'hello world' },
           { name: 'b.md', content: 'foo bar' },
         ];
@@ -141,7 +141,7 @@ test.describe('Property-based tests', () => {
         const inputs = [0, 0.1, 0.5, 0.6, 1, 1.5, 2.0, 2.5, 100, -1, -100];
         for (const v of inputs) {
           window.setZoom(v);
-          const z = window._marqamState.zoomFactor;
+          const z = window._appState.zoomFactor;
           if (z < 0.6 || z > 2.0) return { ok: false, input: v, output: z };
         }
         return { ok: true };
@@ -152,13 +152,13 @@ test.describe('Property-based tests', () => {
     test('NaN and Infinity do not corrupt state', async ({ page }) => {
       const result = await page.evaluate(() => {
         window.setZoom(1);
-        const before = window._marqamState.zoomFactor;
+        const before = window._appState.zoomFactor;
         window.setZoom(NaN);
-        const afterNaN = window._marqamState.zoomFactor;
+        const afterNaN = window._appState.zoomFactor;
         window.setZoom(Infinity);
-        const afterInf = window._marqamState.zoomFactor;
+        const afterInf = window._appState.zoomFactor;
         window.setZoom(-Infinity);
-        const afterNegInf = window._marqamState.zoomFactor;
+        const afterNegInf = window._appState.zoomFactor;
         return afterNaN === before && afterInf === 2.0 && afterNegInf === 0.6;
       });
       expect(result).toBe(true);

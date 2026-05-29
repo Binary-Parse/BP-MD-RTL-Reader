@@ -28,7 +28,7 @@ function bootstrap({ electron, fs, proc = process }) {
   // ==== OBSERVABILITY ====
   // Local-only crash + error capture. NO data leaves the user's machine
   // (uploadToServer: false). Minidumps land in app.getPath('crashDumps');
-  // JS errors land in <userData>/logs/marqam.log (rotated at 1 MiB, keep 3).
+  // JS errors land in <userData>/logs/bpmdrtlreader.log (rotated at 1 MiB, keep 3).
   crashReporter.start({ uploadToServer: false, submitURL: '' });
 
   const LOG_MAX_BYTES = 1024 * 1024;
@@ -39,7 +39,7 @@ function bootstrap({ electron, fs, proc = process }) {
     if (logFilePath) return logFilePath;
     const dir = path.join(app.getPath('userData'), 'logs');
     try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { /* ignore */ }
-    logFilePath = path.join(dir, 'marqam.log');
+    logFilePath = path.join(dir, 'bpmdrtlreader.log');
     return logFilePath;
   }
 

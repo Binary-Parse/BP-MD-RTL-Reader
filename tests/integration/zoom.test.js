@@ -11,7 +11,7 @@ const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replac
 
 async function loadFile(page) {
   await page.evaluate(() => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = [{ name: 'test.md', path: 'test.md', handle: null, content: '# Zoom Test\n\nContent.', dirty: false }];
     window.renderFile(0);
   });
@@ -36,7 +36,7 @@ test.describe('Zoom controls (Issue #5)', () => {
     await page.waitForTimeout(50);
 
     const after = await page.evaluate(() =>
-      window._marqamState.zoomFactor
+      window._appState.zoomFactor
     );
     expect(after).toBeGreaterThan(before);
     expect(after).toBeCloseTo(1.1, 1);
@@ -46,7 +46,7 @@ test.describe('Zoom controls (Issue #5)', () => {
     await page.keyboard.press('Control+-');
     await page.waitForTimeout(50);
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeLessThan(1);
     expect(factor).toBeCloseTo(1 / 1.1, 1);
   });
@@ -61,7 +61,7 @@ test.describe('Zoom controls (Issue #5)', () => {
     await page.keyboard.press('Control+0');
     await page.waitForTimeout(50);
 
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(1);
   });
 
@@ -88,7 +88,7 @@ test.describe('Zoom controls (Issue #5)', () => {
       return z;
     });
     // statusbar should have zoom = 'normal' or '1' — not the editor zoom value
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeGreaterThan(1);
 
     // Verify statusbar did NOT get zoomed (it's outside #editorArea)
@@ -103,13 +103,13 @@ test.describe('Zoom controls (Issue #5)', () => {
 
   test('zoom clamped at 2.0 maximum', async ({ page }) => {
     await page.evaluate(() => window.setZoom(5.0));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(2.0);
   });
 
   test('zoom clamped at 0.6 minimum', async ({ page }) => {
     await page.evaluate(() => window.setZoom(0.1));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(0.6);
   });
 
@@ -132,7 +132,7 @@ test.describe('Zoom controls (Issue #5)', () => {
 
   test('State.zoomFactor is updated via setZoom()', async ({ page }) => {
     await page.evaluate(() => window.setZoom(1.5));
-    const factor = await page.evaluate(() => window._marqamState.zoomFactor);
+    const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(1.5);
   });
 });

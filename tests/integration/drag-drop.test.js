@@ -30,7 +30,7 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
   });
 
   test('drop of .md file loads it into State.files and renders it', async ({ page }) => {
-    const initialCount = await page.evaluate(() => window._marqamState.files.length);
+    const initialCount = await page.evaluate(() => window._appState.files.length);
     expect(initialCount).toBe(0);
 
     // Simulate a drop with a crafted File object
@@ -54,10 +54,10 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
 
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
 
-    const fileName = await page.evaluate(() => window._marqamState.files[0].name);
+    const fileName = await page.evaluate(() => window._appState.files[0].name);
     expect(fileName).toBe('dropped.md');
 
     // Editor should show the content
@@ -95,7 +95,7 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
 
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
 
     // Toast element should be visible (has 'show' class) or contain a message
@@ -119,10 +119,10 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
 
     await page.waitForTimeout(300);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
 
-    const fileName = await page.evaluate(() => window._marqamState.files[0].name);
+    const fileName = await page.evaluate(() => window._appState.files[0].name);
     expect(fileName).toBe('notes.txt');
   });
 
@@ -139,7 +139,7 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
 
     await page.waitForTimeout(400);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(2);
   });
 });

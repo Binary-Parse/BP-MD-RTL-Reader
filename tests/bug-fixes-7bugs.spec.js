@@ -29,7 +29,7 @@ async function goto(page) {
 
 async function injectFile(page, name, content) {
   await page.evaluate(({ name, content }) => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     window.renderFile(0);
   }, { name, content });
@@ -38,7 +38,7 @@ async function injectFile(page, name, content) {
 
 async function injectFiles(page, files) {
   await page.evaluate((files) => {
-    const S = window._marqamState;
+    const S = window._appState;
     S.files = files.map(f => ({ name: f.name, path: f.name, handle: null, content: f.content, dirty: false }));
     window.renderFile(0);
   }, files);
@@ -74,10 +74,10 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     await page.evaluate(() => window.openVault());
     await page.waitForTimeout(400);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(2);
 
-    const firstName = await page.evaluate(() => window._marqamState.files[0].name);
+    const firstName = await page.evaluate(() => window._appState.files[0].name);
     expect(firstName).toBe('alpha.md');
 
     // Preview should show the first file
@@ -101,12 +101,12 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
       };
     });
 
-    const filesBefore = await page.evaluate(() => window._marqamState.files.length);
+    const filesBefore = await page.evaluate(() => window._appState.files.length);
 
     await page.evaluate(() => window.openVault());
     await page.waitForTimeout(300);
 
-    const filesAfter = await page.evaluate(() => window._marqamState.files.length);
+    const filesAfter = await page.evaluate(() => window._appState.files.length);
     expect(filesAfter).toBe(filesBefore);
   });
 
@@ -124,7 +124,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     await page.evaluate(() => window.openVault());
     await page.waitForTimeout(400);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
 
     const toastText = await page.evaluate(() => document.getElementById('toast').textContent);
@@ -252,7 +252,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     await page.evaluate(() => window.openVault());
     await page.waitForTimeout(400);
 
-    const vaultName = await page.evaluate(() => window._marqamState.vaultName);
+    const vaultName = await page.evaluate(() => window._appState.vaultName);
     expect(vaultName).toBe('FSAFolder');
   });
 });
@@ -515,7 +515,7 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
   // Black-box: tag items contain correct text
   test('[AC4-happy] tag items display correct tag names', async ({ page }) => {
     await goto(page);
-    await injectFile(page, 'tagged.md', '# Tagged\n\nUse #marqam and #arabic tags here.');
+    await injectFile(page, 'tagged.md', '# Tagged\n\nUse #bpmd and #arabic tags here.');
     await page.click('.sb-tab[data-pane="tags"]');
     await page.waitForTimeout(200);
 
@@ -523,7 +523,7 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
       Array.from(document.querySelectorAll('.tag')).map(t => t.textContent)
     );
     const combined = tagTexts.join(' ');
-    expect(combined).toContain('marqam');
+    expect(combined).toContain('bpmd');
     expect(combined).toContain('arabic');
   });
 
@@ -664,7 +664,7 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
     await page.click('.tab .close');
     await page.waitForTimeout(200);
 
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
 
     await expect(page.locator('#welcome')).toBeVisible();
@@ -697,7 +697,7 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
     await goto(page);
 
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       S.files = [{ name: '<img src=x onerror="window.__tabXss=true">.md', path: 'evil.md', handle: null, content: '# Evil', dirty: false }];
       window.renderFile(0);
     });
@@ -1510,12 +1510,12 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
     });
     await page.waitForTimeout(100);
 
-    const idxBefore = await page.evaluate(() => window._marqamState.findIdx);
+    const idxBefore = await page.evaluate(() => window._appState.findIdx);
 
     await page.click('#findNextBtn');
     await page.waitForTimeout(50);
 
-    const idxAfter = await page.evaluate(() => window._marqamState.findIdx);
+    const idxAfter = await page.evaluate(() => window._appState.findIdx);
     // findIdx should have advanced
     expect(idxAfter).not.toBe(idxBefore);
   });
@@ -1609,7 +1609,7 @@ test.describe('[ADV] Adversarial tests', () => {
     await page.waitForTimeout(400);
 
     // The renderer should just store whatever name comes from main — no crash
-    const fileCount = await page.evaluate(() => window._marqamState.files.length);
+    const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBeGreaterThanOrEqual(0);
     // No unhandled error
     const jsErrors = [];
@@ -1645,7 +1645,7 @@ test.describe('[ADV] Adversarial tests', () => {
     await goto(page);
 
     await page.evaluate(() => {
-      const S = window._marqamState;
+      const S = window._appState;
       // The title= attribute is set via .title — safe DOM property, never innerHTML
       S.files = [{ name: '"><img src=x onerror="window.__titleXss=true">.md', path: 'x.md', handle: null, content: '# X', dirty: false }];
       window.renderFile(0);

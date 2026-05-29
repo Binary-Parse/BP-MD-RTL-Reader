@@ -32,8 +32,8 @@
       "main.js",
       "preload.js",
       "src/**/*.js",
-      "icon.ico",
-      "icon.png",
+      "assets/icon.ico",
+      "assets/icon.png",
       "node_modules/**/*",
       "package.json"
     ],
@@ -56,7 +56,7 @@
           ]
         }
       ],
-      "icon": "icon.ico"
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -69,10 +69,10 @@
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
       "menuCategory": false,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "installerHeaderIcon": "icon.ico",
-      "include": "build/installer.nsh",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "include": "installer/installer.nsh",
       "warningsAsErrors": false,
       "differentialPackage": false
     },
@@ -82,14 +82,14 @@
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "icon.ico"
+        "icon": "assets/icon.ico"
       },
       {
         "ext": "markdown",
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "icon.ico"
+        "icon": "assets/icon.ico"
       }
     ]
   },

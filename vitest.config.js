@@ -26,7 +26,7 @@ export default defineConfig({
       // (e.g. tests/unit/main-harness.js), whose unused mock closures would
       // otherwise drag the function/line totals below the gate.
       include: ['main.js', 'preload.js', 'src/**/*.js'],
-      exclude: ['node_modules/', 'dist/', 'coverage/', '__mocks__/', 'tests/**'],
+      exclude: ['node_modules/', 'dist/', 'coverage/', 'tests/**'],
       // Coverage gate (audit #5): SAFE thresholds set BELOW current measured
       // coverage (≈98% stmt / 95% branch / 100% func / 98% lines) so the gate
       // enforces a regression floor without false-failing on normal runs.
@@ -41,7 +41,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // ✅ استخدم resolve بدلاً من path.resolve
-      electron: resolve(__dirname, '__mocks__/electron.cjs'),
+      electron: resolve(__dirname, 'tests/__mocks__/electron.cjs'),
     },
   },
 });

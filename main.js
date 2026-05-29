@@ -218,7 +218,7 @@ function bootstrap({ electron, fs, proc = process }) {
       minWidth: 800,
       minHeight: 600,
       title: 'BP MD RTL Reader',
-      icon: path.join(__dirname, 'icon.ico'),
+      icon: path.join(__dirname, 'assets', 'icon.ico'),
       backgroundColor: '#1A1713',
       frame: false,
       transparent: false,

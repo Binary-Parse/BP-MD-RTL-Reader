@@ -101,13 +101,13 @@ const PNG_ICO_SIZES = [16, 32, 48, 256];
 
 describe('app icon — BP MD RTL Reader', () => {
   test('icon.png is a 256x256 PNG', () => {
-    const img = decodePNG(read('icon.png'));
+    const img = decodePNG(read('assets/icon.png'));
     expect(img.width).toBe(256);
     expect(img.height).toBe(256);
   });
 
   test('icon.ico is a valid multi-size PNG-in-ICO incl. {16,32,48,256}', () => {
-    const ico = parseICO(read('icon.ico'));
+    const ico = parseICO(read('assets/icon.ico'));
     for (const s of PNG_ICO_SIZES) {
       const e = ico.at(s);
       expect(e, `icon.ico missing ${s}x${s}`).toBeTruthy();
@@ -116,16 +116,16 @@ describe('app icon — BP MD RTL Reader', () => {
   });
 
   test('installer/assets/icon.ico matches icon.ico byte-for-byte', () => {
-    expect(read('installer/assets/icon.ico').equals(read('icon.ico'))).toBe(true);
+    expect(read('installer/assets/icon.ico').equals(read('assets/icon.ico'))).toBe(true);
   });
 
   test('icon.ico 256x256 entry is exactly icon.png (window/installer icon == app png)', () => {
-    const ico = parseICO(read('icon.ico'));
-    expect(ico.at(256).blob.equals(read('icon.png'))).toBe(true);
+    const ico = parseICO(read('assets/icon.ico'));
+    expect(ico.at(256).blob.equals(read('assets/icon.png'))).toBe(true);
   });
 
   test('icon design is the black-background, green-text BP MD RTL Reader mark', () => {
-    const img = decodePNG(read('icon.png'));
+    const img = decodePNG(read('assets/icon.png'));
     // Black background: the four corners are dark.
     const corners = [img.px(0, 0), img.px(255, 0), img.px(0, 255), img.px(255, 255)];
     const dark = corners.filter((p) => Math.max(p.r, p.g, p.b) < 60).length;

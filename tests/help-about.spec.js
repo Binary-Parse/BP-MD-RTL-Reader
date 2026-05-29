@@ -52,6 +52,9 @@ test.describe('[HELP] Help menu + About attribution', () => {
     // Rebrand: About shows the new product name, and the old Arabic name is gone.
     expect(body).toContain('BP MD RTL Reader');
     expect(body).not.toContain('مَرْقَم');
+    // Release polish: the About dialog states the real release version, not a prototype label.
+    expect(body).toContain('1.0.0');
+    expect(body).not.toContain('prototype');
   });
 
   test('window title and titlebar brand read "BP MD RTL Reader"', async ({ page }) => {

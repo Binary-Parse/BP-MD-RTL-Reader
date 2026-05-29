@@ -1,13 +1,13 @@
 { ============================================================================
   cleanup.pas  —  Complete uninstall cleanup.
 
-  #included into the [Code] section of setup.iss. Invoked from
+  Included into the [Code] section of setup.iss. Invoked from
   CurUninstallStepChanged(usPostUninstall). Mirrored (for the keep-data decision
   and the target list) by Get-CleanupPlan / Get-UninstallTargets in
   tests/installer/logic-sim.ps1.
 
   NOTE on user-data scope: a per-machine uninstall runs as the elevated user,
-  so {userappdata}/{localappdata} resolve to *that* account. On a normal
+  so the roaming/local AppData paths resolve to *that* account. On a normal
   single-user PC this is the right profile. See INSTALLER_VERIFICATION.md for
   the documented multi-user caveat.
   ============================================================================ }

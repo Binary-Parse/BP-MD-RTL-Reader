@@ -30,7 +30,8 @@ if ($cmd) { $iscc = $cmd.Source }
 if (-not $iscc) {
     foreach ($c in @(
         (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
     )) {
         if ($c -and (Test-Path $c)) { $iscc = $c; break }
     }

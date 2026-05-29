@@ -94,8 +94,12 @@ begin
   Test_IsValidPath;
   Test_RegistryDecision;
 
-  T_Report := T_Report + Format('--- %d passed, %d failed ---', [T_Pass, T_Fail]) + #13#10;
-  Log(Format('=== RESULT: %d passed, %d failed ===', [T_Pass, T_Fail]));
+  T_Report := T_Report + Format('RESULT: %d passed, %d failed', [T_Pass, T_Fail]) + #13#10;
+  Log(Format('RESULT: %d passed, %d failed', [T_Pass, T_Fail]));
+
+  { Write results to a file next to the exe (robust: does not depend on Inno's
+    /LOG flushing, which is unreliable when InitializeSetup returns False). }
+  SaveStringToFile(ExpandConstant('{src}\selftest-result.txt'), T_Report, False);
 
   if not WizardSilent then
     MsgBox(T_Report, mbInformation, MB_OK);

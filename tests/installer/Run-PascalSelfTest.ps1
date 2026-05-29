@@ -16,7 +16,8 @@ if ($cmd) { $iscc = $cmd.Source }
 if (-not $iscc) {
     foreach ($c in @(
         (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
     )) { if ($c -and (Test-Path $c)) { $iscc = $c; break } }
 }
 if (-not $iscc) {
@@ -24,23 +25,23 @@ if (-not $iscc) {
     exit 2
 }
 
-$iss = Join-Path $PSScriptRoot 'selftest.iss'
-$exe = Join-Path $PSScriptRoot 'Marqam-SelfTest.exe'
-$log = Join-Path $PSScriptRoot 'selftest.log'
+$iss    = Join-Path $PSScriptRoot 'selftest.iss'
+$exe    = Join-Path $PSScriptRoot 'Marqam-SelfTest.exe'
+$result = Join-Path $PSScriptRoot 'selftest-result.txt'
 
 Write-Host "Compiling selftest.iss..." -ForegroundColor Cyan
 & $iscc $iss
 if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
 if (-not (Test-Path $exe)) { Write-Error "Self-test exe not produced: $exe"; exit 3 }
 
-if (Test-Path $log) { Remove-Item $log -Force }
+if (Test-Path $result) { Remove-Item $result -Force }
 Write-Host "Running self-test..." -ForegroundColor Cyan
-# /VERYSILENT: no UI; harness writes everything to the log and cancels.
-$p = Start-Process -FilePath $exe -ArgumentList '/VERYSILENT', "/LOG=$log" -Wait -PassThru
+# /VERYSILENT: no UI; harness writes selftest-result.txt next to the exe and cancels.
+$p = Start-Process -FilePath $exe -ArgumentList '/VERYSILENT' -Wait -PassThru
 Start-Sleep -Milliseconds 200
 
-if (-not (Test-Path $log)) { Write-Error "No log produced at $log"; exit 4 }
-$content = Get-Content $log -Raw
+if (-not (Test-Path $result)) { Write-Error "No result file produced at $result"; exit 4 }
+$content = Get-Content $result -Raw
 $content -split "`r?`n" | Where-Object { $_ -match 'PASS |FAIL |RESULT:' } | ForEach-Object { Write-Host $_ }
 
 if ($content -match 'RESULT:\s+(\d+)\s+passed,\s+(\d+)\s+failed') {
@@ -54,6 +55,6 @@ if ($content -match 'RESULT:\s+(\d+)\s+passed,\s+(\d+)\s+failed') {
         exit 1
     }
 } else {
-    Write-Error "Could not find the RESULT summary in $log"
+    Write-Error "Could not find the RESULT summary in $result"
     exit 5
 }

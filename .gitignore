@@ -22,6 +22,7 @@ installer/Output/
 tests/installer/*.out.txt
 tests/installer/Marqam-SelfTest.exe
 tests/installer/selftest.log
+tests/installer/selftest-result.txt
 
 # ── Logs ───────────────────────────────────────────────────────────
 logs/

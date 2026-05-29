@@ -2,7 +2,7 @@
   version_compare.test.pas — Pascal assertions for the production version &
   path logic in installer/scripts/version_check.pas and dir_validate.pas.
 
-  #included by selftest.iss, which compiles these together with the REAL units
+  Included by selftest.iss, which compiles these together with the REAL units
   and supplies the T_* assertion harness (T_EqInt / T_EqStr / T_True / T_False).
   This exercises the exact Pascal the installer runs — not a reimplementation.
   ============================================================================ }

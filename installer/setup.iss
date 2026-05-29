@@ -163,8 +163,7 @@ begin
   Result := True;
   Installed := GetInstalledVersion(UNINSTALL_KEY);
   Action := DetermineInstallAction(Installed, APP_VERSION);
-  Log(Format('Version check: installed="%s" setup="%s" action=%s',
-             [Installed, APP_VERSION, Action]));
+  Log(Format('Version check: installed="%s" setup="%s" action=%s', [Installed, APP_VERSION, Action]));
 
   if Action = 'fresh' then
     Exit;                                   { nothing installed — proceed }
@@ -205,8 +204,7 @@ begin
       'A newer version of Marqam is already installed',
       Format('Installed version: %s' + #13#10 +
              'This installer:    %s' + #13#10#13#10 +
-             'Downgrading is not recommended and may corrupt newer settings.',
-             [Installed, APP_VERSION]),
+             'Downgrading is not recommended and may corrupt newer settings.', [Installed, APP_VERSION]),
       mbCriticalError, MB_OKCANCEL, ['&Force install (downgrade)', 'Cancel'], 0);
     Result := (Choice = IDOK);
     Exit;

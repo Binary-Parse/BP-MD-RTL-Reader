@@ -146,4 +146,8 @@ This is a small app with a deliberately large safety net:
 
 Released under the [MIT License](LICENSE) © 2026 **Binary Parse**.
 
+Third-party components (Electron, marked, DOMPurify, fonts) and their licenses are
+listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — all permissive and
+MIT-compatible.
+
 <div align="center"><sub>Made with care for readers of every direction.</sub></div>

@@ -72,6 +72,22 @@ describe('execEditCmd — dispatcher', () => {
     expect(execEditCmd(undefined, makeDeps())).toEqual({ ok: false, reason: 'unknown-cmd' });
   });
 
+  // L195 guard is NOT equivalent to the L117 forwardOrFallback fallthrough.
+  // The L117 fallthrough is only reached AFTER the electronAPI branch (L95-99).
+  // If the L195 guard were removed, an unknown cmd with a live electronAPI would
+  // be forwarded as editCommand('bogus') → {ok:true,reason:'ipc'} instead of
+  // being rejected. This test fixes the guard as load-bearing (kills the
+  // "remove the guard" equivalent-mutant claim).
+  test('L195 guard: unknown command is rejected BEFORE reaching electronAPI', () => {
+    const electronAPI = { editCommand: vi.fn() };
+    const ta = makeTextarea();
+    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    expect(execEditCmd('bogus', deps)).toEqual({ ok: false, reason: 'unknown-cmd' });
+    // Must NOT have been forwarded to the native command (would select/IPC garbage).
+    expect(electronAPI.editCommand).not.toHaveBeenCalled();
+    expect(ta.focus).not.toHaveBeenCalled();
+  });
+
   test('VALID_CMDS list is exactly the six expected commands', () => {
     expect(_internal.VALID_CMDS).toEqual(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
   });
@@ -381,6 +397,19 @@ describe('cut', () => {
     expect(toast).toHaveBeenCalledWith('Cut failed', 'error');
     expect(ta.value).toBe(''); // textarea was still mutated
   });
+
+  // L144: cut with getMode ABSENT defaults to 'source' (NOT 'live'), so the cut
+  // proceeds (mutates the textarea) instead of returning preview-readonly.
+  // Kills the no-coverage mutants on `deps.getMode ? deps.getMode() : 'source'`.
+  test('fallback: getMode ABSENT → defaults to "source", cut proceeds', () => {
+    const ta = makeTextarea('hello world', 5, 11);
+    const clipboard = makeClipboard();
+    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    delete deps.getMode;
+    expect(execEditCmd('cut', deps)).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith(' world');
+    expect(ta.value).toBe('hello'); // proved it did NOT short-circuit as preview-readonly
+  });
 });
 
 // ── paste ───────────────────────────────────────────────────────────────────
@@ -476,6 +505,20 @@ describe('paste', () => {
       getLastFocusedEditable: () => null,
     });
     expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'no-editor' });
+  });
+
+  // L166: paste with getMode ABSENT defaults to 'source' (NOT 'live'), so the
+  // paste proceeds (inserts clipboard text) instead of returning preview-readonly.
+  // Kills the no-coverage mutants on `deps.getMode ? deps.getMode() : 'source'`.
+  test('fallback: getMode ABSENT → defaults to "source", paste proceeds', async () => {
+    const ta = makeTextarea('hello world', 5, 5);
+    const clipboard = makeClipboard({ readText: ',cruel,' });
+    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    delete deps.getMode;
+    expect(execEditCmd('paste', deps)).toEqual({ ok: true });
+    await new Promise(r => setTimeout(r, 5));
+    expect(clipboard.readText).toHaveBeenCalled();
+    expect(ta.value).toBe('hello,cruel, world'); // proved it did NOT short-circuit as preview-readonly
   });
 });
 

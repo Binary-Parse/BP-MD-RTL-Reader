@@ -46,6 +46,12 @@ describe('Proxy State store', () => {
     expect(state.activeFile).toBe(2);
   });
 
+  test('initial values are readable from state', () => {
+    const { state } = createState({ theme: 'ink', zoom: 1.5 });
+    expect(state.theme).toBe('ink');
+    expect(state.zoom).toBe(1.5);
+  });
+
   test('subscriber fires for zoomFactor change', () => {
     const { state, subscribe } = createState({ zoomFactor: 1 });
     const calls = [];

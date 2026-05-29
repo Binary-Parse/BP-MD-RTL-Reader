@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "main.js and preload.js are intentionally excluded from `mutate` (audit #28). Their tests use a Module._cache + Module._resolveFilename hijack to inject mock 'electron' and 'fs' — Stryker's per-test coverage instrumentation cannot trace coverage through that hijack, so every mutant on those files would be reported as NoCoverage regardless of test quality. Behavioral safety is instead locked in by: (a) Vitest line coverage main.js 99.4 % stmts / 91 % branches; preload.js 100 % stmts / 100 % funcs, (b) tests/ipc-security.spec.js JB1-JB4 paths via the live Electron renderer, (c) tests/smoke.spec.js boot-time integration. Re-enable both files in `mutate` once tests are refactored away from the hijack pattern.",
+  "_comment": "main.js and preload.js are now INCLUDED in `mutate` (audit #3 fix). They were previously excluded (audit #28) because tests/unit/main.vitest.test.js injected mock 'electron'/'fs' via a Module._cache + Module._resolveFilename hijack, which Stryker's perTest coverage instrumentation cannot trace (every mutant reported NoCoverage). That hijack is gone: main.js exports `bootstrap({electron, fs, proc})` and preload.js exports `setupBridge({contextBridge, ipcRenderer})`, each auto-running its real Electron entry only outside the test runner (main.js: require.main===module; preload.js: globalThis.__vitest_worker__ undefined). The Vitest suite now imports those seams directly and drives them with plain mocks, so Stryker instruments both files normally. Note: the require.main / vitest-worker auto-run guards at the bottom of each file are NOT executed under the test runner and will show as NoCoverage; this is expected and harmless (they only fire in the real Electron process).",
   "packageManager": "npm",
   "reporters": ["html", "clear-text", "json"],
   "testRunner": "vitest",
@@ -9,6 +9,8 @@
   },
   "coverageAnalysis": "perTest",
   "mutate": [
+    "main.js",
+    "preload.js",
     "src/main-logic.js",
     "src/renderer/i18n.js",
     "src/renderer/markdown.js",

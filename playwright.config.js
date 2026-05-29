@@ -1,6 +1,82 @@
 // @ts-check
-const { defineConfig, devices } = require('@playwright/test');
+const pwTest = require('@playwright/test');
+const { defineConfig, devices } = pwTest;
 const path = require('path');
+const fs = require('fs');
+
+// ---------------------------------------------------------------------------
+// Full-suite renderer coverage collection (audit finding #11).
+//
+// Previously the renderer V8 coverage report reflected ONLY
+// tests/coverage-collector.spec.js (~63 % stmt / ~33 % func) because that was
+// the single spec wired into `test:e2e:coverage`. Every other spec imports the
+// stock `test` from '@playwright/test' and never calls page.coverage, so their
+// exercise of marqam.html never reached the Istanbul report.
+//
+// To capture the WHOLE e2e suite without editing 25+ spec files, we install an
+// `auto: true` coverage fixture and graft it onto the cached '@playwright/test'
+// module export. Because this config module is evaluated by every Playwright
+// worker BEFORE that worker loads its spec files, the spec's
+// `require('@playwright/test')` / `import { test }` resolves to the *patched*
+// `test` (verified for both CJS-require and ESM-import specs). The fixture
+// starts V8 coverage before the test body and writes one JSON file per test
+// into coverage/renderer/, which scripts/generate-renderer-coverage.js merges.
+//
+// Gated behind COLLECT_RENDERER_COVERAGE so normal `test:e2e` runs are
+// untouched (no per-test coverage overhead, identical behaviour).
+// ---------------------------------------------------------------------------
+if (process.env.COLLECT_RENDERER_COVERAGE) {
+  const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
+
+  const patchedTest = pwTest.test.extend({
+    // eslint-disable-next-line no-empty-pattern
+    _rendererCoverage: [async ({ page }, use, testInfo) => {
+      let started = false;
+      try {
+        // resetOnNavigation:false keeps coverage across the spec's own
+        // page.goto()/reloads so we count everything the test executes.
+        await page.coverage.startJSCoverage({ resetOnNavigation: false });
+        started = true;
+      } catch (err) {
+        // A spec that manages its own coverage (coverage-collector.spec.js)
+        // will already have JSCoverage enabled — skip rather than crash.
+        started = false;
+      }
+
+      await use();
+
+      if (!started) return;
+      let coverage;
+      try {
+        coverage = await page.coverage.stopJSCoverage();
+      } catch (err) {
+        return;
+      }
+      // Keep only marqam.html entries to bound the JSON size.
+      const entries = (coverage || []).filter(
+        (e) => e && typeof e.url === 'string' && e.url.includes('marqam.html')
+      );
+      if (entries.length === 0) return;
+
+      fs.mkdirSync(COVERAGE_DIR, { recursive: true });
+      // Unique, collision-free name: worker + parallel index + sanitized title.
+      const safeTitle = String(testInfo.title).replace(/[^a-z0-9]/gi, '_').slice(0, 60);
+      const fileName = `e2e_w${testInfo.workerIndex}_p${testInfo.parallelIndex}_${testInfo.testId}_${safeTitle}.json`;
+      fs.writeFileSync(
+        path.join(COVERAGE_DIR, fileName),
+        JSON.stringify(entries)
+      );
+    }, { auto: true }],
+  });
+
+  // Replace the export on the cached module object so later requires/imports
+  // (i.e. the spec files) receive the coverage-instrumented `test`.
+  Object.defineProperty(pwTest, 'test', {
+    value: patchedTest,
+    configurable: true,
+    writable: true,
+  });
+}
 
 module.exports = defineConfig({
   testDir: './tests',

@@ -1,22 +1,44 @@
-const { contextBridge, ipcRenderer } = require('electron');
+// ==== INJECTABLE BRIDGE SETUP (audit #3) ====
+// The contextBridge wiring lives inside setupBridge() so this file can be
+// imported (by Vitest/Stryker) WITHOUT exposing anything and WITHOUT a
+// Module._resolveFilename hijack. The real preload entry calls setupBridge()
+// with the live electron contextBridge/ipcRenderer at the bottom of this file,
+// so runtime behaviour is identical to before.
+//
+// @param {object} deps
+// @param {object} deps.contextBridge - electron.contextBridge (or a mock)
+// @param {object} deps.ipcRenderer   - electron.ipcRenderer (or a mock)
+function setupBridge({ contextBridge, ipcRenderer }) {
+  contextBridge.exposeInMainWorld('electronAPI', {
+    closeWindow:    () => ipcRenderer.send('window-close'),
+    minimizeWindow: () => ipcRenderer.send('window-minimize'),
+    maximizeWindow: () => ipcRenderer.send('window-maximize'),
+    // Open Folder IPC bridge (Bug 1 / AC1)
+    openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
+    // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
+    // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
+    // editable regardless of JS-side focus juggling caused by the menu opening.
+    editCommand: (cmd) => ipcRenderer.send('edit:command', cmd),
+    // Receives file content when the user double-clicked a .md file in Explorer
+    // (file association) or dropped one on the macOS dock. The renderer wraps
+    // this in addFile() to surface the content immediately.
+    onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
+    // One-way error reporter: forwards renderer-side errors (window.onerror,
+    // unhandledrejection) to the main process, which appends a JSON line to
+    // <userData>/logs/marqam.log. NO network, NO third party — local only.
+    logError: (payload) => ipcRenderer.send('log:error', payload),
+  });
+}
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  closeWindow:    () => ipcRenderer.send('window-close'),
-  minimizeWindow: () => ipcRenderer.send('window-minimize'),
-  maximizeWindow: () => ipcRenderer.send('window-maximize'),
-  // Open Folder IPC bridge (Bug 1 / AC1)
-  openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
-  readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
-  // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
-  // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
-  // editable regardless of JS-side focus juggling caused by the menu opening.
-  editCommand: (cmd) => ipcRenderer.send('edit:command', cmd),
-  // Receives file content when the user double-clicked a .md file in Explorer
-  // (file association) or dropped one on the macOS dock. The renderer wraps
-  // this in addFile() to surface the content immediately.
-  onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
-  // One-way error reporter: forwards renderer-side errors (window.onerror,
-  // unhandledrejection) to the main process, which appends a JSON line to
-  // <userData>/logs/marqam.log. NO network, NO third party — local only.
-  logError: (payload) => ipcRenderer.send('log:error', payload),
-});
+module.exports = { setupBridge };
+
+// ==== REAL PRELOAD ENTRY ====
+// Only run the live bridge setup when loaded by Electron as a preload script.
+// Under Vitest/Stryker the file is imported as a dependency (the vitest worker
+// global is present), so the guard is false and nothing auto-runs — the tests
+// drive setupBridge() with a mock contextBridge/ipcRenderer instead.
+if (typeof globalThis.__vitest_worker__ === 'undefined') {
+  const { contextBridge, ipcRenderer } = require('electron');
+  setupBridge({ contextBridge, ipcRenderer });
+}

@@ -266,6 +266,41 @@ describe('markdown.js — mutation killers (audit #7)', () => {
     expect(ext.level).toBe('inline');
   });
 
+  // ── inner extension start()/tokenizer() killers (L32, L35) ─────────
+  // These target the functions defined *inside* configureMarked's extension
+  // config (not the standalone wikilinkTokenizer). We pull them off the
+  // captured config object and call them directly so the mutants die
+  // deterministically — independent of how a real marked instance scans.
+  function innerExtension() {
+    const useFn = vi.fn();
+    configureMarked({ use: useFn });
+    return useFn.mock.calls[0][0].extensions[0];
+  }
+
+  test('inner start(src) returns indexOf("[[") (kills L32 indexOf("")/empty-body mutants)', () => {
+    const ext = innerExtension();
+    // Original: src.indexOf('[[') === 3 for 'abc[[X]]'.
+    //   • Mutant indexOf('') would return 0 (3 !== 0 → fails).
+    //   • Empty-body mutant would return undefined (3 !== undefined → fails).
+    expect(ext.start('abc[[X]]')).toBe(3);
+    // Wikilink right at the start → index 0 (genuine match position, not
+    // the spurious 0 that indexOf('') always yields — disambiguated above).
+    expect(ext.start('[[X]]')).toBe(0);
+    // No "[[" at all → indexOf returns -1; indexOf('') would wrongly return 0.
+    expect(ext.start('no wikilink here')).toBe(-1);
+  });
+
+  test('inner tokenizer trims an explicit alias (kills L35 m[2]?.trim() → m[2] mutant)', () => {
+    const ext = innerExtension();
+    // Original: alias: m[2]?.trim() → '  spaced  ' becomes 'spaced'.
+    //   Mutant m[2] (no trim) keeps the surrounding whitespace → fails.
+    const tok = ext.tokenizer('[[Target|  spaced  ]]');
+    expect(tok).toBeDefined();
+    expect(tok.type).toBe('wikilink');
+    expect(tok.target).toBe('Target');
+    expect(tok.alias).toBe('spaced');
+  });
+
   // ── parseMarkdown branch killers (L46, L49, L50) ───────────────────
   test('parseMarkdown calls escapeHtml when marked is absent (kills L46 mutant)', () => {
     // Original: escapeHtml ? escapeHtml(md) : String(md)

@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    # audit #13: also run on feature branches so SAST/coverage gate runs
+    # pre-merge, not only on the protected default branches.
+    branches: [main, master, 'feat/**', 'feature/**', 'fix/**']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -52,6 +54,16 @@ jobs:
       # ✅ تشغيل Vitest مع --config صراحةً
       - name: Unit tests + coverage (Vitest)
         run: npx vitest run --config vitest.config.js --coverage
+
+      # audit #4: SAST — static security analysis via eslint security plugins.
+      - name: SAST (lint:security)
+        run: npm run lint:security
+
+      # audit #4: secret scanning — fail the build if credentials are committed.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Mutation tests (Stryker)
         run: npx stryker run

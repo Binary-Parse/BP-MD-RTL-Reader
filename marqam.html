@@ -3067,8 +3067,11 @@ document.addEventListener('keydown', e => {
   else if (cmd && !e.shiftKey && e.key === '=') { e.preventDefault(); zoomIn(); }
   else if (cmd && !e.shiftKey && e.key === '-') { e.preventDefault(); zoomOut(); }
   else if (cmd && !e.shiftKey && e.key === '0') { e.preventDefault(); zoomReset(); }
-  // Ctrl+A: branch on active element — textarea/input uses .select(), else selectAllChildren
+  // Ctrl+A: when a text field (INPUT/TEXTAREA) is focused, leave NATIVE select-all
+  // intact (e.g. #findInput selects its own text). Only scope-select the
+  // live-preview noteContent via execEditCmd when focus is NOT in a field.
   else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'a') {
+    if (inInput) return; // native behavior selects the focused field's text
     e.preventDefault();
     execEditCmd('selectAll');
   }

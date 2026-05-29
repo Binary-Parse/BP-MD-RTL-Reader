@@ -11,7 +11,7 @@
     "test:unit": "vitest run --config vitest.config.js",
     "test:unit:coverage": "vitest run --config vitest.config.js --coverage",
     "test:e2e": "playwright test --config playwright.config.js",
-    "test:e2e:coverage": "playwright test tests/coverage-collector.spec.js && node scripts/generate-renderer-coverage.js",
+    "test:e2e:coverage": "node scripts/generate-renderer-coverage.js --run",
     "test:smoke": "playwright test tests/smoke.spec.js",
     "test:integration": "playwright test tests/integration",
     "test:update-snapshots": "playwright test --update-snapshots",
@@ -70,8 +70,10 @@
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",
-      "include": null,
-      "warningsAsErrors": false
+      "include": "build/installer.nsh",
+      "warningsAsErrors": false,
+      "differentialPackage": false,
+      "guid": "Marqam"
     },
     "fileAssociations": [
       {

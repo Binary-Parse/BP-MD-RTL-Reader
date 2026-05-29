@@ -531,10 +531,10 @@ test.describe('[CA16] Command palette items', () => {
       if (!cmds) return null;
       return cmds.map(c => ({ id: c.id || c.label, hasAct: typeof c.act === 'function' }));
     });
-    if (acts === null) {
-      test.skip();
-      return;
-    }
+    // marqam.html always exposes `window.PALETTE_COMMANDS` (see marqam.html
+    // `window.PALETTE_COMMANDS = PALETTE_COMMANDS;`), so a null result here is a
+    // real regression (the global was removed) — fail loudly instead of skipping.
+    expect(acts, 'window.PALETTE_COMMANDS must be exposed by the renderer').not.toBeNull();
     expect(acts.length).toBeGreaterThan(0);
     for (const a of acts) {
       expect(a.hasAct, `Palette command "${a.id}" missing act fn`).toBe(true);

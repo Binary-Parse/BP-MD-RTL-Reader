@@ -24,6 +24,15 @@ export default defineConfig({
       reportsDirectory: './coverage/node',
       include: ['main.js', 'preload.js', 'src/**/*.js', 'tests/unit/**/*.js'],
       exclude: ['node_modules/', 'dist/', 'coverage/', '__mocks__/'],
+      // Coverage gate (audit #5): SAFE thresholds set BELOW current measured
+      // coverage (≈98% stmt / 95% branch / 100% func / 98% lines) so the gate
+      // enforces a regression floor without false-failing on normal runs.
+      thresholds: {
+        statements: 95,
+        branches: 88,
+        functions: 95,
+        lines: 95,
+      },
     },
   },
   resolve: {

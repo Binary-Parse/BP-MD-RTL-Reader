@@ -192,3 +192,89 @@ describe('vaultSearch — mutation killers (audit #8)', () => {
   // exactly at end" hits this — same test as above asserts ellipsisAfter
   // is false. Mutant would return true. ✓
 });
+
+describe('vaultSearch — audit #7 survivors', () => {
+  // (a) L20:36 — b = Math.min(c.length, idx + query.length + 40).
+  // The prior "after contains world" test does NOT kill the
+  // "+ query.length" → "- query.length" mutant: in short content c.length
+  // caps b identically for both. We must pin the snippet's END offset where
+  // (idx + query.length + 40) is the LIMITING term, not c.length.
+  //
+  // Layout: 50×'X' + 'hello' (5) + 50×'Y'  → length 105, idx('hello') = 50.
+  //   a = max(0, 50 - 40)            = 10
+  //   b = min(105, 50 + 5 + 40)      = min(105, 95)  = 95   (95 < 105 → cap is the arithmetic)
+  //   raw    = c.slice(10, 95)                       length 85
+  //   relIdx = 50 - 10 = 40
+  //   after  = raw.slice(40 + 5) = c.slice(55, 95)   = 40×'Y'
+  // Mutant ("- query.length"):
+  //   b = min(105, 50 - 5 + 40)      = min(105, 85)  = 85
+  //   after = c.slice(55, 85)        = 30×'Y'  → length differs (30 vs 40).
+  test('snippet context window extends query.length+40 past the match (kills L20 "+ query.length" survivor)', () => {
+    const content = 'X'.repeat(50) + 'hello' + 'Y'.repeat(50);
+    const files = [{ name: 'win.md', content }];
+    const r = vaultSearch('hello', files);
+    const hit = r[0].hits[0];
+    // Exact END-of-window assertion: 40 trailing chars survive; mutant yields 30.
+    expect(hit.after).toBe('Y'.repeat(40));
+    expect(hit.after.length).toBe(40);
+    // And ellipsisAfter must be true since b (95) < c.length (105).
+    expect(hit.ellipsisAfter).toBe(true);
+  });
+
+  // (b) L33:51 — hits: hits.length > 0 ? hits : []. The ternary has two
+  // arms; pin BOTH so flipping the condition or swapping arms fails.
+  test('content match populates hits via the truthy arm of the ternary (kills L33 survivor)', () => {
+    const files = [{ name: 'has-hit.md', content: 'word and more words here' }];
+    const r = vaultSearch('word', files);
+    expect(r).toHaveLength(1);
+    // Truthy arm: must be the real hits array, non-empty.
+    expect(Array.isArray(r[0].hits)).toBe(true);
+    expect(r[0].hits.length).toBeGreaterThan(0);
+    expect(r[0].hits[0].match).toBe('word');
+  });
+
+  test('name-only match takes the falsy arm and yields exactly [] (kills L33 survivor)', () => {
+    // "guide" matches the NAME only; content has no occurrence → hits === [].
+    const files = [{ name: 'guide.md', content: 'totally unrelated body text' }];
+    const r = vaultSearch('guide', files);
+    expect(r).toHaveLength(1);
+    expect(r[0].hits).toEqual([]);
+    expect(r[0].hits).toHaveLength(0);
+  });
+
+  // (c) L11:13 — const c = f.content || ''. Exercise the falsy-content branch:
+  // '', undefined, and a missing key must not crash and must behave sensibly.
+  test('empty-string content does not crash; name match still returns file with [] hits (kills L11 || "" no-coverage)', () => {
+    const files = [{ name: 'empty.md', content: '' }];
+    const r = vaultSearch('empty', files); // matches name only
+    expect(r).toHaveLength(1);
+    expect(r[0].name).toBe('empty.md');
+    expect(r[0].hits).toEqual([]);
+  });
+
+  // Pins that the falsy-content DEFAULT is an EMPTY string (not any sentinel).
+  // A StringLiteral mutant '' → "<something>" would let a content search of
+  // that sentinel match; with the real empty default it must find nothing.
+  test('falsy content default is empty — sentinel-like search over no-body file finds nothing (kills L11 StringLiteral mutant)', () => {
+    const files = [{ name: 'x.md', content: undefined }];
+    // "stryker" and "here" are words a mutated default string might contain.
+    expect(vaultSearch('stryker', files)).toEqual([]);
+    expect(vaultSearch('here', files)).toEqual([]);
+    expect(vaultSearch('was', files)).toEqual([]);
+  });
+
+  test('undefined content does not crash and is treated as no body (kills L11 || "" no-coverage)', () => {
+    const files = [{ name: 'topic.md', content: undefined }];
+    // Query matches the name → file returned with empty hits, no throw.
+    expect(() => vaultSearch('topic', files)).not.toThrow();
+    const r = vaultSearch('topic', files);
+    expect(r).toHaveLength(1);
+    expect(r[0].hits).toEqual([]);
+  });
+
+  test('missing content key + query absent from name returns no result (kills L11 || "" no-coverage)', () => {
+    const files = [{ name: 'plain.md' }]; // no content property at all
+    expect(() => vaultSearch('zzz-nowhere', files)).not.toThrow();
+    expect(vaultSearch('zzz-nowhere', files)).toEqual([]);
+  });
+});

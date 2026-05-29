@@ -38,7 +38,11 @@ module.exports = { setupBridge };
 // Under Vitest/Stryker the file is imported as a dependency (the vitest worker
 // global is present), so the guard is false and nothing auto-runs — the tests
 // drive setupBridge() with a mock contextBridge/ipcRenderer instead.
+// Stryker disable all — this preload entry guard fires ONLY in the real Electron
+// preload (the Vitest worker global is absent there), so the lines are
+// unreachable by unit tests. setupBridge() itself is fully mutation-tested.
 if (typeof globalThis.__vitest_worker__ === 'undefined') {
   const { contextBridge, ipcRenderer } = require('electron');
   setupBridge({ contextBridge, ipcRenderer });
 }
+// Stryker restore all

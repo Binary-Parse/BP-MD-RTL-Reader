@@ -1,143 +1,149 @@
+<div align="center">
+
+<img src="docs/assets/icon.png" width="128" height="128" alt="BP MD RTL Reader icon">
+
 # BP MD RTL Reader
 
-A bilingual (English + Arabic) Markdown reader and editor for the desktop.
-Built on Electron. Local-first — your notes never leave your machine.
+**A Markdown reader that treats prose like a literary object.**
 
-> **Status:** v1.0.0 · Windows desktop build via electron-builder (NSIS installer + portable). macOS/Linux not packaged but the renderer runs anywhere Chromium 86+ runs.
+Bilingual to its core — first-class English **and** Arabic.
+Plain `.md` files on disk. No proprietary format. No telemetry.
 
----
+[![Version](https://img.shields.io/badge/version-1.0.0-3ddc4a)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)](#-download)
+[![License](https://img.shields.io/badge/license-MIT-3ddc4a)](LICENSE)
+[![Built with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Tests](https://img.shields.io/badge/tests-994%20passing-brightgreen)](docs/BUILD.md#testing)
 
-## Features
+<img src="docs/assets/theme-paper.png" width="820" alt="BP MD RTL Reader — reading view">
 
-- **Bilingual rendering** — auto-detects Arabic-heavy text and flips the layout to RTL; manual override with `Ctrl+Shift+L`.
-- **Three themes** — Paper (light), Ink (dark), Sepia. Cycle with `Ctrl+Shift+D`.
-- **Three editor modes** — Live preview, Split source/preview, Source-only.
-- **Wikilinks** — `[[target|alias]]` syntax with cross-file navigation.
-- **Command palette** — `Ctrl+K`. Find — `Ctrl+F`.
-- **File-association support** — double-click a `.md` file in Explorer (Windows) or drop one on the dock (macOS).
-- **Vault mode** — open a folder of Markdown files; navigate via sidebar tree, search across all files.
-- **Local-first observability** — crashes and uncaught errors are written to `<userData>/logs/marqam.log` (rotated at 1 MiB, last 3 kept). Nothing is sent to any server.
+</div>
 
 ---
 
-## Install
+## Why BP MD RTL Reader?
 
-### Pre-built (Windows)
+Most Markdown apps are built for writing code or shipping notes to a cloud. **BP MD
+RTL Reader** is built for *reading* — calmly, in either direction of script, from
+plain files that stay on your machine.
 
-Grab the latest `BP MD RTL Reader Setup 1.0.0.exe` (NSIS installer) or `BP MD RTL Reader 1.0.0.exe` (portable) from your distribution channel. Run. (A standalone Inno Setup build, `BP MD RTL Reader Setup.exe`, is also produced by `installer\build-installer.ps1`.)
-
-### From source
-
-Requires Node 24+ and npm 11+.
-
-```bash
-git clone <repo-url>
-cd "MD Reader RTL"
-npm install     # postinstall fetches Playwright browsers
-npm start       # launches Electron
-```
-
----
-
-## Run
-
-```bash
-npm start
-```
-
-Launches the Electron app with `index.html` as the renderer.
+- 🅰️ **Truly bilingual.** Arabic isn't an afterthought. The app detects Arabic-heavy
+  documents and flips to a proper right-to-left layout with Arabic-aware typography —
+  and you can flip direction yourself any time.
+- 🎨 **Three calm themes.** Paper, Ink, and Sepia — chosen to make long reading easy
+  on the eyes. Your choice is remembered.
+- 📄 **Just Markdown.** Open a single file or a whole folder of `.md` files. No
+  database, no proprietary format, no lock-in.
+- 🔒 **Local-first & private.** No telemetry, no analytics, no account, no
+  auto-update phone-home. Your words never leave your computer.
+- 🛡️ **Hardened by design.** A sandboxed renderer and DOMPurify-sanitised output mean
+  opening an untrusted `.md` file is safe.
 
 ---
 
-## Test
+## 📸 Screenshots
 
-```bash
-npm run test:unit              # Vitest unit tests (138+ tests, ~0.5 s)
-npm run test:unit:coverage     # + v8 coverage report → coverage/node/
-npm run test:smoke             # Playwright smoke (15 tests, ~30 s)
-npm run test:e2e               # Full Playwright sweep (~467 tests, ~15 min)
-npm run test:mutation          # Stryker mutation testing
-npm run test:integration       # Playwright integration suite (where wired)
-npm run lint:security          # ESLint with security + no-unsanitized plugins
-```
+|  Paper (light)  |  Ink (dark)  |  Sepia  |
+| :-------------: | :----------: | :-----: |
+| <img src="docs/assets/theme-paper.png" alt="Paper theme"> | <img src="docs/assets/theme-ink.png" alt="Ink theme"> | <img src="docs/assets/theme-sepia.png" alt="Sepia theme"> |
 
-CI runs unit + mutation + full E2E + `npm audit` on every push/PR to `main` / `master` via `.github/workflows/ci.yml`.
+|  Arabic / RTL  |  Split view  |  Command palette  |
+| :------------: | :----------: | :---------------: |
+| <img src="docs/assets/rtl-arabic.png" alt="Right-to-left Arabic rendering"> | <img src="docs/assets/split-view.png" alt="Split source and preview"> | <img src="docs/assets/command-palette.png" alt="Command palette"> |
 
 ---
 
-## Build
+## ⬇️ Download
 
-```bash
-npm run dist                   # electron-builder → Windows NSIS + portable
-```
+> **Requires Windows 10 (22H2 / build 19045) or Windows 11.**
 
-Output lands in `dist/`. The `package.json#build` block controls targets and file associations.
+| Build | File | Best for |
+| ----- | ---- | -------- |
+| **Installer** (recommended) | `BP MD RTL Reader Setup 1.0.0.exe` | Normal install with Start-menu & desktop shortcuts and `.md` association |
+| **Portable** | `BP MD RTL Reader 1.0.0.exe` | Run from anywhere (USB stick, Downloads) — no install |
+
+Grab the latest build from the [**Releases**](https://github.com/Binary-Parse/md-reader-rtl/releases) page and run it.
+The installer is available for **x64, 32-bit, and ARM64**; the portable build likewise.
+
+<sub>A standalone [Inno Setup](https://jrsoftware.org/isinfo.php) installer (`BP MD RTL Reader Setup.exe`, x64) is also produced — see [docs/BUILD.md](docs/BUILD.md).</sub>
 
 ---
 
-## Keyboard shortcuts (selected)
+## 🚀 Quick start
 
-| Shortcut | Action |
+1. **Install** and launch — you'll land on a calm welcome screen.
+2. **Open a file** with `Ctrl+O`, or **open a folder** of notes with `Ctrl+Shift+O`.
+   No files handy? Click **Try Demo Notes** to load a bilingual sample set.
+3. **Read.** Switch themes with the ◐ button (or `Ctrl+Shift+D`), flip direction with
+   ⇄ (`Ctrl+Shift+L`), and press `Ctrl+K` for the command palette.
+
+New to the app? The **[User Guide](docs/USER_GUIDE.md)** walks through every feature —
+vaults, tabs, search, tags, wiki-links, view modes, the inspector, and HTML export.
+
+---
+
+## ✨ Features at a glance
+
+| | |
 | --- | --- |
-| `Ctrl+Shift+O` | Open folder (vault) |
-| `Ctrl+O` | Open single file |
-| `Ctrl+N` / `Ctrl+Shift+N` | New note / daily note |
-| `Ctrl+S` / `Ctrl+Shift+S` | Save / Save As |
-| `Ctrl+B` / `Ctrl+I` / `Ctrl+L` | Bold / Italic / Link |
-| `Ctrl+K Ctrl+W` | Insert wikilink |
-| `Ctrl+F` / `Ctrl+H` | Find / Find & Replace |
-| `Ctrl+K` | Command palette |
-| `Ctrl+\` | Toggle sidebar |
-| `Ctrl+Shift+I` | Toggle inspector |
-| `Ctrl+Shift+D` | Cycle theme |
-| `Ctrl+Shift+L` | Flip RTL/LTR |
-| `Ctrl+/` | Shortcuts modal |
+| **Reading** | Live Preview · Split · Source modes · zoom (60–200%) · document outline & properties inspector |
+| **Bilingual** | Automatic Arabic RTL detection · manual direction flip · Arabic-aware fonts & alignment |
+| **Library** | Open file or folder ("vault") · tabbed editing · file tree · cross-vault search · `#tags` · recent files |
+| **Linking** | `[[wiki-links]]` with `[[target\|alias]]` aliases · click to jump |
+| **Markdown** | Headings, lists, tables, code blocks, blockquotes, emphasis — rendered with [marked](https://marked.js.org/), sanitised with [DOMPurify](https://github.com/cure53/DOMPurify) |
+| **Productivity** | Command palette (`Ctrl+K`) · find-in-document (`Ctrl+F`) · daily notes · HTML export · drag-and-drop |
+| **Comfort** | Three themes remembered across sessions · custom frameless window · keyboard-first |
+
+See the full **[Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)** reference (or press `Ctrl+/` in the app).
 
 ---
 
-## Architecture
+## 🔒 Privacy & security
 
-Single-window Electron app. Pure business logic is extracted into modules under `src/`:
+BP MD RTL Reader is **local-first**. There is **no telemetry, no analytics, no crash
+upload, and no auto-update phone-home** — verifiable in the source.
 
+- Your notes and settings live only in `%APPDATA%\BP MD RTL Reader`; uninstalling can
+  optionally keep them.
+- The renderer runs with `contextIsolation` on and `nodeIntegration` off, behind a
+  minimal preload bridge; rendered HTML is sanitised by DOMPurify.
+- On first run (when online) the renderer fetches the Markdown engine, the sanitiser,
+  and fonts from public CDNs — **content only, integrity-checked, with no identifiers
+  attached.**
+
+Full details: **[docs/PRIVACY.md](docs/PRIVACY.md)**.
+
+---
+
+## 🛠️ Build from source
+
+```bash
+git clone https://github.com/Binary-Parse/md-reader-rtl.git
+cd md-reader-rtl
+npm install      # postinstall fetches the Playwright Chromium used by the e2e tests
+npm start        # launch the app in development
+npm run dist     # build the Windows installers into dist/
 ```
-main.js               # Electron main process — windowing, IPC, file IO
-preload.js            # contextBridge exposes electronAPI to renderer
-src/main-logic.js     # Pure security/file helpers (allowlist, BOM, path checks)
-src/renderer/         # Pure renderer utilities (i18n, theme, search, markdown, state)
-index.html           # Renderer entry — UI markup + remaining inline JS
-```
 
-IPC channels (all gated through `preload.js#electronAPI`):
-
-| Channel | Direction | Purpose |
-| --- | --- | --- |
-| `dialog:openFolder` | renderer → main (invoke) | Pick a vault folder |
-| `fs:readVault` | renderer → main (invoke) | Read `.md` files from an allowlisted folder |
-| `window-close` / `-minimize` / `-maximize` | renderer → main (send) | Custom titlebar controls |
-| `edit:command` | renderer → main (send) | Native copy/cut/paste/undo/redo via webContents |
-| `open-external-file` | main → renderer (send) | Deliver file content for OS-level file-association opens |
-| `log:error` | renderer → main (send, rate-limited 100/min) | Forward renderer-side errors to local log |
-
-### Security boundaries
-
-- `nodeIntegration: false`, `contextIsolation: true` in BrowserWindow.
-- All renderer access to filesystem and shell is via `electronAPI` (preload bridge); the renderer can never call `fs` directly.
-- `fs:readVault` enforces an allowlist seeded only by `dialog:openFolder`, rejects UNC/network paths, caps directory size (5 000 files, 10 MiB per file, 100 MiB cumulative), and rejects symlinks that escape the vault root.
+Building the installers, regenerating the icon, and the full test/CI workflow are
+documented in **[docs/BUILD.md](docs/BUILD.md)**.
 
 ---
 
-## Privacy
+## 🧪 Quality
 
-BP MD RTL Reader is local-first. There is no telemetry, no analytics, no crash-upload, no auto-update phone-home. The renderer loads `marked.js`, `DOMPurify`, and font assets from CDNs (jsdelivr, Google Fonts) on first run when online — these are content-only fetches, no identifiers attached.
+This is a small app with a deliberately large safety net:
+
+- **468** unit tests (Vitest) with a 95% coverage gate
+- **526** end-to-end tests (Playwright), including visual-regression and accessibility
+- **Mutation testing** (Stryker) with a 90% break threshold
+- **Installer logic** verified by Pester + a compiled Inno Setup self-test
+- **CI** on every push/PR: coverage, mutation, e2e, security lint, secret scan, `npm audit`
 
 ---
 
-## Project status
+## 📄 License
 
-Active development. See `AUDIT_REPORT_2026-05-28.md` for the current test-suite audit and outstanding hardening work.
+Released under the [MIT License](LICENSE) © 2026 **Binary Parse**.
 
----
-
-## License
-
-License not yet declared. Treat as **all rights reserved** until a `LICENSE` file is added.
+<div align="center"><sub>Made with care for readers of every direction.</sub></div>

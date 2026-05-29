@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "Mutation-testing config for the installer logic. Stryker has NO PowerShell",
+    "runner (it mutates JS/TS/C#/Scala only), so mutation-runner.ps1 implements an",
+    "equivalent engine that reads THIS file: it generates one mutant per swap",
+    "occurrence in logic-sim.ps1, runs the Pester suites against each mutant, and",
+    "fails if the kill score drops below thresholds.break. The schema mirrors",
+    "Stryker's (mutate / testRunner / thresholds) so intent is unambiguous.",
+    "The root-level stryker.config.json is the SEPARATE, unrelated config for the",
+    "JS app's @stryker-mutator/vitest-runner and is intentionally left untouched.",
+    "logic-sim.ps1 is a pure-decision mirror with no destructive statements (no",
+    "Remove-Item/DeleteFile/DelTree), so a RemoveStatement mutator would be inert.",
+    "The cleanup DECISION is mutated via the boolean/string mutators (Get-CleanupPlan);",
+    "actual destructive deletion is covered by the Pascal self-test and the",
+    "real-machine uninstall checks in uninstall_check.test.ps1."
+  ],
+  "mutate": ["logic-sim.ps1"],
+  "testRunner": "pester",
+  "testFiles": [
+    "version_compare.test.ps1",
+    "path_validate.test.ps1",
+    "registry_mock.test.ps1",
+    "uninstall_check.test.ps1"
+  ],
+  "thresholds": { "high": 95, "low": 90, "break": 90 },
+  "mutators": [
+    { "name": "ComparisonOperator", "swaps": [
+      [" -lt ", " -ge "], [" -gt ", " -le "], [" -le ", " -gt "],
+      [" -ge ", " -lt "], [" -eq ", " -ne "], [" -ne ", " -eq "]
+    ]},
+    { "name": "LogicalOperator", "swaps": [
+      [" -and ", " -or "], [" -or ", " -and "]
+    ]},
+    { "name": "BooleanLiteral", "swaps": [
+      ["$true", "$false"], ["$false", "$true"]
+    ]},
+    { "name": "ReturnValue", "swaps": [
+      ["return -1", "return 1"], ["return 1", "return -1"], ["return 0", "return 1"]
+    ]},
+    { "name": "StringLiteral", "swaps": [
+      ["\\Marqam", "\\WRONGNAME"],
+      ["'fresh'", "'__mut__'"], ["'same'", "'__mut__'"],
+      ["'older'", "'__mut__'"], ["'newer'", "'__mut__'"]
+    ]}
+  ]
+}

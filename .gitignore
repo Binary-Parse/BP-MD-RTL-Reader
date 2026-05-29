@@ -17,6 +17,12 @@ test_output_full.txt
 act-output.txt
 CI test result.txt
 
+# ── Installer build/test scratch ───────────────────────────────────
+installer/Output/
+tests/installer/*.out.txt
+tests/installer/Marqam-SelfTest.exe
+tests/installer/selftest.log
+
 # ── Logs ───────────────────────────────────────────────────────────
 logs/
 *.log

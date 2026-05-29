@@ -1,12 +1,12 @@
 <#
-  build-installer.ps1 — compile the Marqam installer with Inno Setup 6.3+.
+  build-installer.ps1 — compile the BP MD RTL Reader installer with Inno Setup 6.3+.
 
   Steps:
     1. locate ISCC.exe (PATH or default install locations)
     2. read the app version from package.json (override with -Version)
-    3. verify the packaged app exists (dist\win-unpacked\Marqam.exe)
+    3. verify the packaged app exists (dist\win-unpacked\BP MD RTL Reader.exe)
     4. compile installer\setup.iss
-    5. verify dist\Marqam-Setup-x64.exe exists and is > 10 MB
+    5. verify "dist\BP MD RTL Reader Setup.exe" exists and is > 10 MB
     6. print the SHA256 hash
 
   Usage:
@@ -52,7 +52,7 @@ Write-Host "Version: $Version" -ForegroundColor Cyan
 # 3. packaged app source -----------------------------------------------------
 if (-not $SourceDir) { $SourceDir = Join-Path $repoRoot 'dist\win-unpacked' }
 elseif (-not [System.IO.Path]::IsPathRooted($SourceDir)) { $SourceDir = Join-Path $repoRoot $SourceDir }
-$appExe = Join-Path $SourceDir 'Marqam.exe'
+$appExe = Join-Path $SourceDir 'BP MD RTL Reader.exe'
 if (-not (Test-Path $appExe)) {
     Write-Error "Packaged app not found: $appExe`nRun the app build first (e.g. 'npx electron-builder --dir' or 'npm run dist')."
     exit 3
@@ -61,14 +61,14 @@ Write-Host "Source : $SourceDir" -ForegroundColor Cyan
 
 # 4. compile -----------------------------------------------------------------
 $outDir  = Join-Path $repoRoot 'dist'
-$outFile = Join-Path $outDir 'Marqam-Setup-x64.exe'
+$outFile = Join-Path $outDir 'BP MD RTL Reader Setup.exe'
 if (Test-Path $outFile) { Remove-Item $outFile -Force }
 
 $isccArgs = @(
     "/DAppVersion=$Version",
     "/DSourceDir=$SourceDir",
     "/O$outDir",
-    '/FMarqam-Setup-x64',
+    '/FBP MD RTL Reader Setup',
     $Iss
 )
 Write-Host "Compiling..." -ForegroundColor Cyan

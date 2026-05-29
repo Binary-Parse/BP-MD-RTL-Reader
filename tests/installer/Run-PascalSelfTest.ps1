@@ -26,7 +26,7 @@ if (-not $iscc) {
 }
 
 $iss    = Join-Path $PSScriptRoot 'selftest.iss'
-$exe    = Join-Path $PSScriptRoot 'Marqam-SelfTest.exe'
+$exe    = Join-Path $PSScriptRoot 'BP-MD-RTL-Reader-SelfTest.exe'
 $result = Join-Path $PSScriptRoot 'selftest-result.txt'
 
 Write-Host "Compiling selftest.iss..." -ForegroundColor Cyan

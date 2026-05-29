@@ -101,7 +101,7 @@ begin
       if FreeBytes < Int64(DV_MIN_FREE_MB) * 1024 * 1024 then
       begin
         Msg := Format('Not enough free disk space on %s.' + #13#10 +
-                      'Marqam needs at least %d MB free.', [Drive, DV_MIN_FREE_MB]);
+                      'BP MD RTL Reader needs at least %d MB free.', [Drive, DV_MIN_FREE_MB]);
         Exit;
       end;
     end;

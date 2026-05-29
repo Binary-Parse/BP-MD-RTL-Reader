@@ -1,5 +1,5 @@
 ; ============================================================================
-;  selftest.iss — Pascal unit-test harness for the Marqam installer logic.
+;  selftest.iss — Pascal unit-test harness for the BP MD RTL Reader installer logic.
 ;
 ;  Compiles the REAL production units (version_check.pas + dir_validate.pas)
 ;  together with the *.test.pas assertion files and runs every assertion inside
@@ -8,16 +8,16 @@
 ;
 ;  Build + run is automated by Run-PascalSelfTest.ps1, or manually:
 ;     ISCC.exe selftest.iss
-;     Marqam-SelfTest.exe /VERYSILENT /LOG="selftest.log"
+;     BP-MD-RTL-Reader-SelfTest.exe /VERYSILENT /LOG="selftest.log"
 ;     (then grep the log for "RESULT: N passed, 0 failed")
 ; ============================================================================
 
 [Setup]
-AppName=Marqam SelfTest
+AppName=BP MD RTL Reader SelfTest
 AppVersion=1.0.0
-DefaultDirName={tmp}\MarqamSelfTest
+DefaultDirName={tmp}\BPMDRTLReaderSelfTest
 OutputDir=.
-OutputBaseFilename=Marqam-SelfTest
+OutputBaseFilename=BP-MD-RTL-Reader-SelfTest
 CreateAppDir=no
 Uninstallable=no
 DisableWelcomePage=yes
@@ -87,7 +87,7 @@ end;
 function InitializeSetup: Boolean;
 begin
   T_Pass := 0; T_Fail := 0; T_Report := '';
-  Log('=== Marqam installer self-test (Pascal) ===');
+  Log('=== BP MD RTL Reader installer self-test (Pascal) ===');
 
   Test_CompareVersion;
   Test_DetermineInstallAction;

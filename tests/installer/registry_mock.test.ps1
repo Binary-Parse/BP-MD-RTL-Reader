@@ -27,8 +27,11 @@ Describe 'Get-InstalledVersion (mocked HKLM ARP read)' {
         Get-InstalledVersion | Should -Be '0.8.0'
     }
     It 'detects the electron-builder NSIS key when the Inno _is1 key is absent' {
+        # Default: NOTHING is present (also shields the test from any real
+        # uninstall key that happens to exist on the dev machine).
+        Mock Get-ItemProperty { throw 'absent (no such uninstall key)' }
         Mock Get-ItemProperty -ParameterFilter { $Path -like '*_is1' }      { throw 'no Inno key' }
-        Mock Get-ItemProperty -ParameterFilter { $Path -like '*e3a47a7c*' } { [pscustomobject]@{ DisplayVersion = '1.0.0' } }
+        Mock Get-ItemProperty -ParameterFilter { $Path -like '*4f0623fc*' } { [pscustomobject]@{ DisplayVersion = '1.0.0' } }
         Get-InstalledVersion | Should -Be '1.0.0'
     }
 }

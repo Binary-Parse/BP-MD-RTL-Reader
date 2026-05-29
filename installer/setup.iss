@@ -1,13 +1,13 @@
 ; ============================================================================
-;  Marqam — Inno Setup 6.3+ installer
-;  Compiler: ISCC.exe   |   Output: dist\Marqam-Setup-x64.exe   |   x64-only
+;  BP MD RTL Reader — Inno Setup 6.3+ installer
+;  Compiler: ISCC.exe   |   Output: dist\BP MD RTL Reader Setup.exe   |   x64-only
 ;
 ;  Build:   installer\build-installer.ps1
 ;  Manual:  ISCC.exe /DAppVersion=1.0.0 installer\setup.iss
 ;
-;  The product name is "Marqam" (matches package.json productName / appId
-;  com.marqam.app / the bundled Marqam.exe). The original brief used the
-;  spelling "Margam"; that was reconciled to "Marqam" per the codebase.
+;  The product name is "BP MD RTL Reader" (matches package.json productName /
+;  appId com.binaryparse.bpmdrtlreader / the bundled BP MD RTL Reader.exe),
+;  published by Binary Parse.
 ; ============================================================================
 
 ; ---- Version (overridable from the build script: /DAppVersion=x.y.z) --------
@@ -17,7 +17,7 @@
 
 ; ---- Source of the packaged app (electron-builder --dir output) -------------
 ; Relative to this .iss file (installer\..\dist\win-unpacked). Overridable with
-; /DSourceDir=...  Must contain Marqam.exe + the Electron runtime.
+; /DSourceDir=...  Must contain BP MD RTL Reader.exe + the Electron runtime.
 #ifndef SourceDir
   #define SourceDir "..\dist\win-unpacked"
 #endif
@@ -26,9 +26,9 @@
 ; The AppId GUID below also appears (single-brace form) in the [Code] constant
 ; UNINSTALL_KEY. If you ever regenerate it, change BOTH places.
 #define RawGuidNoBrace "32586DF8-1F67-400F-9D8B-6426C3D5B405"
-#define MyAppName      "Marqam"
-#define MyAppExe       "Marqam.exe"
-#define MyPublisher    "Marqam"
+#define MyAppName      "BP MD RTL Reader"
+#define MyAppExe       "BP MD RTL Reader.exe"
+#define MyPublisher    "Binary Parse"
 #define MyAppURL       "https://github.com/"
 
 [Setup]
@@ -66,12 +66,12 @@ ArchitecturesInstallIn64BitMode=x64compatible and not arm64
 MinVersion=10.0.19045
 
 ; ---- ARP / Windows "Installed apps" entry -----------------------------------
-UninstallDisplayName={#MyAppName} Markdown Reader
+UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExe}
 
 ; ---- Output -----------------------------------------------------------------
 OutputDir=..\dist
-OutputBaseFilename=Marqam-Setup-x64
+OutputBaseFilename=BP MD RTL Reader Setup
 SetupIconFile=assets\marqam.ico
 WizardImageFile=assets\wizard-banner.bmp
 WizardSmallImageFile=assets\wizard-small.bmp
@@ -86,7 +86,7 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "associatemd";  Description: "Add an ""Open with Marqam"" entry to .md and .markdown files"
+Name: "associatemd";  Description: "Add an ""Open with BP MD RTL Reader"" entry to .md and .markdown files"
 
 [Files]
 ; Package the entire x64 build tree.
@@ -99,15 +99,15 @@ Name: "{autodesktop}\{#MyAppName}";        Filename: "{app}\{#MyAppExe}"; IconFi
 
 [Registry]
 ; --- Optional, non-destructive .md / .markdown context-menu verb -------------
-; Adds a labelled "Open with Marqam" verb WITHOUT hijacking the default handler.
+; Adds a labelled "Open with BP MD RTL Reader" verb WITHOUT hijacking the default handler.
 ; HKA = auto hive (HKLM per-machine / HKCU per-user). uninsdeletekey removes the
 ; whole verb subtree on uninstall.
-Root: HKA; Subkey: "Software\Classes\.md\shell\Open with Marqam"; ValueType: string; ValueName: ""; ValueData: "Open with Marqam"; Flags: uninsdeletekey; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.md\shell\Open with Marqam"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExe},0"; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.md\shell\Open with Marqam\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with Marqam"; ValueType: string; ValueName: ""; ValueData: "Open with Marqam"; Flags: uninsdeletekey; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with Marqam"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExe},0"; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with Marqam\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: ""; ValueData: "Open with BP MD RTL Reader"; Flags: uninsdeletekey; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExe},0"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: ""; ValueData: "Open with BP MD RTL Reader"; Flags: uninsdeletekey; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExe},0"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
 
 [UninstallDelete]
 ; Leftovers the app may write INTO its own program directory (logs, caches).
@@ -128,11 +128,12 @@ Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; F
 const
   { Single-brace form of AppId — keep the GUID in sync with [Setup] AppId above. }
   UNINSTALL_KEY = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{32586DF8-1F67-400F-9D8B-6426C3D5B405}_is1';
-  { electron-builder NSIS uninstall key for Marqam — a UUID v5 derived from the
-    appId 'com.marqam.app' (nsis.guid 'Marqam'). Lets THIS installer detect an
-    app already installed by the electron-builder NSIS installer. Stable unless
-    appId/guid changes; verify with: reg query HKLM\...\Uninstall /s /f Marqam }
-  EB_NSIS_KEY   = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\e3a47a7c-4d6c-503c-a136-ddaaea18a540';
+  { electron-builder NSIS uninstall key for BP MD RTL Reader — a UUID v5 derived
+    from the appId 'com.binaryparse.bpmdrtlreader' (package.json nsis.guid is left
+    unset, so electron-builder uses the derived UUID). Lets THIS installer detect
+    an app already installed by the electron-builder NSIS installer. Stable unless
+    the appId changes; verify with: reg query HKLM\...\Uninstall /s /f "BP MD RTL Reader" }
+  EB_NSIS_KEY   = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\4f0623fc-2d71-59f2-b165-b36fb9982268';
   APP_VERSION   = '{#AppVersion}';
 
 var
@@ -190,10 +191,10 @@ begin
     if WizardSilent then
       Exit;                                 { silent: reinstall/repair over the top }
     Choice := TaskDialogMsgBox(
-      Format('Marqam %s is already installed', [Installed]),
+      Format('BP MD RTL Reader %s is already installed', [Installed]),
       'What would you like to do?' + #13#10#13#10 +
       'Repair — reinstall the current version.' + #13#10 +
-      'Remove — uninstall Marqam from this PC.' + #13#10 +
+      'Remove — uninstall BP MD RTL Reader from this PC.' + #13#10 +
       'Cancel — exit Setup without changes.',
       mbConfirmation, MB_YESNOCANCEL, ['&Repair', 'Re&move', 'Cancel'], 0);
     if Choice = IDYES then
@@ -218,7 +219,7 @@ begin
       Exit;
     end;
     Choice := TaskDialogMsgBox(
-      'A newer version of Marqam is already installed',
+      'A newer version of BP MD RTL Reader is already installed',
       Format('Installed version: %s' + #13#10 +
              'This installer:    %s' + #13#10#13#10 +
              'Downgrading is not recommended and may corrupt newer settings.', [Installed, APP_VERSION]),
@@ -230,7 +231,7 @@ begin
   { Action = 'older'  ->  upgrade in place. }
   if not WizardSilent then
     TaskDialogMsgBox(
-      'Upgrading Marqam',
+      'Upgrading BP MD RTL Reader',
       Format('Upgrading from %s to %s.' + #13#10 +
              'Your notes and settings will be preserved.', [Installed, APP_VERSION]),
       mbInformation, MB_OK, [], 0);
@@ -261,8 +262,8 @@ begin
     gKeepUserData := False                  { spec default: silent removes everything }
   else
     gKeepUserData :=
-      MsgBox('Keep your Marqam settings and data?' + #13#10#13#10 +
-             'Yes  — keep your data folder (%APPDATA%\Marqam: settings, recent files, notes) and remove only the program.' + #13#10 +
+      MsgBox('Keep your BP MD RTL Reader settings and data?' + #13#10#13#10 +
+             'Yes  — keep your data folder (%APPDATA%\BP MD RTL Reader: settings, recent files, notes) and remove only the program.' + #13#10 +
              'No   — remove everything, including settings and data.',
              mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
 end;

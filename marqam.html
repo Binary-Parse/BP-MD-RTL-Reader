@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Marqam</title>
+<title>BP MD RTL Reader</title>
 <script>(function(){const t=localStorage.getItem('marqam-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1372,7 +1372,7 @@ html.electron .tab-add {
   <div class="titlebar">
     <div class="tb-brand">
       <span class="tb-brand-mark">◆</span>
-      <span class="tb-brand-name">Marqam</span>
+      <span class="tb-brand-name">BP MD RTL Reader</span>
     </div>
 
     <div class="tb-menubar">
@@ -1503,8 +1503,8 @@ html.electron .tab-add {
           <article class="editor" id="editor">
             <div class="editor-welcome" id="welcome">
               <div class="welcome-card">
-                <div class="logo">م</div>
-                <h1>Welcome to <em>Marqam</em></h1>
+                <div class="logo">BP</div>
+                <h1>Welcome to <em>BP MD RTL Reader</em></h1>
                 <p class="lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
                 <div class="welcome-actions">
                   <button class="welcome-btn" id="wbOpenVault">
@@ -1849,8 +1849,8 @@ function showShortcuts() {
 function showAbout() {
   closeMenu();
   const html = `
-    <div class="about-logo">م</div>
-    <div class="about-name">Marqam <em style="font-family: var(--arabic); color: var(--accent); font-style: normal;">مَرْقَم</em></div>
+    <div class="about-logo">BP</div>
+    <div class="about-name">BP MD RTL Reader</div>
     <div class="about-version">version 0.1 · prototype · ${new Date().getFullYear()}</div>
     <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
     <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
@@ -1940,7 +1940,7 @@ const MENU_DEFS = {
     x: 184,
     items: [
       { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
-      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout }
+      { kind: 'item', icon: 'i', name: 'About BP MD RTL Reader', action: showAbout }
     ]
   }
 };
@@ -2954,7 +2954,7 @@ const PALETTE_COMMANDS = [
   { sec: 'View', icon: '−', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
   { sec: 'View', icon: '1', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
   { sec: 'Help', icon: '⌨', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
-  { sec: 'Help', icon: 'i', name: 'About Marqam', meta: 'help', act: showAbout }
+  { sec: 'Help', icon: 'i', name: 'About BP MD RTL Reader', meta: 'help', act: showAbout }
 ];
 
 let palIdx = 0, palVisible = [];

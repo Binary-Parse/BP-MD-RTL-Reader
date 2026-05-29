@@ -2,7 +2,7 @@
 /**
  * File-association tests. Verifies that when the main process sends an
  * 'open-external-file' IPC event (which happens when the user double-clicks
- * a .md file in Windows Explorer with Marqam as the default handler), the
+ * a .md file in Windows Explorer with BP MD RTL Reader as the default handler), the
  * renderer adds the file to State.files and renders it.
  *
  * We can't drive a real OS file association in Playwright, so we simulate the
@@ -53,12 +53,12 @@ test.describe('[FA] File association — open .md from Explorer', () => {
       window.openExternalFile({
         name: 'demo.md',
         path: 'demo.md',
-        content: '# Marqam external open works\n\nbody text here'
+        content: '# BP MD RTL Reader external open works\n\nbody text here'
       });
     });
     await page.waitForTimeout(300);
     const previewText = await page.$eval('#noteContent', el => el.textContent);
-    expect(previewText).toContain('Marqam external open works');
+    expect(previewText).toContain('BP MD RTL Reader external open works');
   });
 
   test('second openExternalFile call adds a second tab (not overwrites)', async ({ page }) => {

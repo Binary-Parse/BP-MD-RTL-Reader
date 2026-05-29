@@ -514,7 +514,7 @@ test.describe('RTL and theme bug fixes', () => {
           text.toLowerCase().includes('rtl') ||
           text.toLowerCase().includes('direction') ||
           text.toLowerCase().includes('arabic') ||
-          text.toLowerCase().includes('marqam')
+          text.toLowerCase().includes('bp md rtl reader')
         ) {
           rtlErrors.push(text);
         }

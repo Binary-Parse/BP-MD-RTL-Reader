@@ -26,12 +26,12 @@ begin
     DeleteFile(Path);
 end;
 
-{ Remove the per-user data folders Marqam writes to.
+{ Remove the per-user data folders BP MD RTL Reader writes to.
 
   The app persists ALL of its state via Electron app.getPath('userData') =
-  %APPDATA%\Marqam (roaming): settings, recent files, window/zoom/theme state
-  (Chromium 'Local Storage'), and any user notes. %LOCALAPPDATA%\Marqam holds
-  only transient caches (GPUCache, etc.). The app does NOT use a dedicated
+  %APPDATA%\BP MD RTL Reader (roaming): settings, recent files, window/zoom/theme
+  state (Chromium 'Local Storage'), and any user notes. %LOCALAPPDATA%\BP MD RTL
+  Reader holds only transient caches (GPUCache, etc.). The app does NOT use a dedicated
   'notes' subfolder, so "keep my data" must preserve the whole roaming folder
   rather than a single notes\ child.
 
@@ -42,8 +42,8 @@ procedure DeleteUserData(KeepUserData: Boolean);
 var
   RoamDir, LocalDir: string;
 begin
-  RoamDir  := ExpandConstant('{userappdata}\Marqam');
-  LocalDir := ExpandConstant('{localappdata}\Marqam');
+  RoamDir  := ExpandConstant('{userappdata}\BP MD RTL Reader');
+  LocalDir := ExpandConstant('{localappdata}\BP MD RTL Reader');
   if KeepUserData then
     CU_DelTree(LocalDir)              { keep roaming settings/notes; drop only caches }
   else
@@ -60,22 +60,22 @@ end;
 procedure CleanupArtifacts;
 begin
   { Shortcuts (desktop / startup) for both per-user and all-users layouts. }
-  CU_DelFile(ExpandConstant('{userstartup}\Marqam.lnk'));
-  CU_DelFile(ExpandConstant('{commonstartup}\Marqam.lnk'));
-  CU_DelFile(ExpandConstant('{userdesktop}\Marqam.lnk'));
-  CU_DelFile(ExpandConstant('{commondesktop}\Marqam.lnk'));
+  CU_DelFile(ExpandConstant('{userstartup}\BP MD RTL Reader.lnk'));
+  CU_DelFile(ExpandConstant('{commonstartup}\BP MD RTL Reader.lnk'));
+  CU_DelFile(ExpandConstant('{userdesktop}\BP MD RTL Reader.lnk'));
+  CU_DelFile(ExpandConstant('{commondesktop}\BP MD RTL Reader.lnk'));
 
   { Start-menu program group. }
-  CU_DelTree(ExpandConstant('{autoprograms}\Marqam'));
-  CU_DelTree(ExpandConstant('{commonprograms}\Marqam'));
+  CU_DelTree(ExpandConstant('{autoprograms}\BP MD RTL Reader'));
+  CU_DelTree(ExpandConstant('{commonprograms}\BP MD RTL Reader'));
 
   { Application settings. }
-  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Marqam');
-  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Marqam');
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\BP MD RTL Reader');
+  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\BP MD RTL Reader');
 
-  { File-association verbs ('Open with Marqam') in both hives. }
-  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\.md\shell\Open with Marqam');
-  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.md\shell\Open with Marqam');
-  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\.markdown\shell\Open with Marqam');
-  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.markdown\shell\Open with Marqam');
+  { File-association verbs ('Open with BP MD RTL Reader') in both hives. }
+  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\.md\shell\Open with BP MD RTL Reader');
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.md\shell\Open with BP MD RTL Reader');
+  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\.markdown\shell\Open with BP MD RTL Reader');
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.markdown\shell\Open with BP MD RTL Reader');
 end;

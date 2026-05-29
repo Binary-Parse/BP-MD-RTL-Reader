@@ -1,4 +1,4 @@
-; Custom NSIS include for Marqam installer.
+; Custom NSIS include for BP MD RTL Reader installer.
 ; Hooks into electron-builder's macro system:
 ;   customInit   — runs before install begins (here: detect any prior install)
 ;   customUnInit — runs before uninstall begins (here: ask about user data)
@@ -17,7 +17,7 @@
   ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_REGISTRY_KEY_2}" "UninstallString"
   ${If} $R0 != ""
     MessageBox MB_YESNO|MB_ICONQUESTION \
-      "An existing user-level Marqam installation was detected.$\n$\nUninstall it before continuing? (Recommended)" \
+      "An existing user-level BP MD RTL Reader installation was detected.$\n$\nUninstall it before continuing? (Recommended)" \
       /SD IDYES IDYES uninstall_per_user IDNO continue_check_machine
     uninstall_per_user:
       ; /S = silent. _?=$INSTDIR prevents the uninstaller from spawning a
@@ -41,13 +41,13 @@
   ; statically. We give the user an explicit choice instead so they're not
   ; surprised either way.
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Delete user notes and preferences too?$\n$\nThis will remove:$\n  • $APPDATA\Marqam (settings, recent files)$\n$\nYour Markdown files on disk are NOT touched.$\n$\nChoose 'No' to keep them for a future reinstall." \
+    "Delete user notes and preferences too?$\n$\nThis will remove:$\n  • $APPDATA\BP MD RTL Reader (settings, recent files)$\n$\nYour Markdown files on disk are NOT touched.$\n$\nChoose 'No' to keep them for a future reinstall." \
     /SD IDNO IDYES delete_user_data IDNO keep_user_data
   delete_user_data:
-    RMDir /r "$APPDATA\Marqam"
-    DetailPrint "Removed $APPDATA\Marqam"
+    RMDir /r "$APPDATA\BP MD RTL Reader"
+    DetailPrint "Removed $APPDATA\BP MD RTL Reader"
     Goto user_data_done
   keep_user_data:
-    DetailPrint "Preserved $APPDATA\Marqam"
+    DetailPrint "Preserved $APPDATA\BP MD RTL Reader"
   user_data_done:
 !macroend

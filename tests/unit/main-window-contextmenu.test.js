@@ -72,8 +72,8 @@ describe('main.js — createWindow() BrowserWindow options', () => {
   });
 
   // ─ string + boolean literals (kills StringLiteral / BooleanLiteral) ─
-  test('title === "Marqam" (exact string)', () => {
-    expect(opts.title).toBe('Marqam');
+  test('title === "BP MD RTL Reader" (exact string)', () => {
+    expect(opts.title).toBe('BP MD RTL Reader');
   });
 
   test('frame === false (boolean, not undefined / not true)', () => {

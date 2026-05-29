@@ -1,7 +1,9 @@
 {
-  "name": "marqam",
+  "name": "bpmdrtlreader",
   "version": "1.0.0",
-  "description": "Marqam markdown editor with RTL support",
+  "description": "BP MD RTL Reader — markdown reader with RTL support",
+  "author": "Binary Parse",
+  "license": "MIT",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -23,8 +25,8 @@
     "postinstall": "playwright install chromium"
   },
   "build": {
-    "appId": "com.marqam.app",
-    "productName": "Marqam",
+    "appId": "com.binaryparse.bpmdrtlreader",
+    "productName": "BP MD RTL Reader",
     "files": [
       "marqam.html",
       "main.js",
@@ -63,7 +65,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Marqam",
+      "shortcutName": "BP MD RTL Reader",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
       "menuCategory": false,
@@ -72,8 +74,7 @@
       "installerHeaderIcon": "icon.ico",
       "include": "build/installer.nsh",
       "warningsAsErrors": false,
-      "differentialPackage": false,
-      "guid": "Marqam"
+      "differentialPackage": false
     },
     "fileAssociations": [
       {

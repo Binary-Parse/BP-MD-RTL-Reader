@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Help menu trimming + About attribution.
- *  - Help menu offers ONLY Keyboard Shortcuts + About Marqam
+ *  - Help menu offers ONLY Keyboard Shortcuts + About BP MD RTL Reader
  *    (the placeholder "Documentation" / "Report an Issue" items were removed).
  *  - The About dialog credits publisher "Binary Parse" and the "MIT License".
  *
@@ -24,9 +24,9 @@ async function helpItemNames(page) {
 }
 
 test.describe('[HELP] Help menu + About attribution', () => {
-  test('Help menu offers exactly Keyboard Shortcuts and About Marqam', async ({ page }) => {
+  test('Help menu offers exactly Keyboard Shortcuts and About BP MD RTL Reader', async ({ page }) => {
     await openHelpMenu(page);
-    expect(await helpItemNames(page)).toEqual(['Keyboard Shortcuts', 'About Marqam']);
+    expect(await helpItemNames(page)).toEqual(['Keyboard Shortcuts', 'About BP MD RTL Reader']);
   });
 
   test('Help menu no longer offers Documentation or Report an Issue', async ({ page }) => {
@@ -41,13 +41,23 @@ test.describe('[HELP] Help menu + About attribution', () => {
     const about = await page.evaluateHandle(() =>
       Array.from(document.querySelectorAll('#dropdown .dd-item'))
         .find(el => el.querySelector('.dd-name') &&
-          el.querySelector('.dd-name').textContent.trim() === 'About Marqam'));
+          el.querySelector('.dd-name').textContent.trim() === 'About BP MD RTL Reader'));
     const el = about.asElement();
-    if (!el) throw new Error('About Marqam item not found');
+    if (!el) throw new Error('About BP MD RTL Reader item not found');
     await el.click();
     await page.waitForSelector('#modalOverlay.open', { state: 'visible' });
     const body = (await page.textContent('#modalBody')) || '';
     expect(body).toContain('Binary Parse');
     expect(body).toContain('MIT License');
+    // Rebrand: About shows the new product name, and the old Arabic name is gone.
+    expect(body).toContain('BP MD RTL Reader');
+    expect(body).not.toContain('مَرْقَم');
+  });
+
+  test('window title and titlebar brand read "BP MD RTL Reader"', async ({ page }) => {
+    await page.goto(FILE_URL);
+    await page.waitForSelector('.app', { state: 'visible' });
+    expect(await page.title()).toBe('BP MD RTL Reader');
+    expect(((await page.textContent('.tb-brand-name')) || '').trim()).toBe('BP MD RTL Reader');
   });
 });

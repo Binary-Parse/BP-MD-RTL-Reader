@@ -49,14 +49,14 @@ procedure Test_IsValidPath;
 var
   L: string;
 begin
-  T_True ('valid Program Files path',       IsValidPath('C:\Program Files\Marqam'));
+  T_True ('valid Program Files path',       IsValidPath('C:\Program Files\BP MD RTL Reader'));
   T_False('drive root C:\ rejected',        IsValidPath('C:\'));
-  T_False('trailing backslash rejected',    IsValidPath('C:\Marqam\'));
+  T_False('trailing backslash rejected',    IsValidPath('C:\BP MD RTL Reader\'));
   T_False('empty rejected',                 IsValidPath(''));
 
   L := FirstAbsentDriveLetter;
   if L <> '' then
-    T_False('nonexistent drive ' + L + ':\ rejected', IsValidPath(L + ':\Marqam'))
+    T_False('nonexistent drive ' + L + ':\ rejected', IsValidPath(L + ':\BP MD RTL Reader'))
   else
     T_Log('SKIP nonexistent-drive test (no absent drive letter D..Z)');
 end;

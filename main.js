@@ -217,7 +217,7 @@ function bootstrap({ electron, fs, proc = process }) {
       height: 820,
       minWidth: 800,
       minHeight: 600,
-      title: 'Marqam',
+      title: 'BP MD RTL Reader',
       icon: path.join(__dirname, 'icon.ico'),
       backgroundColor: '#1A1713',
       frame: false,

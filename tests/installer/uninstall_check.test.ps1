@@ -15,14 +15,14 @@ BeforeAll {
 Describe 'User-data cleanup plan (Get-CleanupPlan)' {
     It 'KeepUserData=$true keeps roaming data, deletes only the local cache' {
         $p = Get-CleanupPlan -KeepUserData $true
-        $p.Preserve | Should -Contain '{userappdata}\Marqam'
-        $p.Delete   | Should -Contain '{localappdata}\Marqam'
-        $p.Delete   | Should -Not -Contain '{userappdata}\Marqam'
+        $p.Preserve | Should -Contain '{userappdata}\BP MD RTL Reader'
+        $p.Delete   | Should -Contain '{localappdata}\BP MD RTL Reader'
+        $p.Delete   | Should -Not -Contain '{userappdata}\BP MD RTL Reader'
     }
     It 'KeepUserData=$false deletes both roaming and local' {
         $p = Get-CleanupPlan -KeepUserData $false
-        $p.Delete   | Should -Contain '{userappdata}\Marqam'
-        $p.Delete   | Should -Contain '{localappdata}\Marqam'
+        $p.Delete   | Should -Contain '{userappdata}\BP MD RTL Reader'
+        $p.Delete   | Should -Contain '{localappdata}\BP MD RTL Reader'
         $p.Preserve | Should -BeNullOrEmpty
     }
 }
@@ -34,32 +34,32 @@ Describe 'Cleanup target set (Get-UninstallTargets)' {
     # mutation of any one entry is caught (not just the "spot-checked" ones).
     It 'shortcut file set is exactly as specified' {
         ($t.Files -join "`n") | Should -Be (@(
-            '{userstartup}\Marqam.lnk'
-            '{commonstartup}\Marqam.lnk'
-            '{userdesktop}\Marqam.lnk'
-            '{commondesktop}\Marqam.lnk'
+            '{userstartup}\BP MD RTL Reader.lnk'
+            '{commonstartup}\BP MD RTL Reader.lnk'
+            '{userdesktop}\BP MD RTL Reader.lnk'
+            '{commondesktop}\BP MD RTL Reader.lnk'
         ) -join "`n")
     }
     It 'directory set is exactly as specified' {
         ($t.Dirs -join "`n") | Should -Be (@(
-            '{userappdata}\Marqam'
-            '{localappdata}\Marqam'
-            '{autoprograms}\Marqam'
-            '{commonprograms}\Marqam'
+            '{userappdata}\BP MD RTL Reader'
+            '{localappdata}\BP MD RTL Reader'
+            '{autoprograms}\BP MD RTL Reader'
+            '{commonprograms}\BP MD RTL Reader'
         ) -join "`n")
     }
     It 'registry-key set is exactly as specified' {
         ($t.RegKeys -join "`n") | Should -Be (@(
-            'HKCU\Software\Marqam'
-            'HKLM\Software\Marqam'
-            'HKLM\Software\Classes\.md\shell\Open with Marqam'
-            'HKCU\Software\Classes\.md\shell\Open with Marqam'
-            'HKLM\Software\Classes\.markdown\shell\Open with Marqam'
-            'HKCU\Software\Classes\.markdown\shell\Open with Marqam'
+            'HKCU\Software\BP MD RTL Reader'
+            'HKLM\Software\BP MD RTL Reader'
+            'HKLM\Software\Classes\.md\shell\Open with BP MD RTL Reader'
+            'HKCU\Software\Classes\.md\shell\Open with BP MD RTL Reader'
+            'HKLM\Software\Classes\.markdown\shell\Open with BP MD RTL Reader'
+            'HKCU\Software\Classes\.markdown\shell\Open with BP MD RTL Reader'
         ) -join "`n")
     }
-    It 'never references the misspelling "Margam"' {
-        (($t.RegKeys + $t.Dirs + $t.Files) -join '|') | Should -Not -Match 'Margam'
+    It 'no longer references the old product name "Marqam" (rename is complete)' {
+        (($t.RegKeys + $t.Dirs + $t.Files) -join '|') | Should -Not -Match 'Marqam'
     }
 }
 
@@ -68,10 +68,10 @@ Describe 'Post-uninstall machine state' -Skip:(-not $env:MARQAM_UNINSTALL_TEST) 
         Test-Path $env:MARQAM_INSTALL_DIR | Should -BeFalse
     }
     It 'roaming app-data is gone (full uninstall)' {
-        Test-Path (Join-Path $env:APPDATA 'Marqam') | Should -BeFalse
+        Test-Path (Join-Path $env:APPDATA 'BP MD RTL Reader') | Should -BeFalse
     }
     It 'local app-data is gone (full uninstall)' {
-        Test-Path (Join-Path $env:LOCALAPPDATA 'Marqam') | Should -BeFalse
+        Test-Path (Join-Path $env:LOCALAPPDATA 'BP MD RTL Reader') | Should -BeFalse
     }
     It 'ARP/uninstall registry key is gone' {
         Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{32586DF8-1F67-400F-9D8B-6426C3D5B405}_is1' | Should -BeFalse

@@ -122,7 +122,7 @@ function Get-InstalledVersion {
     param(
         [string[]]$SubKeys = @(
             'Software\Microsoft\Windows\CurrentVersion\Uninstall\{32586DF8-1F67-400F-9D8B-6426C3D5B405}_is1',
-            'Software\Microsoft\Windows\CurrentVersion\Uninstall\e3a47a7c-4d6c-503c-a136-ddaaea18a540'
+            'Software\Microsoft\Windows\CurrentVersion\Uninstall\4f0623fc-2d71-59f2-b165-b36fb9982268'
         )
     )
     foreach ($sub in $SubKeys) {
@@ -208,8 +208,8 @@ function Get-CleanupPlan {
     # (settings, recent files, notes) and removes only the transient local cache;
     # $false removes both.
     param([bool]$KeepUserData)
-    $roam  = '{userappdata}\Marqam'
-    $local = '{localappdata}\Marqam'
+    $roam  = '{userappdata}\BP MD RTL Reader'
+    $local = '{localappdata}\BP MD RTL Reader'
     if ($KeepUserData) {
         return [pscustomobject]@{ Delete = @($local); Preserve = @($roam) }
     }
@@ -220,24 +220,24 @@ function Get-UninstallTargets {
     # The exact set CleanupArtifacts removes. Tests assert this matches the .pas.
     return [pscustomobject]@{
         Files = @(
-            '{userstartup}\Marqam.lnk',
-            '{commonstartup}\Marqam.lnk',
-            '{userdesktop}\Marqam.lnk',
-            '{commondesktop}\Marqam.lnk'
+            '{userstartup}\BP MD RTL Reader.lnk',
+            '{commonstartup}\BP MD RTL Reader.lnk',
+            '{userdesktop}\BP MD RTL Reader.lnk',
+            '{commondesktop}\BP MD RTL Reader.lnk'
         )
         Dirs = @(
-            '{userappdata}\Marqam',
-            '{localappdata}\Marqam',
-            '{autoprograms}\Marqam',
-            '{commonprograms}\Marqam'
+            '{userappdata}\BP MD RTL Reader',
+            '{localappdata}\BP MD RTL Reader',
+            '{autoprograms}\BP MD RTL Reader',
+            '{commonprograms}\BP MD RTL Reader'
         )
         RegKeys = @(
-            'HKCU\Software\Marqam',
-            'HKLM\Software\Marqam',
-            'HKLM\Software\Classes\.md\shell\Open with Marqam',
-            'HKCU\Software\Classes\.md\shell\Open with Marqam',
-            'HKLM\Software\Classes\.markdown\shell\Open with Marqam',
-            'HKCU\Software\Classes\.markdown\shell\Open with Marqam'
+            'HKCU\Software\BP MD RTL Reader',
+            'HKLM\Software\BP MD RTL Reader',
+            'HKLM\Software\Classes\.md\shell\Open with BP MD RTL Reader',
+            'HKCU\Software\Classes\.md\shell\Open with BP MD RTL Reader',
+            'HKLM\Software\Classes\.markdown\shell\Open with BP MD RTL Reader',
+            'HKCU\Software\Classes\.markdown\shell\Open with BP MD RTL Reader'
         )
     }
 }

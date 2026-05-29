@@ -1,4 +1,4 @@
-# Marqam
+# BP MD RTL Reader
 
 A bilingual (English + Arabic) Markdown reader and editor for the desktop.
 Built on Electron. Local-first — your notes never leave your machine.
@@ -24,7 +24,7 @@ Built on Electron. Local-first — your notes never leave your machine.
 
 ### Pre-built (Windows)
 
-Grab the latest `Marqam-Setup-1.0.0.exe` (NSIS installer) or `Marqam-1.0.0-portable.exe` from your distribution channel. Run.
+Grab the latest `BP MD RTL Reader Setup 1.0.0.exe` (NSIS installer) or `BP MD RTL Reader 1.0.0.exe` (portable) from your distribution channel. Run. (A standalone Inno Setup build, `BP MD RTL Reader Setup.exe`, is also produced by `installer\build-installer.ps1`.)
 
 ### From source
 
@@ -128,7 +128,7 @@ IPC channels (all gated through `preload.js#electronAPI`):
 
 ## Privacy
 
-Marqam is local-first. There is no telemetry, no analytics, no crash-upload, no auto-update phone-home. The renderer loads `marked.js`, `DOMPurify`, and font assets from CDNs (jsdelivr, Google Fonts) on first run when online — these are content-only fetches, no identifiers attached.
+BP MD RTL Reader is local-first. There is no telemetry, no analytics, no crash-upload, no auto-update phone-home. The renderer loads `marked.js`, `DOMPurify`, and font assets from CDNs (jsdelivr, Google Fonts) on first run when online — these are content-only fetches, no identifiers attached.
 
 ---
 

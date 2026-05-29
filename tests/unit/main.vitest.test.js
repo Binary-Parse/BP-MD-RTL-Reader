@@ -145,7 +145,7 @@ describe('main.js', () => {
     const opts = mockElectron.BrowserWindow.mock.calls[0][0];
     expect(opts.width).toBe(1280);
     expect(opts.height).toBe(820);
-    expect(opts.title).toBe('Marqam');
+    expect(opts.title).toBe('BP MD RTL Reader');
     expect(opts.frame).toBe(false);
     expect(opts.webPreferences.nodeIntegration).toBe(false);
     expect(opts.webPreferences.contextIsolation).toBe(true);

@@ -1,4 +1,4 @@
-# Test Audit Report — Marqam v1.0.0
+# Test Audit Report — BP MD RTL Reader v1.0.0
 
 **Pinned state (R1)** — COMMIT_SHA `98911e95b32f7097a8ce97f70e3dc91a9c29d5a6` | BRANCH `master` | TIMESTAMP_UTC `2026-05-28T16:52:35Z` | REPO_STATE **DIRTY** (64 changed files — almost entirely audit/build artifacts, see §I)
 **Autonomy level** — **FULL** (all capabilities present: shell, network, disk, write, git, docker, node 24.14.0, npm 11.9.0)

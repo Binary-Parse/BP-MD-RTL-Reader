@@ -236,7 +236,7 @@ begin
 end;
 
 { Split a registry uninstall command (e.g. '"C:\..\unins000.exe" /SILENT' or
-  '"C:\..\Uninstall Marqam.exe" /allusers /S') into the executable path and its
+  '"C:\..\Uninstall BP MD RTL Reader.exe" /allusers /S') into the executable path and its
   argument string, honouring a leading quoted path. }
 procedure SplitCommand(const Cmd: string; var Exe, Params: string);
 var

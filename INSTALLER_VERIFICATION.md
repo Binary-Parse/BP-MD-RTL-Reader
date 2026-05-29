@@ -89,7 +89,7 @@ Mutators applied to `logic-sim.ps1`: comparison-operator swaps (`-lt/-ge`, `-gt/
 |---|---|---|
 | **1. Forced dir page** `DisableDirPage=no`, default `{autopf}\Marqam`, Browse | `setup.iss [Setup]` | 🟢 |
 | **1. Validation** ≥250 MB, <200 chars, no trailing `\` | `dir_validate.pas ValidateInstallDir` + `NextButtonClick(wpSelectDir)` | ✅ (logic) |
-| **2. Version detect before copy** (registry `…_is1` DisplayVersion) | `InitializeSetup` → `GetInstalledVersion` + `DetermineInstallAction` | ✅ (decision logic) |
+| **2. Version detect before copy** | `InitializeSetup` → `DetectInstalled` (checks the Inno `…_is1` key **and** the electron-builder NSIS key, both hives, both 64/32 views) → `DetermineInstallAction` | ✅ verified on-machine (detects the NSIS-installed Marqam) |
 | **2. Same → [Repair][Remove][Cancel]** | `TaskDialogMsgBox(MB_YESNOCANCEL, ['&Repair','Re&move','Cancel'])` | 🟢 |
 | **2. Higher → [Force Install][Cancel]** | `TaskDialogMsgBox(MB_OKCANCEL, ['&Force install (downgrade)','Cancel'])` | 🟢 |
 | **2. Lower → upgrade, settings preserved** | info dialog + proceed | 🟢 |
@@ -167,6 +167,7 @@ pwsh -File installer\build-installer.ps1
 - **Disk-space check fails OPEN.** If free space can't be read (unreadable drive / UNC target), the install is allowed rather than blocked. The Pascal (`ValidateInstallDir`) and the mirror (`Test-InstallDir`) are aligned on this, and the mirror's fail-open branch is unit-tested via a mocked `Get-FreeBytes`.
 - **File association is non-destructive.** The `.md`/`.markdown` integration adds an "Open with Marqam" shell verb rather than hijacking the default handler; it is removed on uninstall (`uninsdeletekey` + `CleanupArtifacts` clears both hives).
 - **GUID lives in two places** (`setup.iss [Setup] AppId` and `[Code] UNINSTALL_KEY`), kept in sync and asserted by the consistency review + `uninstall_check.test.ps1`.
+- **Cross-installer detection (real-world fix).** On this machine Marqam is installed by the electron-builder **NSIS** installer, which registers under its *own* GUID (`…e3a47a7c…`) — **not** the Inno `{GUID}_is1` key. `DetectInstalled` therefore checks **both** keys, across **both hives (HKLM/HKCU)** and **both registry views (64/32-bit)** — the latter matters because a per-machine x64 install writes to the 64-bit HKLM view, which the default `[Code]` registry read can miss. On "Remove" it runs the detected install's own `QuietUninstallString` (so the right silent switch is used: `/SILENT` for Inno, `/S` for NSIS). Verified on-machine: with only the NSIS install present, the installer logs `Version check: installed="1.0.0" … action=same`. If the appId / `nsis.guid` ever changes, update `EB_NSIS_KEY` in `setup.iss` (and `Get-InstalledVersion` in `logic-sim.ps1`); find the value via `reg query HKLM\…\Uninstall /s /f Marqam`.
 
 ## 9. Independent review
 

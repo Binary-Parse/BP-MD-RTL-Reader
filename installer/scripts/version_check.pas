@@ -203,15 +203,66 @@ begin
     Result := 'older';
 end;
 
-{ Read DisplayVersion from the ARP/Uninstall key, preferring the per-machine
-  hive and falling back to the per-user hive. Returns '' when not present. }
-function GetInstalledVersion(const UninstallKey: string): string;
+{ Try one (RootKey, SubKey): if DisplayVersion exists and is non-empty, set V
+  and the best uninstaller command (QuietUninstallString preferred, so the right
+  silent switch is used for whichever installer wrote the key) and return True. }
+function VC_TryKey(const RootKey: Integer; const SubKey: string; var V, U: string): Boolean;
+begin
+  Result := False;
+  V := '';
+  U := '';
+  if RegQueryStringValue(RootKey, SubKey, 'DisplayVersion', V) and (V <> '') then
+  begin
+    if not RegQueryStringValue(RootKey, SubKey, 'QuietUninstallString', U) then
+      RegQueryStringValue(RootKey, SubKey, 'UninstallString', U);
+    Result := True;
+  end;
+end;
+
+{ Read DisplayVersion (+ uninstaller command) for SubKey across BOTH hives and
+  BOTH registry views. A per-machine x64 install writes to the HKLM 64-bit view;
+  a per-user install to HKCU; reading only the default view misses it. Returns
+  '' (and empty UninstStr) when the key is absent everywhere. }
+function GetInstalledInfo(const SubKey: string; var UninstStr: string): string;
 var
-  V: string;
+  V, U: string;
 begin
   Result := '';
-  if RegQueryStringValue(HKLM, UninstallKey, 'DisplayVersion', V) then
-    Result := V
-  else if RegQueryStringValue(HKCU, UninstallKey, 'DisplayVersion', V) then
-    Result := V;
+  UninstStr := '';
+  if VC_TryKey(HKLM64, SubKey, V, U) then begin Result := V; UninstStr := U; Exit; end;
+  if VC_TryKey(HKLM32, SubKey, V, U) then begin Result := V; UninstStr := U; Exit; end;
+  if VC_TryKey(HKCU64, SubKey, V, U) then begin Result := V; UninstStr := U; Exit; end;
+  if VC_TryKey(HKCU32, SubKey, V, U) then begin Result := V; UninstStr := U; Exit; end;
+end;
+
+{ Split a registry uninstall command (e.g. '"C:\..\unins000.exe" /SILENT' or
+  '"C:\..\Uninstall Marqam.exe" /allusers /S') into the executable path and its
+  argument string, honouring a leading quoted path. }
+procedure SplitCommand(const Cmd: string; var Exe, Params: string);
+var
+  S: string;
+  P: Integer;
+begin
+  S := Trim(Cmd);
+  Exe := '';
+  Params := '';
+  if S = '' then Exit;
+  if S[1] = '"' then
+  begin
+    P := Pos('"', Copy(S, 2, Length(S) - 1));   { closing quote, relative to pos 2 }
+    if P = 0 then begin Exe := Copy(S, 2, Length(S) - 1); Exit; end;
+    Exe := Copy(S, 2, P - 1);
+    Params := Trim(Copy(S, P + 2, Length(S)));
+  end
+  else
+  begin
+    P := Pos(' ', S);
+    if P = 0 then
+      Exe := S
+    else
+    begin
+      Exe := Copy(S, 1, P - 1);
+      Params := Trim(Copy(S, P + 1, Length(S)));
+    end;
+  end;
 end;

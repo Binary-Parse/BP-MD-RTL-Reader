@@ -26,6 +26,11 @@ Describe 'Get-InstalledVersion (mocked HKLM ARP read)' {
         Mock Get-ItemProperty -ParameterFilter { $Path -like 'HKCU:*' } { [pscustomobject]@{ DisplayVersion = '0.8.0' } }
         Get-InstalledVersion | Should -Be '0.8.0'
     }
+    It 'detects the electron-builder NSIS key when the Inno _is1 key is absent' {
+        Mock Get-ItemProperty -ParameterFilter { $Path -like '*_is1' }      { throw 'no Inno key' }
+        Mock Get-ItemProperty -ParameterFilter { $Path -like '*e3a47a7c*' } { [pscustomobject]@{ DisplayVersion = '1.0.0' } }
+        Get-InstalledVersion | Should -Be '1.0.0'
+    }
 }
 
 Describe 'Registry-driven install decision (mock + compare)' {

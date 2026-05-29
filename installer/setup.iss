@@ -128,30 +128,47 @@ Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; F
 const
   { Single-brace form of AppId — keep the GUID in sync with [Setup] AppId above. }
   UNINSTALL_KEY = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{32586DF8-1F67-400F-9D8B-6426C3D5B405}_is1';
+  { electron-builder NSIS uninstall key for Marqam — a UUID v5 derived from the
+    appId 'com.marqam.app' (nsis.guid 'Marqam'). Lets THIS installer detect an
+    app already installed by the electron-builder NSIS installer. Stable unless
+    appId/guid changes; verify with: reg query HKLM\...\Uninstall /s /f Marqam }
+  EB_NSIS_KEY   = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\e3a47a7c-4d6c-503c-a136-ddaaea18a540';
   APP_VERSION   = '{#AppVersion}';
 
 var
   gKeepUserData: Boolean;
+  gExistingUninstaller: string;
 
-{ --- Run the previously-installed uninstaller silently and wait for it. ----- }
+{ --- Detect an existing install (this installer's Inno _is1 key OR the
+      electron-builder NSIS key), across both hives and both registry views;
+      record its uninstaller command in gExistingUninstaller. ---------------- }
+function DetectInstalled: string;
+var
+  U: string;
+begin
+  gExistingUninstaller := '';
+  Result := GetInstalledInfo(UNINSTALL_KEY, U);
+  if Result <> '' then begin gExistingUninstaller := U; Exit; end;
+  Result := GetInstalledInfo(EB_NSIS_KEY, U);
+  if Result <> '' then gExistingUninstaller := U;
+end;
+
+{ --- Run the detected uninstaller silently and wait for it. ----------------- }
 function RunExistingUninstaller: Boolean;
 var
-  UninstStr: string;
+  Exe, Params: string;
   ResultCode: Integer;
 begin
   Result := False;
-  UninstStr := '';
-  if not RegQueryStringValue(HKLM, UNINSTALL_KEY, 'UninstallString', UninstStr) then
-    RegQueryStringValue(HKCU, UNINSTALL_KEY, 'UninstallString', UninstStr);
-  if Trim(UninstStr) = '' then
-    Exit;
-  UninstStr := RemoveQuotes(UninstStr);
-  { NOTE: the Inno uninstaller copies itself to a temp file and relaunches, so
-    ewWaitUntilTerminated returns before removal actually finishes. That is fine
-    here: the only caller (Action='same' -> Remove) sets Result:=False straight
-    after, so Setup exits and nothing races a continuing install. }
-  Result := Exec(UninstStr, '/SILENT /NORESTART', '', SW_SHOW,
-                 ewWaitUntilTerminated, ResultCode);
+  if Trim(gExistingUninstaller) = '' then Exit;
+  { gExistingUninstaller is the QuietUninstallString when available, so it already
+    carries the right silent switch (/SILENT for Inno, /S for NSIS). }
+  SplitCommand(gExistingUninstaller, Exe, Params);
+  if Exe = '' then Exit;
+  { NOTE: an Inno/NSIS uninstaller may relaunch from a temp copy, so
+    ewWaitUntilTerminated can return early; benign here because the only caller
+    (Action='same' -> Remove) sets Result:=False right after and Setup exits. }
+  Result := Exec(Exe, Params, '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
 end;
 
 { --- MANDATORY version detection before any file copy. --------------------- }
@@ -161,7 +178,7 @@ var
   Choice: Integer;
 begin
   Result := True;
-  Installed := GetInstalledVersion(UNINSTALL_KEY);
+  Installed := DetectInstalled;
   Action := DetermineInstallAction(Installed, APP_VERSION);
   Log(Format('Version check: installed="%s" setup="%s" action=%s', [Installed, APP_VERSION, Action]));
 

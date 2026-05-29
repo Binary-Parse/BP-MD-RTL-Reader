@@ -18,7 +18,7 @@
  *   8. File menu items (Open Folder, Open File, New Note, New Daily Note, Save, Save As, Export, Try Demo, Close Tab)
  *   9. Edit menu items (Undo, Redo, Cut, Copy, Paste, Select All, Find)
  *  10. View menu items (Toggle Sidebar, Toggle Inspector, Cycle Theme, Toggle RTL, Live/Split/Source, Zoom In/Out/Reset, Command Palette)
- *  11. Help menu items (Shortcuts, About, Documentation, Report Issue)
+ *  11. Help menu items (Shortcuts, About)
  *  12. Tabs (label click + close X)
  *  13. Inspector outline items (heading click)
  *  14. Tags pane (tag chip click)

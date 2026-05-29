@@ -1857,6 +1857,9 @@ function showAbout() {
       Bilingual to its core — first-class English and Arabic.<br>
       Plain <code style="font-family: var(--mono); font-size: 12px; background: var(--paper-deep); padding: 1px 5px; border-radius: 3px;">.md</code> files on disk. No proprietary format.
     </p>
+    <p style="text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 16px;">
+      <strong>Binary Parse</strong> &middot; MIT License
+    </p>
   `;
   openModal('About', html);
 }
@@ -1937,10 +1940,7 @@ const MENU_DEFS = {
     x: 184,
     items: [
       { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
-      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout },
-      { kind: 'divider' },
-      { kind: 'item', icon: '?', name: 'Documentation', action: () => { closeMenu(); showToast('Docs would open at marqam.app/docs', 'info'); } },
-      { kind: 'item', icon: '✎', name: 'Report an Issue', action: () => { closeMenu(); showToast('Would open issue tracker', 'info'); } }
+      { kind: 'item', icon: 'i', name: 'About Marqam', action: showAbout }
     ]
   }
 };

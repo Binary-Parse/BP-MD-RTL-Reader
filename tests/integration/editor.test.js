@@ -1,7 +1,7 @@
 /**
- * Integration tests for the editor core in marqam.html.
+ * Integration tests for the editor core in index.html.
  *
- * Uses Playwright to open marqam.html via file://, inject a synthetic
+ * Uses Playwright to open index.html via file://, inject a synthetic
  * State.files entry, call renderFile(), and assert that the preview pane
  * renders the expected HTML.
  *
@@ -12,18 +12,18 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../../marqam.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
 
 // =====================================================================
 // Helper: inject a file into State and render it
 // =====================================================================
 async function injectAndRender(page, name, content) {
   await page.evaluate(({ name, content }) => {
-    // Access the Proxy State exported on window by marqam.html
+    // Access the Proxy State exported on window by index.html
     const S = window._marqamState;
     if (!S) throw new Error('window._marqamState not found — T1 State export missing');
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
-    // renderFile is exported on window by marqam.html
+    // renderFile is exported on window by index.html
     if (typeof window.renderFile !== 'function') {
       throw new Error('window.renderFile not found — T2 export missing');
     }

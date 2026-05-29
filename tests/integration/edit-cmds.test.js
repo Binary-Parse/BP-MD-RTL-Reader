@@ -8,7 +8,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../../marqam.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
 
 async function injectAndRender(page, content = '# Test\n\nSome **bold** text here.') {
   await page.evaluate((content) => {

@@ -16,7 +16,7 @@ const KNOWN_VIOLATIONS = new Set([
 
 test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
   });
 

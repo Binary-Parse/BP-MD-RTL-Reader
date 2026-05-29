@@ -12,14 +12,14 @@ const { test, expect } = require('@playwright/test');
 test.describe('Performance budgets', () => {
   test('Initial page load completes within 3 seconds', async ({ page }) => {
     const start = Date.now();
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const elapsed = Date.now() - start;
     expect(elapsed, `Load took ${elapsed}ms`).toBeLessThan(3000);
   });
 
   test('Render 10k-word document within 1 second', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const content = '# Title\n\n' + 'word '.repeat(10000);
     const elapsed = await page.evaluate((md) => {
@@ -32,7 +32,7 @@ test.describe('Performance budgets', () => {
   });
 
   test('Render 100-heading document within 500ms', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const content = Array.from({ length: 100 }, (_, i) => `## Heading ${i}\n\nparagraph ${i}\n`).join('\n');
     const elapsed = await page.evaluate((md) => {
@@ -45,7 +45,7 @@ test.describe('Performance budgets', () => {
   });
 
   test('Zoom toggle does not cause layout thrash (>16ms/frame budget)', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     await page.evaluate(() => window.loadDemo());
     await page.waitForTimeout(200);
@@ -61,7 +61,7 @@ test.describe('Performance budgets', () => {
   });
 
   test('Memory: repeated file open/close does not leak DOM nodes', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const growth = await page.evaluate(() => {
       const counts = [];

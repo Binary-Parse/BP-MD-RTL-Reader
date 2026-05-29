@@ -49,7 +49,7 @@ describe('main.js lifecycle — single-instance lock', () => {
     expect(electron.app.quit).not.toHaveBeenCalled();
     // whenReady().then() continuation ran createWindow → BrowserWindow built once.
     expect(electron.BrowserWindow).toHaveBeenCalledTimes(1);
-    expect(electron._mockWin.loadFile).toHaveBeenCalledWith('marqam.html');
+    expect(electron._mockWin.loadFile).toHaveBeenCalledWith('index.html');
   });
 
   test('lock granted (true): second-instance, window-all-closed, activate are wired', async () => {

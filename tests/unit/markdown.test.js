@@ -125,7 +125,7 @@ describe('configureMarked — integration with real marked (audit #29)', () => {
   // 24 NoCoverage mutants in src/renderer/markdown.js L32-L40 only die when
   // a real marked instance walks through those inner functions.
   //
-  // Uses marked@^18.0.4 (matches the CDN version loaded by marqam.html).
+  // Uses marked@^18.0.4 (matches the CDN version loaded by index.html).
   let MarkedClass;
   beforeAll(async () => {
     const m = await import('marked');

@@ -229,7 +229,7 @@ function bootstrap({ electron, fs, proc = process }) {
       },
     });
 
-    win.loadFile('marqam.html');
+    win.loadFile('index.html');
     win.webContents.on('did-finish-load', () => deliverPendingFile(win));
 
     ipcMain.on('window-close',    () => win.close());

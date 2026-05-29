@@ -163,8 +163,8 @@ describe('main.js', () => {
     expect(mockElectron.ipcMain.on).toHaveBeenCalledWith('window-maximize', expect.any(Function));
   });
 
-  test('loads marqam.html', () => {
-    expect(mockElectron._mockWin.loadFile).toHaveBeenCalledWith('marqam.html');
+  test('loads index.html', () => {
+    expect(mockElectron._mockWin.loadFile).toHaveBeenCalledWith('index.html');
   });
 
   test('window-close calls win.close', () => {

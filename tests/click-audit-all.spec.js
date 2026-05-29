@@ -2,7 +2,7 @@
 /**
  * Comprehensive click-every-element audit.
  *
- * For every interactive element in marqam.html, programmatically click it and
+ * For every interactive element in index.html, programmatically click it and
  * assert a measurable side effect (state change, DOM mutation, toast text,
  * modal opens, etc.). The goal is to catch any handler that is wired but
  * silently no-ops, throws, or fires the wrong action.
@@ -29,7 +29,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../marqam.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../index.html').replace(/\\/g, '/');
 
 async function goto(page) {
   await page.goto(FILE_URL);
@@ -531,7 +531,7 @@ test.describe('[CA16] Command palette items', () => {
       if (!cmds) return null;
       return cmds.map(c => ({ id: c.id || c.label, hasAct: typeof c.act === 'function' }));
     });
-    // marqam.html always exposes `window.PALETTE_COMMANDS` (see marqam.html
+    // index.html always exposes `window.PALETTE_COMMANDS` (see index.html
     // `window.PALETTE_COMMANDS = PALETTE_COMMANDS;`), so a null result here is a
     // real regression (the global was removed) — fail loudly instead of skipping.
     expect(acts, 'window.PALETTE_COMMANDS must be exposed by the renderer').not.toBeNull();

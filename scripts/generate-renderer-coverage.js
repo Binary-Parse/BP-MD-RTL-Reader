@@ -9,7 +9,7 @@
  *
  * Per-file coverage is converted to Istanbul and merged: istanbul-lib-coverage
  * merges (unions) hit counts for repeated file paths, so running more tests can
- * only ever increase coverage of marqam.html, never shrink it.
+ * only ever increase coverage of index.html, never shrink it.
  */
 
 const fs = require('fs');
@@ -22,7 +22,7 @@ const reports = require('istanbul-reports');
 
 const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 const REPORT_DIR = path.join(process.cwd(), 'coverage', 'renderer-report');
-const MARQAM_HTML = path.join(process.cwd(), 'marqam.html');
+const MARQAM_HTML = path.join(process.cwd(), 'index.html');
 
 // Regression guard (audit #11): if this report ever drops back to the narrow
 // "collector-only" footprint, fail loudly instead of silently shipping a
@@ -115,7 +115,7 @@ async function main() {
     if (!Array.isArray(raw)) continue;
 
     for (const entry of raw) {
-      if (!entry || typeof entry.url !== 'string' || !entry.url.includes('marqam.html')) continue;
+      if (!entry || typeof entry.url !== 'string' || !entry.url.includes('index.html')) continue;
 
       const converter = v8toIstanbul(MARQAM_HTML, 0, {
         source: entry.source,
@@ -140,7 +140,7 @@ async function main() {
         };
 
         // addFileCoverage MERGES (unions hit counts) when the path repeats,
-        // so coverage from every test accumulates onto marqam.html.
+        // so coverage from every test accumulates onto index.html.
         coverageMap.addFileCoverage(standard);
         mergedEntries++;
       }
@@ -157,7 +157,7 @@ async function main() {
   reports.create('json').execute(context);
 
   console.log(`Renderer coverage report generated at: ${REPORT_DIR}`);
-  console.log(`Merged ${mergedEntries} marqam.html coverage entr${mergedEntries === 1 ? 'y' : 'ies'} from ${files.length} JSON file(s).`);
+  console.log(`Merged ${mergedEntries} index.html coverage entr${mergedEntries === 1 ? 'y' : 'ies'} from ${files.length} JSON file(s).`);
 
   // --- Regression guard -----------------------------------------------------
   const summary = coverageMap.getCoverageSummary().toJSON();

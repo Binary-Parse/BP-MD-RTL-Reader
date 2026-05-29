@@ -72,7 +72,7 @@ UninstallDisplayIcon={app}\{#MyAppExe}
 ; ---- Output -----------------------------------------------------------------
 OutputDir=..\dist
 OutputBaseFilename=BP MD RTL Reader Setup
-SetupIconFile=assets\marqam.ico
+SetupIconFile=assets\icon.ico
 WizardImageFile=assets\wizard-banner.bmp
 WizardSmallImageFile=assets\wizard-small.bmp
 WizardStyle=modern

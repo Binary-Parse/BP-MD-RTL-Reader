@@ -13,9 +13,9 @@
  *   AC8 -- Visual screenshot baselines for 4 theme+RTL combinations
  *
  * Selector architecture: uses `.body.rtl-mode` ancestor (the toggle applied by
- * toggleRTL() in marqam-app.html), NOT `#editor[dir="rtl"]`.
+ * toggleRTL() in rtl-heading-fixture.html), NOT `#editor[dir="rtl"]`.
  *
- * Architecture note: marqam-app.html uses a div#body (not document.body) for
+ * Architecture note: rtl-heading-fixture.html uses a div#body (not document.body) for
  * RTL scoping. toggleRTL() toggles class "rtl-mode" on div#body. The CSS
  * selector .body.rtl-mode matches <div class="body" id="body">.
  *
@@ -25,7 +25,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../marqam-app.html');
+const MARQAM_PATH = path.resolve(__dirname, '../rtl-heading-fixture.html');
 const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
 
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
 
 /**
  * Inject rendered markdown HTML directly into #noteContent.
- * marqam-app.html does not expose window._marqamState, so we use marked.parse()
+ * rtl-heading-fixture.html does not expose window._marqamState, so we use marked.parse()
  * directly. A stub .doc-meta div is prepended to match the production DOM
  * structure that renderFile() produces.
  */
@@ -86,7 +86,7 @@ async function getTextGeometry(page, selector) {
 
 /**
  * Check whether div#body has class "rtl-mode".
- * In marqam-app.html, `const body = $('body')` refers to
+ * In rtl-heading-fixture.html, `const body = $('body')` refers to
  * document.getElementById('body') which is <div class="body" id="body">.
  * toggleRTL() toggles "rtl-mode" on that element.
  */

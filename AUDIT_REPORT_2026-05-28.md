@@ -15,15 +15,15 @@
 | 2026-05-28 | `18b024d` | — (config tune) | CI runner → `ubuntu-latest`, version-pinned Playwright browser cache, timeout 30 → 45 min. |
 | 2026-05-28 | `39164aa` | **#20** (new) | 14 `*-chromium-linux.png` baselines so ubuntu-latest CI visual diffs match the win32 dev set. |
 | 2026-05-28 | `5aba180` | **#10** | `qs` CVE GHSA-q8mj-m7cp-5q26 → `package.json` `overrides: { "qs": "^6.15.2" }`. `npm audit`: 2 moderate → **0 vulns**. |
-| 2026-05-28 | `7ca4d38` | **#14** | Deleted stale `tests/baseline.spec.js` + its 4 snapshots (referenced pre-Electron `marqam-app.html`). |
+| 2026-05-28 | `7ca4d38` | **#14** | Deleted stale `tests/baseline.spec.js` + its 4 snapshots (referenced pre-Electron `rtl-heading-fixture.html`). |
 | 2026-05-28 | `0505373` | **#16** | `eslint.config.mjs` flat-config + `lint:security` script; first run 0 errors / 10 warnings (all P-INFO). |
 | 2026-05-28 | `cd2d9fd` | **#18** | `.gitignore`: build/test/log/scratch artefacts (51 → 24 untracked, excluding source). |
 | 2026-05-28 | `f57d47b` | **#15** | Observability — `crashReporter.start({uploadToServer:false})`, `<userData>/logs/marqam.log` rotating, `process.on('uncaughtException'/'unhandledRejection')`, preload `electronAPI.logError` bridge. |
-| 2026-05-28 | `7833b8f` | **#25** (new) | `marqam.html` renderer `window.addEventListener('error' / 'unhandledrejection')` → `electronAPI.logError`. |
+| 2026-05-28 | `7833b8f` | **#25** (new) | `index.html` renderer `window.addEventListener('error' / 'unhandledrejection')` → `electronAPI.logError`. |
 | 2026-05-28 | `12819ac` | **#26, #27** (new) | `postinstall: playwright install chromium`; main-side rate limit (100/min) on `log:error` IPC. |
 | 2026-05-28 | `e93591c` | **#19** | 6 ReDoS-defence tests in `markdown.test.js` (50 ms budget per pathological wikilink payload). |
 | 2026-05-28 | `d56e487` | **#24** (new) | `.gitattributes` LF normalisation + binary PNG protection + CRLF for Windows shells. |
-| 2026-05-28 | `f9668db` | **#11, #13** | `eslint-plugin-html` scans `marqam.html` inline scripts (0 errors / 38 warnings); `i18n.js` mutation 76 → 94 % (escapeHtml/escapeReg killers). |
+| 2026-05-28 | `f9668db` | **#11, #13** | `eslint-plugin-html` scans `index.html` inline scripts (0 errors / 38 warnings); `i18n.js` mutation 76 → 94 % (escapeHtml/escapeReg killers). |
 | 2026-05-28 | `dfedd19` | **#12** | `tests/integration/*.test.js` × 5 wired into Playwright (55 tests, all pass); `test:integration` script. |
 | 2026-05-28 | `db3cd46` | **#1 partial** | 24 tests for main.js IPC handlers, edit:command, window lifecycle, observability paths. Coverage: 27 → 74 %. |
 | 2026-05-28 | `1050a29` | **#23** (new) | Tracked 29 source/test/asset files that were untracked (`src/`, `scripts/`, `__mocks__/`, configs, 7 specs, icons, audit reports). |
@@ -78,7 +78,7 @@
 ### Bug classes NOT tested (residual risk)
 - **Race / concurrency** — module-level `allowedFolders: Set` in `main.js:17` mutated by `dialog:openFolder` and read by `fs:readVault`; **zero tests** for concurrent IPC calls from multiple windows. (P2)
 - **Electron runtime end-to-end** — `main.js` & `preload.js` only exercised through mocks; no Spectron-style spawn of real `electron .`. (P2)
-- **marqam.html renderer code (3 260 LOC of inline JS)** — covered by Playwright E2E but **NOT** by SAST (semgrep JS rules skipped HTML), **NOT** by mutation testing, **NOT** measured by Vitest coverage. (P2)
+- **index.html renderer code (3 260 LOC of inline JS)** — covered by Playwright E2E but **NOT** by SAST (semgrep JS rules skipped HTML), **NOT** by mutation testing, **NOT** measured by Vitest coverage. (P2)
 - **Cross-OS visual snapshots** — all baselines locked to `chromium-win32`. (P3)
 - **Offline / CDN failure** — `marked.js`, Google Fonts, axe-core load from CDN; no offline-mode test. (P3)
 - **Long-session stability / clock-dependent logic** — none. (P3)
@@ -115,8 +115,8 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 | `src/renderer/state.js` | **T3** | 24 | ✅ 6 tests | — | 100 / 100 / 100 % | 8 / **1** / 0 (0) → **88.89 %** | — | — | — | ⚠️ `detect-object-injection` on Proxy setter (safe by design) | — | OBSERVED-RUN | — | ✅ Strong. Survivor: `initial = {}` default arg. |
 | `src/renderer/theme.js` | **T3** | 16 | ✅ 11 tests | ✅ E2E theme cycle | 100 / N/A / 100 % | 10 / 0 / 0 (0) → **100.00 %** | — | — | — | ✅ | — | OBSERVED-RUN | — | ✅ Strong. |
 | `src/renderer/index.js` | **T4** | 10 | — | — | 0 / 0 / 0 % (pure barrel) | n/a | — | — | — | ✅ | — | OBSERVED-RUN | — | ✅ Re-export only. |
-| `marqam.html` (renderer JS) | **T2/T3** | 3 260 | — | ✅ Playwright suite | 57.6 / 97.9 / 35.4 % (UNVERIFIED, from prior audit — fresh renderer-coverage not regenerated this run) | **N/A — not mutable in Stryker (inline JS in HTML)** | — | ✅ fuzz 1000+ | — | ⚠️ NOT SAST-scanned (semgrep skipped HTML) | ✅ | UNVERIFIED + OBSERVED-RUN | **P2** | Branch cov excellent; function cov low; SAST blind-spot. |
-| `marqam-app.html` (legacy prototype) | T4 | 2 617 | — | — | — | — | — | — | — | — | — | UNVERIFIED | P3 | Pre-Electron prototype file, no longer loaded by `main.js`. Dead-code candidate. |
+| `index.html` (renderer JS) | **T2/T3** | 3 260 | — | ✅ Playwright suite | 57.6 / 97.9 / 35.4 % (UNVERIFIED, from prior audit — fresh renderer-coverage not regenerated this run) | **N/A — not mutable in Stryker (inline JS in HTML)** | — | ✅ fuzz 1000+ | — | ⚠️ NOT SAST-scanned (semgrep skipped HTML) | ✅ | UNVERIFIED + OBSERVED-RUN | **P2** | Branch cov excellent; function cov low; SAST blind-spot. |
+| `rtl-heading-fixture.html` (legacy prototype) | T4 | 2 617 | — | — | — | — | — | — | — | — | — | UNVERIFIED | P3 | Pre-Electron prototype file, no longer loaded by `main.js`. Dead-code candidate. |
 
 ### Coverage uncovered detail (OBSERVED-RUN)
 - `src/main-logic.js` (78.1 % lines): uncovered statement spans line 18-33, 24-25, 55, 94-95 — instrumentation artefact from `await import()` in `main-logic.test.js`; mutation testing (82/82 killed in covered code) proves all branches actually execute.
@@ -137,14 +137,14 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 | E2E full sweep (524 tests via `npm run test:e2e`) | ⚠️ Broken | BLOCKED | Playwright picks up `tests/unit/*.test.js` (ESM imports) → `Vitest cannot be imported in a CommonJS module` errors. Carry-over from prior audit, **still unfixed**. | **P1** |
 | Contract tests | ✅ Yes | OBSERVED-RUN | `ipc-security.spec.js` validates 15 error shapes for `fs:readVault` | — |
 | Coverage (V8, Vitest only) | ✅ Yes | OBSERVED-RUN | 54.04 % stmts · 45.92 % branches · 61.81 % funcs · 56.06 % lines across all Node files | — |
-| Coverage (renderer / Playwright) | ⚠️ Last run 2026-05-28 18:59 (earlier today, pre-audit) | UNVERIFIED for this report | Not regenerated this run; reused prior `OBSERVED-RUN`-tagged figures from §C only for `marqam.html` | P3 |
+| Coverage (renderer / Playwright) | ⚠️ Last run 2026-05-28 18:59 (earlier today, pre-audit) | UNVERIFIED for this report | Not regenerated this run; reused prior `OBSERVED-RUN`-tagged figures from §C only for `index.html` | P3 |
 | Mutation testing (project-enforced config) | ⚠️ Scope = 1 file of 460 | OBSERVED-RUN | 100 % on `src/main-logic.js` only | **P1** (R8/R9 first-party exclusion) |
 | **Mutation testing (R9-compliant expanded run, by auditor)** | ✅ Yes | OBSERVED-RUN | **48.33 % campaign-wide** (230 killed · 29 **survived** · 2 timeout · 219 no-coverage across 8 files) | **P1** (T1 files 0 %) |
 | Fuzz / property-based | ✅ Yes | OBSERVED-RUN | 21/21 pass | — |
 | Adversarial | ✅ Yes (`adversarial-9bugs`, `rtl-adversarial`, `rtl-heading-adversarial`) | UNVERIFIED at this SHA (not re-run) | Pre-existing OBSERVED-RUN in prior audit | — |
 | Performance / load | ✅ Yes | OBSERVED-RUN | 5/5 pass | — |
 | Concurrency / race | ❌ No | OBSERVED-RUN (grep) | Zero matches for `concurrent / parallel / race / Promise.all` against IPC handlers | **P2** |
-| Security: SAST (Semgrep JS rules) | ✅ Yes | OBSERVED-RUN | 0 findings / 68 rules / 15 JS files — **marqam.html NOT covered** (no HTML inline JS rules) | P2 (gap on marqam.html) |
+| Security: SAST (Semgrep JS rules) | ✅ Yes | OBSERVED-RUN | 0 findings / 68 rules / 15 JS files — **index.html NOT covered** (no HTML inline JS rules) | P2 (gap on index.html) |
 | Security: SAST (ESLint + plugin-security + no-unsanitized) | ✅ Yes (transient cfg) | OBSERVED-RUN | 0 errors / 10 warnings (all false-positives or expected by design) | — |
 | Security: SCA (`npm audit`) | ✅ Yes | OBSERVED-RUN | 2 moderate (qs GHSA-q8mj-m7cp-5q26 CVSS 5.3, transitive typed-rest-client), 0 high, 0 critical, `fixAvailable: true` | P2 |
 | Security: Secret scan (gitleaks, working tree) | ✅ Yes | OBSERVED-RUN | 0 leaks, 97.19 MB scanned in 2.32 s | — |
@@ -157,7 +157,7 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 | DR / resilience | ⚠️ Partial | OBSERVED-RUN (grep) | App has `try/catch` around fs IPC; no backup/restore semantics; no circuit breakers | P3 |
 | Infrastructure | ➖ N/A | — | No infra | — |
 | API contract / schema | ➖ N/A | — | No HTTP API | — |
-| Snapshot / visual regression | ✅ Yes | OBSERVED-RUN | 14 PNG baselines, freshest 2026-05-27, **one stale** baseline `baseline.spec.js-snapshots/marqam-app-baseline-chromium-win32.png` dated 2026-05-09 referencing pre-Electron `marqam-app.html` | P3 |
+| Snapshot / visual regression | ✅ Yes | OBSERVED-RUN | 14 PNG baselines, freshest 2026-05-27, **one stale** baseline `baseline.spec.js-snapshots/marqam-app-baseline-chromium-win32.png` dated 2026-05-09 referencing pre-Electron `rtl-heading-fixture.html` | P3 |
 | Observability / monitoring | ❌ No | OBSERVED-RUN (grep) | No `crashReporter`, `sentry`, `datadog`, `window.onerror`, telemetry hooks | P3 |
 | Manual / exploratory | ⚠️ Implicit | — | No documented charters | P3 |
 | Documentation tests | ⚠️ Partial | OBSERVED-RUN | `CLAUDE.md` documents commands; **no README.md**; `package.json` scripts work (`test:smoke` validated) | P3 |
@@ -179,17 +179,17 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 | Coverage — `main-logic.js` | 🟡 (instrumentation artefact) |
 | Coverage — `main.js` / `preload.js` | 🔴 (T1 thresholds not met) |
 | Coverage — renderer modules | 🟢 (search/state/theme); 🟡 (markdown) |
-| Coverage — `marqam.html` | 🟡 (last measured earlier today, not in this run) |
+| Coverage — `index.html` | 🟡 (last measured earlier today, not in this run) |
 | Mutation — `main-logic.js` | 🟢 |
 | Mutation — `main.js` / `preload.js` | 🔴 |
 | Mutation — renderer modules | 🟡 (markdown.js below T2) |
-| Mutation — `marqam.html` | ⚪ (cannot be mutated by current tool) |
+| Mutation — `index.html` | ⚪ (cannot be mutated by current tool) |
 | Fuzz / property | 🟢 |
 | Adversarial | 🟢 |
 | Performance budgets | 🟢 |
 | Accessibility | 🟢 |
 | Concurrency / race | 🔴 |
-| Security — SAST | 🟡 (clean on JS, gap on marqam.html) |
+| Security — SAST | 🟡 (clean on JS, gap on index.html) |
 | Security — SCA | 🟡 (2 moderate) |
 | Security — Secret | 🟢 |
 | Security — Container / IaC / DAST | ➖ |
@@ -216,8 +216,8 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 | 9 | `src/renderer/i18n.js` 5 surviving mutants — `.slice(0, 500)` truncation, `letters >= 0` vs `> 0` | **P3** | OBSERVED-RUN | Mutant survives because no test exercises the > 500-char early-truncation path. | Add `isArabicHeavy(repeat('a', 1000) + repeat('ا', 5))` test asserting the trailing Arabic is ignored. | 20 min | Next sprint | Same |
 | 10 | No concurrency tests for shared `allowedFolders: Set` in `main.js:17` | **P2** | OBSERVED-RUN (grep) | Two windows calling `dialog:openFolder` simultaneously, or `fs:readVault` racing with `openFolder` mutating the Set, could allow path that was just removed. | Add Vitest test invoking `dialog:openFolder` handler twice with `Promise.all([h(), h()])` and asserting both paths end up in `allowedFolders`; do the same for `fs:readVault` racing against a folder being added. | 2 h | Next sprint | Same |
 | 11 | 2 moderate dependency CVEs (`qs` GHSA-q8mj-m7cp-5q26 CVSS 5.3; transitive `typed-rest-client`) | **P2** | OBSERVED-RUN (`npm audit --json`) | `qs` DoS via null/undefined in comma-format arrays. Transitive via `electron-builder` build chain. Both `fixAvailable: true`. | `npm audit fix`; if unsuccessful, override resolution in `package.json` → `"overrides": { "qs": "^6.15.2" }`. | 30 min | This sprint | Same |
-| 12 | `marqam.html` (3 260 LOC, bulk of app) not scanned by SAST; not mutation-tested | **P2** | OBSERVED-RUN (semgrep summary "Targets scanned: 15", excluded HTML) | The renderer hosts all UI logic including wikilink rendering, markdown escaping, find-bar input handling, command palette. Any XSS or unsafe-eval slip ships unflagged. | Either (a) progressively migrate inline `<script>` content into `src/renderer/*.js` modules covered by Vitest+Stryker (already started — keep going), or (b) add semgrep rules with `--lang=html` and `paths.include: ["*.html"]` to scan inline JS. | 1 d (a) / 2 h (b) | Next sprint | Frontend lead |
-| 13 | One stale visual snapshot — `tests/baseline.spec.js-snapshots/marqam-app-baseline-chromium-win32.png` (2026-05-09) references pre-Electron `marqam-app.html` | **P3** | OBSERVED-RUN | Test still runs and passes only because `marqam-app.html` is still in the repo; if deleted the test would silently 404. | Delete the test+snapshot or move/regenerate to `marqam.html`. | 15 min | Backlog | Same |
+| 12 | `index.html` (3 260 LOC, bulk of app) not scanned by SAST; not mutation-tested | **P2** | OBSERVED-RUN (semgrep summary "Targets scanned: 15", excluded HTML) | The renderer hosts all UI logic including wikilink rendering, markdown escaping, find-bar input handling, command palette. Any XSS or unsafe-eval slip ships unflagged. | Either (a) progressively migrate inline `<script>` content into `src/renderer/*.js` modules covered by Vitest+Stryker (already started — keep going), or (b) add semgrep rules with `--lang=html` and `paths.include: ["*.html"]` to scan inline JS. | 1 d (a) / 2 h (b) | Next sprint | Frontend lead |
+| 13 | One stale visual snapshot — `tests/baseline.spec.js-snapshots/marqam-app-baseline-chromium-win32.png` (2026-05-09) references pre-Electron `rtl-heading-fixture.html` | **P3** | OBSERVED-RUN | Test still runs and passes only because `rtl-heading-fixture.html` is still in the repo; if deleted the test would silently 404. | Delete the test+snapshot or move/regenerate to `index.html`. | 15 min | Backlog | Same |
 | 14 | No observability — no `crashReporter.start()`, no telemetry, no `window.onerror` | **P3** | OBSERVED-RUN | Production crashes invisible. Cannot tell which users hit Bug X. | Add `electron.crashReporter.start({uploadToServer: false})` and a renderer `window.addEventListener('error', ...)` that writes to a rotating log file. | 4 h | Backlog | Backend lead |
 | 15 | ESLint installed (v10.4.0) but no config file present — `.eslintrc*` / `eslint.config.*` absent | **P3** | OBSERVED-RUN (`ls .eslintrc* eslint.config.*` returns nothing) | ESLint cannot run without config. Two security plugins (`eslint-plugin-security`, `eslint-plugin-no-unsanitized`) declared in `devDependencies` but unreachable. | Add `eslint.config.mjs` (flat-config) wiring both plugins; chain into `npm test` as `lint:security`. Working example: `.audit-tmp/eslint.config.mjs`. | 30 min | Next sprint | Same |
 | 16 | No README.md | **P3** | OBSERVED-RUN | New contributors / packagers see only `CLAUDE.md` (auditor-oriented). | Add a one-page `README.md` covering install, run, test, build, license. | 1 h | Backlog | Anyone |
@@ -234,9 +234,9 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 | Check | What I attempted | Why blocked (category) | Exact failure | How to run it | What it would tell us | Estimated impact |
 | --- | --- | --- | --- | --- | --- | --- |
 | Full 524-test E2E sweep | `npm run test:e2e` and `npx playwright test` | AMBIGUOUS-CONFIG | Playwright loads `tests/unit/*.test.js`; ESM imports throw `Vitest cannot be imported in a CommonJS module using require()` (verbatim from `unit/arabic.test.js:6`). Same error blocks `--list`. | Add `testIgnore: ['**/unit/**']` to `playwright.config.js`. Then `npx playwright test --workers=2`. ~5 min wall-time. | Confirm the remaining ~458 E2E tests beyond the 66 I personally ran still pass at this SHA. | P1 (documented test command broken — see Gap #5) |
-| Renderer V8 coverage refresh for `marqam.html` | Reused prior `coverage/renderer-report/` data from earlier today; did NOT re-run `npm run test:e2e:coverage` | SANDBOX-LIMIT (time budget) | n/a — deliberate skip after Gap #5 made full E2E pass impossible | After Gap #5 fix: `npm run test:e2e:coverage && npm run report:merge`. | Whether renderer coverage drifted between this morning and the audit snapshot. | P3 |
+| Renderer V8 coverage refresh for `index.html` | Reused prior `coverage/renderer-report/` data from earlier today; did NOT re-run `npm run test:e2e:coverage` | SANDBOX-LIMIT (time budget) | n/a — deliberate skip after Gap #5 made full E2E pass impossible | After Gap #5 fix: `npm run test:e2e:coverage && npm run report:merge`. | Whether renderer coverage drifted between this morning and the audit snapshot. | P3 |
 | Semgrep auto / managed-rule scan | `semgrep --config auto --metrics=off` | AMBIGUOUS-CONFIG | "Cannot create auto config when metrics are off." Used `--config p/javascript` instead (68 rules, 15 files). | `semgrep --config auto --metrics=on` (sends usage telemetry to semgrep.dev) or `semgrep login` for richer Pro rules. | Would add ~500 additional rule patterns (taint analysis, supply-chain). | P2 |
-| Semgrep on `marqam.html` inline JS | `semgrep --config p/javascript .` | NO-RULE-COVERAGE | Semgrep skipped HTML — JS rules don't extract inline `<script>` by default. | Use `--lang=html` with custom rules or migrate inline JS into `src/renderer/*.js` (preferred). | Would scan the 3 260 LOC of renderer logic for `eval`, `innerHTML` assigns, `document.write`, etc. | P2 (see Gap #12) |
+| Semgrep on `index.html` inline JS | `semgrep --config p/javascript .` | NO-RULE-COVERAGE | Semgrep skipped HTML — JS rules don't extract inline `<script>` by default. | Use `--lang=html` with custom rules or migrate inline JS into `src/renderer/*.js` (preferred). | Would scan the 3 260 LOC of renderer logic for `eval`, `innerHTML` assigns, `document.write`, etc. | P2 (see Gap #12) |
 | TLA+/formal model checking | n/a | NOT-APPLICABLE | No critical state machine warranting formal verification | — | — | — |
 | Chaos engineering / Testcontainers | n/a | NOT-APPLICABLE | Single-process desktop app, no distributed system | — | — | — |
 | Container / IaC scan | n/a | NOT-APPLICABLE | No Dockerfile, no Terraform/K8s manifests | — | — | — |
@@ -248,12 +248,12 @@ Peak ~600 MB RAM (Stryker 23 workers); ≪ 80 % thresholds.
 
 | Item | Type | Mechanism | What it hides | Permitted (justification)? | Auto-generated? | Severity |
 | --- | --- | --- | --- | --- | --- | --- |
-| `stryker.config.json` → `mutate: ["src/main-logic.js"]` | Mutation-scope exclusion | Stryker `mutate` glob | 459 of 460 first-party files (main.js, preload.js, all src/renderer/*.js, marqam.html) excluded from mutation testing | **NO — unjustified.** R8 violation. | Manual | **P1** (Gap #3) |
+| `stryker.config.json` → `mutate: ["src/main-logic.js"]` | Mutation-scope exclusion | Stryker `mutate` glob | 459 of 460 first-party files (main.js, preload.js, all src/renderer/*.js, index.html) excluded from mutation testing | **NO — unjustified.** R8 violation. | Manual | **P1** (Gap #3) |
 | `vitest.config.js` line 11 → `exclude: ['tests/unit/**/*.assert.test.js']` | Test-runner exclusion | Vitest `exclude` glob | `main.assert.test.js` (185 LOC, 17 asserts) and `preload.assert.test.js` (77 LOC, 12 asserts) never run | **PARTIAL** — pattern is justified (they're standalone-Node scripts), BUT no script in `package.json` runs them either, so they are effectively orphaned | Manual | **P1** (Gap #6) |
 | `vitest.config.js` coverage → `exclude: ['node_modules/', 'dist/', 'coverage/', '__mocks__/']` | Coverage exclusion | Vitest coverage exclude | Third-party deps + build artefacts + mocks | ✅ **JUSTIFIED** — third-party + generated + test infra (R8 standard exception) | Manual | — |
 | `tests/click-audit-all.spec.js:535` → `test.skip()` | Conditional test skip | Playwright `test.skip()` | Skips palette-commands check when `window.PALETTE_COMMANDS` not exposed | ⚠️ **PARTIAL** — defensive guard, but means the assertion only runs if the renderer exposes the global; a regression that removes the global would silently skip rather than fail | Manual | P3 |
-| Coverage tool `include: ['main.js', 'preload.js', 'src/**/*.js', 'tests/unit/**/*.js']` | Coverage scope | Vitest coverage include | `marqam.html` NOT included (cannot be — Vitest is Node-only); needs separate Playwright/V8 pipeline | ✅ **JUSTIFIED** — different runtime; renderer-coverage script handles it | Manual | — |
-| Semgrep scan scope | Tool default | `--exclude-files` HTML, files-tracked-by-git | `marqam.html` (3 260 LOC of inline JS) and untracked files | **NO — gap not justified** | Manual | **P2** (Gap #12) |
+| Coverage tool `include: ['main.js', 'preload.js', 'src/**/*.js', 'tests/unit/**/*.js']` | Coverage scope | Vitest coverage include | `index.html` NOT included (cannot be — Vitest is Node-only); needs separate Playwright/V8 pipeline | ✅ **JUSTIFIED** — different runtime; renderer-coverage script handles it | Manual | — |
+| Semgrep scan scope | Tool default | `--exclude-files` HTML, files-tracked-by-git | `index.html` (3 260 LOC of inline JS) and untracked files | **NO — gap not justified** | Manual | **P2** (Gap #12) |
 | No `/* istanbul ignore */`, no `// Stryker disable`, no `it.only`, no empty test bodies, no `expect(true).toBe(true)` | All clean | — | — | ✅ none | — | — |
 
 ---
@@ -272,7 +272,7 @@ Prior `AUDIT_REPORT.md` at same SHA (`98911e9`) dated 2026-05-27T06:50:32Z is in
 | Coverage — `main.js` | 23 % stmts | 27.1 % stmts / 1.5 % branches / 25 % funcs | +4 pp | Within noise |
 | Coverage — `preload.js` | 60 % stmts | 55.6 % stmts / N/A / 50 % funcs | −4 pp | Within noise |
 | Coverage — renderer modules | not enumerated by prior | 73-100 % per file (see §C) | New detail | — |
-| Coverage — `marqam.html` (renderer) | 57.78 % stmts, 97.88 % branches, 35.43 % funcs | UNVERIFIED at this run (not re-run) | unchanged | — |
+| Coverage — `index.html` (renderer) | 57.78 % stmts, 97.88 % branches, 35.43 % funcs | UNVERIFIED at this run (not re-run) | unchanged | — |
 | npm audit | 2 moderate | 2 moderate (qs, typed-rest-client) | 0 | Same vulns still present |
 | Secret scan | BLOCKED | 0 leaks (working tree + 66-commit history) | **resolved** | gitleaks now available in env |
 | Full E2E sweep | 364/524 pass before 600 s timeout | not re-attempted (BLOCKED, same config bug) | unchanged | Gap #5 still open |
@@ -313,7 +313,7 @@ Prior `AUDIT_REPORT.md` at same SHA (`98911e9`) dated 2026-05-27T06:50:32Z is in
 | Medium | 0 | — | — |
 | Low | 0 | — | — |
 
-Scan scope: 15 JS files (semgrep skipped `marqam.html` — see Gap #12).
+Scan scope: 15 JS files (semgrep skipped `index.html` — see Gap #12).
 
 ### SAST (ESLint plugin-security + no-unsanitized — auditor's transient config)
 | Rule | File:line | Tier | Verdict |
@@ -418,7 +418,7 @@ N/A (no AI components detected).
 
 ## Closing
 
-Real, full, measured data — the audit ran every tool itself, on the entire first-party code, to completion. The headline finding (mutation = 48.3 % campaign-wide, not 100 % as commonly reported) is the direct consequence of expanding the team's 1-file Stryker scope to all 8 mutable first-party modules. Passing the 66 E2E core paths I personally ran + the 138/138 unit tests demonstrably reduces bugs of the classes covered (XSS, IPC contract, RTL, a11y, performance, fuzz inputs, security caps); it does **not** prove absence of bugs in `main.js`, `preload.js`, or the 3 260 LOC of inline JS in `marqam.html`, which mutation and SAST currently cannot reach.
+Real, full, measured data — the audit ran every tool itself, on the entire first-party code, to completion. The headline finding (mutation = 48.3 % campaign-wide, not 100 % as commonly reported) is the direct consequence of expanding the team's 1-file Stryker scope to all 8 mutable first-party modules. Passing the 66 E2E core paths I personally ran + the 138/138 unit tests demonstrably reduces bugs of the classes covered (XSS, IPC contract, RTL, a11y, performance, fuzz inputs, security caps); it does **not** prove absence of bugs in `main.js`, `preload.js`, or the 3 260 LOC of inline JS in `index.html`, which mutation and SAST currently cannot reach.
 
 **Fastest path to a deployable state:** fix Gaps #3 (Stryker scope), #5 (Playwright config), #4 (CI), and address the 9 surviving mutants in `markdown.js`. With those four landed, Gate 1 C2 unblocks, Gate 2 Q3 passes for markdown.js, and Gate 3 drops below 3 open P1s.
 
@@ -445,7 +445,7 @@ Real, full, measured data — the audit ran every tool itself, on the entire fir
 | Campaign-wide mutation (Stryker-measurable) | 100 % on 1 file | **96.54 %** on 6 files | + 5 files measured |
 | `npm audit` vulns | 2 moderate | **0** | −2 |
 | CI/CD pipeline | absent | `.github/workflows/ci.yml` (act-validated) | — |
-| SAST scope | 15 JS files (semgrep skipped HTML) | + `marqam.html` via `eslint-plugin-html` | +3260 LOC |
+| SAST scope | 15 JS files (semgrep skipped HTML) | + `index.html` via `eslint-plugin-html` | +3260 LOC |
 | Observability | none | `crashReporter` + main/renderer error capture + rate limit | — |
 | README | absent | present | — |
 | `.gitignore` size | 13 lines (Claude only) | 45 lines (full coverage) | — |

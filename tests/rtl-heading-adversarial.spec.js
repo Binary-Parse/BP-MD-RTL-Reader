@@ -20,7 +20,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const MARQAM_PATH = path.resolve(__dirname, '../marqam.html');
+const MARQAM_PATH = path.resolve(__dirname, '../index.html');
 const MARQAM_URL = `file:///${MARQAM_PATH.replace(/\\/g, '/')}`;
 
 // ---------------------------------------------------------------------------

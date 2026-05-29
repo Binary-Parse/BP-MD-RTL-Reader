@@ -1,15 +1,15 @@
 /**
- * Comprehensive assertion tests for ALL marqam.html exported functions.
+ * Comprehensive assertion tests for ALL index.html exported functions.
  * Uses Playwright page.evaluate to test renderer code directly.
  */
 
 import { test, expect } from '@playwright/test';
 import path from 'path';
 
-const MARQAM_PATH = path.resolve(process.cwd(), 'marqam.html');
+const MARQAM_PATH = path.resolve(process.cwd(), 'index.html');
 const MARQAM_URL = 'file:///' + MARQAM_PATH.replace(/\\/g, '/');
 
-test.describe('marqam.html — ALL exported functions', () => {
+test.describe('index.html — ALL exported functions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(MARQAM_URL);
     await page.waitForSelector('.app', { state: 'visible' });

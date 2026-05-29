@@ -45,7 +45,7 @@ npm start       # launches Electron
 npm start
 ```
 
-Launches the Electron app with `marqam.html` as the renderer.
+Launches the Electron app with `index.html` as the renderer.
 
 ---
 
@@ -104,7 +104,7 @@ main.js               # Electron main process — windowing, IPC, file IO
 preload.js            # contextBridge exposes electronAPI to renderer
 src/main-logic.js     # Pure security/file helpers (allowlist, BOM, path checks)
 src/renderer/         # Pure renderer utilities (i18n, theme, search, markdown, state)
-marqam.html           # Renderer entry — UI markup + remaining inline JS
+index.html           # Renderer entry — UI markup + remaining inline JS
 ```
 
 IPC channels (all gated through `preload.js#electronAPI`):

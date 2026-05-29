@@ -1,7 +1,7 @@
 /**
  * edit-commands.js — pure dispatcher for the Edit menu (audit Edit-Menu fix).
  *
- * Why extracted: the inline version inside marqam.html cannot be Stryker-mutated
+ * Why extracted: the inline version inside index.html cannot be Stryker-mutated
  * and is hard to unit-test. This module takes ALL its dependencies via a `deps`
  * object — no module-level `document`, no `window.electronAPI` access, no
  * `navigator.clipboard` import — so vitest can exercise every branch with a

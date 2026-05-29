@@ -5,7 +5,7 @@
     icon.png                     — 256x256 PNG (app/window icon, Linux + fallback)
     icon.ico                     — multi-size PNG-in-ICO (256,48,32,16) used by
                                    main.js BrowserWindow + electron-builder + fileAssociations
-    installer/assets/marqam.ico  — byte-identical copy used by Inno SetupIconFile
+    installer/assets/icon.ico  — byte-identical copy used by Inno SetupIconFile
 
   All ICO entries are PNG-compressed, matching the format the build chain already
   accepts (verified against the previous icon.ico). Pure .NET System.Drawing — no
@@ -80,7 +80,7 @@ try {
   $icoBytes = $out.ToArray()
 
   [System.IO.File]::WriteAllBytes((Join-Path $repo 'icon.ico'), $icoBytes)
-  [System.IO.File]::WriteAllBytes((Join-Path $repo 'installer\assets\marqam.ico'), $icoBytes)
+  [System.IO.File]::WriteAllBytes((Join-Path $repo 'installer\assets\icon.ico'), $icoBytes)
 
   Write-Host ("icon.png = {0} bytes; icon.ico = {1} bytes; sizes = {2}" -f `
     $pngs[256].Length, $icoBytes.Length, ($Sizes -join ','))

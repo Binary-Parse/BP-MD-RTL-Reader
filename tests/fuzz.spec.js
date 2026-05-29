@@ -15,7 +15,7 @@ function randomString(len, charset) {
 
 test.describe('Fuzzing — parsers & validators', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
   });
 

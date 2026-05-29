@@ -5,13 +5,13 @@
  *    (the placeholder "Documentation" / "Report an Issue" items were removed).
  *  - The About dialog credits publisher "Binary Parse" and the "MIT License".
  *
- * These assertions go RED against the pre-change marqam.html (which had the two
+ * These assertions go RED against the pre-change index.html (which had the two
  * extra Help items and an About without attribution) — verified during authoring.
  */
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../marqam.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../index.html').replace(/\\/g, '/');
 
 async function openHelpMenu(page) {
   await page.goto(FILE_URL);

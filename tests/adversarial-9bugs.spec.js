@@ -8,13 +8,13 @@
  *   Phase 3 — Adversarial / hostile QA tests probing security and edge cases.
  *
  * Framework: Playwright (@playwright/test)
- * Target file: marqam.html (shipping renderer)
+ * Target file: index.html (shipping renderer)
  */
 
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../marqam.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../index.html').replace(/\\/g, '/');
 
 // ---------------------------------------------------------------------------
 // Shared helpers

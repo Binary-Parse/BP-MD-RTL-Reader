@@ -11,7 +11,7 @@ const fs = require('fs');
 // tests/coverage-collector.spec.js (~63 % stmt / ~33 % func) because that was
 // the single spec wired into `test:e2e:coverage`. Every other spec imports the
 // stock `test` from '@playwright/test' and never calls page.coverage, so their
-// exercise of marqam.html never reached the Istanbul report.
+// exercise of index.html never reached the Istanbul report.
 //
 // To capture the WHOLE e2e suite without editing 25+ spec files, we install an
 // `auto: true` coverage fixture and graft it onto the cached '@playwright/test'
@@ -52,9 +52,9 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
       } catch (err) {
         return;
       }
-      // Keep only marqam.html entries to bound the JSON size.
+      // Keep only index.html entries to bound the JSON size.
       const entries = (coverage || []).filter(
-        (e) => e && typeof e.url === 'string' && e.url.includes('marqam.html')
+        (e) => e && typeof e.url === 'string' && e.url.includes('index.html')
       );
       if (entries.length === 0) return;
 
@@ -81,7 +81,7 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
 module.exports = defineConfig({
   testDir: './tests',
   // Only Vitest unit tests are excluded — Playwright integration tests
-  // (tests/integration/*.test.js) target marqam.html via file:// like the
+  // (tests/integration/*.test.js) target index.html via file:// like the
   // rest of the E2E sweep, so they belong in test:e2e.
   testIgnore: ['**/unit/**'],
   fullyParallel: false,

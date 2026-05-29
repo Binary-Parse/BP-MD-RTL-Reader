@@ -11,7 +11,7 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('I18N & Localization', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
   });
 

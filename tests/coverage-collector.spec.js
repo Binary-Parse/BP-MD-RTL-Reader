@@ -1,5 +1,5 @@
 /**
- * Renderer coverage collector for marqam.html inline JS.
+ * Renderer coverage collector for index.html inline JS.
  * Uses Chromium DevTools Protocol to collect V8 coverage while exercising
  * renderer code paths via direct function calls + minimal UI interaction.
  */
@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-const MARQAM_PATH = path.resolve(process.cwd(), 'marqam.html');
+const MARQAM_PATH = path.resolve(process.cwd(), 'index.html');
 const MARQAM_URL = 'file:///' + MARQAM_PATH.replace(/\\/g, '/');
 const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 

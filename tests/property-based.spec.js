@@ -8,7 +8,7 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Property-based tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/marqam.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     // Wait for init
     await page.waitForSelector('#app', { state: 'visible' });
   });

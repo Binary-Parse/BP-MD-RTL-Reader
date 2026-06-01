@@ -1384,27 +1384,27 @@ html.electron .tab-add {
     </div>
 
     <div class="tabs" id="tabs">
-      <button class="tab-add" id="tabAddBtn" title="New tab (Ctrl+N)">+</button>
+      <button class="tab-add" id="tabAddBtn" title="New tab (Ctrl+N)" aria-label="New tab">+</button>
     </div>
 
     <div class="tb-actions">
-      <div class="tb-search" id="searchBtn">
+      <div class="tb-search" id="searchBtn" role="button" tabindex="0" aria-label="Search files">
         <span style="font-family: var(--serif); font-style: italic;">⌘</span>
         <span>Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </div>
-      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)">⇄</button>
-      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)">◐</button>
+      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)" aria-label="Flip text direction">⇄</button>
+      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme">◐</button>
     </div>
 
     <div class="win-controls">
-      <button class="win-btn" id="winMinBtn" title="Minimize">
+      <button class="win-btn" id="winMinBtn" title="Minimize" aria-label="Minimize window">
         <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
       </button>
-      <button class="win-btn" id="winMaxBtn" title="Maximize">
+      <button class="win-btn" id="winMaxBtn" title="Maximize" aria-label="Maximize window">
         <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
       </button>
-      <button class="win-btn close" id="winCloseBtn" title="Close">
+      <button class="win-btn close" id="winCloseBtn" title="Close" aria-label="Close window">
         <svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
       </button>
     </div>
@@ -1424,7 +1424,7 @@ html.electron .tab-add {
 
     <aside class="sidebar">
       <div class="sb-header">
-        <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)">‹</button>
+        <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)" aria-label="Toggle sidebar">‹</button>
         <div class="sb-vault-name empty" id="vaultName">No folder opened</div>
         <div class="sb-actions">
           <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…">⌂</button>
@@ -1475,12 +1475,12 @@ html.electron .tab-add {
 
     <main class="editor-wrap">
       <div class="toolbar-strip" id="toolbarStrip" style="display:none;">
-        <button class="tool-btn active" id="modeLive" title="Live preview">¶</button>
-        <button class="tool-btn" id="modeSplit" title="Split view">‖</button>
-        <button class="tool-btn" id="modeSource" title="Source mode">&lt;/&gt;</button>
+        <button class="tool-btn active" id="modeLive" title="Live preview" aria-label="Live preview mode">¶</button>
+        <button class="tool-btn" id="modeSplit" title="Split view" aria-label="Split view mode">‖</button>
+        <button class="tool-btn" id="modeSource" title="Source mode" aria-label="Source mode">&lt;/&gt;</button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" style="font-weight: 700;">B</button>
-        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" style="font-style: italic;">I</button>
+        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" aria-label="Bold" style="font-weight: 700;">B</button>
+        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" aria-label="Italic" style="font-style: italic;">I</button>
         <button class="tool-btn" id="tbStrike" title="Strike" style="text-decoration: line-through;">S</button>
         <span class="tool-divider"></span>
         <button class="tool-btn" id="tbH1" title="Heading 1">H1</button>
@@ -1543,13 +1543,13 @@ html.electron .tab-add {
         <span class="find-info" id="findInfo">0/0</span>
         <button class="find-btn" id="findPrevBtn" title="Previous">↑</button>
         <button class="find-btn" id="findNextBtn" title="Next">↓</button>
-        <button class="find-btn" id="findCloseBtn" title="Close">×</button>
+        <button class="find-btn" id="findCloseBtn" title="Close" aria-label="Close find">×</button>
       </div>
     </main>
 
     <aside class="inspector">
       <div class="insp-header">
-        <button class="sb-icon-btn insp-toggle" id="inspectorToggleBtn" title="Hide inspector (Ctrl+Shift+I)">›</button>
+        <button class="sb-icon-btn insp-toggle" id="inspectorToggleBtn" title="Hide inspector (Ctrl+Shift+I)" aria-label="Toggle inspector">›</button>
         <span class="insp-title">Inspector</span>
       </div>
       <div class="insp-content">
@@ -1602,13 +1602,13 @@ html.electron .tab-add {
     <div class="modal">
       <div class="modal-header">
         <span class="modal-title" id="modalTitle">Modal</span>
-        <button class="modal-close" id="modalCloseBtn">×</button>
+        <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
       </div>
       <div class="modal-body" id="modalBody"></div>
     </div>
   </div>
 
-  <div class="toast" id="toast">Toast</div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 </div>
 

@@ -1,6 +1,7 @@
 # BP MD RTL Reader — Technical Specification (SPEC.md)
 
-> **Status:** Draft v1.0 · **Owner:** Binary Parse · **Standard:** 2026 architecture/security/accessibility baselines
+> **Status:** Draft v1.1 · **Owner:** Binary Parse · **Standard:** 2026 architecture/security/accessibility baselines
+> **Methodology:** **Test-Driven Development (TDD) is mandatory** — see §12. No production code is written before a failing test.
 > **Scope:** Consolidates the Master Assessment & Backlog into a ship-ready engineering specification.
 > **Audience:** Implementers (human or agentic), reviewers, release engineers.
 
@@ -328,6 +329,9 @@ flowchart LR
 | R9 | Bidi tables + cursor | High | M | Med | F13 |
 | R7 | Full RTL/Arabic UI | High | L | Med | F8/B5 |
 | F12 | Decompose index.html | Med | L | Med | — |
+| **AI1** | **DocumentStore (transactional repository)** | Med | M | Med (data safety) | — |
+| **AI2** | **Secure asset protocol + content pipeline** | Med | M | Med (CSP/SVG) | B3 |
+| **AI3** | **EditorPort + BidiService (ports & adapters)** | High | L | Med | F13 |
 
 ---
 
@@ -336,12 +340,12 @@ flowchart LR
 | Phase | Theme | Items | Exit |
 |---|---|---|---|
 | 1 | Stop the bleeding | B11, B12, B13 | SC3, SC4; security checklist green |
-| 2 | Make claims true | B3, B4, T1, T3, T2 | SC1, SC2 |
-| 3 | Core feature real | B1 → B2 → F1 | SC5 |
+| 2 | Make claims true | B3, B4, T1, T3, T2, **AI2** | SC1, SC2 |
+| 3 | Core feature real | **AI1** → B1 → B2 → F1 | SC5 |
 | 4 | RTL correctness | R1, R2, R3, R4, R5 | SC7 (non-table) |
 | 5 | Accessibility | F2, F3, F4, F5, T4, T5 | SC8 |
 | 6 | Persistence & docs | B5, F8, B8 | session restore verified |
-| 7 | Editor rewrite (flagship) | F13 + B1 in-place + R9 | SC6, SC7 (tables) |
+| 7 | Editor rewrite (flagship) | **AI3** + F13 + B1 in-place + R9 | SC6, SC7 (tables) |
 | 8 | Rendering baseline | F9, F14, F15, F16, F7, B6/F6 | SC9 |
 | 9 | RTL moats | R7, R8, R10, R6 | Arabic UI shippable |
 | 10 | Reach & cleanup | B7, B9, B10, F10, F11, T6, F12 | cross-platform builds |
@@ -353,6 +357,7 @@ flowchart LR
 Each item is **Done** only when **all** of the following hold. Global gates apply to every PR.
 
 ### 8.1 Global gates (every change)
+- [ ] **TDD followed (§12):** the PR/commit history shows a **failing test committed before** the implementation that makes it pass (red → green → refactor). New behaviour has a test authored first.
 - [ ] `npm run test:unit` green; **line coverage ≥ 95%**.
 - [ ] `npm run test:mutation` (Stryker) **≥ 90%** on touched modules.
 - [ ] `npm run test:e2e` (Playwright) incl. **visual-regression** and **axe a11y** green.
@@ -391,16 +396,167 @@ Each item is **Done** only when **all** of the following hold. Global gates appl
 | Q3 | Highlighter | highlight.js vs Shiki | Shiki (themes) if bundle size acceptable, else highlight.js |
 | Q4 | "Split" mode | keep vs drop | Drop; replace with unified + Source toggle |
 | Q5 | Code signing | cert authority/budget | Required for macOS notarization (B7) |
+| Q6 | Security patching vs no-phone-home | manual only vs opt-in update-check | Opt-in **check-only** (no auto-download), privacy-preserving (EC-D3) |
 
 ---
 
-## 10. Appendix — Backlog ID Index
+## 10. Edge Cases & Hardening
+
+Failure modes the implementation **must** handle. Each is owned by a backlog/AI item and validated test-first (§12).
+
+### 10.1 File I/O & persistence
+| ID | Edge case | Required behaviour | Owner |
+|---|---|---|---|
+| EC-A1 | BOM / EOL / final-newline on round-trip | Preserve original encoding, line-ending style, and trailing-newline on write | AI1, B1 |
+| EC-A2 | External modification while edits unsaved (watch + autosave) | Compare last-known `mtime`+hash before write; on mismatch **reject `conflict`** and surface resolve (keep/reload) — never silent overwrite | AI1, B9 |
+| EC-A3 | `rename` not atomic across volumes; Windows `EPERM`/AV lock | Temp file in **same dir**, `fsync`, rename with bounded retry; preserve perms | AI1, B1 |
+| EC-A4 | `writeFile(relPath)` traversal (`..`/symlink segment) | Normalize + `realpath`, re-assert path is inside an allow-listed root; else `unauthorized-path` | AI1, B1 |
+| EC-A5 | Symlink cycle / huge tree in recursive vault | Visited-`realpath` set; depth bound; **whole-tree** file/byte cap | AI1, B2 |
+| EC-A6 | Eager full-vault load OOM on large vaults | Load metadata eagerly, **body lazily** on open | AI1, B2 |
+| EC-A7 | Save target deleted/moved/disk-full | Typed errors (`gone`, `enospc`); offer Save-As fallback | AI1, B1 |
+| EC-D1 | Corrupt/old `settings.json` | Schema-version migration; fail-safe to defaults; never crash | B5 |
+| EC-D2 | Window geometry on a disconnected monitor | Clamp restored bounds to a currently-visible display | B5 |
+
+### 10.2 Trust boundary, CSP & content
+| ID | Edge case | Required behaviour | Owner |
+|---|---|---|---|
+| EC-B1 | Note-relative images/attachments (`![](pic.png)`) | Serve via `bpmd://vault/<relPath>` scoped to the allow-listed root | AI2 |
+| EC-B2 | Inline styles vs CSP | Strict CSP via nonces/protocol; drop `unsafe-inline` where feasible | AI2, B4 |
+| EC-B3 | Mermaid SVG XSS (`<script>`/`<foreignObject>`) | DOMPurify **SVG/MathML profile** on diagram output | AI2, F16 |
+| EC-B4 | KaTeX macro-expansion DoS / `\href` | `trust:false`, bounded `maxExpand`/`maxSize` | AI2, F9 |
+| EC-B5 | Non-http link schemes (`mailto:`/`tel:`/`data:`/`blob:`/custom) | Allow-list: `https`→openExternal, `mailto`/`tel`→openExternal, others denied | AI2, B11 |
+| EC-B6 | Fragile internal-URL match (`includes('index.html')`) | Compare against the **exact** app file URL, not a substring | B11 |
+
+### 10.3 Bidi, editor state & a11y
+| ID | Edge case | Required behaviour | Owner |
+|---|---|---|---|
+| EC-C1 | Neutral-only line (digits/punct/image) under `dir=auto` | Inherit paragraph/context direction, not forced LTR | AI3, R1 |
+| EC-C2 | Caret stepping at bidi boundaries | **Logical** caret movement across RTL/LTR runs (the Obsidian-beating piece) | AI3, R9 |
+| EC-C3 | IME composition during decoration swap | Suppress token re-render mid-composition; no caret jump/double-input | AI3, F13 |
+| EC-C4 | Find-in-document on the new engine | Re-home `Ctrl+F` on `EditorPort.find` (works over decorated/folded tokens) | AI3, F13 |
+| EC-C5 | Arabic heading anchors/slugs | URL-safe slug generation for Arabic h1–h6 | AI3, F7 |
+| EC-C6 | Screen-reader pronunciation of Arabic | Emit `lang="ar"` on Arabic runs | AI3, F2 |
+| EC-C7 | Nested overlays (palette over modal) | Deterministic focus-trap + Esc unwinding order | F4 |
+
+### 10.4 Lifecycle & ops
+| ID | Edge case | Required behaviour | Owner |
+|---|---|---|---|
+| EC-D3 | No auto-update vs security patching | **Decision Q6:** offline update-check-only (no auto-download) channel, opt-in, privacy-preserving | B7 |
+| EC-D4 | Three sources of truth (Proxy ↔ settings.json ↔ disk) | AI1 owns disk truth; renderer state subscribes to store events | AI1 |
+
+---
+
+## 11. Architectural Improvements (v1.1)
+
+Three structural boundaries that subsume the edge cases above and de-risk the flagship rewrite. Each is built **test-first** against a pure interface.
+
+### 11.1 AI1 — Transactional `DocumentStore` (main-process repository)
+Single authority over file identity and durability; replaces ad-hoc `fs` calls.
+
+- **Owns:** identity by `realpath`; per-note `mtime`+content-hash; encoding/BOM/EOL-preserving atomic write; cycle-safe bounded recursion; lazy body loading.
+- **Conflict contract:** writes carry last-known `mtime`/hash → mismatch ⇒ `{error:'conflict'}` + `changed` event; closes EC-A1…A7, EC-D4.
+
+```mermaid
+flowchart LR
+  R[Renderer] -->|read/write/subscribe| API[electronAPI]
+  API --> DS[DocumentStore]
+  DS -->|mtime/hash guard| FS[(Disk)]
+  W[fs.watch] --> DS
+  DS -->|emits: changed / conflict| R
+```
+
+**Done (test-first):** unit tests for atomic-write fidelity (BOM/EOL), conflict rejection on stale mtime, traversal rejection, symlink-cycle termination, lazy-load; ≥90% mutation on the store.
+
+### 11.2 AI2 — Secure asset protocol + content pipeline
+Register a privileged scheme (`bpmd://`); route **all** non-document content through one boundary.
+
+- **Serves:** bundled vendor JS/CSS/**fonts** (enables strict CSP, EC-B2) and **vault-scoped images** (`bpmd://vault/<relPath>`, EC-B1) with the same path guards as writes.
+- **`renderTrusted()` stage:** Mermaid→DOMPurify SVG profile (EC-B3); KaTeX `trust:false`+limits (EC-B4); link-scheme allow-list (EC-B5/B6).
+
+```mermaid
+flowchart TB
+  N[Note content] --> RT[renderTrusted]
+  RT --> MD[marked + extensions]
+  RT --> KX[KaTeX trust:false]
+  RT --> MM[Mermaid -> DOMPurify SVG]
+  MD --> SAN[DOMPurify]
+  IMG[bpmd://vault/* image] --> PROT[Custom protocol\nallow-list guard]
+```
+
+**Done (test-first):** protocol resolves only paths under an allow-listed root; out-of-root/`..` denied; Mermaid `<script>` stripped (fixture); KaTeX bomb bounded; CSP has no `unsafe-inline` for scripts; 0 runtime network (SC2).
+
+### 11.3 AI3 — `EditorPort` (ports & adapters) + pure `BidiService`
+The UI depends on an interface, not CodeMirror 6 directly — keeping TDD/DI discipline through the biggest rewrite.
+
+- **`EditorPort`:** `load/save, getSelection, setDecorations, find, setDirection(line), onChange`. `CodeMirrorAdapter` and a fallback `TextareaAdapter` coexist behind a flag → incremental, reversible migration (F13).
+- **`BidiService` (pure, no DOM):** per-line direction inheritance (EC-C1), logical caret stepping (EC-C2), inline isolation rules, IME handling (EC-C3), Arabic slugs (EC-C5), `lang` tagging (EC-C6). The single tested home of the RTL moat.
+
+```mermaid
+flowchart TB
+  UI[UI / State] --> PORT[EditorPort iface]
+  PORT --> CM[CodeMirrorAdapter]
+  PORT --> TA[TextareaAdapter fallback]
+  CM --> BIDI[BidiService pure]
+  TA --> BIDI
+```
+
+**Done (test-first):** `BidiService` unit-tested for mixed AR/EN direction, neutral-line inheritance, caret stepping, slug/`lang` output (≥90% mutation); UI suites run against a mock `EditorPort`; CM6 exercised via Playwright only.
+
+### 11.4 Coverage map
+| Improvement | Subsumes edge cases | De-risks backlog |
+|---|---|---|
+| AI1 DocumentStore | EC-A1…A7, EC-D4 | B1, B2, B5, B9 |
+| AI2 Asset protocol + pipeline | EC-B1…B6 | B3, B4, F9, F16, F6 |
+| AI3 EditorPort + BidiService | EC-C1…C6 | **F13**, R1, R2, R9, F7 |
+
+---
+
+## 12. Development Methodology — Test-Driven Development (mandatory)
+
+This project is built **test-first**. The existing history (commits tagged `(TDD)`) and the 95%-coverage / 90%-mutation gates are the contract; this section makes the loop explicit and non-optional.
+
+### 12.1 The loop (per behaviour)
+```mermaid
+flowchart LR
+  RED["RED: write a failing test\nthat names the behaviour"] --> GREEN["GREEN: minimal code\nto pass"]
+  GREEN --> REFACTOR["REFACTOR: clean up,\ntests stay green"]
+  REFACTOR --> RED
+```
+1. **RED** — write the smallest failing test that specifies the next behaviour (commit it failing, or stage it before impl).
+2. **GREEN** — write the minimum production code to pass. No untested code paths.
+3. **REFACTOR** — improve structure with the safety net green; mutation testing proves the tests actually constrain behaviour.
+
+### 12.2 Test-first ordering by layer (lowest cost first)
+| Layer | Test type | Tool | Rule |
+|---|---|---|---|
+| Pure core (`main-logic`, `BidiService`, `DocumentStore` logic, markdown ext) | Unit + property/fuzz + **mutation** | Vitest, fast-check, Stryker | **Always test-first**; pure functions, no DOM |
+| Main process (IPC, protocol, nav guard, context menu) | Unit via DI seam (`bootstrap`) | Vitest + harness mocks | Test-first against mock `electron`/`fs` |
+| Renderer behaviour behind ports | Unit against mock `EditorPort`/`electronAPI` | Vitest + jsdom | Test-first |
+| Integrated UI / editor / RTL / a11y | e2e + visual-regression + axe | Playwright | Test-first where feasible; snapshot on first green |
+
+### 12.3 Rules
+- **No production code without a failing test first.** Bug fixes start with a reproducing test (see the existing `*-Nbugs` specs).
+- **Extract logic to pure modules** so it can be unit-tested + mutation-scored before wiring to Electron/DOM (the established `src/` pattern).
+- **Preserve the DI seams** (`bootstrap`, `setupBridge`, `EditorPort`) — they exist to make TDD possible without launching the app.
+- **Mutation score is the real gate:** coverage proves lines ran; Stryker ≥90% proves the assertions bite.
+
+### 12.4 TDD Definition of Done (applies to every §8.2 item)
+- [ ] A failing test existed before the implementation (visible in commit order).
+- [ ] Behaviour covered by unit tests at the lowest viable layer; integrated paths covered by e2e.
+- [ ] Edge cases from §10 owned by the item have explicit tests.
+- [ ] Coverage ≥95% / mutation ≥90% on touched modules; suites green.
+
+---
+
+## 13. Appendix — Backlog ID Index
 - **B** (backend/main): B1 write IPC · B2 recursive vault · B3 vendor assets · B4 CSP · B5 persist state · B6 printToPDF · B7 platforms · B8 docs · B9 fs.watch · B10 .txt · B11 nav guard · B12 context menu · B13 sandbox
 - **F** (frontend/UX): F1 folder tree · F2 aria-label · F3 aria-live · F4 focus trap · F5 menu nav · F6 PDF export · F7 outline h1–h6 · F8 UI prefs · F10 cosmetics · F11 italic/chevrons · F12 decompose · F13 unified editor
 - **Fr** (rendering): F9 highlight+KaTeX · F14 callouts · F15 task lists · F16 mermaid
 - **T** (typography): T1 weights · T2 font-synthesis · T3 self-host · T4 zoom/rem · T5 min sizes · T6 opsz
 - **R** (RTL/Arabic): R1 per-line dir · R2 bidi isolation · R3 Arabic type defaults · R4 weights/ligatures · R5 numerals · R6 per-note dir · R7 full RTL UI · R8 Hijri · R9 bidi tables · R10 justification
+- **AI** (architectural improvements): AI1 DocumentStore · AI2 asset protocol + content pipeline · AI3 EditorPort + BidiService
+- **EC** (edge cases): EC-A1…A7 (I/O) · EC-B1…B6 (trust/CSP) · EC-C1…C7 (bidi/editor/a11y) · EC-D1…D4 (lifecycle)
 
 ---
 
-*End of SPEC.md — Draft v1.0.*
+*End of SPEC.md — Draft v1.1.*

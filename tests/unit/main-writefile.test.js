@@ -60,3 +60,36 @@ describe('fs:writeFile (T-B1)', () => {
     expect(r).toEqual({ error: 'unauthorized-path' });
   });
 });
+
+describe('fs:readVault recursion (T-B2) + writeFile invalid folder', () => {
+  test('descends subdirectories returning relPaths', async () => {
+    const el = buildMockElectron();
+    const handlers = {};
+    el.ipcMain.handle.mockImplementation((n, fn) => { handlers[n] = fn; });
+    const dirent = (name, kind) => ({ name, isFile: () => kind === 'f', isSymbolicLink: () => false, isDirectory: () => kind === 'd' });
+    const fsMock = buildMockFs();
+    fsMock.promises.readdir = (async (p) => {
+      if (p === '/vault') return [dirent('top.md', 'f'), dirent('sub', 'd')];
+      if (p.endsWith('sub')) return [dirent('inner.md', 'f')];
+      return [];
+    });
+    fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, size: 10 }));
+    fsMock.promises.readFile = (async () => 'content');
+    el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
+    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 30));
+    await handlers['dialog:openFolder']();
+    const res = await handlers['fs:readVault']({}, '/vault');
+    expect(res.map(r => r.relPath).sort()).toEqual(['sub/inner.md', 'top.md']);
+  });
+
+  test('writeFile rejects empty folderPath', async () => {
+    const el = buildMockElectron();
+    const handlers = {};
+    el.ipcMain.handle.mockImplementation((n, fn) => { handlers[n] = fn; });
+    bootstrap({ electron: el, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(await handlers['fs:writeFile']({}, { folderPath: '', relPath: 'a.md', content: 'x' }))
+      .toEqual({ error: 'invalid' });
+  });
+});

@@ -15,6 +15,8 @@ export function buildMockElectron() {
     setWindowOpenHandler: vi.fn(),
     copy: vi.fn(), cut: vi.fn(), paste: vi.fn(),
     undo: vi.fn(), redo: vi.fn(), selectAll: vi.fn(),
+    copyImageAt: vi.fn(), downloadURL: vi.fn(), replaceMisspelling: vi.fn(),
+    session: { addWordToSpellCheckerDictionary: vi.fn() },
     isDestroyed: vi.fn(() => false),
   };
   const mockWin = {

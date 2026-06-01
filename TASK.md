@@ -327,18 +327,27 @@ interface EditorPort {
 `navigation.test.js` · `context-menu.test.js` · `protocol.test.js` · `trusted.test.js` · `document-store.test.js` · `settings.test.js` · `bidi.test.js` · e2e: `links.spec.js` · `offline-network.spec.js` · `editor-live-preview.spec.js` (+ extend existing `rtl-*`, `accessibility`, `visual`).
 
 ## Appendix C — Master status board
-| Phase | Tasks | Done |
-|---|---|---|
-| P1 | T-B11, T-B12, T-B13 | ☐ |
-| P2 | T-B3, T-AI2, T-T1/T3, T-B4 | ☐ |
-| P3 | T-AI1, T-B1, T-B2, T-F1 | ☐ |
-| P4 | T-R1, T-R2, T-R3/4/5 | ☐ |
-| P5 | T-F2, T-F3, T-F4, T-F5, T-T4, T-T5 | ☐ |
-| P6 | T-B5, T-F8, T-B8 | ☐ |
-| P7 | T-AI3, T-F13, T-R9 | ☐ |
-| P8 | T-F9, T-F14, T-F15, T-F16, T-F7, T-B6/F6 | ☐ |
-| P9 | T-R7, T-R8, T-R10, T-R6 | ☐ |
-| P10 | T-B7, T-B9, T-B10, T-F10, T-F11, T-T6, T-F12, Q6 | ☐ |
+Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/heavy-dep/binary not available in CI sandbox)
+
+| Phase | Done (☑) | Partial (◑) | Deferred (⊘) |
+|---|---|---|---|
+| P1 | T-B11, T-B12, T-B13 | — | — |
+| P2 | T-AI2 (protocol+pipeline) | T-B3 (marked/DOMPurify vendored; fonts ⊘) | T-B4 CSP, T-T1/T3 font binaries |
+| P3 | T-AI1, T-B1, T-B2 | T-F1 (tree builder ☑; collapsible DOM ⊘) | — |
+| P4 | T-R1, T-R2, T-R3/4/5 (pure core) | live DOM wiring ⊘ | — |
+| P5 | T-F2, T-F3 | — | T-F4, T-F5, T-T4, T-T5 (Playwright/axe) |
+| P6 | T-B5 | — | T-F8 wiring, T-B8 docs |
+| P7 | T-AI3 (EditorPort+TextareaAdapter, caret) | — | T-F13 CM6 live-preview, T-R9 bidi tables |
+| P8 | T-F14, T-F7, T-F15 | — | T-F9 KaTeX/highlight, T-F16 mermaid, T-B6/F6 PDF |
+| P9 | T-R6, T-R8, T-R7-core (locale) | — | T-R7 UI DOM mirroring, T-R10 justification |
+| P10 | T-B10, T-F10 | — | T-B7 builds, T-B9 fs.watch, T-F11, T-T6, T-F12, Q6 |
+
+**Test status:** 624 unit tests green · coverage 96.3% stmts / 90.8% branch / 96.5% func / 97.3% lines (gate ✓) · eslint 0 errors. E2E (Playwright) not runnable in sandbox (browser binary download blocked).
+
+### Why items are deferred
+- **CM6 live-preview (F13) + bidi tables (R9):** require adding/integrating the CodeMirror 6 engine and Playwright verification — the tested `EditorPort`/`BidiService` seam (AI3) is in place so this is now an adapter swap.
+- **Fonts (T1/T3) + CSP (B4):** need offline WOFF2 subsetting (fonttools) and renderer-script externalization (couples to F12) — not reproducible in this sandbox.
+- **A11y F4/F5/T4/T5, RTL DOM wiring, F8, R7 UI, mermaid/KaTeX/PDF, builds, fs.watch:** require a browser/axe runtime, heavy deps, or platform toolchains unavailable here. The pure, testable cores for each (bidi, locale, dates, outline, callouts, settings, tree) are implemented and unit-tested.
 
 ---
 

@@ -865,6 +865,39 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-size: 21px;
 }
 
+/* Callouts (T-F14): calm, theme-aware admonitions. The tinted background uses a
+   theme var so it adapts to paper/ink/sepia; a per-type accent colours the
+   inline-start border + icon. Logical properties keep it correct in RTL. */
+.callout {
+  margin: 20px 0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--paper-deep);
+  border-inline-start: 3px solid var(--callout-color, var(--accent));
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--callout-color, var(--accent));
+}
+.callout-icon { font-size: 15px; line-height: 1; flex: none; }
+.callout-title-text { unicode-bidi: plaintext; }
+.callout-body { color: var(--ink-soft); font-size: 16px; line-height: 1.7; }
+.callout-body > :first-child { margin-top: 0; }
+.callout-body > :last-child { margin-bottom: 0; }
+.callout-note      { --callout-color: #4a6fa5; }
+.callout-tip       { --callout-color: #4f8a5b; }
+.callout-important { --callout-color: #8a5aa8; }
+.callout-warning   { --callout-color: #b07d2b; }
+.callout-caution   { --callout-color: var(--accent); }
+.callout-info      { --callout-color: #3e7c8c; }
+
 .editor ul, .editor ol { padding-inline-start: 24px; margin-bottom: 16px; }
 .editor li { margin-bottom: 6px; }
 .editor li::marker { color: var(--accent); }
@@ -1057,14 +1090,21 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-family: var(--serif);
   font-size: 13px;
   color: var(--ink-soft);
-  padding: 4px 0 4px 12px;
+  padding: 4px 0;
+  padding-inline-start: 12px;
   border-inline-start: 2px solid transparent;
   cursor: pointer;
   line-height: 1.4;
 }
 .toc-item:hover { color: var(--ink); border-inline-start-color: var(--ink-mute); }
 .toc-item.active { color: var(--accent); border-inline-start-color: var(--accent); font-weight: 500; }
+/* Outline depth (T-F7): h1–h6 indentation via logical padding (RTL-aware). */
+.toc-item.h1 { padding-inline-start: 12px; }
 .toc-item.h2 { padding-inline-start: 24px; font-size: 13px; }
+.toc-item.h3 { padding-inline-start: 36px; font-size: 12.5px; }
+.toc-item.h4 { padding-inline-start: 48px; font-size: 12px; }
+.toc-item.h5 { padding-inline-start: 60px; font-size: 12px; }
+.toc-item.h6 { padding-inline-start: 72px; font-size: 11.5px; }
 .toc-empty { font-size: 12px; color: var(--ink-mute); font-style: italic; padding: 4px 0; }
 
 .prop-row {
@@ -1640,10 +1680,12 @@ import { isArabicHeavy, escapeHtml, escapeReg } from './src/renderer/i18n.js';
 import { THEMES, getNextTheme, clampZoom } from './src/renderer/theme.js';
 import { createState } from './src/renderer/state.js';
 import { vaultSearch as _vaultSearch } from './src/renderer/search.js';
-import { configureMarked, parseMarkdown as _parseMarkdown } from './src/renderer/markdown.js';
+import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader } from './src/renderer/markdown.js';
 import { execEditCmd as _execEditCmdImpl } from './src/renderer/edit-commands.js';
 import { applyBidi } from './src/renderer/bidi-dom.js';
-import { resolveDirection } from './src/renderer/bidi.js';
+import { resolveDirection, slugify } from './src/renderer/bidi.js';
+import { transformCallouts } from './src/renderer/callouts.js';
+import { activeHeading } from './src/renderer/outline.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -2467,6 +2509,9 @@ function renderFile(idx) {
     ${html}
   `;
 
+  // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
+  // the bidi pass so callout bodies still get per-block direction (R1/R2).
+  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
   // Per-block direction + inline bidi isolation (T-R1/R2), replacing the old
   // whole-document isArabicHeavy flip. The manual ⇄ toggle remains the override.
   applyBidiToNote(file.content || '');
@@ -2493,29 +2538,70 @@ function renderFile(idx) {
 }
 window.renderFile = renderFile;
 
+// Outline (T-F7): full h1–h6 tree with Arabic-aware slugs, matching ids on the
+// rendered headings (click-to-scroll), and scroll-sync highlighting.
+let _tocHeadings = []; // [{ el, item }] in document order, for scroll-sync
+
 function buildTOC() {
-  const headings = noteContent.querySelectorAll('h1, h2, h3');
-  if (!headings.length) {
+  // Derive the outline from the RENDERED DOM headings (the source of truth for
+  // what's displayed) rather than from marked.lexer tokens index-aligned to the
+  // DOM: the lexer only emits top-level headings, so a heading nested in a
+  // blockquote/callout/list (or raw HTML) would desync the index and mis-assign
+  // ids/labels/scroll-targets. Slug + GitHub-style de-dup mirror outline.js, using
+  // the same Arabic-aware slugify, so ids/labels/targets are inherently consistent.
+  const rendered = [...noteContent.querySelectorAll('h1, h2, h3, h4, h5, h6')];
+
+  _tocHeadings = [];
+  if (!rendered.length) {
     tocList.className = 'toc-empty';
     tocList.textContent = 'No headings.';
     return;
   }
   tocList.className = '';
   tocList.innerHTML = '';
-  headings.forEach((h, i) => {
-    const el = document.createElement('div');
-    el.className = 'toc-item' + (h.tagName === 'H1' ? '' : ' h2') + (i === 0 ? ' active' : '');
-    el.textContent = h.textContent;
-    el.addEventListener('click', () => {
-      const pane = h.closest('.preview-pane');
-      if (pane) {
-        pane.scrollTo({ top: h.offsetTop - pane.offsetTop, behavior: 'smooth' });
-      } else {
-        h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
-    tocList.appendChild(el);
+  const seen = new Map();
+  rendered.forEach((el) => {
+    const text = (el.textContent || '').trim();
+    let slug = slugify(text);
+    if (seen.has(slug)) { const k = seen.get(slug) + 1; seen.set(slug, k); slug = `${slug}-${k}`; }
+    else seen.set(slug, 0);
+    el.id = slug;
+    const item = document.createElement('div');
+    item.className = `toc-item h${el.tagName.charAt(1)}` + (_tocHeadings.length === 0 ? ' active' : '');
+    item.textContent = text; // clean rendered text (no raw markdown punctuation)
+    item.setAttribute('dir', 'auto'); // Arabic outline entries render RTL
+    item.addEventListener('click', () => scrollToHeading(el));
+    tocList.appendChild(item);
+    _tocHeadings.push({ el, item });
   });
+  setupScrollSync();
+}
+
+// The rendered note scrolls inside .preview-pane (.editor-area is overflow:hidden,
+// so .editor-wrap itself never scrolls).
+function previewScroller() { return document.querySelector('.preview-pane'); }
+
+function scrollToHeading(el) {
+  const wrap = previewScroller();
+  if (!wrap || !el) return;
+  const top = el.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
+  wrap.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
+}
+
+function setupScrollSync() {
+  const wrap = previewScroller();
+  if (!wrap || wrap._tocSyncWired) return;
+  wrap._tocSyncWired = true;
+  wrap.addEventListener('scroll', () => {
+    if (!_tocHeadings.length) return;
+    const wrapTop = wrap.getBoundingClientRect().top;
+    const offsets = _tocHeadings.map(({ el }) => el.getBoundingClientRect().top - wrapTop + wrap.scrollTop);
+    // At the very bottom the last heading's section is in view even if the heading
+    // itself can't reach the top — highlight it explicitly.
+    const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 2;
+    const idx = atBottom ? _tocHeadings.length - 1 : activeHeading(wrap.scrollTop, offsets);
+    _tocHeadings.forEach(({ item }, i) => item.classList.toggle('active', i === idx));
+  }, { passive: true });
 }
 
 // =====================================================================
@@ -2859,6 +2945,7 @@ function onSourceInput() {
       </div>
       ${html}
     `;
+    transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
     applyBidiToNote(f.content);
     $('propWords').textContent = wordCount;
     $('propRead').textContent = `≈ ${readMin} min`;

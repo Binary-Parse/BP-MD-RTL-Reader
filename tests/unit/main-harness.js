@@ -42,6 +42,7 @@ export function buildMockElectron() {
     app: mockApp, BrowserWindow, ipcMain, ipcRenderer, contextBridge,
     shell: { openExternal: vi.fn() },
     dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
+    clipboard: { writeText: vi.fn() },
     crashReporter, Menu, _mockWin: mockWin,
   };
 }

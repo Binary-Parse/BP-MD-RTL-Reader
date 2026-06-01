@@ -1,4 +1,5 @@
 const path = require('path');
+const { pathToFileURL } = require('url');
 const {
   parseFileArg,
   isAuthorizedPath,
@@ -10,6 +11,8 @@ const {
   stripBOM,
   filterAndSortMdFiles,
 } = require('./src/main-logic');
+const { classifyNavigation, isExternallyOpenable } = require('./src/main/navigation');
+const { buildContextMenuTemplate } = require('./src/main/context-menu');
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
 // All Electron/fs side-effects live inside bootstrap() so the module can be
@@ -23,7 +26,40 @@ const {
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
 function bootstrap({ electron, fs, proc = process }) {
-  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu } = electron;
+  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard } = electron;
+
+  // ==== CONTEXT-MENU ACTION DISPATCH (T-B12) ====
+  // Executes the side-effecting click for an action descriptor from
+  // buildContextMenuTemplate. Kept tiny; all policy lives in the pure builder.
+  function runContextAction(d, params, win) {
+    try {
+      switch (d.id) {
+        case 'open-link':
+          if (isExternallyOpenable(d.url)) shell.openExternal(d.url);
+          break;
+        case 'copy-link':
+        case 'copy-image-address':
+          if (d.url) clipboard.writeText(d.url);
+          break;
+        case 'copy-image':
+          if (params.x != null && params.y != null) win.webContents.copyImageAt(params.x, params.y);
+          break;
+        case 'save-image':
+          if (d.url && isExternallyOpenable(d.url)) win.webContents.downloadURL(d.url);
+          break;
+        case 'replace-misspelling':
+          win.webContents.replaceMisspelling(d.replacement);
+          break;
+        case 'add-to-dictionary':
+          if (win.webContents.session?.addWordToSpellCheckerDictionary) {
+            win.webContents.session.addWordToSpellCheckerDictionary(d.word);
+          }
+          break;
+        default:
+          break;
+      }
+    } catch (_) { /* never let a menu click crash main */ }
+  }
 
   // ==== OBSERVABILITY ====
   // Local-only crash + error capture. NO data leaves the user's machine
@@ -225,11 +261,13 @@ function bootstrap({ electron, fs, proc = process }) {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: true,
         preload: path.join(__dirname, 'preload.js'),
       },
     });
 
     win.loadFile('index.html');
+    const appUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
     win.webContents.on('did-finish-load', () => deliverPendingFile(win));
 
     ipcMain.on('window-close',    () => win.close());
@@ -237,32 +275,36 @@ function bootstrap({ electron, fs, proc = process }) {
     ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
 
     win.webContents.setWindowOpenHandler(({ url }) => {
-      if (url.startsWith('http')) shell.openExternal(url);
+      if (isExternallyOpenable(url)) shell.openExternal(url);
       return { action: 'deny' };
     });
 
-    // ==== RIGHT-CLICK CONTEXT MENU ====
-    // Native editing roles (undo/redo/cut/copy/paste/selectAll) run on the focused
-    // element with correct timing — far more reliable than routing through IPC.
-    // Items + enabled state come from Chromium via params.editFlags / isEditable,
-    // so this works in the source textarea AND for copy in the live-preview div.
+    // ==== NAVIGATION GUARD (T-B11) ====
+    // The app is a single local page. A click on a rendered http(s) link would
+    // otherwise navigate the renderer AWAY from the app (replacing the UI with the
+    // website, with no back button on this frameless window). Block ALL top-level
+    // navigation; route external http(s)/mailto/tel to the OS browser.
+    const guardNavigation = (event, url) => {
+      const { action } = classifyNavigation(url, appUrl);
+      if (action === 'allow') return;
+      event.preventDefault();
+      if (action === 'external' && isExternallyOpenable(url)) shell.openExternal(url);
+    };
+    win.webContents.on('will-navigate', guardNavigation);
+    win.webContents.on('will-redirect', guardNavigation);
+
+    // ==== RIGHT-CLICK CONTEXT MENU (T-B12) ====
+    // Template is built by a pure, unit-tested function; main attaches the
+    // side-effecting click handlers (shell/clipboard/webContents). A relevant
+    // menu appears for every right-click: links, images, selection, editable,
+    // and bare/empty areas.
     win.webContents.on('context-menu', (_event, params) => {
-      const f = params.editFlags || {};
-      const template = [];
-      if (params.isEditable) {
-        template.push({ role: 'undo', enabled: !!f.canUndo });
-        template.push({ role: 'redo', enabled: !!f.canRedo });
-        template.push({ type: 'separator' });
-        template.push({ role: 'cut', enabled: !!f.canCut });
-        template.push({ role: 'copy', enabled: !!f.canCopy });
-        template.push({ role: 'paste', enabled: !!f.canPaste });
-        template.push({ type: 'separator' });
-        template.push({ role: 'selectAll', enabled: !!f.canSelectAll });
-      } else if (params.selectionText && params.selectionText.trim() !== '') {
-        // Non-editable surface (e.g. live preview): offer Copy + Select All.
-        template.push({ role: 'copy', enabled: !!f.canCopy });
-        template.push({ role: 'selectAll', enabled: !!f.canSelectAll });
-      }
+      const descriptors = buildContextMenuTemplate(params, { isExternallyOpenable });
+      const template = descriptors.map((d) => {
+        if (d.kind === 'separator') return { type: 'separator' };
+        if (d.kind === 'role') return { role: d.role, enabled: d.enabled };
+        return { label: d.label, click: () => runContextAction(d, params, win) };
+      });
       if (template.length === 0) return;
       Menu.buildFromTemplate(template).popup({ window: win });
     });

@@ -20,7 +20,7 @@
  *     order, separators, popup, and each item.enabled === its editFlag.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, vi } from 'vitest';
 import { bootstrap } from '../../main.js';
 import {
   buildMockElectron,
@@ -308,25 +308,103 @@ describe('main.js — webContents "context-menu" handler', () => {
     });
   });
 
-  // ─ NON-EDITABLE + EMPTY selection → no menu, no popup ─
-  test('non-editable with empty selection → buildFromTemplate NOT called, popup NOT called', () => {
+  // ─ NON-EDITABLE + EMPTY selection → menu shown, Copy disabled (T-B12) ─
+  test('non-editable with empty selection → menu shown with [copy(disabled), selectAll]', () => {
     mockElectron.Menu.buildFromTemplate.mockClear();
     mockElectron.Menu._popup.mockClear();
 
-    ctxHandler({}, { isEditable: false, selectionText: '', editFlags: {} });
+    ctxHandler({}, { isEditable: false, selectionText: '', editFlags: { canSelectAll: true } });
 
-    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
-    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
+    expect(mockElectron.Menu.buildFromTemplate).toHaveBeenCalledTimes(1);
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(Object.keys(byRole)).toEqual(['copy', 'selectAll']);
+    expect(byRole.copy).toBe(false);
+    expect(byRole.selectAll).toBe(true);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
   });
 
-  // ─ NON-EDITABLE + WHITESPACE-ONLY selection → still no menu (trim() branch) ─
-  test('non-editable with whitespace-only selection → no menu (kills the .trim() guard mutant)', () => {
+  // ─ NON-EDITABLE + WHITESPACE-ONLY selection → Copy disabled (kills .trim() mutant) ─
+  test('non-editable with whitespace-only selection → Copy disabled', () => {
     mockElectron.Menu.buildFromTemplate.mockClear();
     mockElectron.Menu._popup.mockClear();
 
-    ctxHandler({}, { isEditable: false, selectionText: '   \t  ', editFlags: {} });
+    ctxHandler({}, { isEditable: false, selectionText: '   \t  ', editFlags: { canCopy: true, canSelectAll: true } });
 
-    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
-    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(byRole.copy).toBe(false);
+    expect(byRole.selectAll).toBe(true);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
+  });
+
+  // ─ LINK right-click → Open/Copy link items (T-B12) ─
+  test('link right-click → Open Link in Browser + Copy Link Address', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.shell.openExternal.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', linkURL: 'https://example.com', editFlags: { canSelectAll: true } });
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const labels = tpl.filter(i => i.label).map(i => i.label);
+    expect(labels).toContain('Open Link in Browser');
+    expect(labels).toContain('Copy Link Address');
+    tpl.find(i => i.label === 'Open Link in Browser').click();
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://example.com');
+    tpl.find(i => i.label === 'Copy Link Address').click();
+    expect(mockElectron.clipboard.writeText).toHaveBeenCalledWith('https://example.com');
+  });
+
+  test('non-http link → Open does not call openExternal', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.shell.openExternal.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', linkURL: 'javascript:alert(1)', editFlags: {} });
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    expect(tpl.some(i => i.label === 'Open Link in Browser')).toBe(false);
+  });
+});
+
+// ── NAVIGATION GUARD (T-B11) ───────────────────────────────────────────────
+describe('main.js — navigation guard', () => {
+  let mockElectron;
+  let navHandler;
+  let redirectHandler;
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
+      if (event === 'will-navigate') navHandler = fn;
+      if (event === 'will-redirect') redirectHandler = fn;
+    });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  test('will-navigate and will-redirect registered', () => {
+    expect(typeof navHandler).toBe('function');
+    expect(typeof redirectHandler).toBe('function');
+  });
+  test('external http → preventDefault + openExternal', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    navHandler(e, 'https://example.com');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://example.com');
+  });
+  test('non-http navigation → prevented, not opened', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    navHandler(e, 'file:///etc/passwd');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+// ── SANDBOX (T-B13) ────────────────────────────────────────────────────────
+describe('main.js — renderer sandbox', () => {
+  test('sandbox:true on BrowserWindow', async () => {
+    const mockElectron = buildMockElectron();
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+    const opts = mockElectron.BrowserWindow.mock.calls[0][0];
+    expect(opts.webPreferences.sandbox).toBe(true);
+    expect(opts.webPreferences.contextIsolation).toBe(true);
+    expect(opts.webPreferences.nodeIntegration).toBe(false);
   });
 });

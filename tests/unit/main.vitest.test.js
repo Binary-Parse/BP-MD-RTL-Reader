@@ -78,6 +78,7 @@ function buildMockElectron() {
     contextBridge,
     shell: { openExternal: vi.fn() },
     dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
+    clipboard: { writeText: vi.fn() },
     crashReporter,
     Menu,
     _mockWin: mockWin,
@@ -1043,11 +1044,15 @@ describe('main.js — right-click context menu', () => {
     expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
   });
 
-  test('non-editable, no selection → no menu shown', () => {
+  test('non-editable, no selection → menu shown with Select All (Copy disabled)', () => {
     mockElectron.Menu.buildFromTemplate.mockClear();
     mockElectron.Menu._popup.mockClear();
-    ctxHandler({}, { isEditable: false, selectionText: '   ', editFlags: {} });
-    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
-    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
+    ctxHandler({}, { isEditable: false, selectionText: '   ', editFlags: { canSelectAll: true } });
+    expect(mockElectron.Menu.buildFromTemplate).toHaveBeenCalledTimes(1);
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(byRole.copy).toBe(false);
+    expect(byRole.selectAll).toBe(true);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
   });
 });

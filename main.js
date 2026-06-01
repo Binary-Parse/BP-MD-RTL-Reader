@@ -13,6 +13,8 @@ const {
 } = require('./src/main-logic');
 const { classifyNavigation, isExternallyOpenable } = require('./src/main/navigation');
 const { buildContextMenuTemplate } = require('./src/main/context-menu');
+const { createDocumentStore } = require('./src/main/document-store');
+const crypto = require('crypto');
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
 // All Electron/fs side-effects live inside bootstrap() so the module can be
@@ -119,6 +121,10 @@ function bootstrap({ electron, fs, proc = process }) {
   // ==== SECURITY: ALLOWLIST ====
   const allowedFolders = new Set();
 
+  // ==== DOCUMENT STORE (T-AI1) ====
+  // Transactional repository: atomic, encoding-preserving, conflict-aware writes.
+  const docStore = createDocumentStore({ fs, path, crypto });
+
   // ==== FILE ASSOCIATION ====
   let pendingFileToOpen = null;
 
@@ -165,18 +171,37 @@ function bootstrap({ electron, fs, proc = process }) {
         return { error: 'unauthorized-path' };
       }
 
-      const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+      const topEntries = await fs.promises.readdir(folderPath, { withFileTypes: true });
 
-      if (isTooManyFiles(entries.length)) {
+      if (isTooManyFiles(topEntries.length)) {
         return { error: 'too-many-files' };
       }
 
-      const mdFiles = filterAndSortMdFiles(entries);
+      // Gather markdown files recursively (T-B2). Top-level md files first, then
+      // descend into subdirectories (depth-bounded). The isDirectory check is
+      // defensive so flat callers / simple mocks issue exactly one readdir.
+      const relPaths = filterAndSortMdFiles(topEntries).slice();
+      const isDir = (e) => typeof e.isDirectory === 'function' && e.isDirectory();
+      async function collectSub(dir, baseRel, depth) {
+        if (depth > 12 || relPaths.length >= 5000) return;
+        let entries;
+        try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
+        catch (_) { return; }
+        for (const name of filterAndSortMdFiles(entries)) relPaths.push(`${baseRel}/${name}`);
+        for (const s of entries.filter(isDir)) {
+          await collectSub(path.join(dir, s.name), `${baseRel}/${s.name}`, depth + 1);
+        }
+      }
+      for (const s of topEntries.filter(isDir)) {
+        await collectSub(path.join(folderPath, s.name), s.name, 1);
+      }
+      relPaths.sort((a, b) => a.localeCompare(b));
+
       const results = [];
       let cumulativeBytes = 0;
 
-      for (const name of mdFiles) {
-        const fullPath = path.join(folderPath, name);
+      for (const relPath of relPaths) {
+        const fullPath = path.join(folderPath, relPath);
 
         const lstat = await fs.promises.lstat(fullPath);
         if (lstat.isSymbolicLink()) {
@@ -200,9 +225,22 @@ function bootstrap({ electron, fs, proc = process }) {
 
         let content = await fs.promises.readFile(fullPath, 'utf8');
         content = stripBOM(content);
-        results.push({ name, relPath: name, content });
+        results.push({ name: path.basename(relPath), relPath, content });
       }
       return results;
+    });
+
+    // ==== fs:writeFile (T-B1) ====
+    // Atomic, allow-listed, conflict-aware write backed by the DocumentStore.
+    ipcMain.handle('fs:writeFile', async (_event, payload) => {
+      if (!payload || typeof payload !== 'object') return { error: 'invalid' };
+      const { folderPath, relPath, content, baseHash, bom, eol, finalNewline } = payload;
+      if (typeof relPath !== 'string' || typeof content !== 'string') return { error: 'invalid' };
+      if (typeof folderPath !== 'string' || folderPath === '') return { error: 'invalid' };
+      if (isNetworkPath(folderPath)) return { error: 'network-path-not-allowed' };
+      if (!isAuthorizedPath(folderPath, allowedFolders)) return { error: 'unauthorized-path' };
+      const abs = path.join(folderPath, relPath);
+      return docStore.write(abs, content, { root: folderPath, baseHash, bom, eol, finalNewline });
     });
 
     ipcMain.on('edit:command', (event, cmd) => {

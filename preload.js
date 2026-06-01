@@ -16,6 +16,8 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // Open Folder IPC bridge (Bug 1 / AC1)
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
+    // Write a note back to disk (T-B1): atomic, allow-listed, conflict-aware.
+    writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
     // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
     // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
     // editable regardless of JS-side focus juggling caused by the menu opening.

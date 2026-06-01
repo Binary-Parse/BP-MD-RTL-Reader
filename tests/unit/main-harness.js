@@ -62,6 +62,7 @@ export function buildMockFs(overrides = {}) {
     },
     appendFileSync: vi.fn(), mkdirSync: vi.fn(),
     existsSync: vi.fn(() => false), renameSync: vi.fn(),
+    writeFileSync: vi.fn(), unlinkSync: vi.fn(),
     ...overrides,
   };
 }

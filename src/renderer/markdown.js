@@ -42,6 +42,23 @@ export function configureMarked(marked) {
   });
 }
 
+// ── Callouts (T-F14): GitHub/Obsidian `> [!NOTE]` admonitions ───────────────
+export const CALLOUT_TYPES = ['note', 'tip', 'important', 'warning', 'caution', 'info'];
+
+/**
+ * Parse the first line of a blockquote for a callout marker.
+ * @param {string} line e.g. "[!WARNING] Be careful" or "[!note]"
+ * @returns {{type:string, title:string}|null}
+ */
+export function parseCalloutHeader(line) {
+  const m = /^\s*\[!(\w+)\]\s*(.*)$/.exec(line || '');
+  if (!m) return null;
+  const type = m[1].toLowerCase();
+  if (!CALLOUT_TYPES.includes(type)) return null;
+  const title = (m[2] && m[2].trim()) || (type.charAt(0).toUpperCase() + type.slice(1));
+  return { type, title };
+}
+
 export function parseMarkdown(md, { marked, DOMPurify, escapeHtml } = {}) {
   if (!marked || typeof marked.parse !== 'function') {
     return escapeHtml ? escapeHtml(md) : String(md);

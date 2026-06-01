@@ -100,16 +100,18 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     // expect(computedDir).toBe('rtl');
   });
 
-  test('[A2] exactly 50% Arabic content (at impl threshold boundary) triggers RTL', async ({ page }) => {
+  test('[A2] Arabic-first block resolves to per-block dir=rtl (first-strong, not ratio)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
+    // The whole-doc isArabicHeavy ratio flip was retired (T-R1). Direction is now
+    // per-block by first-strong char: this block STARTS Arabic → dir=rtl.
     await injectMarkdown(page, FIFTY_PCT_ARABIC);
     await page.waitForTimeout(200);
 
-    // 50% Arabic meets the impl threshold (>= 0.5), so auto-RTL should fire
-    const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('rtl');
+    await expect(page.locator('#noteContent p').first()).toHaveAttribute('dir', 'rtl');
+    // The container itself is NOT whole-document flipped.
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
 
   test('[A3] isArabicHeavy exposed on window returns true for heavy Arabic', async ({ page }) => {
@@ -343,24 +345,24 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
 
 test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)', () => {
 
-  test('[C1] loading Arabic-heavy content auto-applies computed direction:rtl', async ({ page }) => {
-    // AC1 in the existing suite ALWAYS manually toggles first, then injects Arabic.
-    // This test exercises the pure auto-RTL path: no manual click, just load Arabic.
+  test('[C1] loading Arabic content applies per-block dir=rtl (container NOT flipped)', async ({ page }) => {
+    // The whole-document auto-flip was replaced by per-block direction (T-R1).
+    // Loading Arabic with no manual toggle gives each Arabic block dir=rtl while
+    // the editor container stays ltr.
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Do NOT click #rtlBtn — let renderFile auto-detect
     await injectMarkdown(page, ARABIC_HEAVY);
     await page.waitForTimeout(300);
 
-    await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
-    const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('rtl');
+    await expect(page.locator('#noteContent p[dir="rtl"]').first()).toBeVisible();
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
+    await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
   });
 
-  test('[C2] auto-RTL does NOT set _manualRTL flag', async ({ page }) => {
-    // When auto-RTL fires, _manualRTL must remain false/undefined.
-    // If it were set to true, loading an English file next would fail to revert.
+  test('[C2] loading Arabic content does NOT set _manualRTL flag', async ({ page }) => {
+    // Per-block direction must never silently set the manual override flag,
+    // otherwise a later English file could not be read LTR.
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
@@ -370,47 +372,45 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
     const manualRTL = await page.evaluate(() => {
       return document.getElementById('appBody')._manualRTL;
     });
-    // After auto-RTL, _manualRTL must be falsy (false or undefined)
+    // _manualRTL must be falsy (false or undefined) — only the ⇄ button sets it.
     expect(manualRTL).toBeFalsy();
   });
 
-  test('[C3] after auto-RTL, loading English content auto-reverts to LTR', async ({ page }) => {
-    // Without _manualRTL being set, switching to English file should revert direction
+  test('[C3] switching Arabic→English updates per-block direction; container stays ltr', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Step 1: auto-RTL
+    // Arabic doc → its block is rtl.
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(300);
-    expect(await getEditorComputedDirection(page)).toBe('rtl');
+    await page.waitForTimeout(200);
+    await expect(page.locator('#noteContent p[dir="rtl"]').first()).toBeVisible();
 
-    // Step 2: load English — should auto-revert
+    // English doc → its block is ltr; container never whole-doc flipped.
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(300);
-
-    const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('ltr');
+    await page.waitForTimeout(200);
+    await expect(page.locator('#noteContent p[dir="ltr"]').first()).toBeVisible();
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
     await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
   });
 
-  test('[C4] auto-RTL followed by manual toggle-OFF correctly clears _manualRTL', async ({ page }) => {
-    // Sequence: auto-RTL fires → user clicks RTL off manually.
-    // After toggle-off, _manualRTL should be false.
+  test('[C4] manual toggle after loading Arabic: on→rtl, off→ltr with _manualRTL cleared', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(200);
+    // No auto-flip: the container stays ltr until the user toggles.
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
 
-    // Now manually toggle off (State.direction is 'rtl' so this sets it to 'ltr')
-    await page.click('#rtlBtn');
+    await page.click('#rtlBtn');          // manual override ON
     await page.waitForTimeout(100);
+    expect(await getEditorComputedDirection(page)).toBe('rtl');
+    expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(true);
 
-    const manualRTL = await page.evaluate(() => document.getElementById('appBody')._manualRTL);
-    expect(manualRTL).toBe(false);
-
-    const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('ltr');
+    await page.click('#rtlBtn');          // manual override OFF
+    await page.waitForTimeout(100);
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
+    expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(false);
   });
 
   test('[C5] loading Arabic file when already in RTL (manual) does NOT reset _manualRTL', async ({ page }) => {
@@ -615,22 +615,22 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     await expect(page.locator('#editorArea')).toHaveClass(/split/);
   });
 
-  test('[E3] #srcTextarea stays dir=auto (not dir=rtl) when RTL is active', async ({ page }) => {
-    // spec.md §Constraints: "Must keep #srcTextarea at dir=auto"
-    // This is tested in [RTL-scope] but that test only checks after a click.
-    // Here we verify it stays 'auto' (not 'rtl') even when re-checked after
-    // injecting Arabic content that auto-triggers RTL.
+  test('[E3] #srcTextarea is never dir=rtl: auto per-block load leaves it alone, manual toggle sets dir=auto', async ({ page }) => {
+    // spec.md §Constraints: "Must keep #srcTextarea at dir=auto".
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Auto-RTL path
+    // Per-block load must NOT force the source textarea to rtl.
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() =>
+      document.getElementById('srcTextarea').getAttribute('dir'))).not.toBe('rtl');
 
+    // The manual ⇄ override sets the source textarea to dir=auto (never rtl).
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
     const srcDir = await page.evaluate(() =>
-      document.getElementById('srcTextarea').getAttribute('dir')
-    );
-    // Must be 'auto', never 'rtl'
+      document.getElementById('srcTextarea').getAttribute('dir'));
     expect(srcDir).toBe('auto');
     expect(srcDir).not.toBe('rtl');
   });
@@ -794,9 +794,9 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     expect(xssErrors).toHaveLength(0);
   });
 
-  test('[F5] very long Arabic document (>500 chars sample limit) still auto-RTL via first 500 chars', async ({ page }) => {
-    // isArabicHeavy() only samples the first 500 chars.
-    // Generate a 1000-char Arabic document: the first 500 must be Arabic-heavy.
+  test('[F5] very long Arabic document gets per-block dir=rtl on its blocks', async ({ page }) => {
+    // Per-block direction does not sample/truncate: a long Arabic block is rtl by
+    // its first-strong char regardless of length.
     const longArabic = 'مرحباً بالعالم '.repeat(40); // ~600 Arabic chars
 
     await page.goto(INDEX_URL);
@@ -805,8 +805,8 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     await injectMarkdown(page, longArabic);
     await page.waitForTimeout(300);
 
-    const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('rtl');
+    await expect(page.locator('#noteContent p[dir="rtl"]').first()).toBeVisible();
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
 
   test('[F6] document that starts LTR but is Arabic-heavy after 500 chars does NOT auto-RTL', async ({ page }) => {

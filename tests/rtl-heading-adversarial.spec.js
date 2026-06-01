@@ -551,12 +551,16 @@ test.describe('[L-Series] Font change and alignment independence', () => {
     expect(fontFamily).toBeTruthy();
   });
 
-  test('[L2] heading font-family reverts to serif when RTL mode is toggled off', async ({ page }) => {
-    // After toggling RTL off, h1 should revert to the .editor h1 font-family (serif).
+  test('[L2] heading font is content-driven per-block, not reverted by the global ⇄ toggle', async ({ page }) => {
+    // Per-block direction (T-R1) replaced the whole-document flip: a heading's
+    // font follows ITS OWN content direction, not the container toggle. So an
+    // English heading is serif and an Arabic heading is the Arabic face — and an
+    // Arabic heading stays Arabic even with the global direction LTR (it must not
+    // "revert" to a Latin serif, which would mis-render Arabic glyphs).
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Get LTR font first
+    // English heading → serif baseline (no toggle).
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
     await page.waitForTimeout(200);
     const ltrFont = await page.evaluate(() => {
@@ -564,31 +568,34 @@ test.describe('[L-Series] Font change and alignment independence', () => {
       return h1 ? getComputedStyle(h1).fontFamily : null;
     });
 
-    // Switch to RTL
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
+    // Arabic heading with NO manual toggle → per-block dir=rtl → Arabic font,
+    // even though the editor container stays LTR.
     await injectMarkdown(page, RTL_HEADINGS_MD);
     await page.waitForTimeout(200);
-    const rtlFont = await page.evaluate(() => {
+    const arFont = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? getComputedStyle(h1).fontFamily : null;
     });
+    const editorDir = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('editor')).direction);
 
-    // Fonts must differ between LTR and RTL
     expect(ltrFont).not.toBeNull();
-    expect(rtlFont).not.toBeNull();
-    expect(rtlFont).not.toBe(ltrFont);
+    expect(arFont).not.toBeNull();
+    expect(editorDir).toBe('ltr');                 // global toggle never pressed
+    expect(arFont).not.toBe(ltrFont);              // Arabic heading is NOT the serif…
+    expect(arFont.toLowerCase()).toContain('arabic'); // …it uses the Arabic face
 
-    // Toggle back to LTR
+    // Toggling the global RTL on then off must NOT change the Arabic heading's
+    // (content-driven) font — it is Arabic before and after.
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
-    const revertFont = await page.evaluate(() => {
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
+    const afterToggleFont = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? getComputedStyle(h1).fontFamily : null;
     });
-
-    // After toggling off, font must revert (same as original LTR font)
-    expect(revertFont).toBe(ltrFont);
+    expect(afterToggleFont).toBe(arFont);
   });
 
   test('[L3] h1 letter-spacing resets to 0 in RTL mode (no decorative Latin spacing)', async ({ page }) => {

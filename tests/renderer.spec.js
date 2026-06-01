@@ -215,7 +215,12 @@ test.describe('index.html — ALL exported functions', () => {
     await page.evaluate(() => window.newDailyNote());
     const files = await page.evaluate(() => window._appState.files);
     const lastFile = files[files.length - 1];
-    expect(lastFile.name).toContain(new Date().toISOString().slice(0, 10));
+    // newDailyNote names the file from LOCAL date components (getFullYear/Month/Date),
+    // so compare against the local date — not UTC toISOString(), which mismatches
+    // across the day boundary when local is ahead of UTC.
+    const d = new Date();
+    const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    expect(lastFile.name).toContain(local);
   });
 
   test('window.saveCurrent exists', async ({ page }) => {

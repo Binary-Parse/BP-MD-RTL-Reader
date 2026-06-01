@@ -844,6 +844,27 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-size: 21px;
 }
 
+/* Per-block Arabic typography (T-R1/R3): the bidi engine marks individual blocks
+   dir="rtl" even when the editor container stays ltr (mixed AR/EN docs with no
+   manual flip). Mirror the container RTL styling onto those blocks so Arabic
+   prose keeps the Arabic face, looser leading and no letter-spacing — not only
+   when the whole editor is flipped. */
+#editor p[dir="rtl"], #editor li[dir="rtl"], #editor td[dir="rtl"], #editor th[dir="rtl"] {
+  font-family: var(--arabic);
+  line-height: 1.95;
+  letter-spacing: 0;
+}
+#editor h1[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 38px; letter-spacing: 0; }
+#editor h2[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 26px; }
+#editor h3[dir="rtl"] { font-family: var(--arabic); font-weight: 600; }
+#editor blockquote[dir="rtl"] {
+  padding-inline-start: 0;
+  padding-inline-end: 24px;
+  font-family: var(--arabic);
+  font-style: normal;
+  font-size: 21px;
+}
+
 .editor ul, .editor ol { padding-inline-start: 24px; margin-bottom: 16px; }
 .editor li { margin-bottom: 6px; }
 .editor li::marker { color: var(--accent); }
@@ -1621,6 +1642,8 @@ import { createState } from './src/renderer/state.js';
 import { vaultSearch as _vaultSearch } from './src/renderer/search.js';
 import { configureMarked, parseMarkdown as _parseMarkdown } from './src/renderer/markdown.js';
 import { execEditCmd as _execEditCmdImpl } from './src/renderer/edit-commands.js';
+import { applyBidi } from './src/renderer/bidi-dom.js';
+import { resolveDirection } from './src/renderer/bidi.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1708,6 +1731,16 @@ function parseMarkdown(md) {
   return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
 }
 
+// Apply per-block direction + inline bidi isolation to the rendered note
+// (T-R1/R2). baseDir is the inherited direction for neutral-only blocks: the
+// manual ⇄ toggle forces rtl, otherwise the document's first-strong char decides
+// — no whole-document flip; each block resolves its own direction.
+function applyBidiToNote(content) {
+  const baseDir = appBody._manualRTL ? 'rtl' : resolveDirection(content || '', 'ltr');
+  applyBidi(noteContent, { baseDir, escape: escapeHtml });
+}
+window.applyBidiToNote = applyBidiToNote;
+
 window.isArabicHeavy = isArabicHeavy;
 
 // =====================================================================
@@ -1766,6 +1799,11 @@ function toggleRTL() {
     appBody._manualRTL = false;
   }
   updateDirUI();
+  // Re-resolve per-block direction + inline isolation under the new override so
+  // neutral-only blocks inherit the new base direction (EC-C1) and isolation is
+  // refreshed immediately, not only on the next render.
+  const af = State.files[State.activeFile];
+  if (af) applyBidiToNote(af.content || '');
   showToast(`Direction: ${State.direction.toUpperCase()}`);
 }
 window.toggleRTL = toggleRTL;
@@ -2142,9 +2180,18 @@ function exportHTML() {
     showToast('No file to export', 'error'); return;
   }
   const f = State.files[State.activeFile];
-  const html = parseMarkdown(f.content || '');
+  // Bidi-aware export (T-R1/R2): derive the document base direction from the
+  // manual override or the content's first-strong char (State.direction is no
+  // longer auto-set on load), and carry per-block direction + inline isolation
+  // into the exported body so an Arabic doc exports as RTL even without a toggle.
+  const exportDir = (appBody._manualRTL || State.direction === 'rtl')
+    ? 'rtl' : resolveDirection(f.content || '', 'ltr');
+  const exportEl = document.createElement('div');
+  exportEl.innerHTML = parseMarkdown(f.content || '');
+  applyBidi(exportEl, { baseDir: exportDir, escape: escapeHtml });
+  const html = exportEl.innerHTML;
   const fullHtml = `<!DOCTYPE html>
-<html lang="${State.direction === 'rtl' ? 'ar' : 'en'}" dir="${State.direction}">
+<html lang="${exportDir === 'rtl' ? 'ar' : 'en'}" dir="${exportDir}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2170,6 +2217,7 @@ ${html}
   a.click();
   URL.revokeObjectURL(url);
   showToast(`Exported ${a.download}`);
+  return fullHtml; // also returned so the export markup is unit/e2e-testable
 }
 window.exportHTML = exportHTML;
 
@@ -2419,19 +2467,9 @@ function renderFile(idx) {
     ${html}
   `;
 
-  // Auto-RTL: detect Arabic-heavy content and flip layout
-  const editorEl = $('editor');
-  if (isAr && State.direction !== 'rtl') {
-    State.direction = 'rtl';
-    srcTextarea.setAttribute('dir', 'auto');
-    if (editorEl) editorEl.setAttribute('dir', 'rtl');
-    updateDirUI();
-  } else if (!isAr && State.direction === 'rtl' && !appBody._manualRTL) {
-    State.direction = 'ltr';
-    srcTextarea.removeAttribute('dir');
-    if (editorEl) editorEl.removeAttribute('dir');
-    updateDirUI();
-  }
+  // Per-block direction + inline bidi isolation (T-R1/R2), replacing the old
+  // whole-document isArabicHeavy flip. The manual ⇄ toggle remains the override.
+  applyBidiToNote(file.content || '');
 
   $('propFile').textContent = file.name;
   $('propWords').textContent = wordCount;
@@ -2821,6 +2859,7 @@ function onSourceInput() {
       </div>
       ${html}
     `;
+    applyBidiToNote(f.content);
     $('propWords').textContent = wordCount;
     $('propRead').textContent = `≈ ${readMin} min`;
     $('readTime').textContent = `≈ ${readMin} min read`;

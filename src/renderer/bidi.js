@@ -45,6 +45,24 @@ export function directionAttrs(text, inherited = 'ltr') {
   return { dir, 'data-dir': dir };
 }
 
+// Combining marks (Latin + Arabic tashkeel) — caret must not split a base+mark.
+const COMBINING = /[̀-ًͯ-ٰٟۖ-ۭ]/;
+
+/**
+ * Logical caret step (EC-C2/C3): move one grapheme in `delta` direction, skipping
+ * combining marks so the caret lands on cluster boundaries (e.g. base+harakat).
+ * @param {string} text
+ * @param {number} pos
+ * @param {number} delta  -1 or +1
+ * @returns {number} clamped new position
+ */
+export function stepCaret(text, pos, delta) {
+  const dir = delta >= 0 ? 1 : -1;
+  let p = pos + dir;
+  while (p > 0 && p < text.length && COMBINING.test(text[p])) p += dir;
+  return Math.max(0, Math.min(text.length, p));
+}
+
 /** URL-safe slug for headings, Arabic-aware (EC-C5): keep letters/numbers, dash the rest. */
 export function slugify(text) {
   return String(text)

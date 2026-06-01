@@ -2,6 +2,7 @@
  * main-writefile.test.js — T-B1 fs:writeFile IPC handler (via bootstrap seam).
  */
 import { describe, test, expect, beforeEach } from 'vitest';
+import path from 'node:path';
 import { bootstrap } from '../../main.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
@@ -51,7 +52,8 @@ describe('fs:writeFile (T-B1)', () => {
     await openFolder();                       // authorizes /vault
     const r = await writeFile({}, { folderPath: '/vault', relPath: 'note.md', content: 'hello', eol: '\n' });
     expect(r.ok).toBe(true);
-    expect(fsMock._files['/vault/note.md']).toBe('hello\n');
+    // OS-independent: the store writes to the path.join'd key (backslashes on Windows).
+    expect(fsMock._files[path.join('/vault', 'note.md')]).toBe('hello\n');
   });
 
   test('rejects traversal outside the authorized root (EC-A4)', async () => {

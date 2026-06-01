@@ -121,8 +121,20 @@ function filterAndSortMdFiles(entries) {
     .sort((a, b) => a.localeCompare(b));
 }
 
+// ── File-type predicates (T-B10) ───────────────────────────────────────────
+// Single source of truth so the vault filter and drag-drop agree on extensions.
+// Vault = notes only (.md/.markdown); drag-drop additionally accepts .txt.
+function isVaultFile(name) {
+  return typeof name === 'string' && /\.(md|markdown)$/i.test(name);
+}
+function isDroppableFile(name) {
+  return typeof name === 'string' && /\.(md|markdown|txt)$/i.test(name);
+}
+
 module.exports = {
   parseFileArg,
+  isVaultFile,
+  isDroppableFile,
   isAuthorizedPath,
   isNetworkPath,
   isTooManyFiles,

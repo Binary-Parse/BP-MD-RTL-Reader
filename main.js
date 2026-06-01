@@ -14,6 +14,7 @@ const {
 const { classifyNavigation, isExternallyOpenable } = require('./src/main/navigation');
 const { buildContextMenuTemplate } = require('./src/main/context-menu');
 const { createDocumentStore } = require('./src/main/document-store');
+const { createSettingsStore, clampWindowBounds, migrate } = require('./src/main/settings');
 const crypto = require('crypto');
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
@@ -28,7 +29,7 @@ const crypto = require('crypto');
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
 function bootstrap({ electron, fs, proc = process }) {
-  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard } = electron;
+  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen } = electron;
 
   // ==== CONTEXT-MENU ACTION DISPATCH (T-B12) ====
   // Executes the side-effecting click for an action descriptor from
@@ -124,6 +125,27 @@ function bootstrap({ electron, fs, proc = process }) {
   // ==== DOCUMENT STORE (T-AI1) ====
   // Transactional repository: atomic, encoding-preserving, conflict-aware writes.
   const docStore = createDocumentStore({ fs, path, crypto });
+
+  // ==== PERSISTENT SETTINGS (T-B5 / T-F8) ====
+  // Versioned, fail-safe settings store under <userData>/settings.json. Loaded
+  // on app.whenReady (so app.getPath('userData') is valid); the renderer reads
+  // and writes it via settings:get / settings:set; window geometry is persisted
+  // on window close / app quit and restored (clamped to a visible display) on
+  // the next launch (EC-D1/EC-D2).
+  let settingsStore = null;
+  let currentSettings = null;
+
+  // Capture the live window geometry into settings and flush to disk. Never
+  // throws — a persistence failure must not block window close or app quit.
+  function persistWindowState(win) {
+    if (!win || win.isDestroyed()) return;
+    try {
+      const b = win.getNormalBounds();
+      const window = { x: b.x, y: b.y, w: b.width, h: b.height, maximized: win.isMaximized() };
+      currentSettings = migrate({ ...currentSettings, window });
+      settingsStore.save(currentSettings);
+    } catch (_) { /* never let persistence block teardown */ }
+  }
 
   // ==== FILE ASSOCIATION ====
   let pendingFileToOpen = null;
@@ -243,6 +265,24 @@ function bootstrap({ electron, fs, proc = process }) {
       return docStore.write(abs, content, { root: folderPath, baseHash, bom, eol, finalNewline });
     });
 
+    // ==== settings:get / settings:set (T-B5 / T-F8) ====
+    // The renderer restores theme/zoom/mode/panels/recents from settings:get on
+    // launch and writes changes back via settings:set. settings:set accepts a
+    // partial patch, merges it into the current settings, migrates (coerces to a
+    // valid, versioned shape — EC-D1), and atomically persists it.
+    ipcMain.handle('settings:get', async () => {
+      if (!currentSettings) currentSettings = settingsStore ? settingsStore.load() : null;
+      return currentSettings;
+    });
+
+    ipcMain.handle('settings:set', async (_event, patch) => {
+      if (!patch || typeof patch !== 'object') return { error: 'invalid' };
+      const merged = migrate({ ...currentSettings, ...patch });
+      const res = settingsStore.save(merged);
+      if (res && res.ok) currentSettings = merged;
+      return res;
+    });
+
     ipcMain.on('edit:command', (event, cmd) => {
       const wc = event.sender;
       if (!wc || wc.isDestroyed()) return;
@@ -286,9 +326,17 @@ function bootstrap({ electron, fs, proc = process }) {
   }
 
   function createWindow() {
+    // Restore the saved window geometry, clamped to a currently-visible display
+    // (EC-D2). Falls back to the default 1280x820 when nothing is saved or no
+    // display info is available.
+    const displays = (screen && typeof screen.getAllDisplays === 'function') ? screen.getAllDisplays() : [];
+    const bounds = clampWindowBounds(currentSettings && currentSettings.window, displays);
+
     const win = new BrowserWindow({
-      width: 1280,
-      height: 820,
+      width: bounds.w,
+      height: bounds.h,
+      ...(bounds.x != null ? { x: bounds.x } : {}),
+      ...(bounds.y != null ? { y: bounds.y } : {}),
       minWidth: 800,
       minHeight: 600,
       title: 'BP MD RTL Reader',
@@ -303,6 +351,11 @@ function bootstrap({ electron, fs, proc = process }) {
         preload: path.join(__dirname, 'preload.js'),
       },
     });
+
+    if (bounds.maximized) win.maximize();
+    // Persist geometry when the user closes the window (covers app quit too,
+    // which closes the window first).
+    if (typeof win.on === 'function') win.on('close', () => persistWindowState(win));
 
     win.loadFile('index.html');
     const appUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
@@ -369,6 +422,10 @@ function bootstrap({ electron, fs, proc = process }) {
     });
 
     app.whenReady().then(() => {
+      // Load persisted settings now that userData path is valid (EC-D1: corrupt
+      // file degrades to defaults rather than crashing).
+      settingsStore = createSettingsStore({ fs, path, userDataDir: app.getPath('userData') });
+      currentSettings = settingsStore.load();
       pendingFileToOpen = parseFileArg(proc.argv, fs);
       registerIpcHandlers();
       createWindow();
@@ -385,6 +442,13 @@ function bootstrap({ electron, fs, proc = process }) {
       if (wins.length > 0) deliverPendingFile(wins[0]);
     });
   }
+
+  // Persist window geometry on quit (in addition to per-window close). Settings
+  // changed by the renderer are already flushed eagerly via settings:set.
+  app.on('before-quit', () => {
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length > 0) persistWindowState(wins[0]);
+  });
 
   app.on('window-all-closed', () => {
     if (proc.platform !== 'darwin') app.quit();

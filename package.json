@@ -11,7 +11,7 @@
     "dist": "electron-builder --win",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run --config vitest.config.js",
-    "test:unit:coverage": "vitest run --config vitest.config.js --coverage",
+    "test:unit:coverage": "vitest run --config vitest.config.js --coverage --no-file-parallelism",
     "test:e2e": "playwright test --config playwright.config.js",
     "test:e2e:coverage": "node scripts/generate-renderer-coverage.js --run",
     "test:smoke": "playwright test tests/smoke.spec.js",

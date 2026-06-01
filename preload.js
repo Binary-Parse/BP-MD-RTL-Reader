@@ -18,6 +18,11 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
     // Write a note back to disk (T-B1): atomic, allow-listed, conflict-aware.
     writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
+    // Persistent app settings (T-B5/T-F8): the renderer restores theme/zoom/
+    // mode/panels/recents on launch and writes changes back. Main owns the
+    // on-disk truth in <userData>/settings.json.
+    getSettings: () => ipcRenderer.invoke('settings:get'),
+    setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
     // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
     // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
     // editable regardless of JS-side focus juggling caused by the menu opening.

@@ -23,6 +23,9 @@ export function buildMockElectron() {
     loadFile: vi.fn(), close: vi.fn(), minimize: vi.fn(), maximize: vi.fn(),
     unmaximize: vi.fn(), isMaximized: vi.fn(() => false), isDestroyed: vi.fn(() => false),
     restore: vi.fn(), focus: vi.fn(), isMinimized: vi.fn(() => false),
+    on: vi.fn(),
+    getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 820 })),
+    getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 820 })),
     webContents: mockWebContents, _options: null,
   };
   const mockApp = {
@@ -45,6 +48,7 @@ export function buildMockElectron() {
     shell: { openExternal: vi.fn() },
     dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
     clipboard: { writeText: vi.fn() },
+    screen: { getAllDisplays: vi.fn(() => [{ x: 0, y: 0, width: 1920, height: 1080 }]) },
     crashReporter, Menu, _mockWin: mockWin,
   };
 }

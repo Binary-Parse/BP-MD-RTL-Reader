@@ -1673,6 +1673,10 @@ const { state: State, subscribe } = createState({
 window._appState = State;
 window._appSubscribe = subscribe;
 
+// When true, settings restore is in progress: suppress startup toasts and the
+// write-back that would otherwise echo the just-restored values to disk.
+let _restoring = false;
+
 // =====================================================================
 // CONSTANTS & DOM REFS
 // =====================================================================
@@ -1710,6 +1714,7 @@ window.isArabicHeavy = isArabicHeavy;
 // TOAST
 // =====================================================================
 function showToast(msg, kind) {
+  if (_restoring) return; // stay quiet while restoring persisted settings
   toastEl.textContent = msg;
   toastEl.classList.remove('error', 'info');
   if (kind === 'error') toastEl.classList.add('error');
@@ -3205,19 +3210,95 @@ window.renderTags = renderTags;
 window.escapeHtml = escapeHtml;
 
 // =====================================================================
+// PERSISTENT SETTINGS (T-F8 / B5)
+// Restore theme / zoom / editor-mode / panel visibility / recents from the
+// main process on launch and persist them (debounced) whenever they change.
+// Outside Electron (browser/dev) there is no bridge, so we keep the existing
+// localStorage theme fallback untouched.
+// =====================================================================
+const SettingsBridge =
+  (window.electronAPI && typeof window.electronAPI.getSettings === 'function')
+    ? window.electronAPI : null;
+const PERSISTED_KEYS = new Set([
+  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents',
+]);
+let _persistTimer = null;
+function persistSettings() {
+  if (!SettingsBridge || _restoring) return;
+  clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    try {
+      SettingsBridge.setSettings({
+        theme: State.theme,
+        zoomFactor: State.zoomFactor,
+        editorMode: State.editorMode,
+        sidebarVisible: State.sidebarVisible,
+        inspectorVisible: State.inspectorVisible,
+        recents: State.recents.map(r => ({ name: r.name, path: r.path })),
+      });
+    } catch (_) { /* persistence is best-effort; never break the UI */ }
+  }, 200);
+}
+window.persistSettings = persistSettings;
+// Persist whenever a persisted key changes (debounced inside persistSettings).
+subscribe((key) => { if (PERSISTED_KEYS.has(key)) persistSettings(); });
+
+async function restoreSettings() {
+  if (!SettingsBridge) return false;
+  let s;
+  try { s = await SettingsBridge.getSettings(); } catch (_) { return false; }
+  if (!s || typeof s !== 'object') return false;
+  _restoring = true; // suppress toasts + write-back while applying
+  try {
+    if (THEMES.includes(s.theme)) {
+      State.theme = s.theme;
+      document.documentElement.setAttribute('data-theme', s.theme);
+      $('themeBtn')?.classList.toggle('active', s.theme !== 'paper');
+      if ($('themeLabel')) $('themeLabel').textContent = s.theme;
+    }
+    if (typeof s.zoomFactor === 'number') setZoom(s.zoomFactor);
+    if (typeof s.editorMode === 'string') setEditorMode(s.editorMode);
+    if (typeof s.sidebarVisible === 'boolean') {
+      State.sidebarVisible = s.sidebarVisible;
+      appBody.classList.toggle('no-sidebar', !s.sidebarVisible);
+    }
+    if (typeof s.inspectorVisible === 'boolean') {
+      State.inspectorVisible = s.inspectorVisible;
+      appBody.classList.toggle('no-inspector', !s.inspectorVisible);
+    }
+    if (Array.isArray(s.recents)) {
+      State.recents = s.recents
+        .filter(r => r && typeof r.path === 'string')
+        .map(r => ({ name: String(r.name || ''), path: r.path }));
+      renderRecents();
+    }
+  } finally {
+    _restoring = false;
+  }
+  return true;
+}
+window.restoreSettings = restoreSettings;
+
+// =====================================================================
 // INIT
 // =====================================================================
 (function init() {
   // Detect Electron and apply native-window overrides
   if (window.electronAPI) document.documentElement.classList.add('electron');
 
-  const stored = localStorage.getItem('bpmdrtlreader-theme');
-  if (stored && THEMES.includes(stored)) {
-    State.theme = stored;
-    document.documentElement.setAttribute('data-theme', stored);
-    $('themeBtn').classList.toggle('active', stored !== 'paper');
-    if ($('themeLabel')) $('themeLabel').textContent = stored;
-  }
+  // Restore persisted settings from the main process. When there is no bridge
+  // (browser/dev), fall back to the localStorage theme exactly as before.
+  restoreSettings().then((restored) => {
+    if (restored) return;
+    const stored = localStorage.getItem('bpmdrtlreader-theme');
+    if (stored && THEMES.includes(stored)) {
+      State.theme = stored;
+      document.documentElement.setAttribute('data-theme', stored);
+      $('themeBtn')?.classList.toggle('active', stored !== 'paper');
+      if ($('themeLabel')) $('themeLabel').textContent = stored;
+    }
+  });
+
   showWelcome();
   initDragDrop();
 })();

@@ -39,6 +39,19 @@ export function isolate(text, escape = (s) => s) {
   return `<bdi>${escape(text)}</bdi>`;
 }
 
+/**
+ * Resolve a document's base direction by precedence (T-R6): a manual ⇄ override
+ * wins, then a front-matter `direction:` declaration, then the content's auto
+ * (first-strong) direction. Invalid override/front-matter values are ignored.
+ * @param {{manual?:string|null, frontMatter?:string|null, content?:'ltr'|'rtl'}} opts
+ * @returns {'ltr'|'rtl'}
+ */
+export function resolveDocDirection({ manual = null, frontMatter = null, content = 'ltr' } = {}) {
+  if (manual === 'rtl' || manual === 'ltr') return manual;
+  if (frontMatter === 'rtl' || frontMatter === 'ltr') return frontMatter;
+  return content === 'rtl' ? 'rtl' : 'ltr';
+}
+
 /** Produce the attributes a block should carry for correct direction. */
 export function directionAttrs(text, inherited = 'ltr') {
   const dir = resolveDirection(text, inherited);

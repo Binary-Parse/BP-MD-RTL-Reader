@@ -85,13 +85,13 @@ test.describe('I18N & Localization', () => {
     expect(result.height).toBeGreaterThan(0);
   });
 
-  test('Locale-specific date in daily note uses toLocaleDateString', async ({ page }) => {
+  test('daily note heading is the calendar date (YYYY-MM-DD) via dailyNoteName (T-R8)', async ({ page }) => {
     const content = await page.evaluate(() => {
       window.newDailyNote();
       return window._appState.files[0].content;
     });
-    // Should contain a date heading like "# Monday, June 1, 2026" or "# 1 June 2026" depending on locale
-    expect(content).toMatch(/^# .+\d{4}/);
+    // The heading mirrors the filename date for the chosen calendar (default Gregorian).
+    expect(content).toMatch(/^# \d{3,4}-\d{2}-\d{2}\n/);
   });
 
   test('No hardcoded English strings in dynamically generated UI (tags pane)', async ({ page }) => {

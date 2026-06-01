@@ -2,7 +2,7 @@
  * bidi.test.js — T-R1/R2 + slug. Pure direction + isolation logic.
  */
 import { describe, test, expect } from 'vitest';
-import { resolveDirection, needsIsolation, isolate, directionAttrs, slugify } from '../../src/renderer/bidi.js';
+import { resolveDirection, needsIsolation, isolate, directionAttrs, slugify, resolveDocDirection } from '../../src/renderer/bidi.js';
 
 describe('resolveDirection (T-R1)', () => {
   test('Arabic first-strong → rtl', () => {
@@ -40,6 +40,26 @@ describe('needsIsolation / isolate (T-R2)', () => {
 describe('directionAttrs', () => {
   test('returns dir + data-dir', () => {
     expect(directionAttrs('مرحبا')).toEqual({ dir: 'rtl', 'data-dir': 'rtl' });
+  });
+});
+
+describe('resolveDocDirection (T-R6 precedence: manual > front-matter > auto)', () => {
+  test('manual override wins over everything', () => {
+    expect(resolveDocDirection({ manual: 'rtl', frontMatter: 'ltr', content: 'ltr' })).toBe('rtl');
+    expect(resolveDocDirection({ manual: 'ltr', frontMatter: 'rtl', content: 'rtl' })).toBe('ltr');
+  });
+  test('front-matter direction wins over content auto', () => {
+    expect(resolveDocDirection({ manual: null, frontMatter: 'rtl', content: 'ltr' })).toBe('rtl');
+    expect(resolveDocDirection({ manual: null, frontMatter: 'ltr', content: 'rtl' })).toBe('ltr');
+  });
+  test('falls back to content auto-direction when no overrides', () => {
+    expect(resolveDocDirection({ content: 'rtl' })).toBe('rtl');
+    expect(resolveDocDirection({ content: 'ltr' })).toBe('ltr');
+  });
+  test('defaults to ltr; ignores invalid override/front-matter values', () => {
+    expect(resolveDocDirection({})).toBe('ltr');
+    expect(resolveDocDirection()).toBe('ltr');
+    expect(resolveDocDirection({ manual: 'sideways', frontMatter: 'nope', content: 'rtl' })).toBe('rtl');
   });
 });
 

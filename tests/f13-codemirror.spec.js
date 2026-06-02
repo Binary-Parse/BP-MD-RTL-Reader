@@ -410,4 +410,61 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(await page.evaluate(() => document.querySelector('.cm-mount') === null)).toBe(true);
     expect(await page.evaluate(() => document.getElementById('srcTextarea').style.display)).not.toBe('none');
   });
+
+  test('per-line direction: each CM6 line gets dir from its own first-strong char (R1/R2)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'hello world\nمرحبا بالعالم' });
+      await new Promise((res) => setTimeout(res, 60));
+      const lines = [...div.querySelectorAll('.cm-line')];
+      const view = ad._view;
+      const out = {
+        line1Dir: lines[0].getAttribute('dir'),
+        line2Dir: lines[1].getAttribute('dir'),
+        // CM6 Direction: LTR=0, RTL=1. perLineTextDirection makes this per-line.
+        td1: view.textDirectionAt(view.state.doc.line(1).from),
+        td2: view.textDirectionAt(view.state.doc.line(2).from),
+      };
+      ad.destroy();
+      div.remove();
+      return out;
+    });
+    expect(r.line1Dir).toBe('ltr');  // Latin line
+    expect(r.line2Dir).toBe('rtl');  // Arabic line
+    expect(r.td1).toBe(0);           // engine reads the Latin line as LTR
+    expect(r.td2).toBe(1);           // …and the Arabic line as RTL (whole-editor base would give one value for both)
+  });
+
+  test('logical caret: the ArrowLeft key is direction-aware per line (EC-C2)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    // RTL line: pressing ArrowLeft (cursorCharLeft) moves FORWARD in reading order.
+    await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const d = document.createElement('div'); document.body.appendChild(d);
+      window._rtlAd = window.createCodeMirrorAdapter(d, { CM6, doc: 'مرحبا' });
+      window._rtlAd.setSelection({ start: 2, end: 2 });
+      window._rtlAd._view.focus();
+    });
+    await page.keyboard.press('ArrowLeft');
+    const rtlHead = await page.evaluate(() => window._rtlAd.getSelection().start);
+
+    // LTR line: ArrowLeft moves BACK, as usual.
+    await page.evaluate(() => {
+      const d = document.createElement('div'); document.body.appendChild(d);
+      window._ltrAd = window.createCodeMirrorAdapter(d, { CM6: window.CM6, doc: 'hello' });
+      window._ltrAd.setSelection({ start: 2, end: 2 });
+      window._ltrAd._view.focus();
+    });
+    await page.keyboard.press('ArrowLeft');
+    const ltrHead = await page.evaluate(() => window._ltrAd.getSelection().start);
+
+    await page.evaluate(() => { window._rtlAd.destroy(); window._ltrAd.destroy(); });
+    expect(rtlHead).toBe(3); // RTL line: ArrowLeft advances (perLineTextDirection makes cursorCharLeft logical)
+    expect(ltrHead).toBe(1); // LTR line: ArrowLeft retreats
+  });
 });

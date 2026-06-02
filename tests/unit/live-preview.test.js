@@ -1,17 +1,20 @@
+// @vitest-environment jsdom
 /**
  * live-preview.test.js — T-F13: the CM6 live-preview decoration logic.
  *
  * createLivePreview(CM6) takes an INJECTED CodeMirror namespace, so we exercise its core
- * buildDecorations behaviour with a minimal fake CM6 + fake view — no heavy engine, no DOM.
- * It must hide markdown MARKER nodes on inactive lines while leaving the active line's
- * markers visible (so the raw markdown stays editable under the cursor).
+ * buildDecorations behaviour with a minimal fake CM6 + fake view — no heavy engine.
+ * It hides prose markers (#, *, `) on inactive lines and replaces list/quote markers with
+ * a structural WIDGET glyph (a real DOM node — hence the jsdom env), while the active
+ * line's markers stay raw (so the markdown stays editable under the cursor).
  */
 import { describe, test, expect } from 'vitest';
-import { createLivePreview } from '../../src/renderer/editor/live-preview.js';
+import { createLivePreview, livePreviewTheme } from '../../src/renderer/editor/live-preview.js';
 
 // A fake CM6 just rich enough for buildDecorations: ViewPlugin.fromClass captures the class
 // (and its provide/decorations spec) so we can instantiate it; Decoration records the ranges
-// it is asked to replace; EditorView.atomicRanges captures the facet provider.
+// (and their replace spec, incl. any widget) it is asked to build; EditorView.atomicRanges
+// captures the facet provider; WidgetType is the base class the marker widget extends.
 function fakeCM6() {
   const Decoration = {
     replace: (spec) => ({ range: (from, to) => ({ from, to, spec, kind: 'replace' }) }),
@@ -19,6 +22,7 @@ function fakeCM6() {
   };
   const EditorView = {
     atomicRanges: { of: (fn) => ({ facet: 'atomicRanges', fn }) },
+    theme: (spec) => ({ theme: spec }),
   };
   const ViewPlugin = {
     fromClass: (cls, opts) => ({ cls, opts }),
@@ -30,7 +34,8 @@ function fakeCM6() {
       }
     },
   });
-  return { ViewPlugin, Decoration, syntaxTree, EditorView };
+  class WidgetType {}
+  return { ViewPlugin, Decoration, syntaxTree, EditorView, WidgetType };
 }
 
 // Build a fake view over `docText` with the given Lezer-style `nodes` and a selection.
@@ -46,7 +51,7 @@ function fakeView(docText, nodes, selFrom, selTo = selFrom) {
     visibleRanges: [{ from: 0, to: docText.length }],
     state: {
       selection: { main: { from: selFrom, to: selTo } },
-      doc: { length: docText.length, lineAt },
+      doc: { length: docText.length, lineAt, sliceString: (from, to) => docText.slice(from, to) },
       _nodes: nodes,
     },
   };
@@ -113,13 +118,83 @@ describe('createLivePreview', () => {
     ]);
   });
 
-  test('does NOT hide list / quote / link markers (structure-destroying — left visible by design)', () => {
+  test('replaces an unordered ListMark with a bullet WIDGET on inactive lines (keeps the affordance)', () => {
     const CM6 = fakeCM6();
     const doc = 'inactive\n- item';
     const l2 = 'inactive\n'.length;
     const nodes = [{ name: 'ListMark', from: l2, to: l2 + 1 }]; // '-'
     const inst = instantiate(CM6, fakeView(doc, nodes, 0));
-    expect(inst.decorations.ranges).toEqual([]); // ListMark not in the hidden set
+    expect(inst.decorations.ranges.length).toBe(1);
+    const deco = inst.decorations.ranges[0];
+    expect([deco.from, deco.to]).toEqual([l2, l2 + 1]);
+    const widget = deco.spec.widget;            // a replace WITH a widget, not an empty replace
+    expect(widget.toDOM().textContent).toBe('•');
+  });
+
+  test('leaves an ORDERED ListMark (1.) visible — the number is the content', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n1. item';
+    const l2 = 'inactive\n'.length;
+    const nodes = [{ name: 'ListMark', from: l2, to: l2 + 2 }]; // '1.'
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0));
+    expect(inst.decorations.ranges).toEqual([]); // ordered markers are not replaced
+  });
+
+  test('replaces a QuoteMark with a bar WIDGET on inactive lines', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n> quote';
+    const l2 = 'inactive\n'.length;
+    const nodes = [{ name: 'QuoteMark', from: l2, to: l2 + 1 }]; // '>'
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0));
+    expect(inst.decorations.ranges.length).toBe(1);
+    expect(inst.decorations.ranges[0].spec.widget.toDOM().textContent).toBe('▌');
+  });
+
+  test('list/quote markers stay RAW on the active line (no widget)', () => {
+    const CM6 = fakeCM6();
+    const doc = '- item\n> quote';
+    const q = '- item\n'.length; // 7 — start of line 2 ('>')
+    const nodes = [
+      { name: 'ListMark', from: 0, to: 1 },        // line 1 (active)
+      { name: 'QuoteMark', from: q, to: q + 1 },   // line 2 (inactive)
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0)); // cursor on line 1 (the list)
+    // only the inactive line-2 quote is replaced; the active line-1 bullet stays raw
+    expect(inst.decorations.ranges.length).toBe(1);
+    expect(inst.decorations.ranges[0].spec.widget.toDOM().textContent).toBe('▌');
+  });
+
+  test('does NOT touch LinkMark (still a deferred follow-up)', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n[t](u)';
+    const l2 = 'inactive\n'.length;
+    const nodes = [{ name: 'LinkMark', from: l2, to: l2 + 1 }]; // '['
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0));
+    expect(inst.decorations.ranges).toEqual([]);
+  });
+
+  test('the marker widget is decorative (aria-hidden) and compares by glyph (eq)', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n- item';
+    const l2 = 'inactive\n'.length;
+    const inst = instantiate(CM6, fakeView(doc, [{ name: 'ListMark', from: l2, to: l2 + 1 }], 0));
+    const widget = inst.decorations.ranges[0].spec.widget;
+    expect(widget.toDOM().getAttribute('aria-hidden')).toBe('true');
+    expect(widget.eq(widget)).toBe(true);
+    expect(widget.eq({ glyph: 'x', cls: 'y' })).toBe(false);
+  });
+
+  test('exposes the decorations via the plugin spec accessor', () => {
+    const CM6 = fakeCM6();
+    const plugin = createLivePreview(CM6);
+    const inst = new plugin.cls(fakeView(DOC, MARKS, 0));
+    expect(plugin.opts.decorations(inst)).toBe(inst.decorations); // the ViewPlugin decorations getter
+  });
+
+  test('livePreviewTheme returns a theme styling the bullet + quote widgets', () => {
+    const theme = livePreviewTheme(fakeCM6());
+    expect(theme.theme['.cm-lp-bullet']).toBeTruthy();
+    expect(theme.theme['.cm-lp-quote']).toBeTruthy();
   });
 
   test('provides an atomicRanges facet so the caret steps over hidden markers', () => {

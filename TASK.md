@@ -280,15 +280,17 @@ sync; no-data-loss on format; toggleRTL flips CM6; default keeps textarea). cove
 `createLivePreview(CM6)` ViewPlugin hides markdown SYNTAX MARKERS on every line EXCEPT the one(s) the
 selection touches (inactive lines read as formatted prose via the syntax-highlight extension; the active line
 shows raw editable tokens). Wired into the adapter's EditorState extensions (`livePreview` option, default on).
-**Scope chosen for fidelity (3-lens review caught these):** hides only `HeaderMark`/`EmphasisMark`/`CodeMark`
-(the markers whose surviving text the highlight extension still styles). Deliberately does NOT hide
-`ListMark`/`QuoteMark` (an empty replace would collapse bullets/indent into flat text), `LinkMark` (would leave a
-bare `texturl`), or strikethrough (needs GFM — `markdown()` is commonmark-only). Removed dead `StrongEmphasisMark`
-(no such Lezer node — bold is `EmphasisMark`) + `StrikethroughMark`. Replaced markers registered as
-`EditorView.atomicRanges` so the caret steps over hidden glyphs. Tests: `tests/unit/live-preview.test.js`
-(8, real node names) + `tests/f13-codemirror.spec.js` real-engine cases (`**` hide/show, `#`+`` ` `` hide/show,
-docChanged-typing re-hide, multi-line selection keeps both). **Remaining F13 follow-ups:** ☐ list/quote/link
-WidgetType replacements + GFM (strikethrough/tables) · ☐ viewport-scroll (virtualized long-doc) real-engine test ·
+**Two strategies by marker (review-driven):** PROSE markers `HeaderMark`/`EmphasisMark`/`CodeMark` are HIDDEN by an
+empty replace (the highlight extension still styles the surviving text). ☑ **STRUCTURAL markers now use `WidgetType`
+replacements** — unordered `ListMark` (`-`/`*`/`+`) → bullet `•`, `QuoteMark` (`>`) → bar `▌`, preserving the
+list/quote affordance + leading indent that an empty replace destroyed; ordered `ListMark` (`1.`) stays raw (the
+number is content). `livePreviewTheme(CM6)` mutes the glyphs. Removed dead `StrongEmphasisMark` (no such Lezer node —
+bold is `EmphasisMark`) + `StrikethroughMark`. Replaced markers registered as `EditorView.atomicRanges` so the caret
+steps over hidden glyphs (verified in-editor: facet exposes exactly the hidden ranges). Tests:
+`tests/unit/live-preview.test.js` (15, real node names + widget toDOM/eq via jsdom) + `tests/f13-codemirror.spec.js`
+real-engine cases (`**`/`#`/`` ` `` hide-show, bullet `•`/quote `▌`/ordered survives, docChanged re-hide, multi-line
+selection, atomicRanges count). **Remaining F13 follow-ups:** ☐ `LinkMark` widget (needs URL hidden too) + GFM
+(strikethrough/tables) · ☐ viewport-scroll (virtualized long-doc) real-engine test · ☐ caret-skip keyboard e2e ·
 ☐ remove the 3-mode switch · ☐ per-line RTL + logical caret in CM6 · ☐ perf 10k-line <100ms/<16ms.
 
 ## ☐ T-R9 — Bidi tables + cursor

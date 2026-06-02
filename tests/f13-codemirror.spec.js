@@ -106,6 +106,63 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.onBody).toContain('`c`');           // inline-code raw on its active line
   });
 
+  test('hidden markers are registered as atomicRanges in the real editor (caret skips them)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'plain line\n**bold**' });
+      const settle = () => new Promise((res) => setTimeout(res, 60));
+      ad.setSelection({ start: 0, end: 0 }); // cursor on line 1 → line 2 ** markers hidden
+      await settle();
+      // Count the atomic ranges the live editor actually exposes over the whole doc.
+      let atoms = 0;
+      for (const get of ad._view.state.facet(CM6.EditorView.atomicRanges)) {
+        get(ad._view).between(0, ad._view.state.doc.length, () => { atoms += 1; });
+      }
+      ad.destroy();
+      div.remove();
+      return { atoms };
+    });
+    expect(r.atoms).toBe(2); // the two hidden '**' marks are atomic → the caret steps over them
+  });
+
+  test('live-preview swaps list/quote markers for widgets on inactive lines; ordered numbers + raw markers survive', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'para\n- bullet\n1. numbered\n> quote' });
+      const content = () => div.querySelector('.cm-content').textContent;
+      const settle = () => new Promise((res) => setTimeout(res, 60));
+
+      ad.setSelection({ start: 0, end: 0 });      // cursor on line 1 → lines 2-4 INACTIVE
+      await settle();
+      const inactive = content();
+
+      const onList = 'para\n'.length + 2;          // cursor on line 2 (the bullet list) → ACTIVE
+      ad.setSelection({ start: onList, end: onList });
+      await settle();
+      const listActive = content();
+
+      ad.destroy();
+      div.remove();
+      return { inactive, listActive };
+    });
+    // inactive lines: bullet '-' → '•', blockquote '>' → '▌', ordered '1.' stays raw
+    expect(r.inactive).toContain('•');             // bullet widget rendered
+    expect(r.inactive).toContain('▌');             // quote bar widget rendered
+    expect(r.inactive).toContain('1. numbered');   // ordered marker NOT replaced (the number is content)
+    expect(r.inactive).toContain('bullet');        // list text preserved
+    expect(r.inactive).not.toContain('- bullet');  // raw bullet marker gone from the inactive line
+    // cursor on the list line → it shows the RAW '-' marker again (no widget there)
+    expect(r.listActive).toContain('- bullet');
+  });
+
   test('typing new markdown (docChanged) re-hides once the cursor leaves; multi-line selection keeps both — no data loss', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

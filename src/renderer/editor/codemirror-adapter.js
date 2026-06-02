@@ -7,7 +7,7 @@
  * hard dependency on the heavy engine and the wiring stays lazy + testable.
  */
 
-import { createLivePreview } from './live-preview.js';
+import { createLivePreview, livePreviewTheme } from './live-preview.js';
 
 function escapeReg(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -39,7 +39,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       markdown(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      ...(livePreview ? [createLivePreview(CM6)] : []), // T-F13: hide markers off the active line
+      ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
       highlightActiveLine(),
       drawSelection(),
       EditorView.lineWrapping,

@@ -1,30 +1,59 @@
 /**
  * live-preview.js — CodeMirror 6 live-preview decorations (T-F13).
  *
- * Hides the markdown SYNTAX MARKERS (the `#` of headings, the `*`/`**`/`~~`/`` ` `` of
- * inline emphasis/code) on every line EXCEPT the one(s) the cursor/selection touches —
- * so inactive lines read as formatted prose (the content is already styled by the
- * syntax-highlight extension) while the active line shows raw, editable tokens.
+ * On every line EXCEPT the one(s) the cursor/selection touches, rewrite the markdown
+ * SYNTAX MARKERS so inactive lines read as formatted prose while the active line shows
+ * raw, editable tokens. Two strategies, by marker:
+ *   • PROSE markers (#, *, **, `) → an empty replace HIDES them; the syntax-highlight
+ *     extension still styles the surviving text (heading / bold-italic / monospace).
+ *   • STRUCTURAL markers (list bullets, blockquote '>') → a WIDGET replace swaps the raw
+ *     glyph for a decorative one (• / ▌), preserving the bullet/quote AFFORDANCE and the
+ *     leading indent (an empty replace here would collapse the line to flat text).
  *
  * CM6 is injected so this stays decoupled from the heavy vendored engine and testable.
  */
 
-// Lezer (lang-markdown) node names for the marker tokens we hide on inactive lines.
-// We ONLY hide markers whose surrounding text the syntax-highlight extension still styles,
-// so the line reads as formatted prose once the glyph is gone:
-//   • HeaderMark  '#'  → heading text stays styled as a heading
-//   • EmphasisMark '*'/'_'/'**'/'__' → bold/italic inner text stays styled (this single node
-//     covers BOTH emphasis and strong; @lezer/markdown has no separate 'StrongEmphasisMark')
-//   • CodeMark    '`'/'```' → code stays styled monospace
-// Deliberately NOT hidden (an empty replace would DESTROY their affordance, not render prose):
-//   • ListMark/QuoteMark — removing '- '/'> ' collapses the bullet + indent into flat text
-//   • LinkMark — hiding the brackets leaves a bare "texturl" (the URL itself stays visible)
-//   • Strikethrough — needs GFM (markdown() runs commonmark-only), so '~~' isn't even parsed
-// Those are follow-ups requiring WidgetType replacements / GFM, not a plain replace.
-const MARKER_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark']);
+// Prose markers hidden by an empty replace. EmphasisMark covers BOTH emphasis and strong
+// (@lezer/markdown has no separate 'StrongEmphasisMark'); CodeMark covers inline + fences.
+const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark']);
+// Unordered list bullets we swap for a single bullet glyph. Ordered markers ('1.', '2)')
+// are left raw — the number IS content. (LinkMark + GFM strikethrough remain follow-ups:
+// LinkMark needs the URL hidden too, strikethrough needs GFM enabled in markdown().)
+const BULLET_MARKERS = new Set(['-', '*', '+']);
 
 export function createLivePreview(CM6) {
-  const { ViewPlugin, Decoration, syntaxTree, EditorView } = CM6;
+  const { ViewPlugin, Decoration, syntaxTree, EditorView, WidgetType } = CM6;
+
+  // A decorative inline glyph that stands in for a structural marker. aria-hidden because
+  // it is purely visual — the real marker text is untouched in the document.
+  class MarkerWidget extends WidgetType {
+    constructor(glyph, cls) { super(); this.glyph = glyph; this.cls = cls; }
+    eq(other) { return other.glyph === this.glyph && other.cls === this.cls; }
+    toDOM() {
+      const span = document.createElement('span');
+      span.className = this.cls;
+      span.textContent = this.glyph;
+      span.setAttribute('aria-hidden', 'true');
+      return span;
+    }
+  }
+
+  // Reusable decoration values (a single RangeValue can back many ranges).
+  const HIDE = Decoration.replace({});
+  const BULLET = Decoration.replace({ widget: new MarkerWidget('•', 'cm-lp-bullet') });
+  const QUOTE = Decoration.replace({ widget: new MarkerWidget('▌', 'cm-lp-quote') });
+
+  // Which decoration (if any) applies to a marker node off the active line.
+  function decorationFor(view, node) {
+    const { name } = node;
+    if (HIDE_NODES.has(name)) return HIDE;
+    if (name === 'ListMark') {
+      const text = view.state.doc.sliceString(node.from, node.to).trim();
+      return BULLET_MARKERS.has(text) ? BULLET : null; // ordered ('1.') stays raw
+    }
+    if (name === 'QuoteMark') return QUOTE;
+    return null;
+  }
 
   function buildDecorations(view) {
     const ranges = [];
@@ -40,13 +69,14 @@ export function createLivePreview(CM6) {
         from, to,
         enter: (node) => {
           if (node.from === node.to) return;
-          if (MARKER_NODES.has(node.name) && !onActiveLine(node.from, node.to)) {
-            ranges.push(Decoration.replace({}).range(node.from, node.to));
-          }
+          if (onActiveLine(node.from, node.to)) return;
+          const deco = decorationFor(view, node);
+          if (deco) ranges.push(deco.range(node.from, node.to));
         },
       });
     }
-    ranges.sort((a, b) => a.from - b.from || a.to - b.to);
+    // Decoration.set(ranges, /* sort */ true) sorts internally (by from, then startSide),
+    // so we don't hand-sort — iterate() already yields nodes in document order anyway.
     return Decoration.set(ranges, true);
   }
 
@@ -69,4 +99,13 @@ export function createLivePreview(CM6) {
       ),
     },
   );
+}
+
+// Muted styling for the structural marker widgets. Returned separately so the adapter can
+// add it alongside the plugin; kept optional/cosmetic (the glyphs render without it).
+export function livePreviewTheme(CM6) {
+  return CM6.EditorView.theme({
+    '.cm-lp-bullet': { color: 'var(--muted-fg, #8a8a8a)' },
+    '.cm-lp-quote': { color: 'var(--muted-fg, #8a8a8a)', marginInlineEnd: '0.35em' },
+  });
 }

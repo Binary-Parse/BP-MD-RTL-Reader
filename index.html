@@ -807,6 +807,14 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .editor-area.source .preview-pane { display: none; }
 .editor-area.split .source-pane { flex: 1; }
 .editor-area.split .preview-pane { flex: 1; }
+/* T-F13 single live-preview mode (behind ?cm=1): the CM6 source pane IS the rendered
+   surface (its own live-preview decorations), so show it and hide the redundant markdown
+   preview. :not(.split) keeps Split View reachable via the palette/View menu. */
+.editor-area.cm-single .source-pane { display: block; flex: 1; }
+.editor-area.cm-single:not(.split) .preview-pane { display: none; }
+.toolbar-strip.cm-single #modeLive,
+.toolbar-strip.cm-single #modeSplit,
+.toolbar-strip.cm-single #modeSource { display: none; }
 
 .source-textarea {
   width: 100%;

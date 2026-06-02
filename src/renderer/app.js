@@ -652,7 +652,10 @@ function runFind(q) {
 
   // Source mode: search inside the source editor, since the preview is hidden. Re-homed
   // onto the active EditorPort (T-F13) so it works for both the textarea and CodeMirror.
-  if (State.editorMode === 'source') {
+  // `|| cmAdapter`: in single CM6 mode the editor stays 'live' but the searchable surface
+  // is the CM6 source (the markdown preview pane is hidden). cmAdapter is null without ?cm=1,
+  // so the default textarea path is unchanged.
+  if (State.editorMode === 'source' || cmAdapter) {
     if (!q) { $('findInfo').textContent = '0/0'; return; }
     let matches;
     if (cmAdapter) {
@@ -734,8 +737,8 @@ function scrollMarkIntoPane(mark) {
 }
 
 function findStep(d) {
-  // Source mode: navigate textarea match positions
-  if (State.editorMode === 'source') {
+  // Source mode (or single CM6 mode): navigate source/EditorPort match positions.
+  if (State.editorMode === 'source' || cmAdapter) {
     const matches = State.findSourceMatches || [];
     if (!matches.length) return;
     State.findIdx = (State.findIdx + d + matches.length) % matches.length;
@@ -1669,6 +1672,11 @@ async function initCM6Editor() {
     onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
   });
   window.__cmActive = true;
+  // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane,
+  // hides the redundant markdown preview pane + the 3 mode buttons). Added ONLY after a
+  // successful mount, so a CM6 load failure leaves the full 3-mode UI intact.
+  editorArea.classList.add('cm-single');
+  toolbarStrip.classList.add('cm-single');
   return true;
 }
 // Load a document into whichever source engine is active (used by renderFile).

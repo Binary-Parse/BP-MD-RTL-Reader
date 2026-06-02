@@ -18,6 +18,7 @@ import { sanitizeHtml, sanitizeSvg } from './trusted.js';
 import { renderMermaid } from './mermaid.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
 import { t as tr, localeDirection } from './locale.js';
+import { buildExportDoc as buildExportDocImpl } from './export.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -702,49 +703,16 @@ function findStep(d) {
 // =====================================================================
 // EXPORT HTML
 // =====================================================================
-// Build the standalone, bidi-aware export document for a file — shared by HTML export
-// and PDF export (T-F6). Strips front matter, then derives the document base direction
-// by precedence (manual override > front-matter direction > content first-strong),
-// carrying per-block direction + inline isolation into the body so it reads correctly
-// even without a toggle (T-R1/R2/R6). Math is pre-rendered (T-F9) so the doc needs no JS.
+// Thin renderer wrapper around the extracted, import-testable export module (T-F12):
+// injects the app's configured parseMarkdown + the manual-direction state + math globals.
 function buildExportDoc(f, { csp = false } = {}) {
-  const { data, body } = parseFrontMatter(f.content || '');
-  const exportDir = resolveDocDirection({
-    manual: (appBody._manualRTL || State.direction === 'rtl') ? 'rtl' : null,
-    frontMatter: frontMatterDirection(data),
-    content: resolveDirection(body, 'ltr'),
+  return buildExportDocImpl(f, {
+    manualRtl: !!(appBody._manualRTL || State.direction === 'rtl'),
+    parseMarkdown,
+    csp,
+    katex: (typeof katex !== 'undefined') ? katex : null,
+    DOMPurify: (typeof DOMPurify !== 'undefined') ? DOMPurify : null,
   });
-  const exportEl = document.createElement('div');
-  exportEl.innerHTML = parseMarkdown(body);
-  if (typeof katex !== 'undefined') restoreMath(exportEl, { katex, DOMPurify }); // T-F9
-  applyBidi(exportEl, { baseDir: exportDir, escape: escapeHtml });
-  const html = exportEl.innerHTML;
-  // Strip any accepted note extension (case-insensitive); fall back to a sane name.
-  const baseName = (f.name || '').replace(/\.(md|markdown|txt)$/i, '') || 'document';
-  // For PDF export, embed a strict CSP so the offscreen render can't pull remote
-  // resources (SC2 0-network) — belt-and-suspenders with the main-process session block.
-  // (HTML export keeps no CSP so a user-opened doc behaves like a normal page.)
-  const cspMeta = csp ? `\n<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:">` : '';
-  const fullHtml = `<!DOCTYPE html>
-<html lang="${exportDir === 'rtl' ? 'ar' : 'en'}" dir="${exportDir}">
-<head>
-<meta charset="UTF-8">${cspMeta}
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(baseName)}</title>
-<style>
-body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; }
-h1,h2,h3 { font-weight: 600; line-height: 1.2; }
-a { color: #C0492C; }
-code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; }
-pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; overflow-x: auto; }
-blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding-inline-start: 20px; margin: 24px 0; font-style: italic; }
-</style>
-</head>
-<body>
-${html}
-</body>
-</html>`;
-  return { fullHtml, baseName };
 }
 
 function exportHTML() {

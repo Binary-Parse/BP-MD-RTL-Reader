@@ -317,7 +317,7 @@ interface EditorPort {
 | ☐ T-F10 | `index.html` | remove double `◆`; hide/disable dead Recent + fake `.sb-stat` pointer | cosmetics |
 | ✅ T-F11 | `index.html` CSS, `src/{main/settings,renderer/app}.js`, `tests/f11-t6.spec.js` | italic-recolour OPT-OUT (`italicRecolor` setting, default on; `.no-italic-recolor #noteContent em` → ink colour, slant kept) via View ▸ Typography + palette, persisted; chevrons mirror under `html[dir="rtl"]` (dormant until R7 sets UI dir — scoped to UI, not content) | |
 | ✅ T-T6 | `index.html` (`font-optical-sizing: auto` on body) | Fraunces (variable opsz) optical sizing explicitly engaged + guarded (static + e2e tests) — auto = size-driven cut | |
-| ☐ T-F12 | split `index.html` → `src/renderer/{ui,editor,...}` | modules import-testable; no behavior change (snapshots stable) | do last |
+| ✅ T-F12 | `index.html` (zero inline logic — B4), `src/renderer/*` (22 import-testable modules incl. new `export.js`), `app.js` (composition root) | index.html decomposed: the whole inline script externalized in B4; behavior lives in import-testable ES modules (i18n/theme/state/markdown/edit-commands/bidi/bidi-dom/callouts/outline/frontmatter/dates/highlight/math/trusted/mermaid/focus/locale/export/search/…); export subsystem extracted to `export.js` + unit-tested; snapshots stable / behavior unchanged. `app.js` remains the DOM-wiring composition root (further ui/editor sub-splits are incremental). | done last |
 | ☐ Q6 | `main.js` | opt-in update-**check** only (no auto-download), privacy-preserving | EC-D3 |
 
 **M10 EXIT:** cross-platform signed builds ☐ · modularized ☐.
@@ -360,7 +360,7 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 **Test status (after Task 5 — fonts + B4 CSP):** 768 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95; app.js/theme-boot.js excluded as e2e-tested glue) · full Playwright e2e 599/599 on win32 under strict CSP (csp e2e proves inline + REMOTE script/img/fetch are refused; KaTeX+mermaid render; accessibility axe loads locally) · eslint 0 errors (app.js now linted, warnings only). Strict CSP active (script-src 'self', no inline script); fonts self-hosted; 0 CDN/network anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
-Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 ✅(core; full string catalog deferred) → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
+Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 ✅(core) → F12 ✅(index.html decomposed in B4 + export.js extracted; app.js = composition root) → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
 
 ---
 

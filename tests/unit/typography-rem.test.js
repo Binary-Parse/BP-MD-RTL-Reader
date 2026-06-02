@@ -44,9 +44,11 @@ describe('chrome typography sizing (T-T4 / T-T5)', () => {
   });
 
   test('the HTML-export template is left fully in px (a standalone doc — no rem leaked in)', () => {
-    const exportCss = html.slice(html.lastIndexOf('<style>') + '<style>'.length, html.lastIndexOf('</style>'));
+    // The export template lives in buildExportDoc, externalized to src/renderer/app.js (T-B4).
+    const appJs = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const exportCss = appJs.slice(appJs.lastIndexOf('<style>') + '<style>'.length, appJs.lastIndexOf('</style>'));
     expect(exportCss).toMatch(/font-size:\s*18px/);          // body of the exported doc stays px
-    expect(exportCss).not.toMatch(/font-size:\s*[\d.]+rem/); // converter never reached the second block
+    expect(exportCss).not.toMatch(/font-size:\s*[\d.]+rem/); // converter never reached the export template
   });
 });
 

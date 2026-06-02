@@ -106,6 +106,11 @@
 **GREEN:** register `bpmd` as privileged/secure; implement `resolveAsset`; `renderTrusted({md, katexOpts, mermaid})`.
 **REFACTOR:** DOMPurify SVG/MathML profile centralised.
 **Acceptance:** ☐ protocol root-scoped ☐ Mermaid sanitized ☐ KaTeX bounded ☐ enables strict CSP.
+> **Follow-up (from T-B4 review):** the main viewer render (`renderFile`→`parseMarkdown`, `markdown.js`)
+> uses a loose DOMPurify config (`ADD_ATTR` only) — it keeps inline `style=`/`<img>`. The strict CSP
+> (B4) now backstops the exfil risk (no remote img/font/connect → CSS exfil is dead), but AI2 should
+> route the viewer through `trusted.js` `sanitizeHtml` (which `FORBID`s `style`+active img attrs) so the
+> sanitizer — not CSP alone — is the control. Defense-in-depth, not currently exploitable.
 
 ## ✅ T-T1 / T-T3 / T-T2 — Correct + self-hosted fonts
 **Done:** vendored woff2 in `assets/vendor/fonts/` (10 files + `LICENSES.md`, via @fontsource `--no-save`).
@@ -115,13 +120,20 @@ cover all T1 weights in one file each; IBM Plex Sans Arabic ships 4 static weigh
 **Files:** `index.html` (@font-face + font-synthesis), `assets/vendor/fonts/**`, `tests/unit/fonts-selfhost.test.js`, `tests/offline-network.spec.js`.
 **Acceptance (T1/T2/T3):** ✅ real weights ✅ no faux-bold/oblique (real italics vendored — review caught body `<em>` would render upright) ✅ local fonts, 0 network (offline probe loads all families incl. italics).
 
-## ☐ T-B4 — CSP  *(remaining half of Task 5)*
-**Files:** `index.html` (meta CSP), `tests/offline-network.spec.js`.
-**RED:** ☐ CSP meta present; ☐ e2e: 0 CSP violations; ☐ no inline `<script>`.
-**GREEN:** `default-src 'self'; img-src 'self' bpmd: data:; style-src 'self' 'nonce-…'; script-src 'self'`.
-**Acceptance (B4):** ☐ present ☐ no violations ☐ no inline script.
+## ✅ T-B4 — CSP
+**Done:** strict CSP meta in `index.html` `<head>`: `default-src 'self'; script-src 'self';
+style-src 'self' 'unsafe-inline'; img-src 'self' data: bpmd: file:; font-src 'self' data:;
+connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'`. The XSS lock is
+`script-src 'self'` (no inline/eval/remote). Both inline scripts externalized (overlaps F12):
+the FOUC theme-boot → `src/renderer/theme-boot.js`, the whole app module → `src/renderer/app.js`
+(imports rebased; via one-shot `scripts/externalize-app.mjs`). `style-src` keeps `'unsafe-inline'`
+DELIBERATELY — KaTeX emits inline `style=` in its math HTML (documented concession; the script
+lock is the real win). accessibility.spec axe load moved CDN→local (`addInitScript`, CSP-exempt).
+coverage excludes app.js/theme-boot.js (e2e-tested glue, as the inline script always was).
+**Files:** `index.html`, `src/renderer/{app,theme-boot}.js`, `scripts/externalize-app.mjs`, `vitest.config.js`, `tests/unit/csp.test.js`, `tests/csp.spec.js`, `tests/accessibility.spec.js`.
+**Acceptance (B4):** ✅ present ✅ 0 violations (csp e2e) ✅ no inline script (csp.test.js) + CSP ENFORCED (injected inline script does not run).
 
-**M2 EXIT:** SC1 ☐ · SC2 ☐ · CSP active ☐ · fonts correct ☐.
+**M2 EXIT:** SC1 ✅ · SC2 ✅ (offline probe + CSP) · CSP active ✅ · fonts correct ✅.
 
 ---
 
@@ -343,7 +355,7 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 | P9 | T-R6, T-R8, T-R7-core (locale) | — | T-R7 UI mirroring, T-R10 justification |
 | P10 | T-B10, T-F10 | — | T-B7 builds, T-B9 fs.watch, T-F11, T-T6, T-F12, Q6 |
 
-**Test status (after T-B3/T1/T3 fonts — B4 CSP still pending):** 761 unit tests green · coverage 96.45% stmts / 90.17% branch (gate ✓ at 95/88/95/95) · Playwright e2e green on win32 (offline probe loads all 4 font families incl. real italics with 0 network; 10 full-page snapshots updated for real font weights, eyeballed LTR+RTL) · eslint 0 errors. Fonts self-hosted (woff2, font-synthesis:none); 0 CDN anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
+**Test status (after Task 5 — fonts + B4 CSP):** 768 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95; app.js/theme-boot.js excluded as e2e-tested glue) · full Playwright e2e 599/599 on win32 under strict CSP (csp e2e proves inline + REMOTE script/img/fetch are refused; KaTeX+mermaid render; accessibility axe loads locally) · eslint 0 errors (app.js now linted, warnings only). Strict CSP active (script-src 'self', no inline script); fonts self-hosted; 0 CDN/network anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
 Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 → R10 → F11+T6 → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).

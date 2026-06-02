@@ -39,7 +39,8 @@ function fakeCM6() {
 }
 
 // Build a fake view over `docText` with the given Lezer-style `nodes` and a selection.
-function fakeView(docText, nodes, selFrom, selTo = selFrom) {
+// visibleRanges defaults to the whole doc; pass a narrowed window to exercise clipping.
+function fakeView(docText, nodes, selFrom, selTo = selFrom, visibleRanges = null) {
   const lines = [];
   let off = 0;
   for (const part of docText.split('\n')) {
@@ -48,7 +49,7 @@ function fakeView(docText, nodes, selFrom, selTo = selFrom) {
   }
   const lineAt = (pos) => lines.find((l) => pos >= l.from && pos <= l.to) || lines[lines.length - 1];
   return {
-    visibleRanges: [{ from: 0, to: docText.length }],
+    visibleRanges: visibleRanges || [{ from: 0, to: docText.length }],
     state: {
       selection: { main: { from: selFrom, to: selTo } },
       doc: { length: docText.length, lineAt, sliceString: (from, to) => docText.slice(from, to) },
@@ -261,6 +262,18 @@ describe('createLivePreview', () => {
     expect(facet.facet).toBe('atomicRanges');
     const ranges = facet.fn({ plugin: () => inst });      // fake view.plugin(plugin) → the instance
     expect(ranges.ranges.map((r) => [r.from, r.to])).toEqual([[15, 17], [21, 23]]);
+  });
+
+  test('clips decorations to visibleRanges (only nodes inside the visible window are built)', () => {
+    const CM6 = fakeCM6();
+    // two emphasis pairs on the (inactive) line 2; visibleRanges covers ONLY the first pair.
+    const doc = 'cursor here\n**a** and **b**';
+    const nodes = [
+      { name: 'EmphasisMark', from: 12, to: 14 }, { name: 'EmphasisMark', from: 15, to: 17 }, // pair 1
+      { name: 'EmphasisMark', from: 22, to: 24 }, { name: 'EmphasisMark', from: 25, to: 27 }, // pair 2
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0, 0, [{ from: 0, to: 18 }])); // cursor line 1; window = pair 1 only
+    expect(inst.decorations.ranges.map((r) => [r.from, r.to])).toEqual([[12, 14], [15, 17]]);
   });
 
   test('rebuilds decorations on doc/selection/viewport change, not otherwise', () => {

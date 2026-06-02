@@ -188,6 +188,80 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.valueActive).toBe(r.valueInactive);
   });
 
+  test('live-preview tracks a narrowed viewport on a long scrolled doc (visibleRanges + viewportChanged)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      div.style.height = '200px';
+      div.style.overflow = 'auto';
+      div.style.contain = 'size';
+      document.body.appendChild(div);
+      // ~400 lines, every other line a bold marker.
+      const lines = [];
+      for (let i = 0; i < 400; i += 1) lines.push(i % 2 ? `**b${i}**` : `plain ${i}`);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: lines.join('\n') });
+      const view = ad._view;
+      const raf = () => new Promise((res) => requestAnimationFrame(() => setTimeout(res, 60)));
+
+      ad.setSelection({ start: 0, end: 0 });
+      await raf();
+      const len = view.state.doc.length;
+      const narrowedAtStart = view.visibleRanges[view.visibleRanges.length - 1].to < len;
+
+      view.dispatch({ effects: CM6.EditorView.scrollIntoView(len, { y: 'start' }) });
+      view.scrollDOM.scrollTop = view.scrollDOM.scrollHeight;
+      view.requestMeasure();
+      await raf();
+      await raf();
+
+      const vpFrom = view.visibleRanges[0].from;
+      const visibleText = div.querySelector('.cm-content').textContent;
+      let atomsInViewport = 0;
+      for (const get of view.state.facet(CM6.EditorView.atomicRanges)) {
+        get(view).between(view.viewport.from, view.viewport.to, () => { atomsInViewport += 1; });
+      }
+      ad.destroy();
+      div.remove();
+      return { narrowedAtStart, vpFrom, visibleText, atomsInViewport };
+    });
+    expect(r.narrowedAtStart).toBe(true);        // virtualization is real (fails loudly if height not honored)
+    expect(r.vpFrom).toBeGreaterThan(0);         // we scrolled past the top → viewportChanged fired
+    expect(r.visibleText).not.toContain('**');   // inactive markers in the scrolled window are hidden
+    expect(r.atomsInViewport % 2).toBe(0);       // markers come in '**'…'**' pairs (metric-independent)
+  });
+
+  test('atomicRanges make the caret step OVER a hidden marker (vs a no-live-preview control)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const settle = () => new Promise((res) => setTimeout(res, 60));
+      const doc = 'plain line\n**bold**';
+      const l2 = 'plain line\n'.length; // 11 — start of the '**bold**' line
+
+      const d1 = document.createElement('div'); document.body.appendChild(d1);
+      const ad = window.createCodeMirrorAdapter(d1, { CM6, doc }); // livePreview default true
+      const d2 = document.createElement('div'); document.body.appendChild(d2);
+      const adPlain = window.createCodeMirrorAdapter(d2, { CM6, doc, livePreview: false }); // control
+
+      ad.setSelection({ start: 0, end: 0 });       // caret on line 1 → line 2 '**' hidden + atomic
+      adPlain.setSelection({ start: 0, end: 0 });
+      await settle();
+
+      // moveByChar is a PURE query — it does not dispatch, so line 2 never re-activates.
+      const headLive = ad._view.moveByChar(CM6.EditorSelection.cursor(l2), true).head;
+      const headCtrl = adPlain._view.moveByChar(CM6.EditorSelection.cursor(l2), true).head;
+      const stillHidden = !d1.querySelector('.cm-content').textContent.includes('**');
+      ad.destroy(); adPlain.destroy(); d1.remove(); d2.remove();
+      return { headLive, headCtrl, stillHidden, l2 };
+    });
+    expect(r.stillHidden).toBe(true);            // the probe never activated line 2 (anti-flake)
+    expect(r.headCtrl).toBe(r.l2 + 1);           // control: one step lands INSIDE the '**'
+    expect(r.headLive).toBe(r.l2 + 2);           // live-preview: skips the whole atomic 2-char marker
+  });
+
   test('hidden markers are registered as atomicRanges in the real editor (caret skips them)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

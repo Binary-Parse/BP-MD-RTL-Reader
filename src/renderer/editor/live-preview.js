@@ -14,11 +14,12 @@
  */
 
 // Prose markers hidden by an empty replace. EmphasisMark covers BOTH emphasis and strong
-// (@lezer/markdown has no separate 'StrongEmphasisMark'); CodeMark covers inline + fences.
-const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark']);
+// (@lezer/markdown has no separate 'StrongEmphasisMark'); CodeMark covers inline + fences;
+// StrikethroughMark is the GFM '~~' marker (the editor parses GFM via base: markdownLanguage).
+const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark']);
 // Unordered list bullets we swap for a single bullet glyph. Ordered markers ('1.', '2)')
-// are left raw — the number IS content. (LinkMark + GFM strikethrough remain follow-ups:
-// LinkMark needs the URL hidden too, strikethrough needs GFM enabled in markdown().)
+// are left raw — the number IS content. (LinkMark remains a follow-up: it needs the URL
+// hidden too, not just the brackets.)
 const BULLET_MARKERS = new Set(['-', '*', '+']);
 
 export function createLivePreview(CM6) {

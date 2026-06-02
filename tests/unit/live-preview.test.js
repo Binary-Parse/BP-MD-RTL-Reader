@@ -101,6 +101,29 @@ describe('createLivePreview', () => {
     expect(inst.decorations.ranges).toEqual([]);
   });
 
+  test('hides StrikethroughMark on inactive lines (GFM parity)', () => {
+    const CM6 = fakeCM6();
+    // 'inactive\n~~gone~~' — the two ~~ marks live on line 2 at [9,11] and [15,17].
+    const doc = 'inactive\n~~gone~~';
+    const nodes = [
+      { name: 'StrikethroughMark', from: 9, to: 11 },
+      { name: 'StrikethroughMark', from: 15, to: 17 },
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0)); // cursor on line 1 → line 2 inactive
+    expect(inst.decorations.ranges.map((r) => [r.from, r.to])).toEqual([[9, 11], [15, 17]]);
+  });
+
+  test('keeps StrikethroughMark raw on the active line', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n~~gone~~';
+    const nodes = [
+      { name: 'StrikethroughMark', from: 9, to: 11 },
+      { name: 'StrikethroughMark', from: 15, to: 17 },
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 12)); // cursor inside line 2
+    expect(inst.decorations.ranges).toEqual([]);
+  });
+
   test('hides HeaderMark and CodeMark on inactive lines (the other prose-rendering markers)', () => {
     const CM6 = fakeCM6();
     // 'inactive\n# Heading\n`code`' — HeaderMark '# ' on line 2, CodeMark backticks on line 3.

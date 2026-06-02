@@ -106,6 +106,55 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.onBody).toContain('`c`');           // inline-code raw on its active line
   });
 
+  test('GFM strikethrough parses in CM6 and is hidden on inactive lines', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'plain line\n~~struck out~~' });
+      const names = new Set();
+      CM6.syntaxTree(ad._view.state).iterate({ enter: (n) => names.add(n.name) });
+      const content = () => div.querySelector('.cm-content').textContent;
+      const settle = () => new Promise((res) => setTimeout(res, 60));
+
+      ad.setSelection({ start: 0, end: 0 }); // cursor line 1 → strikethrough line inactive
+      await settle();
+      const inactive = content();
+      ad.setSelection({ start: 13, end: 13 }); // cursor inside line 2 → active
+      await settle();
+      const active = content();
+      ad.destroy();
+      div.remove();
+      return { hasStrike: names.has('Strikethrough') && names.has('StrikethroughMark'), inactive, active };
+    });
+    expect(r.hasStrike).toBe(true);                 // GFM is parsing ~~ (commonmark would not)
+    expect(r.inactive).not.toContain('~~');         // markers hidden on the inactive line
+    expect(r.inactive).toContain('struck out');     // content preserved
+    expect(r.active).toContain('~~struck out~~');   // raw markers on the active line
+  });
+
+  test('GFM tables parse in the CM6 source engine (pipes stay visible)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: '| a | b |\n| - | - |\n| 1 | 2 |' });
+      const names = new Set();
+      CM6.syntaxTree(ad._view.state).iterate({ enter: (n) => names.add(n.name) });
+      const text = div.querySelector('.cm-content').textContent;
+      ad.destroy();
+      div.remove();
+      return { names: [...names], text };
+    });
+    expect(r.names).toContain('Table');             // GFM table parsed (commonmark → Paragraph only)
+    expect(r.names).toContain('TableDelimiter');
+    expect(r.text).toContain('|');                  // pipes are structural content — NOT hidden
+  });
+
   test('hidden markers are registered as atomicRanges in the real editor (caret skips them)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

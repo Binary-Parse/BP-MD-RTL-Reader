@@ -22,7 +22,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
   const {
     EditorState, EditorSelection, EditorView, keymap, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
-    syntaxHighlighting, defaultHighlightStyle, markdown,
+    syntaxHighlighting, defaultHighlightStyle, markdown, markdownLanguage,
   } = CM6;
 
   let changeCb = onChange;
@@ -37,7 +37,10 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     extensions: [
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      markdown(),
+      // GFM via the `extended` parser (markdownLanguage) — strikethrough + tables parse,
+      // matching the preview pipeline (marked is GFM). markdownLanguage is already vendored,
+      // so this needs no bundle rebuild. Guarded so the fake-CM6 unit path stays safe.
+      markdown(markdownLanguage ? { base: markdownLanguage } : undefined),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
       highlightActiveLine(),

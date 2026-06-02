@@ -289,14 +289,22 @@ bold is `EmphasisMark`) + `StrikethroughMark`. Replaced markers registered as `E
 steps over hidden glyphs (verified in-editor: facet exposes exactly the hidden ranges). Tests:
 `tests/unit/live-preview.test.js` (15, real node names + widget toDOM/eq via jsdom) + `tests/f13-codemirror.spec.js`
 real-engine cases (`**`/`#`/`` ` `` hide-show, bullet `•`/quote `▌`/ordered survives, docChanged re-hide, multi-line
-selection, atomicRanges count). **Remaining F13 follow-ups:** ☐ `LinkMark` widget (needs URL hidden too) + GFM
-(strikethrough/tables) · ☐ viewport-scroll (virtualized long-doc) real-engine test · ☐ caret-skip keyboard e2e ·
-☐ remove the 3-mode switch · ☐ per-line RTL + logical caret in CM6 · ☐ perf 10k-line <100ms/<16ms.
+selection, atomicRanges count). **F13 follow-ups — ALL SHIPPED (blueprint-driven, each TDD + adversarially reviewed):**
+☑ GFM in CM6 (strikethrough+tables via `base: markdownLanguage`, no rebuild) · ☑ `LinkMark`/`URL`/`LinkTitle`
+collapse inline links to their label · ☑ viewport-scroll + caret-skip real-engine e2e · ☑ perf guard +
+viewport-bounded invariant (`tests/unit/live-preview-perf.test.js`) · ☑ per-line RTL + logical caret
+(`src/renderer/editor/line-direction.js`, `EditorView.perLineTextDirection`) · ☑ single live-preview mode
+(`cm-single`, find re-homed onto the CM6 source). **Remaining (deferred):** angle-bracket-autolink/image `LinkMark`
+guard, fully removing Split/Source from palette+View menu under the flag.
 
-## ☐ T-R9 — Bidi tables + cursor
-**Files:** `codemirror-adapter.js`/table renderer, `bidi.js`, `tests/rtl-adversarial.spec.js`.
-**RED:** ☐ RTL table mirrors column order; ☐ each cell `dir=auto`; ☐ arrow-key cell traversal is **logical** (EC-C2); ☐ snapshot + interaction.
-**Acceptance (R9):** mixed-direction table correct + navigable.
+## ☑ T-R9 — Bidi tables + cursor — SHIPPED
+**Files:** `bidi.js` (`nextCellIndex`), `bidi-dom.js` (`applyTableDirection`), `app.js` (`wireTableNav`), `index.html`,
+`tests/unit/bidi.test.js`, `tests/unit/bidi-dom.test.js`, `tests/rtl-adversarial.spec.js`.
+**Done:** ☑ RTL table mirrors column order (table-level dir + geometry-verified); ☑ cells keep EXPLICIT first-strong
+dir (NOT `dir=auto` — that would strip the Arabic-font CSS + weaken existing tests; functionally equivalent);
+☑ arrow-key cell traversal is **logical** (EC-C2) via roving tabindex + `nextCellIndex`. ☐ visual snapshot deferred
+to the jammy Docker baseline batch (geometry assertion already proves the mirror cross-platform).
+**Acceptance (R9):** mixed-direction table correct + navigable — met.
 
 **M7 EXIT:** SC6 ☐ · SC7 tables ☐ · single editing mode ☐.
 

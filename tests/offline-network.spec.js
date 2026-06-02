@@ -47,8 +47,22 @@ test.describe('local-first / network', () => {
     // Mermaid lazy-loads from the local vendor bundle and renders even offline.
     await expect(page.locator('#noteContent .mermaid svg')).toHaveCount(1, { timeout: 15000 });
 
-    // None of the F9/F16 deps (or any CDN) were requested — they are vendored locally.
-    const cdnish = external.filter((u) => /katex|highlight|hljs|mermaid|d3|jsdelivr|unpkg|cdnjs/i.test(u));
+    // Fonts are self-hosted (T-B3/T1/T3): explicitly loading each family succeeds from
+    // the local woff2 even with the network blocked (a CDN font would fail to load here).
+    const fontsLoaded = await page.evaluate(async () => {
+      const specs = ["700 16px 'Fraunces'", "italic 400 16px 'Fraunces'", "500 16px 'Inter'", "italic 400 16px 'Inter'", "16px 'JetBrains Mono'", "600 16px 'IBM Plex Sans Arabic'"];
+      const out = {};
+      for (const s of specs) {
+        try { out[s] = (await document.fonts.load(s)).length > 0; } catch (_) { out[s] = false; }
+      }
+      return out;
+    });
+    for (const [spec, ok] of Object.entries(fontsLoaded)) {
+      expect(ok, `font failed to load locally: ${spec}`).toBe(true);
+    }
+
+    // None of the F9/F16 deps, NO font CDN, NO CDN at all was requested — all vendored.
+    const cdnish = external.filter((u) => /katex|highlight|hljs|mermaid|d3|jsdelivr|unpkg|cdnjs|googleapis|gstatic|fontsource/i.test(u));
     expect(cdnish).toEqual([]);
   });
 });

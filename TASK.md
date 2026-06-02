@@ -107,14 +107,15 @@
 **REFACTOR:** DOMPurify SVG/MathML profile centralised.
 **Acceptance:** ☐ protocol root-scoped ☐ Mermaid sanitized ☐ KaTeX bounded ☐ enables strict CSP.
 
-## ☐ T-T1 / T-T3 — Correct + self-hosted fonts
-**Objective:** load actually-used weights; no faux-bold; self-hosted subset.
-**Files:** `index.html` (@font-face), `assets/fonts/**`, `tests/visual.spec.js`, `tests/rtl-heading-fix.spec.js` (snapshots).
-**RED:** ☐ visual-regression with `font-synthesis:none` shows real bold (Latin h1/h2 + Arabic h1/h2). ☐ no network font request (folds into SC2).
-**GREEN:** subset+WOFF2 for Fraunces 300/500/600/700(+ital), Inter 400/500/600, JetBrains 400/500, IBM Plex Arabic 400/500/600/700; `font-synthesis:none`.
-**Acceptance (T1/T3):** ☐ real weights ☐ no faux-bold in snapshots ☐ local fonts.
+## ✅ T-T1 / T-T3 / T-T2 — Correct + self-hosted fonts
+**Done:** vendored woff2 in `assets/vendor/fonts/` (10 files + `LICENSES.md`, via @fontsource `--no-save`).
+Variable fonts (Fraunces opsz+wght normal+italic, Inter wght normal+italic, JetBrains wght normal+italic)
+cover all T1 weights in one file each; IBM Plex Sans Arabic ships 4 static weights (400/500/600/700).
+`@font-face` block + `font-synthesis: none` (T2) on body; Google Fonts CDN `<link>`/preconnects removed.
+**Files:** `index.html` (@font-face + font-synthesis), `assets/vendor/fonts/**`, `tests/unit/fonts-selfhost.test.js`, `tests/offline-network.spec.js`.
+**Acceptance (T1/T2/T3):** ✅ real weights ✅ no faux-bold/oblique (real italics vendored — review caught body `<em>` would render upright) ✅ local fonts, 0 network (offline probe loads all families incl. italics).
 
-## ☐ T-B4 — CSP
+## ☐ T-B4 — CSP  *(remaining half of Task 5)*
 **Files:** `index.html` (meta CSP), `tests/offline-network.spec.js`.
 **RED:** ☐ CSP meta present; ☐ e2e: 0 CSP violations; ☐ no inline `<script>`.
 **GREEN:** `default-src 'self'; img-src 'self' bpmd: data:; style-src 'self' 'nonce-…'; script-src 'self'`.
@@ -342,7 +343,7 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 | P9 | T-R6, T-R8, T-R7-core (locale) | — | T-R7 UI mirroring, T-R10 justification |
 | P10 | T-B10, T-F10 | — | T-B7 builds, T-B9 fs.watch, T-F11, T-T6, T-F12, Q6 |
 
-**Test status (after T-B6/F6):** 755 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95, run serial via `--no-file-parallelism`) · Playwright e2e green on win32 (B6 unit 10/10 incl. SC2 session-block + close-on-write-failure; F6 e2e 8/8 incl. canceled/error/reject/backslash + CSP; menu/IPC/focus suites re-run clean) · eslint 0 errors. PDF export does 0 network (isolated offline session + CSP). Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
+**Test status (after T-B3/T1/T3 fonts — B4 CSP still pending):** 761 unit tests green · coverage 96.45% stmts / 90.17% branch (gate ✓ at 95/88/95/95) · Playwright e2e green on win32 (offline probe loads all 4 font families incl. real italics with 0 network; 10 full-page snapshots updated for real font weights, eyeballed LTR+RTL) · eslint 0 errors. Fonts self-hosted (woff2, font-synthesis:none); 0 CDN anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
 Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 → R10 → F11+T6 → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).

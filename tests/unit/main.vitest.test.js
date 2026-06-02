@@ -192,7 +192,7 @@ describe('preload.js', () => {
     return mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
   }
 
-  test('exposes 8 electronAPI methods (incl. logError from #15)', () => {
+  test('exposes electronAPI methods (incl. logError #15, exportPDF T-F6)', () => {
     expect(mockElectron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('electronAPI', expect.any(Object));
     const api = getApi();
     expect(typeof api.closeWindow).toBe('function');
@@ -203,6 +203,15 @@ describe('preload.js', () => {
     expect(typeof api.editCommand).toBe('function');
     expect(typeof api.onOpenFile).toBe('function');
     expect(typeof api.logError).toBe('function');
+    expect(typeof api.exportPDF).toBe('function');
+  });
+
+  test('exportPDF invokes export:pdf with the payload (T-F6)', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    const payload = { html: '<html></html>', defaultName: 'note.pdf' };
+    getApi().exportPDF(payload);
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledWith('export:pdf', payload);
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
   });
 
   // ─ window controls (kills NoCoverage on preload.js L4-L6) ──────────

@@ -2114,6 +2114,7 @@ const MENU_DEFS = {
       { kind: 'item', icon: '⇣', name: 'Save As…', shortcut: 'Ctrl+Shift+S', action: () => saveAs() },
       { kind: 'divider' },
       { kind: 'item', icon: '⇪', name: 'Export HTML', action: () => exportHTML() },
+      { kind: 'item', icon: '⎙', name: 'Export PDF', action: () => exportPDF() },
       { kind: 'divider' },
       { kind: 'item', icon: '★', name: 'Load Demo Notes', action: () => loadDemo() },
       { kind: 'divider' },
@@ -2384,16 +2385,12 @@ function findStep(d) {
 // =====================================================================
 // EXPORT HTML
 // =====================================================================
-function exportHTML() {
-  closeMenu();
-  if (State.activeFile === null || !State.files[State.activeFile]) {
-    showToast('No file to export', 'error'); return;
-  }
-  const f = State.files[State.activeFile];
-  // Bidi-aware export (T-R1/R2/R6): strip front matter, then derive the document
-  // base direction by precedence (manual override > front-matter direction >
-  // content first-strong), carrying per-block direction + inline isolation into
-  // the exported body so it reads correctly even without a toggle.
+// Build the standalone, bidi-aware export document for a file — shared by HTML export
+// and PDF export (T-F6). Strips front matter, then derives the document base direction
+// by precedence (manual override > front-matter direction > content first-strong),
+// carrying per-block direction + inline isolation into the body so it reads correctly
+// even without a toggle (T-R1/R2/R6). Math is pre-rendered (T-F9) so the doc needs no JS.
+function buildExportDoc(f, { csp = false } = {}) {
   const { data, body } = parseFrontMatter(f.content || '');
   const exportDir = resolveDocDirection({
     manual: (appBody._manualRTL || State.direction === 'rtl') ? 'rtl' : null,
@@ -2405,12 +2402,18 @@ function exportHTML() {
   if (typeof katex !== 'undefined') restoreMath(exportEl, { katex, DOMPurify }); // T-F9
   applyBidi(exportEl, { baseDir: exportDir, escape: escapeHtml });
   const html = exportEl.innerHTML;
+  // Strip any accepted note extension (case-insensitive); fall back to a sane name.
+  const baseName = (f.name || '').replace(/\.(md|markdown|txt)$/i, '') || 'document';
+  // For PDF export, embed a strict CSP so the offscreen render can't pull remote
+  // resources (SC2 0-network) — belt-and-suspenders with the main-process session block.
+  // (HTML export keeps no CSP so a user-opened doc behaves like a normal page.)
+  const cspMeta = csp ? `\n<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:">` : '';
   const fullHtml = `<!DOCTYPE html>
 <html lang="${exportDir === 'rtl' ? 'ar' : 'en'}" dir="${exportDir}">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8">${cspMeta}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(f.name.replace(/\.md$/, ''))}</title>
+<title>${escapeHtml(baseName)}</title>
 <style>
 body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; }
 h1,h2,h3 { font-weight: 600; line-height: 1.2; }
@@ -2424,17 +2427,53 @@ blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding
 ${html}
 </body>
 </html>`;
+  return { fullHtml, baseName };
+}
+
+function exportHTML() {
+  closeMenu();
+  if (State.activeFile === null || !State.files[State.activeFile]) {
+    showToast('No file to export', 'error'); return;
+  }
+  const { fullHtml, baseName } = buildExportDoc(State.files[State.activeFile]);
   const blob = new Blob([fullHtml], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = f.name.replace(/\.md$/, '.html');
+  a.download = baseName + '.html';
   a.click();
   URL.revokeObjectURL(url);
   showToast(`Exported ${a.download}`);
   return fullHtml; // also returned so the export markup is unit/e2e-testable
 }
 window.exportHTML = exportHTML;
+
+// Export the current note to PDF (T-F6). Reuses the standalone export document and
+// hands it to the main process (T-B6), which renders it offscreen and printToPDFs it.
+// PDF export is a desktop-only capability (needs the Electron bridge).
+async function exportPDF() {
+  closeMenu();
+  if (State.activeFile === null || !State.files[State.activeFile]) {
+    showToast('No file to export', 'error'); return;
+  }
+  if (!window.electronAPI || typeof window.electronAPI.exportPDF !== 'function') {
+    showToast('PDF export needs the desktop app', 'error'); return;
+  }
+  const { fullHtml, baseName } = buildExportDoc(State.files[State.activeFile], { csp: true });
+  showToast('Exporting PDF…');
+  let res;
+  try {
+    res = await window.electronAPI.exportPDF({ html: fullHtml, defaultName: baseName + '.pdf' });
+  } catch (_) {
+    res = { error: 'ipc-failed' };
+  }
+  if (res && res.ok) showToast(`Exported ${String(res.path).split(/[\\/]/).pop()}`);
+  else if (res && res.canceled) { /* user cancelled — stay quiet */ }
+  else showToast('PDF export failed', 'error');
+  return res;
+}
+window.exportPDF = exportPDF;
+window.buildExportDoc = buildExportDoc;
 
 // =====================================================================
 // NEW DAILY NOTE
@@ -3268,6 +3307,8 @@ const PALETTE_COMMANDS = [
   { sec: 'Files', icon: '¶', name: 'Open File…', meta: 'command', sk: 'Ctrl+O', act: openSingleFile },
   { sec: 'Files', icon: '+', name: 'New Note', meta: 'command', sk: 'Ctrl+N', act: newNote },
   { sec: 'Files', icon: '↓', name: 'Save', meta: 'command', sk: 'Ctrl+S', act: saveCurrent },
+  { sec: 'Files', icon: '⇪', name: 'Export HTML', meta: 'command', act: () => exportHTML() },
+  { sec: 'Files', icon: '⎙', name: 'Export PDF', meta: 'command', act: () => exportPDF() },
   { sec: 'Files', icon: '★', name: 'Load demo notes', meta: 'command', act: loadDemo },
   { sec: 'View', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
   { sec: 'View', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },

@@ -23,6 +23,9 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // on-disk truth in <userData>/settings.json.
     getSettings: () => ipcRenderer.invoke('settings:get'),
     setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+    // Export the current note to PDF (T-B6/F6): the renderer passes the standalone
+    // note HTML; main renders it offscreen and printToPDFs it to a chosen path.
+    exportPDF: (payload) => ipcRenderer.invoke('export:pdf', payload),
     // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
     // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
     // editable regardless of JS-side focus juggling caused by the menu opening.

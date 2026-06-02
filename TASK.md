@@ -275,7 +275,7 @@ interface EditorPort {
 | ☐ T-F15 | `markdown.js` | GFM `- [ ]`/`- [x]` checkboxes render (+toggle if editable) | — |
 | ☐ T-F16 | `trusted.js` (mermaid lazy) | mermaid renders; SVG sanitized | EC-B3 |
 | ☐ T-F7 | `index.html` (buildTOC), `bidi.js` | outline h1–h6; scroll-sync active item; Arabic slugs | EC-C5 |
-| ☐ T-B6/F6 | `main.js` (`printToPDF`), `preload.js`, `index.html` | PDF export of current note; sanitized content only | — |
+| ✅ T-B6/F6 | `main.js` (`export:pdf`), `preload.js` (`exportPDF`), `index.html` (`buildExportDoc`/`exportPDF` + File-menu/palette), `tests/{unit/main-export-pdf,export-pdf}` | PDF export of current note via offscreen render of the standalone export doc; ISOLATED offline session hard-blocks all non-local requests (SC2) + CSP meta; temp-file (no data:-URL size cap); 30s timeout; sanitized content only | — |
 
 **M8 EXIT:** SC9 ☐.
 
@@ -338,14 +338,14 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 | P5 | T-F2, T-F3, T-F4, T-F5, T-T4, T-T5 | — | — |
 | P6 | T-B5, T-F8 (persist+restore wired) | — | T-B8 docs |
 | P7 | T-AI3 (EditorPort+TextareaAdapter) | — | T-F13 CM6, T-R9 bidi tables |
-| P8 | T-F14, T-F7, T-F15, T-F9 (highlight+KaTeX), T-F16 (mermaid) | — | T-B6/F6 PDF |
+| P8 | T-F14, T-F7, T-F15, T-F9 (highlight+KaTeX), T-F16 (mermaid), T-B6/F6 (PDF) | — | — |
 | P9 | T-R6, T-R8, T-R7-core (locale) | — | T-R7 UI mirroring, T-R10 justification |
 | P10 | T-B10, T-F10 | — | T-B7 builds, T-B9 fs.watch, T-F11, T-T6, T-F12, Q6 |
 
-**Test status (after T-T4/T5):** 744 unit tests green · coverage 96.52% stmts / 90.23% branch / 96.77% func / 97.40% lines (gate ✓ at 95/88/95/95, run serial via `--no-file-parallelism`) · Playwright e2e green on win32 (typography-zoom 8/8 incl. in-viewport checks at zoom 0.6/1.5/2.0; stale #editorArea-zoom assertions in integration/zoom + adversarial-9bugs updated to the rem-base contract; 9 full-page snapshots updated for the 11px floor, eyeballed LTR+RTL + zoom 1.5/2.0) · eslint 0 errors. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
+**Test status (after T-B6/F6):** 755 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95, run serial via `--no-file-parallelism`) · Playwright e2e green on win32 (B6 unit 10/10 incl. SC2 session-block + close-on-write-failure; F6 e2e 8/8 incl. canceled/error/reject/backslash + CSP; menu/IPC/focus suites re-run clean) · eslint 0 errors. PDF export does 0 network (isolated offline session + CSP). Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
-Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 → B3-finish/T1/T3/B4 → R10 → F11+T6 → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
+Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 → R10 → F11+T6 → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
 
 ---
 

@@ -29,7 +29,16 @@ const crypto = require('crypto');
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
 function bootstrap({ electron, fs, proc = process }) {
-  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen } = electron;
+  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session } = electron;
+
+  // Reject `promise` if it hasn't settled within `ms` — bounds a stuck PDF render so
+  // the export can't hang forever (T-B6). Clears the timer so no listener leaks.
+  function withTimeout(promise, ms) {
+    let timer;
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+  let pdfExportSeq = 0;
 
   // ==== CONTEXT-MENU ACTION DISPATCH (T-B12) ====
   // Executes the side-effecting click for an action descriptor from
@@ -281,6 +290,54 @@ function bootstrap({ electron, fs, proc = process }) {
       const res = settingsStore.save(merged);
       if (res && res.ok) currentSettings = merged;
       return res;
+    });
+
+    // ==== export:pdf (T-B6) ====
+    // The renderer (T-F6) builds the same standalone, bidi-aware note HTML it uses for
+    // HTML export and hands it here. We render it in a HIDDEN, sandboxed, JS-disabled
+    // window and printToPDF → a clean note document (no app chrome), independent of the
+    // live editor mode.
+    //
+    // SC2 (0 runtime network) is a HARD requirement, so the offscreen window renders on
+    // an ISOLATED session whose webRequest hard-blocks every non-local request: a note
+    // with a remote <img> must not phone home at export time (javascript:false blocks
+    // scripts but NOT passive subresource fetches — the session block is what enforces it).
+    // The HTML is written to a temp file and loadFile'd (no data:-URL size cliff, so even
+    // large Arabic notes export); the temp is always cleaned up.
+    ipcMain.handle('export:pdf', async (_event, payload) => {
+      if (!payload || typeof payload.html !== 'string') return { error: 'invalid' };
+      const parent = BrowserWindow.getFocusedWindow();
+      const defaultPath = (typeof payload.defaultName === 'string' && payload.defaultName) || 'document.pdf';
+      const result = await dialog.showSaveDialog(parent, {
+        title: 'Export PDF',
+        defaultPath,
+        filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+
+      // Isolated, offline session — cancel anything that isn't the local file/data we load.
+      const ses = session.fromPartition('pdf-export');
+      ses.webRequest.onBeforeRequest((details, cb) => cb({ cancel: !/^(file:|data:|about:)/i.test(details.url) }));
+
+      const tmpHtml = path.join(app.getPath('temp'), `bpmd-export-${Date.now()}-${pdfExportSeq++}.html`);
+      let pdfWin = null;
+      try {
+        await fs.promises.writeFile(tmpHtml, payload.html, 'utf8');
+        pdfWin = new BrowserWindow({
+          show: false,
+          webPreferences: { partition: 'pdf-export', sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+        });
+        pdfWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        await withTimeout(pdfWin.loadFile(tmpHtml), 30000);
+        const data = await withTimeout(pdfWin.webContents.printToPDF({ printBackground: true }), 30000);
+        await fs.promises.writeFile(result.filePath, data);
+        return { ok: true, path: result.filePath };
+      } catch (_) {
+        return { error: 'export-failed' };
+      } finally {
+        if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close();
+        fs.promises.unlink(tmpHtml).catch(() => { /* best-effort temp cleanup */ });
+      }
     });
 
     ipcMain.on('edit:command', (event, cmd) => {

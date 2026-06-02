@@ -17,6 +17,7 @@ import { mathExtension, restoreMath } from './math.js';
 import { sanitizeHtml, sanitizeSvg } from './trusted.js';
 import { renderMermaid } from './mermaid.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
+import { t as tr, localeDirection } from './locale.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -65,7 +66,9 @@ const { state: State, subscribe } = createState({
   zoomFactor: 1,
   calendar: 'gregorian',
   arabicKashida: false,
-  italicRecolor: true
+  italicRecolor: true,
+  uiLocale: 'en',
+  uiDirection: 'ltr'
 });
 
 // Export for testing via window (smoke tests only)
@@ -460,6 +463,7 @@ const MENU_DEFS = {
       { kind: 'check', name: 'Hijri (Umm al-Qura)', checked: () => State.calendar === 'hijri', action: () => setCalendar('hijri') },
       { kind: 'divider' },
       { kind: 'label', text: 'Arabic' },
+      { kind: 'check', name: 'Arabic Interface (العربية)', checked: () => State.uiDirection === 'rtl', action: () => toggleArabicUI() },
       { kind: 'check', name: 'Kashida Justification', checked: () => State.arabicKashida, action: () => toggleKashida() },
       { kind: 'divider' },
       { kind: 'label', text: 'Typography' },
@@ -495,8 +499,20 @@ function openMenu(e, name) {
   if (e.currentTarget.classList.contains('tb-menu-item')) e.currentTarget.classList.add('open-menu');
   dropdown.classList.add('open');
   dropdown.dataset.menu = name;
-  dropdown.style.insetInlineStart = MENU_DEFS[name].x + 'px';
-  _menuOpener = e.currentTarget;
+  // T-R7: align the dropdown's inline-start to the button's inline-start using LIVE
+  // geometry — correct under both LTR and RTL UI (and robust to localized label widths),
+  // unlike the old hard-coded LTR x offsets. Falls back to MENU_DEFS.x if geometry is absent.
+  const btnEl = e.currentTarget;
+  const parent = dropdown.offsetParent;
+  if (btnEl && typeof btnEl.getBoundingClientRect === 'function' && parent) {
+    const br = btnEl.getBoundingClientRect();
+    const pr = parent.getBoundingClientRect();
+    const rtl = getComputedStyle(parent).direction === 'rtl';
+    dropdown.style.insetInlineStart = Math.max(0, rtl ? (pr.right - br.right) : (br.left - pr.left)) + 'px';
+  } else {
+    dropdown.style.insetInlineStart = MENU_DEFS[name].x + 'px';
+  }
+  _menuOpener = btnEl;
   // Keyboard-opened (Enter/Space → click with detail 0): move focus into the menu
   // for roving navigation. Mouse-opened: leave focus on the editor so Copy/Cut from
   // the Edit menu still reads the live selection (the items preventDefault mousedown).
@@ -826,6 +842,42 @@ function setItalicRecolor(on) {
 function toggleItalicRecolor() { setItalicRecolor(!State.italicRecolor); }
 window.setItalicRecolor = setItalicRecolor;
 window.toggleItalicRecolor = toggleItalicRecolor;
+
+// ── T-R7: full RTL/Arabic UI (mirror + localize), persisted via F8 ──────────────
+// Localize chrome strings tagged with data-i18n. The original (English) innerHTML is
+// captured once into data-i18nOrig and restored for 'en' — so the default UI (incl. the
+// File/Edit/View/Help accelerator <u> underlines) is untouched, and 'ar' shows translations.
+function applyLocale(locale) {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    if (el.dataset.i18nOrig === undefined) el.dataset.i18nOrig = el.innerHTML;
+    if (locale === 'en') el.innerHTML = el.dataset.i18nOrig;
+    else el.textContent = tr(el.dataset.i18n, locale);
+  });
+}
+function setUiLocale(locale) {
+  if (locale !== 'en' && locale !== 'ar') return;
+  State.uiLocale = locale;
+  applyLocale(locale);
+}
+// Mirror the whole chrome by setting the document direction; the grid/flex layout and
+// logical CSS reverse, and the F11 chevrons flip. Content/code/math keep their own dir.
+function setUiDirection(dir) {
+  if (dir !== 'ltr' && dir !== 'rtl') return;
+  State.uiDirection = dir;
+  document.documentElement.setAttribute('dir', dir);
+}
+// One switch for the Arabic interface: ar+rtl together (locale implies direction).
+function setArabicUI(on) {
+  setUiLocale(on ? 'ar' : 'en');
+  setUiDirection(on ? localeDirection('ar') : localeDirection('en'));
+  closeMenu();
+  if (!_restoring) showToast(on ? 'الواجهة بالعربية' : 'English interface', 'info');
+}
+function toggleArabicUI() { setArabicUI(State.uiDirection !== 'rtl'); }
+window.setUiLocale = setUiLocale;
+window.setUiDirection = setUiDirection;
+window.setArabicUI = setArabicUI;
+window.toggleArabicUI = toggleArabicUI;
 
 // =====================================================================
 // EDIT MENU COMMANDS
@@ -1680,6 +1732,7 @@ const PALETTE_COMMANDS = [
   { sec: 'View', icon: '◐', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
   { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
   { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
+  { sec: 'View', icon: '🌐', name: 'Toggle Arabic Interface (العربية)', meta: 'view', act: toggleArabicUI },
   { sec: 'View', icon: 'ـ', name: 'Toggle Arabic Kashida Justification', meta: 'view', act: toggleKashida },
   { sec: 'View', icon: 'i', name: 'Toggle Italic Recolour', meta: 'view', act: toggleItalicRecolor },
   { sec: 'View', icon: '+', name: 'Zoom In',    meta: 'view', sk: 'Ctrl+=', act: zoomIn },
@@ -2037,7 +2090,7 @@ const SettingsBridge =
   (window.electronAPI && typeof window.electronAPI.getSettings === 'function')
     ? window.electronAPI : null;
 const PERSISTED_KEYS = new Set([
-  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor',
+  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor', 'uiLocale', 'uiDirection',
 ]);
 let _persistTimer = null;
 function persistSettings() {
@@ -2055,6 +2108,8 @@ function persistSettings() {
         calendar: State.calendar,
         arabicKashida: State.arabicKashida,
         italicRecolor: State.italicRecolor,
+        uiLocale: State.uiLocale,
+        uiDirection: State.uiDirection,
       });
     } catch (_) { /* persistence is best-effort; never break the UI */ }
   }, 200);
@@ -2095,6 +2150,8 @@ async function restoreSettings() {
     if (s.calendar === 'hijri' || s.calendar === 'gregorian') State.calendar = s.calendar;
     if (typeof s.arabicKashida === 'boolean') { State.arabicKashida = s.arabicKashida; applyKashida(); }
     if (typeof s.italicRecolor === 'boolean') { State.italicRecolor = s.italicRecolor; applyItalicRecolor(); }
+    if (s.uiLocale === 'ar' || s.uiLocale === 'en') setUiLocale(s.uiLocale);       // T-R7
+    if (s.uiDirection === 'rtl' || s.uiDirection === 'ltr') setUiDirection(s.uiDirection);
   } finally {
     _restoring = false;
   }

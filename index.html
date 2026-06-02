@@ -406,7 +406,9 @@ body {
   overflow: hidden;
   background: var(--paper);
   position: relative;
-  direction: ltr;
+  /* T-R7: no hard LTR lock — the chrome follows the UI direction (html[dir]). In RTL UI the
+     grid's inline axis reverses, so the sidebar's 240px track lands on the right and the
+     inspector's 280px track on the left (mirrored, original widths). Content/math keep dir:ltr. */
 }
 /* CSS Grid with display:none children leaves the remaining items to flow into
    the first available columns. So the column tracks must match the count of
@@ -437,8 +439,9 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 .reveal-strip:hover { background: var(--accent); color: white; }
-.reveal-sidebar  { left: 0;  border-left: none;  border-radius: 0 6px 6px 0; }
-.reveal-inspector { right: 0; border-right: none; border-radius: 6px 0 0 6px; }
+/* T-R7: logical insets so the strips track the panel edge under both LTR and RTL UI. */
+.reveal-sidebar  { inset-inline-start: 0; border-inline-start: none; border-start-end-radius: 6px; border-end-end-radius: 6px; }
+.reveal-inspector { inset-inline-end: 0; border-inline-end: none; border-start-start-radius: 6px; border-end-start-radius: 6px; }
 /* T-F11: directional chevrons (collapse/reveal sidebar & inspector) point toward the panel
    edge. When the UI itself is RTL (html[dir="rtl"] — set by R7), mirror them so they keep
    pointing the right way. scaleX(-1) flips any chevron glyph without swapping characters. */
@@ -825,6 +828,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-size: 1.0625rem;
   line-height: 1.7;
   color: var(--ink);
+  /* T-R7: anchor the note CONTENT to LTR independent of the UI chrome direction — so an
+     English note stays LTR even when the Arabic UI sets html[dir="rtl"]. Arabic docs flip
+     via the #editor[dir="rtl"] attribute below (set per-doc by applyBidiToNote). */
+  direction: ltr;
 }
 #editor[dir="rtl"] {
   direction: rtl;
@@ -1561,10 +1568,10 @@ html.electron .tab-add {
     </div>
 
     <div class="tb-menubar">
-      <button class="tb-menu-item" data-menu="file"><u>F</u>ile</button>
-      <button class="tb-menu-item" data-menu="edit"><u>E</u>dit</button>
-      <button class="tb-menu-item" data-menu="view"><u>V</u>iew</button>
-      <button class="tb-menu-item" data-menu="help"><u>H</u>elp</button>
+      <button class="tb-menu-item" data-menu="file" data-i18n="menu.file"><u>F</u>ile</button>
+      <button class="tb-menu-item" data-menu="edit" data-i18n="menu.edit"><u>E</u>dit</button>
+      <button class="tb-menu-item" data-menu="view" data-i18n="menu.view"><u>V</u>iew</button>
+      <button class="tb-menu-item" data-menu="help" data-i18n="menu.help"><u>H</u>elp</button>
     </div>
 
     <div class="tabs" id="tabs">
@@ -1618,9 +1625,9 @@ html.electron .tab-add {
       </div>
 
       <div class="sb-tabs">
-        <button class="sb-tab active" data-pane="files">Files</button>
-        <button class="sb-tab" data-pane="tags">Tags</button>
-        <button class="sb-tab" data-pane="search">Search</button>
+        <button class="sb-tab active" data-pane="files" data-i18n="panel.files">Files</button>
+        <button class="sb-tab" data-pane="tags" data-i18n="panel.tags">Tags</button>
+        <button class="sb-tab" data-pane="search" data-i18n="panel.search">Search</button>
       </div>
 
       <div class="sb-content">

@@ -298,7 +298,7 @@ interface EditorPort {
 
 | Task | Files | RED | Differentiator |
 |---|---|---|---|
-| ☐ T-R7 | `index.html` (drop `direction:ltr` lock), `src/renderer/i18n.js` (locale catalog), `tests/rtl-*.spec.js` | full UI mirrors (layout+glyphs) when `uiDirection=rtl`; strings localize via `uiLocale`; persisted; RTL chrome visual snapshot | **unique** |
+| ✅ T-R7 (core) | `index.html` (drop `.app-body` ltr lock; `data-i18n`; content LTR anchor on `.editor`; logical reveal-strip insets), `src/renderer/{locale,app}.js`, `tests/{r7-rtl-ui,unit/locale}` | UI mirrors layout+glyphs when `uiDirection=rtl` (sidebar→right, chevrons flip); primary chrome (menus + sidebar tabs) localizes via `uiLocale`/`locale.js`; persisted (F8); content/code/math stay LTR; RTL chrome visual snapshot. **Catalog expansion** (dropdown items, inspector/status/palette strings) = follow-up. | **unique** |
 | ☐ T-R8 | `index.html` (`newDailyNote`), `src/renderer/i18n.js` (Hijri) | Daily Note name+title in Hijri when `calendar=hijri` | unique |
 | ✅ T-R10 | `index.html` CSS, `src/{main/settings,renderer/app}.js`, `tests/{unit/settings,r10-kashida}` | Arabic blocks ragged by default; optional kashida justification (`text-justify: inter-character` on RTL prose blocks) toggled via View ▸ Arabic + palette, persisted (`arabicKashida` setting, F8); prose-only (headings/cells stay ragged) | unique |
 | ☐ T-R6 | front-matter parse, `bidi.js` | `direction:` front-matter honored; manual per-line override (hotkey) inserts/clears isolate | parity built-in |
@@ -360,7 +360,7 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 **Test status (after Task 5 — fonts + B4 CSP):** 768 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95; app.js/theme-boot.js excluded as e2e-tested glue) · full Playwright e2e 599/599 on win32 under strict CSP (csp e2e proves inline + REMOTE script/img/fetch are refused; KaTeX+mermaid render; accessibility axe loads locally) · eslint 0 errors (app.js now linted, warnings only). Strict CSP active (script-src 'self', no inline script); fonts self-hosted; 0 CDN/network anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
-Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
+Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 ✅(core; full string catalog deferred) → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
 
 ---
 

@@ -825,6 +825,16 @@ mark.find-hit.current { background: var(--accent); color: white; }
   line-height: 1.95;
 }
 
+/* T-R10: Arabic justification. OFF by default → RTL blocks stay RAGGED (the safe Arabic
+   default). When `.kashida` is set (View ▸ Arabic ▸ Kashida Justification, persisted),
+   RTL note blocks fill the measure via inter-character distribution — the closest CSS gets
+   to OpenType kashida in Chromium — while the last line stays ragged (text-align-last). */
+.kashida #noteContent :is(p, li)[dir="rtl"] {
+  text-align: justify;
+  text-justify: inter-character;
+  text-align-last: start;
+}
+
 .editor h1 {
   font-family: var(--serif);
   font-size: 2.625rem;

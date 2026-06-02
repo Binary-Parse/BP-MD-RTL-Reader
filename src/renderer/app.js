@@ -63,7 +63,8 @@ const { state: State, subscribe } = createState({
   findHits: [],
   findIdx: 0,
   zoomFactor: 1,
-  calendar: 'gregorian'
+  calendar: 'gregorian',
+  arabicKashida: false
 });
 
 // Export for testing via window (smoke tests only)
@@ -457,6 +458,9 @@ const MENU_DEFS = {
       { kind: 'check', name: 'Gregorian', checked: () => State.calendar === 'gregorian', action: () => setCalendar('gregorian') },
       { kind: 'check', name: 'Hijri (Umm al-Qura)', checked: () => State.calendar === 'hijri', action: () => setCalendar('hijri') },
       { kind: 'divider' },
+      { kind: 'label', text: 'Arabic' },
+      { kind: 'check', name: 'Kashida Justification', checked: () => State.arabicKashida, action: () => toggleKashida() },
+      { kind: 'divider' },
       { kind: 'label', text: 'Zoom' },
       { kind: 'item', icon: '+', name: 'Zoom In',    shortcut: 'Ctrl+=', action: () => { zoomIn();    closeMenu(); } },
       { kind: 'item', icon: '−', name: 'Zoom Out',   shortcut: 'Ctrl+-', action: () => { zoomOut();   closeMenu(); } },
@@ -790,6 +794,20 @@ function setCalendar(cal) {
   showToast(`Calendar: ${cal === 'hijri' ? 'Hijri (Umm al-Qura)' : 'Gregorian'}`, 'info');
 }
 window.setCalendar = setCalendar;
+
+// T-R10: Arabic justification. Default OFF = ragged (the typographically safe default for
+// Arabic). When ON, RTL blocks fill the measure via inter-character distribution (the
+// closest CSS gets to OpenType kashida in Chromium) — see the `.kashida` rule. Persisted (F8).
+function applyKashida() { appBody.classList.toggle('kashida', !!State.arabicKashida); }
+function setKashida(on) {
+  State.arabicKashida = !!on; // triggers persistSettings via the subscribe hook
+  applyKashida();
+  closeMenu();
+  if (!_restoring) showToast(`Arabic justification: ${State.arabicKashida ? 'kashida' : 'ragged'}`, 'info');
+}
+function toggleKashida() { setKashida(!State.arabicKashida); }
+window.setKashida = setKashida;
+window.toggleKashida = toggleKashida;
 
 // =====================================================================
 // EDIT MENU COMMANDS
@@ -1612,6 +1630,7 @@ const PALETTE_COMMANDS = [
   { sec: 'View', icon: '◐', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
   { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
   { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
+  { sec: 'View', icon: 'ـ', name: 'Toggle Arabic Kashida Justification', meta: 'view', act: toggleKashida },
   { sec: 'View', icon: '+', name: 'Zoom In',    meta: 'view', sk: 'Ctrl+=', act: zoomIn },
   { sec: 'View', icon: '−', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
   { sec: 'View', icon: '1', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
@@ -1914,7 +1933,7 @@ const SettingsBridge =
   (window.electronAPI && typeof window.electronAPI.getSettings === 'function')
     ? window.electronAPI : null;
 const PERSISTED_KEYS = new Set([
-  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar',
+  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
 ]);
 let _persistTimer = null;
 function persistSettings() {
@@ -1930,6 +1949,7 @@ function persistSettings() {
         inspectorVisible: State.inspectorVisible,
         recents: State.recents.map(r => ({ name: r.name, path: r.path })),
         calendar: State.calendar,
+        arabicKashida: State.arabicKashida,
       });
     } catch (_) { /* persistence is best-effort; never break the UI */ }
   }, 200);
@@ -1968,6 +1988,7 @@ async function restoreSettings() {
       renderRecents();
     }
     if (s.calendar === 'hijri' || s.calendar === 'gregorian') State.calendar = s.calendar;
+    if (typeof s.arabicKashida === 'boolean') { State.arabicKashida = s.arabicKashida; applyKashida(); }
   } finally {
     _restoring = false;
   }

@@ -19,6 +19,13 @@ describe('migrate (EC-D1)', () => {
     expect('evil' in m).toBe(false);
     expect(m.version).toBe(1);
   });
+  test('arabicKashida (T-R10): defaults false; accepts boolean; coerces non-boolean to default', () => {
+    expect(defaultSettings().arabicKashida).toBe(false);   // ragged by default
+    expect(migrate({ arabicKashida: true }).arabicKashida).toBe(true);
+    expect(migrate({ arabicKashida: 'yes' }).arabicKashida).toBe(false); // non-boolean → default
+    expect(migrate({}).arabicKashida).toBe(false);
+  });
+
   test('recents sanitized + capped at 10', () => {
     const recents = Array.from({ length: 15 }, (_, i) => ({ name: 'n' + i, path: '/p' + i }));
     recents.push({ name: 'bad' }); // no path → dropped

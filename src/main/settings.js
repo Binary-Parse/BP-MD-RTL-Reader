@@ -18,6 +18,7 @@ const DEFAULTS = Object.freeze({
   uiLocale: 'en',
   numerals: 'western',
   calendar: 'gregorian',
+  arabicKashida: false,
   recents: [],
   window: { w: 1280, h: 820, maximized: false },
   lastSession: null,
@@ -49,6 +50,7 @@ function migrate(raw) {
   if (raw.uiLocale === 'ar' || raw.uiLocale === 'en') out.uiLocale = raw.uiLocale;
   if (raw.numerals === 'arabic-indic' || raw.numerals === 'western') out.numerals = raw.numerals;
   if (raw.calendar === 'hijri' || raw.calendar === 'gregorian') out.calendar = raw.calendar;
+  if (typeof raw.arabicKashida === 'boolean') out.arabicKashida = raw.arabicKashida;
   if (Array.isArray(raw.recents)) {
     out.recents = raw.recents
       .filter(r => r && typeof r.path === 'string')

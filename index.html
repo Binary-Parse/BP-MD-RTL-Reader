@@ -1599,7 +1599,7 @@ html.electron .tab-add {
     <div class="tb-actions">
       <div class="tb-search" id="searchBtn" role="button" tabindex="0" aria-label="Search files">
         <span style="font-family: var(--serif); font-style: italic;">⌘</span>
-        <span>Search files…</span>
+        <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </div>
       <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)" aria-label="Flip text direction">⇄</button>
@@ -1672,10 +1672,10 @@ html.electron .tab-add {
         <div class="sb-pane" data-pane="search">
           <div class="search-pane">
             <div class="search-input-wrap">
-              <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…">
+              <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…" data-i18n-placeholder="search.placeholder">
             </div>
             <div class="search-results" id="searchResults">
-              <div class="search-empty">Type to search.</div>
+              <div class="search-empty" data-i18n="search.empty">Type to search.</div>
             </div>
           </div>
         </div>
@@ -1714,29 +1714,29 @@ html.electron .tab-add {
             <div class="editor-welcome" id="welcome">
               <div class="welcome-card">
                 <div class="logo">BP</div>
-                <h1>Welcome to <em>BP MD RTL Reader</em></h1>
-                <p class="lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
+                <h1 data-i18n-html="welcome.title">Welcome to <em>BP MD RTL Reader</em></h1>
+                <p class="lede" data-i18n-html="welcome.lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
                 <div class="welcome-actions">
                   <button class="welcome-btn" id="wbOpenVault">
-                    <div class="wb-title"><span class="wb-icon">⌂</span>Open Folder<span class="wb-shortcut">Ctrl+Shift+O</span></div>
-                    <div class="wb-sub">Pick a folder containing your markdown files.</div>
+                    <div class="wb-title"><span class="wb-icon">⌂</span><span data-i18n="welcome.openFolder">Open Folder</span><span class="wb-shortcut">Ctrl+Shift+O</span></div>
+                    <div class="wb-sub" data-i18n="welcome.openFolderSub">Pick a folder containing your markdown files.</div>
                   </button>
                   <button class="welcome-btn" id="wbOpenFile">
-                    <div class="wb-title"><span class="wb-icon">¶</span>Open File<span class="wb-shortcut">Ctrl+O</span></div>
-                    <div class="wb-sub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
+                    <div class="wb-title"><span class="wb-icon">¶</span><span data-i18n="welcome.openFile">Open File</span><span class="wb-shortcut">Ctrl+O</span></div>
+                    <div class="wb-sub" data-i18n-html="welcome.openFileSub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
                   </button>
                   <button class="welcome-btn" id="wbNewNote">
-                    <div class="wb-title"><span class="wb-icon">+</span>New Note<span class="wb-shortcut">Ctrl+N</span></div>
-                    <div class="wb-sub">Start a fresh note in a new tab.</div>
+                    <div class="wb-title"><span class="wb-icon">+</span><span data-i18n="welcome.newNote">New Note</span><span class="wb-shortcut">Ctrl+N</span></div>
+                    <div class="wb-sub" data-i18n="welcome.newNoteSub">Start a fresh note in a new tab.</div>
                   </button>
                   <button class="welcome-btn" id="wbLoadDemo">
-                    <div class="wb-title"><span class="wb-icon">★</span>Try Demo</div>
-                    <div class="wb-sub">Sample notes in English and Arabic.</div>
+                    <div class="wb-title"><span class="wb-icon">★</span><span data-i18n="welcome.tryDemo">Try Demo</span></div>
+                    <div class="wb-sub" data-i18n="welcome.tryDemoSub">Sample notes in English and Arabic.</div>
                   </button>
                 </div>
                 <div class="recent-list">
-                  <div class="recent-label">Recent</div>
-                  <div class="recent-empty" id="recentEmpty">No recent files yet.</div>
+                  <div class="recent-label" data-i18n="welcome.recent">Recent</div>
+                  <div class="recent-empty" id="recentEmpty" data-i18n="welcome.recentEmpty">No recent files yet.</div>
                   <div id="recentList"></div>
                 </div>
               </div>
@@ -1748,11 +1748,11 @@ html.electron .tab-add {
 
       <!-- Find bar -->
       <div class="find-bar" id="findBar">
-        <input type="text" id="findInput" placeholder="Find in note…">
+        <input type="text" id="findInput" placeholder="Find in note…" data-i18n-placeholder="find.placeholder">
         <span class="find-info" id="findInfo">0/0</span>
-        <button class="find-btn" id="findPrevBtn" title="Previous">↑</button>
-        <button class="find-btn" id="findNextBtn" title="Next">↓</button>
-        <button class="find-btn" id="findCloseBtn" title="Close" aria-label="Close find">×</button>
+        <button class="find-btn" id="findPrevBtn" title="Previous" data-i18n-title="find.prev">↑</button>
+        <button class="find-btn" id="findNextBtn" title="Next" data-i18n-title="find.next">↓</button>
+        <button class="find-btn" id="findCloseBtn" title="Close" aria-label="Close find" data-i18n-title="find.close">×</button>
       </div>
     </main>
 

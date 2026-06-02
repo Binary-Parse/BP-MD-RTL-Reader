@@ -31,6 +31,18 @@ export const MESSAGES = {
     'menu.zoom': 'Zoom', 'menu.zoomIn': 'Zoom In', 'menu.zoomOut': 'Zoom Out', 'menu.resetZoom': 'Reset Zoom',
     'menu.commandPalette': 'Command Palette', 'menu.shortcuts': 'Keyboard Shortcuts',
     'menu.checkUpdates': 'Check for Updates…', 'menu.about': 'About BP MD RTL Reader',
+    // Welcome screen (T-R7). Title/lede/openFileSub carry inline markup → data-i18n-html.
+    'welcome.title': 'Welcome to <em>BP MD RTL Reader</em>',
+    'welcome.lede': 'A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.',
+    'welcome.openFolder': 'Open Folder', 'welcome.openFolderSub': 'Pick a folder containing your markdown files.',
+    'welcome.openFile': 'Open File', 'welcome.openFileSub': 'Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.',
+    'welcome.newNote': 'New Note', 'welcome.newNoteSub': 'Start a fresh note in a new tab.',
+    'welcome.tryDemo': 'Try Demo', 'welcome.tryDemoSub': 'Sample notes in English and Arabic.',
+    'welcome.recent': 'Recent', 'welcome.recentEmpty': 'No recent files yet.',
+    // Find bar + sidebar search + titlebar search (T-R7).
+    'find.placeholder': 'Find in note…', 'find.prev': 'Previous', 'find.next': 'Next', 'find.close': 'Close',
+    'search.placeholder': 'Search in all files…', 'search.empty': 'Type to search.',
+    'titlebar.search': 'Search files…',
   },
   ar: {
     'menu.file': 'ملف', 'menu.edit': 'تحرير', 'menu.view': 'عرض', 'menu.help': 'مساعدة',
@@ -58,6 +70,18 @@ export const MESSAGES = {
     'menu.zoom': 'التكبير', 'menu.zoomIn': 'تكبير', 'menu.zoomOut': 'تصغير', 'menu.resetZoom': 'إعادة التكبير',
     'menu.commandPalette': 'لوحة الأوامر', 'menu.shortcuts': 'اختصارات لوحة المفاتيح',
     'menu.checkUpdates': 'التحقق من التحديثات…', 'menu.about': 'حول BP MD RTL Reader',
+    // Welcome screen (T-R7). The product name + the .md extension stay Latin (content).
+    'welcome.title': 'مرحبًا بك في <em>BP MD RTL Reader</em>',
+    'welcome.lede': 'قارئ ماركداون يعامل النص كعمل أدبي، ثنائي اللغة في جوهره. افتح مجلدًا من ملفات <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> — أو افتح ملفًا واحدًا — للبدء.',
+    'welcome.openFolder': 'فتح مجلد', 'welcome.openFolderSub': 'اختر مجلدًا يحتوي على ملفات ماركداون.',
+    'welcome.openFile': 'فتح ملف', 'welcome.openFileSub': 'افتح ملف <code style="font-family: var(--mono); font-size: 11px;">.md</code> واحدًا.',
+    'welcome.newNote': 'ملاحظة جديدة', 'welcome.newNoteSub': 'ابدأ ملاحظة جديدة في تبويب جديد.',
+    'welcome.tryDemo': 'جرّب العرض', 'welcome.tryDemoSub': 'ملاحظات تجريبية بالعربية والإنجليزية.',
+    'welcome.recent': 'الأخيرة', 'welcome.recentEmpty': 'لا ملفات حديثة بعد.',
+    // Find bar + sidebar search + titlebar search (T-R7).
+    'find.placeholder': 'بحث في الملاحظة…', 'find.prev': 'السابق', 'find.next': 'التالي', 'find.close': 'إغلاق',
+    'search.placeholder': 'بحث في كل الملفات…', 'search.empty': 'اكتب للبحث.',
+    'titlebar.search': 'بحث في الملفات…',
   },
 };
 

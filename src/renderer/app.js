@@ -879,6 +879,22 @@ function applyLocale(locale) {
     if (locale === 'en') el.innerHTML = el.dataset.i18nOrig;
     else el.textContent = tr(el.dataset.i18n, locale);
   });
+  // Elements whose localized string carries trusted inline markup (welcome title/lede
+  // with <em>/<code>) — set via innerHTML from the static catalog (T-R7).
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    if (el.dataset.i18nHtmlOrig === undefined) el.dataset.i18nHtmlOrig = el.innerHTML;
+    el.innerHTML = locale === 'en' ? el.dataset.i18nHtmlOrig : tr(el.dataset.i18nHtml, locale);
+  });
+  // <input> placeholders — textContent/innerHTML don't apply (find/search bars, T-R7).
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    if (el.dataset.i18nPhOrig === undefined) el.dataset.i18nPhOrig = el.getAttribute('placeholder') || '';
+    el.setAttribute('placeholder', locale === 'en' ? el.dataset.i18nPhOrig : tr(el.dataset.i18nPlaceholder, locale));
+  });
+  // title= tooltips (find prev/next/close buttons, T-R7).
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    if (el.dataset.i18nTitleOrig === undefined) el.dataset.i18nTitleOrig = el.getAttribute('title') || '';
+    el.setAttribute('title', locale === 'en' ? el.dataset.i18nTitleOrig : tr(el.dataset.i18nTitle, locale));
+  });
 }
 function setUiLocale(locale) {
   if (locale !== 'en' && locale !== 'ar') return;

@@ -90,6 +90,34 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     expect(dir.para).toBe('ltr');
   });
 
+  test('Arabic UI localizes the welcome screen (title, buttons, lede markup, recent)', async ({ page }) => {
+    await page.evaluate(() => window.setArabicUI(true));
+    expect(await page.locator('.welcome-card h1').textContent()).toContain('مرحبًا');
+    expect(await page.locator('.welcome-card h1 em').textContent()).toBe('BP MD RTL Reader'); // brand stays Latin
+    expect(await page.locator('[data-i18n="welcome.openFolder"]').textContent()).toBe('فتح مجلد');
+    expect(await page.locator('[data-i18n="welcome.tryDemo"]').textContent()).toBe('جرّب العرض');
+    expect(await page.locator('[data-i18n="welcome.recent"]').textContent()).toBe('الأخيرة');
+    // the lede keeps its inline <code>.md</code> after the HTML-aware swap
+    expect(await page.locator('.welcome-card .lede code').textContent()).toBe('.md');
+    expect(await page.locator('.welcome-card .lede').textContent()).toContain('قارئ ماركداون');
+    // no Latin leak in a localized button label
+    expect(/[A-Za-z]/.test(await page.locator('[data-i18n="welcome.openFile"]').textContent())).toBe(false);
+  });
+
+  test('Arabic UI localizes the find + search placeholders and find-button tooltips', async ({ page }) => {
+    await page.evaluate(() => window.setArabicUI(true));
+    expect(await page.locator('#findInput').getAttribute('placeholder')).toBe('بحث في الملاحظة…');
+    expect(await page.locator('#sbSearchInput').getAttribute('placeholder')).toBe('بحث في كل الملفات…');
+    expect(await page.locator('.tb-search [data-i18n="titlebar.search"]').textContent()).toBe('بحث في الملفات…');
+    expect(await page.locator('#findPrevBtn').getAttribute('title')).toBe('السابق');
+    expect(await page.locator('#findCloseBtn').getAttribute('title')).toBe('إغلاق');
+    // toggling back to English restores the originals exactly
+    await page.evaluate(() => window.setArabicUI(false));
+    expect(await page.locator('#findInput').getAttribute('placeholder')).toBe('Find in note…');
+    expect(await page.locator('.welcome-card h1').textContent()).toContain('Welcome to');
+    expect(await page.locator('#findNextBtn').getAttribute('title')).toBe('Next');
+  });
+
   test('[Visual] Arabic (RTL) chrome at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(() => { window.loadDemo(); window.setArabicUI(true); });

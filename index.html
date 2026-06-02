@@ -1795,13 +1795,13 @@ html.electron .tab-add {
   <div class="palette-overlay" id="palOverlay">
     <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
       <div class="pal-input-wrap">
-        <input class="pal-input" id="palInput" placeholder="Type a command, search files…">
+        <input class="pal-input" id="palInput" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">
       </div>
       <div class="pal-results" id="palResults"></div>
       <div class="pal-footer">
-        <span><span class="kbd">↑↓</span> navigate</span>
-        <span><span class="kbd">↵</span> open</span>
-        <span><span class="kbd">esc</span> close</span>
+        <span><span class="kbd">↑↓</span> <span data-i18n="palette.navigate">navigate</span></span>
+        <span><span class="kbd">↵</span> <span data-i18n="palette.openHint">open</span></span>
+        <span><span class="kbd">esc</span> <span data-i18n="palette.close">close</span></span>
       </div>
     </div>
   </div>

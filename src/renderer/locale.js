@@ -43,6 +43,21 @@ export const MESSAGES = {
     'find.placeholder': 'Find in note…', 'find.prev': 'Previous', 'find.next': 'Next', 'find.close': 'Close',
     'search.placeholder': 'Search in all files…', 'search.empty': 'Type to search.',
     'titlebar.search': 'Search files…',
+    // Command palette (T-R7). en values MUST match the PALETTE_COMMANDS names verbatim
+    // (ellipsis/casing/arrows) so the default English palette is byte-identical.
+    'palette.placeholder': 'Type a command, search files…', 'palette.noMatches': 'No matches.',
+    'palette.navigate': 'navigate', 'palette.openHint': 'open', 'palette.close': 'close',
+    'palette.sec.files': 'Files', 'palette.sec.view': 'View', 'palette.sec.help': 'Help', 'palette.sec.filesInFolder': 'Files in folder',
+    'palette.openFolder': 'Open Folder…', 'palette.openFile': 'Open File…', 'palette.newNote': 'New Note',
+    'palette.save': 'Save', 'palette.exportHtml': 'Export HTML', 'palette.exportPdf': 'Export PDF', 'palette.loadDemo': 'Load demo notes',
+    'palette.modeLive': 'Mode: Live preview', 'palette.modeSplit': 'Mode: Split view', 'palette.modeSource': 'Mode: Source',
+    'palette.flip': 'Flip direction (RTL ⇄ LTR)',
+    'palette.themePaper': 'Theme: Paper', 'palette.themeInk': 'Theme: Ink', 'palette.themeSepia': 'Theme: Sepia',
+    'palette.toggleSidebar': 'Toggle Sidebar', 'palette.toggleInspector': 'Toggle Inspector',
+    'palette.toggleArabic': 'Toggle Arabic Interface (العربية)', 'palette.toggleKashida': 'Toggle Arabic Kashida Justification',
+    'palette.toggleItalic': 'Toggle Italic Recolour',
+    'palette.zoomIn': 'Zoom In', 'palette.zoomOut': 'Zoom Out', 'palette.resetZoom': 'Reset Zoom',
+    'palette.shortcuts': 'Keyboard Shortcuts', 'palette.about': 'About BP MD RTL Reader',
   },
   ar: {
     'menu.file': 'ملف', 'menu.edit': 'تحرير', 'menu.view': 'عرض', 'menu.help': 'مساعدة',
@@ -82,6 +97,20 @@ export const MESSAGES = {
     'find.placeholder': 'بحث في الملاحظة…', 'find.prev': 'السابق', 'find.next': 'التالي', 'find.close': 'إغلاق',
     'search.placeholder': 'بحث في كل الملفات…', 'search.empty': 'اكتب للبحث.',
     'titlebar.search': 'بحث في الملفات…',
+    // Command palette (T-R7). Latin acronyms (HTML/PDF/RTL/LTR) + product name stay verbatim.
+    'palette.placeholder': 'اكتب أمرًا أو ابحث في الملفات…', 'palette.noMatches': 'لا نتائج.',
+    'palette.navigate': 'تنقّل', 'palette.openHint': 'فتح', 'palette.close': 'إغلاق',
+    'palette.sec.files': 'الملفات', 'palette.sec.view': 'عرض', 'palette.sec.help': 'مساعدة', 'palette.sec.filesInFolder': 'ملفات في المجلد',
+    'palette.openFolder': 'فتح مجلد…', 'palette.openFile': 'فتح ملف…', 'palette.newNote': 'ملاحظة جديدة',
+    'palette.save': 'حفظ', 'palette.exportHtml': 'تصدير HTML', 'palette.exportPdf': 'تصدير PDF', 'palette.loadDemo': 'تحميل ملاحظات تجريبية',
+    'palette.modeLive': 'الوضع: معاينة حيّة', 'palette.modeSplit': 'الوضع: عرض مقسّم', 'palette.modeSource': 'الوضع: المصدر',
+    'palette.flip': 'قلب الاتجاه (RTL ⇄ LTR)',
+    'palette.themePaper': 'السمة: ورقي', 'palette.themeInk': 'السمة: حبر', 'palette.themeSepia': 'السمة: بنّي داكن',
+    'palette.toggleSidebar': 'إظهار/إخفاء الشريط الجانبي', 'palette.toggleInspector': 'إظهار/إخفاء المُعايِن',
+    'palette.toggleArabic': 'تبديل الواجهة العربية (العربية)', 'palette.toggleKashida': 'تبديل الضبط بالكشيدة',
+    'palette.toggleItalic': 'تبديل تلوين المائل',
+    'palette.zoomIn': 'تكبير', 'palette.zoomOut': 'تصغير', 'palette.resetZoom': 'إعادة التكبير',
+    'palette.shortcuts': 'اختصارات لوحة المفاتيح', 'palette.about': 'حول BP MD RTL Reader',
   },
 };
 

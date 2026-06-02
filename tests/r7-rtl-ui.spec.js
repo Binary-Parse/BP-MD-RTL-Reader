@@ -118,6 +118,31 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     expect(await page.locator('#findNextBtn').getAttribute('title')).toBe('Next');
   });
 
+  test('Arabic UI localizes the command palette (commands, sections, placeholder, footer)', async ({ page }) => {
+    await page.evaluate(() => { window.setArabicUI(true); window.openPalette(); });
+    await page.waitForTimeout(60);
+    expect(await page.locator('#palInput').getAttribute('placeholder')).toBe('اكتب أمرًا أو ابحث في الملفات…');
+    expect(await page.locator('[data-i18n="palette.navigate"]').textContent()).toBe('تنقّل');
+    const names = await page.locator('#palResults .pi-name').allTextContents();
+    expect(names).toContain('فتح مجلد…');        // Open Folder…
+    expect(names).toContain('السمة: ورقي');       // Theme: Paper
+    expect(names).not.toContain('Open Folder…');  // English is gone
+    expect(names).not.toContain('Theme: Paper');
+    // Latin acronyms/brand stay verbatim INSIDE Arabic command names
+    expect(names).toContain('تصدير HTML');
+    expect(await page.locator('#palResults .pal-section-label').first().textContent()).toBe('الملفات');
+  });
+
+  test('the default English palette is unchanged (en keys match verbatim)', async ({ page }) => {
+    await page.evaluate(() => window.openPalette());
+    await page.waitForTimeout(60);
+    const names = await page.locator('#palResults .pi-name').allTextContents();
+    expect(names).toContain('Open Folder…');
+    expect(names).toContain('Mode: Live preview');
+    expect(await page.locator('#palResults .pal-section-label').first().textContent()).toBe('Files');
+    expect(await page.locator('#palInput').getAttribute('placeholder')).toBe('Type a command, search files…');
+  });
+
   test('[Visual] Arabic (RTL) chrome at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(() => { window.loadDemo(); window.setArabicUI(true); });

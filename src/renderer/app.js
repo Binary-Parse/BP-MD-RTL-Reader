@@ -1846,31 +1846,34 @@ window.lineStart = lineStart;
 // =====================================================================
 // COMMAND PALETTE
 // =====================================================================
+// Section labels carry a stable English `sec` (used for grouping + English display)
+// and a localization key resolved at render time (T-R7).
+const PAL_SEC_KEY = { 'Files': 'palette.sec.files', 'View': 'palette.sec.view', 'Help': 'palette.sec.help', 'Files in folder': 'palette.sec.filesInFolder' };
 const PALETTE_COMMANDS = [
-  { sec: 'Files', icon: '⌂', name: 'Open Folder…', meta: 'command', sk: 'Ctrl+⇧+O', act: openVault },
-  { sec: 'Files', icon: '¶', name: 'Open File…', meta: 'command', sk: 'Ctrl+O', act: openSingleFile },
-  { sec: 'Files', icon: '+', name: 'New Note', meta: 'command', sk: 'Ctrl+N', act: newNote },
-  { sec: 'Files', icon: '↓', name: 'Save', meta: 'command', sk: 'Ctrl+S', act: saveCurrent },
-  { sec: 'Files', icon: '⇪', name: 'Export HTML', meta: 'command', act: () => exportHTML() },
-  { sec: 'Files', icon: '⎙', name: 'Export PDF', meta: 'command', act: () => exportPDF() },
-  { sec: 'Files', icon: '★', name: 'Load demo notes', meta: 'command', act: loadDemo },
-  { sec: 'View', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
-  { sec: 'View', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },
-  { sec: 'View', icon: '<>', name: 'Mode: Source', meta: 'view', act: () => setEditorMode('source') },
-  { sec: 'View', icon: '⇄', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
-  { sec: 'View', icon: '◐', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
-  { sec: 'View', icon: '◐', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
-  { sec: 'View', icon: '◐', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
-  { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
-  { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
-  { sec: 'View', icon: '🌐', name: 'Toggle Arabic Interface (العربية)', meta: 'view', act: toggleArabicUI },
-  { sec: 'View', icon: 'ـ', name: 'Toggle Arabic Kashida Justification', meta: 'view', act: toggleKashida },
-  { sec: 'View', icon: 'i', name: 'Toggle Italic Recolour', meta: 'view', act: toggleItalicRecolor },
-  { sec: 'View', icon: '+', name: 'Zoom In',    meta: 'view', sk: 'Ctrl+=', act: zoomIn },
-  { sec: 'View', icon: '−', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
-  { sec: 'View', icon: '1', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
-  { sec: 'Help', icon: '⌨', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
-  { sec: 'Help', icon: 'i', name: 'About BP MD RTL Reader', meta: 'help', act: showAbout }
+  { sec: 'Files', key: 'palette.openFolder', icon: '⌂', name: 'Open Folder…', meta: 'command', sk: 'Ctrl+⇧+O', act: openVault },
+  { sec: 'Files', key: 'palette.openFile', icon: '¶', name: 'Open File…', meta: 'command', sk: 'Ctrl+O', act: openSingleFile },
+  { sec: 'Files', key: 'palette.newNote', icon: '+', name: 'New Note', meta: 'command', sk: 'Ctrl+N', act: newNote },
+  { sec: 'Files', key: 'palette.save', icon: '↓', name: 'Save', meta: 'command', sk: 'Ctrl+S', act: saveCurrent },
+  { sec: 'Files', key: 'palette.exportHtml', icon: '⇪', name: 'Export HTML', meta: 'command', act: () => exportHTML() },
+  { sec: 'Files', key: 'palette.exportPdf', icon: '⎙', name: 'Export PDF', meta: 'command', act: () => exportPDF() },
+  { sec: 'Files', key: 'palette.loadDemo', icon: '★', name: 'Load demo notes', meta: 'command', act: loadDemo },
+  { sec: 'View', key: 'palette.modeLive', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
+  { sec: 'View', key: 'palette.modeSplit', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },
+  { sec: 'View', key: 'palette.modeSource', icon: '<>', name: 'Mode: Source', meta: 'view', act: () => setEditorMode('source') },
+  { sec: 'View', key: 'palette.flip', icon: '⇄', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
+  { sec: 'View', key: 'palette.themePaper', icon: '◐', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
+  { sec: 'View', key: 'palette.themeInk', icon: '◐', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
+  { sec: 'View', key: 'palette.themeSepia', icon: '◐', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
+  { sec: 'View', key: 'palette.toggleSidebar', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
+  { sec: 'View', key: 'palette.toggleInspector', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
+  { sec: 'View', key: 'palette.toggleArabic', icon: '🌐', name: 'Toggle Arabic Interface (العربية)', meta: 'view', act: toggleArabicUI },
+  { sec: 'View', key: 'palette.toggleKashida', icon: 'ـ', name: 'Toggle Arabic Kashida Justification', meta: 'view', act: toggleKashida },
+  { sec: 'View', key: 'palette.toggleItalic', icon: 'i', name: 'Toggle Italic Recolour', meta: 'view', act: toggleItalicRecolor },
+  { sec: 'View', key: 'palette.zoomIn', icon: '+', name: 'Zoom In',    meta: 'view', sk: 'Ctrl+=', act: zoomIn },
+  { sec: 'View', key: 'palette.zoomOut', icon: '−', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
+  { sec: 'View', key: 'palette.resetZoom', icon: '1', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
+  { sec: 'Help', key: 'palette.shortcuts', icon: '⌨', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
+  { sec: 'Help', key: 'palette.about', icon: 'i', name: 'About BP MD RTL Reader', meta: 'help', act: showAbout }
 ];
 
 let palIdx = 0, palVisible = [];
@@ -1903,30 +1906,37 @@ window.PALETTE_COMMANDS = PALETTE_COMMANDS;
 
 function filterPalette(q) {
   q = (q || '').trim().toLowerCase();
+  const loc = State.uiLocale;
+  const labelOf = (c) => (c.key ? tr(c.key, loc) : c.name); // localized display name (T-R7)
   const items = [];
-  PALETTE_COMMANDS.forEach(c => { if (!q || c.name.toLowerCase().includes(q)) items.push({ ...c, _kind: 'cmd' }); });
+  // Match BOTH the English name and the localized label so search works in either language.
+  PALETTE_COMMANDS.forEach(c => {
+    const label = labelOf(c);
+    if (!q || c.name.toLowerCase().includes(q) || label.toLowerCase().includes(q)) items.push({ ...c, _kind: 'cmd', _label: label });
+  });
   State.files.forEach((f, i) => {
     if (!q || f.name.toLowerCase().includes(q)) {
-      items.push({ sec: 'Files in folder', icon: '¶', name: f.name, meta: f.path, _kind: 'file', _idx: i });
+      items.push({ sec: 'Files in folder', icon: '¶', name: f.name, _label: f.name, meta: f.path, _kind: 'file', _idx: i });
     }
   });
   const sections = {};
   items.forEach(it => { sections[it.sec] = sections[it.sec] || []; sections[it.sec].push(it); });
   let html = ''; palVisible = [];
   Object.entries(sections).forEach(([sec, arr]) => {
-    html += `<div class="pal-section-label">${escapeHtml(sec)}</div>`;
+    const secLabel = PAL_SEC_KEY[sec] ? tr(PAL_SEC_KEY[sec], loc) : sec;
+    html += `<div class="pal-section-label">${escapeHtml(secLabel)}</div>`;
     arr.forEach(it => {
       palVisible.push(it);
       const sk = it.sk ? `<span class="pi-shortcut">${it.sk.split('+').map(p => `<span class="kbd">${p}</span>`).join('')}</span>` : '';
       html += `<div class="pal-item${palVisible.length === 1 ? ' active' : ''}" data-i="${palVisible.length - 1}">
         <span class="pi-icon">${escapeHtml(it.icon)}</span>
-        <span class="pi-name">${escapeHtml(it.name)}</span>
+        <span class="pi-name">${escapeHtml(it._label || it.name)}</span>
         <span class="pi-meta">${escapeHtml(it.meta || '')}</span>
         ${sk}
       </div>`;
     });
   });
-  if (!items.length) html = '<div class="search-empty" style="padding: 20px;">No matches.</div>';
+  if (!items.length) html = `<div class="search-empty" style="padding: 20px;">${escapeHtml(tr('palette.noMatches', loc))}</div>`;
   palResults.innerHTML = html;
   palIdx = 0;
   palResults.querySelectorAll('.pal-item').forEach(el => {

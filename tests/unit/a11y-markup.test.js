@@ -44,3 +44,12 @@ describe('toast is a live region (T-F3)', () => {
     expect(tag).toMatch(/aria-live="polite"/);
   });
 });
+
+describe('overlays are labelled modal dialogs (T-F4)', () => {
+  test('command palette inner is role=dialog aria-modal', () => {
+    expect(html).toMatch(/<div class="palette" role="dialog" aria-modal="true"[^>]*>/);
+  });
+  test('modal inner is role=dialog aria-modal labelled by its title', () => {
+    expect(html).toMatch(/<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">/);
+  });
+});

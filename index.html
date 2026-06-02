@@ -1671,7 +1671,7 @@ html.electron .tab-add {
 
   <!-- COMMAND PALETTE -->
   <div class="palette-overlay" id="palOverlay">
-    <div class="palette">
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
       <div class="pal-input-wrap">
         <input class="pal-input" id="palInput" placeholder="Type a command, search files…">
       </div>
@@ -1686,7 +1686,7 @@ html.electron .tab-add {
 
   <!-- MODAL -->
   <div class="modal-overlay" id="modalOverlay">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <span class="modal-title" id="modalTitle">Modal</span>
         <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
@@ -1718,6 +1718,7 @@ import { highlightCode } from './src/renderer/highlight.js';
 import { mathExtension, restoreMath } from './src/renderer/math.js';
 import { sanitizeHtml, sanitizeSvg } from './src/renderer/trusted.js';
 import { renderMermaid } from './src/renderer/mermaid.js';
+import { getFocusable, trapTab, rovingNext } from './src/renderer/focus.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1992,12 +1993,36 @@ window.toggleInspector = toggleInspector;
 // =====================================================================
 // MODAL
 // =====================================================================
+// ---- Focus management (T-F4) -------------------------------------------------
+// A stack of the elements that had focus before each overlay opened, so closing
+// an overlay restores focus to whatever opened it. The stack (not a single field)
+// is what makes nesting work: palette-over-modal restores into the modal first,
+// then the modal restores to the original trigger.
+const _focusStack = [];
+function pushFocus() { _focusStack.push(document.activeElement); }
+function restoreFocus() {
+  const el = _focusStack.pop();
+  if (el && typeof el.focus === 'function' && document.contains(el)) {
+    try { el.focus(); } catch (_) { /* element no longer focusable */ }
+  }
+}
+
 function openModal(title, html) {
+  if (dropdown.classList.contains('open')) closeMenu(); // dismiss any open menu (returns focus to its button → captured as the restore target)
   modalTitle.textContent = title;
   modalBody.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : html;
+  // Only capture the opener on a fresh open — re-opening (e.g. Shortcuts→About swaps
+  // the body while the overlay stays open) must not push a second, unpaired entry.
+  if (!modalOverlay.classList.contains('open')) pushFocus();
   modalOverlay.classList.add('open');
+  // Move focus into the dialog so Tab is trapped and SR users land inside it.
+  setTimeout(() => { (getFocusable($('modalOverlay'))[0] || $('modalCloseBtn'))?.focus(); }, 0);
 }
-function closeModal() { modalOverlay.classList.remove('open'); }
+function closeModal() {
+  if (!modalOverlay.classList.contains('open')) return;
+  modalOverlay.classList.remove('open');
+  restoreFocus();
+}
 
 function showShortcuts() {
   closeMenu();
@@ -2150,6 +2175,8 @@ const MENU_DEFS = {
   }
 };
 
+// The element that opened the current menu — focus returns to it on close (T-F5).
+let _menuOpener = null;
 function openMenu(e, name) {
   e.stopPropagation();
   if (dropdown.classList.contains('open') && dropdown.dataset.menu === name) {
@@ -2162,6 +2189,14 @@ function openMenu(e, name) {
   dropdown.classList.add('open');
   dropdown.dataset.menu = name;
   dropdown.style.insetInlineStart = MENU_DEFS[name].x + 'px';
+  _menuOpener = e.currentTarget;
+  // Keyboard-opened (Enter/Space → click with detail 0): move focus into the menu
+  // for roving navigation. Mouse-opened: leave focus on the editor so Copy/Cut from
+  // the Edit menu still reads the live selection (the items preventDefault mousedown).
+  if (e.detail === 0) {
+    const first = dropdown.querySelector('.dd-item:not(.disabled)');
+    if (first) setTimeout(() => first.focus(), 0);
+  }
 }
 
 function buildMenu(name) {
@@ -2199,8 +2234,17 @@ function buildMenu(name) {
 }
 
 function closeMenu() {
+  const hadFocusInside = dropdown.contains(document.activeElement);
   dropdown.classList.remove('open');
   document.querySelectorAll('.tb-menu-item').forEach(m => m.classList.remove('open-menu'));
+  // If a menu item held focus (keyboard use), return focus to the opener button so
+  // it isn't stranded on a now-hidden item. Mouse use (focus on the editor) is left
+  // alone. This also lets a menu action that opens a dialog capture the button as the
+  // restore target. (T-F5)
+  if (hadFocusInside && _menuOpener && document.contains(_menuOpener)) {
+    try { _menuOpener.focus(); } catch (_) { /* opener gone */ }
+  }
+  _menuOpener = null;
 }
 
 // =====================================================================
@@ -3231,12 +3275,19 @@ const PALETTE_COMMANDS = [
 
 let palIdx = 0, palVisible = [];
 function openPalette() {
+  if (dropdown.classList.contains('open')) closeMenu(); // don't strand a menu open behind the overlay (returns focus to its button first)
+  if (!palOverlay.classList.contains('open')) pushFocus(); // remember the opener (may be inside a modal)
   palOverlay.classList.add('open');
   palInput.value = '';
   filterPalette('');
   setTimeout(() => palInput.focus(), 50);
 }
-function closePalette() { palOverlay.classList.remove('open'); palInput.value = ''; }
+function closePalette() {
+  const wasOpen = palOverlay.classList.contains('open');
+  palOverlay.classList.remove('open');
+  palInput.value = '';
+  if (wasOpen) restoreFocus();
+}
 window.openPalette = openPalette;
 window.closePalette = closePalette;
 window.openFind = openFind;
@@ -3294,7 +3345,9 @@ palInput.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(palIdx + 1, items.length - 1); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); items[palIdx]?.scrollIntoView({ block: 'nearest' }); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(palIdx - 1, 0); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); }
   else if (e.key === 'Enter') { e.preventDefault(); items[palIdx]?.click(); }
-  else if (e.key === 'Escape') closePalette();
+  // Stop the Esc from also reaching the global handler — otherwise it would see the
+  // palette already closed and go on to close a modal underneath it (nested overlays).
+  else if (e.key === 'Escape') { e.stopPropagation(); closePalette(); }
 });
 palInput.addEventListener('input', () => filterPalette(palInput.value));
 
@@ -3355,6 +3408,35 @@ document.addEventListener('keydown', e => {
     else if ($('findBar').classList.contains('open')) closeFind();
     else if (dropdown.classList.contains('open')) closeMenu();
   }
+});
+
+// T-F4: keep Tab inside the top-most open overlay (palette wins over modal when
+// both are open). The pure trapTab() decides the wrap target; the browser handles
+// interior moves (it returns null for those).
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const overlay = palOverlay.classList.contains('open') ? palOverlay
+    : modalOverlay.classList.contains('open') ? modalOverlay : null;
+  if (!overlay) return;
+  const target = trapTab(getFocusable(overlay), document.activeElement, e.shiftKey);
+  if (target) { e.preventDefault(); target.focus(); }
+});
+
+// T-F5: keyboard control of the open toolbar menu. Document-level so it works even
+// when the menu was mouse-opened (focus still on the editor): Up/Down/Home/End rove
+// between items, pulling focus IN if it isn't already (rovingNext maps current=-1 to
+// first/last). Tab closes the menu (standard ARIA) and returns focus to the opener.
+// Esc is handled by the global Escape branch (also via closeMenu → opener restore).
+document.addEventListener('keydown', e => {
+  if (!dropdown.classList.contains('open')) return;
+  if (e.key === 'Tab') { e.preventDefault(); closeMenu(); return; }
+  const items = [...dropdown.querySelectorAll('.dd-item:not(.disabled)')];
+  if (!items.length) return;
+  const next = rovingNext(e.key, items.indexOf(document.activeElement), items.length, { loop: true });
+  if (next < 0) return;
+  e.preventDefault();
+  items.forEach((it, i) => it.setAttribute('tabindex', i === next ? '0' : '-1'));
+  items[next].focus();
 });
 
 // =====================================================================

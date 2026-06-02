@@ -203,8 +203,8 @@ class DocumentStore {
 |---|---|---|---|---|
 | ☐ T-F2 | `index.html`, `tests/accessibility.spec.js` | every icon button has `aria-label`; Arabic runs get `lang="ar"` | EC-C6 | axe: controls named |
 | ☐ T-F3 | `index.html` (`#toast`) | toast `role="status"`/`aria-live="polite"`; SR announces save/error | — | announced |
-| ☐ T-F4 | `index.html` (modal/palette) | focus trapped + restored; nested overlay Esc order (palette→modal) | EC-C7 | keyboard-safe |
-| ☐ T-F5 | `index.html` (dropdown) | Up/Down roving focus, Home/End, Esc | — | menus operable |
+| ✅ T-F4 | `src/renderer/focus.js`, `index.html`, `tests/{unit/focus,focus-trap}` | focus trapped (`trapTab`) + restored via `_focusStack` (nested palette→modal); dialogs `role=dialog aria-modal`; nested Esc order | EC-C7 | keyboard-safe |
+| ✅ T-F5 | `src/renderer/focus.js`, `index.html`, `tests/focus-trap.spec.js` | dropdown Up/Down/Home/End roving (`rovingNext`), Esc→opener, Tab closes; mouse-open keeps editor focus + still keyboard-navigable | — | menus operable |
 | ☐ T-T4 | `index.html` CSS | chrome sizes in `rem`; app-wide zoom scales chrome | — | scalable |
 | ☐ T-T5 | `index.html` CSS | min label ≥11px (or scales w/ T4) | — | legible |
 
@@ -335,17 +335,17 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 | P2 | T-AI2, T-B3 (marked/DOMPurify/KaTeX/highlight.js/mermaid vendored) | — | T-B4 CSP, T-T1/T3 self-host fonts (in progress) |
 | P3 | T-AI1, T-B1, T-B2 | T-F1 (tree builder ☑; collapsible DOM ☐) | — |
 | P4 | T-R1, T-R2 (live DOM), T-R3/4/5 (core) | — | — |
-| P5 | T-F2, T-F3 | — | T-F4, T-F5, T-T4, T-T5 |
+| P5 | T-F2, T-F3, T-F4, T-F5 | — | T-T4, T-T5 |
 | P6 | T-B5, T-F8 (persist+restore wired) | — | T-B8 docs |
 | P7 | T-AI3 (EditorPort+TextareaAdapter) | — | T-F13 CM6, T-R9 bidi tables |
 | P8 | T-F14, T-F7, T-F15, T-F9 (highlight+KaTeX), T-F16 (mermaid) | — | T-B6/F6 PDF |
 | P9 | T-R6, T-R8, T-R7-core (locale) | — | T-R7 UI mirroring, T-R10 justification |
 | P10 | T-B10, T-F10 | — | T-B7 builds, T-B9 fs.watch, T-F11, T-T6, T-F12, Q6 |
 
-**Test status (after T-F16):** 711 unit tests green · coverage ~96.3% stmts / ~89.7% branch / ~96.7% func / ~97.3% lines (gate ✓, run serial via `--no-file-parallelism`) · full Playwright e2e green (~571) on win32 · eslint 0 errors. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
+**Test status (after T-F4/F5):** 737 unit tests green · coverage 96.52% stmts / 90.23% branch / 96.77% func / 97.40% lines (gate ✓ at 95/88/95/95, run serial via `--no-file-parallelism`) · Playwright e2e green on win32 (focus-trap 9/9 + menu/modal/palette/edit/a11y suites re-run clean) · eslint 0 errors. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
-Working order: F16 ✅ → F4+F5 → T4+T5 → B6+F6 → B3-finish/T1/T3/B4 → R10 → F11+T6 → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
+Working order: F16 ✅ → F4+F5 ✅ → T4+T5 → B6+F6 → B3-finish/T1/T3/B4 → R10 → F11+T6 → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
 
 ---
 

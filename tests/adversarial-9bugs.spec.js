@@ -533,26 +533,22 @@ test.describe('[AC5] Zoom controls', () => {
     expect(factor).toBe(0.6);
   });
 
-  test('[AC5-boundary] zoom applied to #editorArea inline style, not html/body', async ({ page }) => {
+  test('[AC5-boundary] app-wide zoom scales the :root rem base, never the CSS zoom of html/body (T-T4)', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.setZoom(1.5));
 
-    // #editorArea must have the zoom
-    const editorZoom = await page.evaluate(() => {
-      return document.getElementById('editorArea').style.zoom;
-    });
-    expect(parseFloat(editorZoom)).toBeCloseTo(1.5, 2);
+    // Zoom is driven by the :root rem base (16px * 1.5 = 24px), not CSS `zoom`.
+    const rootFs = await page.evaluate(() => parseFloat(document.documentElement.style.fontSize));
+    expect(rootFs).toBeCloseTo(24, 1);
 
-    // html must NOT have zoom applied
-    const htmlZoom = await page.evaluate(() => {
-      return document.documentElement.style.zoom;
-    });
+    // The old content-only #editorArea zoom is cleared (no double-scaling).
+    const editorZoom = await page.evaluate(() => document.getElementById('editorArea').style.zoom);
+    expect(editorZoom).toBe('');
+
+    // No CSS `zoom` is applied to html or body.
+    const htmlZoom = await page.evaluate(() => document.documentElement.style.zoom);
     expect(htmlZoom).toBeFalsy();
-
-    // body must NOT have zoom applied
-    const bodyZoom = await page.evaluate(() => {
-      return document.body.style.zoom;
-    });
+    const bodyZoom = await page.evaluate(() => document.body.style.zoom);
     expect(bodyZoom).toBeFalsy();
   });
 

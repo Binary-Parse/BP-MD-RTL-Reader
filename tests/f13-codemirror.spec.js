@@ -155,6 +155,39 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.text).toContain('|');                  // pipes are structural content — NOT hidden
   });
 
+  test('live-preview collapses an inline link to its label on inactive lines (real engine)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'see [the docs](https://example.com) now\nsecond line' });
+      const content = () => div.querySelector('.cm-content').textContent;
+      const settle = () => new Promise((res) => setTimeout(res, 60));
+
+      ad.setSelection({ start: 45, end: 45 }); // cursor on line 2 → the link line is INACTIVE
+      await settle();
+      const inactive = content();
+      const valueInactive = ad.getValue();
+
+      ad.setSelection({ start: 6, end: 6 });   // cursor on the link line → ACTIVE (raw)
+      await settle();
+      const active = content();
+      const valueActive = ad.getValue();
+      ad.destroy();
+      div.remove();
+      return { inactive, active, valueInactive, valueActive };
+    });
+    expect(r.inactive).toContain('the docs');               // link label shown
+    expect(r.inactive).not.toContain('https://example.com'); // URL hidden
+    expect(r.inactive).not.toContain('](');                  // brackets/paren markers hidden
+    expect(r.active).toContain('[the docs](https://example.com)'); // raw on the active line
+    // the document text itself is never altered (no data loss)
+    expect(r.valueInactive).toBe('see [the docs](https://example.com) now\nsecond line');
+    expect(r.valueActive).toBe(r.valueInactive);
+  });
+
   test('hidden markers are registered as atomicRanges in the real editor (caret skips them)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

@@ -16,10 +16,15 @@
 // Prose markers hidden by an empty replace. EmphasisMark covers BOTH emphasis and strong
 // (@lezer/markdown has no separate 'StrongEmphasisMark'); CodeMark covers inline + fences;
 // StrikethroughMark is the GFM '~~' marker (the editor parses GFM via base: markdownLanguage).
-const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark']);
+// LinkMark + URL + LinkTitle collapse an inline [text](url "title") down to its styled label
+// (the link text is separate inline content and survives). Known out-of-scope caveats: an
+// angle-bracket autolink <url> has no separate text node (would collapse to nothing) and an
+// image ![alt](url) hides the same way leaving bare alt — both need a parent='Link' guard,
+// which the flat unit harness can't cover, so they're deferred follow-ups. Reference links
+// [text][ref] use LinkLabel (not hidden) so the label stays readable.
+const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark', 'LinkMark', 'URL', 'LinkTitle']);
 // Unordered list bullets we swap for a single bullet glyph. Ordered markers ('1.', '2)')
-// are left raw — the number IS content. (LinkMark remains a follow-up: it needs the URL
-// hidden too, not just the brackets.)
+// are left raw — the number IS content.
 const BULLET_MARKERS = new Set(['-', '*', '+']);
 
 export function createLivePreview(CM6) {

@@ -187,13 +187,45 @@ describe('createLivePreview', () => {
     expect(inst.decorations.ranges[0].spec.widget.toDOM().textContent).toBe('▌');
   });
 
-  test('does NOT touch LinkMark (still a deferred follow-up)', () => {
+  test('hides LinkMark + URL on inactive lines so [t](u) renders as just the link text', () => {
     const CM6 = fakeCM6();
     const doc = 'inactive\n[t](u)';
-    const l2 = 'inactive\n'.length;
-    const nodes = [{ name: 'LinkMark', from: l2, to: l2 + 1 }]; // '['
-    const inst = instantiate(CM6, fakeView(doc, nodes, 0));
+    const l2 = 'inactive\n'.length; // 9
+    // document order: Link parent (ignored), then the marker/url children.
+    const nodes = [
+      { name: 'Link', from: l2, to: l2 + 6 },          // parent — must NOT be hidden
+      { name: 'LinkMark', from: l2, to: l2 + 1 },       // '['
+      { name: 'LinkMark', from: l2 + 2, to: l2 + 3 },   // ']'
+      { name: 'LinkMark', from: l2 + 3, to: l2 + 4 },   // '('
+      { name: 'URL', from: l2 + 4, to: l2 + 5 },        // 'u'
+      { name: 'LinkMark', from: l2 + 5, to: l2 + 6 },   // ')'
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0)); // cursor line 1 → link inactive
+    expect(inst.decorations.ranges.map((r) => [r.from, r.to])).toEqual([
+      [l2, l2 + 1], [l2 + 2, l2 + 3], [l2 + 3, l2 + 4], [l2 + 4, l2 + 5], [l2 + 5, l2 + 6],
+    ]);
+    // the Link PARENT span is never hidden (that would erase the visible link text)
+    expect(inst.decorations.ranges.some((r) => r.from === l2 && r.to === l2 + 6)).toBe(false);
+  });
+
+  test('keeps the whole link raw on the active line', () => {
+    const CM6 = fakeCM6();
+    const doc = '[t](u)\nother';
+    const nodes = [
+      { name: 'LinkMark', from: 0, to: 1 }, { name: 'LinkMark', from: 2, to: 3 },
+      { name: 'LinkMark', from: 3, to: 4 }, { name: 'URL', from: 4, to: 5 },
+      { name: 'LinkMark', from: 5, to: 6 },
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 1)); // cursor inside the link line
     expect(inst.decorations.ranges).toEqual([]);
+  });
+
+  test('hides a LinkTitle alongside the url', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n[t](u "x")';
+    const nodes = [{ name: 'LinkTitle', from: 14, to: 17 }]; // the "x" title
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0));
+    expect(inst.decorations.ranges.map((r) => [r.from, r.to])).toEqual([[14, 17]]);
   });
 
   test('the marker widget is decorative (aria-hidden) and compares by glyph (eq)', () => {

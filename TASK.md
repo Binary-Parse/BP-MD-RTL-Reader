@@ -264,7 +264,7 @@ interface EditorPort {
 **GREEN:** define port; `TextareaAdapter` (parity) behind flag, then `CodeMirrorAdapter`. **Q1**=CM6, **Q4**=drop Split.
 **Acceptance:** UI depends only on port; BidiService green ≥90% mutation.
 
-## ◐ T-F13 — Unified Live Preview (CM6) — FOUNDATION shipped; live-preview is the next increment
+## ◐ T-F13 — Unified Live Preview (CM6) — FOUNDATION + live-preview decorations shipped (behind ?cm=1)
 **Done (foundation, reversible):** vendored CodeMirror 6 (`assets/vendor/codemirror/codemirror.min.js`,
 esbuild IIFE `window.CM6` from `scripts/codemirror-entry.mjs`); `src/renderer/editor/codemirror-adapter.js`
 = `createCodeMirrorAdapter` implementing the SAME EditorPort contract as the textarea adapter
@@ -276,9 +276,20 @@ helpers, and toggleRTL all re-homed through the active EditorPort** (review caug
 Bold/Italic wrote the stale textarea — fixed + regression-tested). DEFAULT = textarea (behaviour/snapshots
 unchanged; CM6 never loaded). Tests: `tests/f13-codemirror.spec.js` (adapter contract; ?cm=1 mount + edit
 sync; no-data-loss on format; toggleRTL flips CM6; default keeps textarea). coverage excludes the adapter (e2e-tested binding).
-**NEXT increment (the flagship UX):** ☐ live-preview decorations (inactive lines render formatted / active line raw) ·
-☐ remove the 3-mode switch · ☐ per-line RTL + logical caret in CM6 · ☐ scroll/selection preserved across edits ·
-☐ perf 10k-line <100ms/<16ms. The EditorPort seam + CM6 engine are now in place to build these on.
+**Live-preview increment SHIPPED (behind `?cm=1`):** ☑ live-preview decorations — `src/renderer/editor/live-preview.js`
+`createLivePreview(CM6)` ViewPlugin hides markdown SYNTAX MARKERS on every line EXCEPT the one(s) the
+selection touches (inactive lines read as formatted prose via the syntax-highlight extension; the active line
+shows raw editable tokens). Wired into the adapter's EditorState extensions (`livePreview` option, default on).
+**Scope chosen for fidelity (3-lens review caught these):** hides only `HeaderMark`/`EmphasisMark`/`CodeMark`
+(the markers whose surviving text the highlight extension still styles). Deliberately does NOT hide
+`ListMark`/`QuoteMark` (an empty replace would collapse bullets/indent into flat text), `LinkMark` (would leave a
+bare `texturl`), or strikethrough (needs GFM — `markdown()` is commonmark-only). Removed dead `StrongEmphasisMark`
+(no such Lezer node — bold is `EmphasisMark`) + `StrikethroughMark`. Replaced markers registered as
+`EditorView.atomicRanges` so the caret steps over hidden glyphs. Tests: `tests/unit/live-preview.test.js`
+(8, real node names) + `tests/f13-codemirror.spec.js` real-engine cases (`**` hide/show, `#`+`` ` `` hide/show,
+docChanged-typing re-hide, multi-line selection keeps both). **Remaining F13 follow-ups:** ☐ list/quote/link
+WidgetType replacements + GFM (strikethrough/tables) · ☐ viewport-scroll (virtualized long-doc) real-engine test ·
+☐ remove the 3-mode switch · ☐ per-line RTL + logical caret in CM6 · ☐ perf 10k-line <100ms/<16ms.
 
 ## ☐ T-R9 — Bidi tables + cursor
 **Files:** `codemirror-adapter.js`/table renderer, `bidi.js`, `tests/rtl-adversarial.spec.js`.

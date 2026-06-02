@@ -7,6 +7,8 @@
  * hard dependency on the heavy engine and the wiring stays lazy + testable.
  */
 
+import { createLivePreview } from './live-preview.js';
+
 function escapeReg(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -16,7 +18,7 @@ function escapeReg(s) {
  * @param {object} opts  { CM6, doc, onChange, dir }
  * @returns an EditorPort (+ setDirection/focus/destroy/_view) backed by a CM6 EditorView
  */
-export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr' } = {}) {
+export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true } = {}) {
   const {
     EditorState, EditorSelection, EditorView, keymap, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
@@ -37,6 +39,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       markdown(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      ...(livePreview ? [createLivePreview(CM6)] : []), // T-F13: hide markers off the active line
       highlightActiveLine(),
       drawSelection(),
       EditorView.lineWrapping,

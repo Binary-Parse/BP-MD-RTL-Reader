@@ -50,6 +50,12 @@ describe('self-hosted fonts (T-B3 / T1 / T3)', () => {
     expect(html).toMatch(/font-synthesis:\s*none/);
   });
 
+  test('T6: optical sizing is explicitly enabled (Fraunces opsz engaged; guards against a future :none)', () => {
+    // `auto` is the CSS initial value, so this static assertion is what makes the
+    // declaration load-bearing — deleting it (or setting `none`) fails here.
+    expect(html).toMatch(/font-optical-sizing:\s*auto/);
+  });
+
   test('families used with font-style:italic ship a REAL italic face (font-synthesis:none → no faux-oblique)', () => {
     // Body <em> is --sans (Inter); code comments are --mono (JetBrains); headings/UI accents
     // are --serif (Fraunces). All three are used italic somewhere, so each needs an italic face.

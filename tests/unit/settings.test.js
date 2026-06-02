@@ -26,6 +26,13 @@ describe('migrate (EC-D1)', () => {
     expect(migrate({}).arabicKashida).toBe(false);
   });
 
+  test('italicRecolor (T-F11): defaults true (recolor on); opt-out via boolean false', () => {
+    expect(defaultSettings().italicRecolor).toBe(true);    // recolor ON by default (opt-OUT feature)
+    expect(migrate({ italicRecolor: false }).italicRecolor).toBe(false);
+    expect(migrate({ italicRecolor: 'no' }).italicRecolor).toBe(true); // non-boolean → default true
+    expect(migrate({}).italicRecolor).toBe(true);
+  });
+
   test('recents sanitized + capped at 10', () => {
     const recents = Array.from({ length: 15 }, (_, i) => ({ name: 'n' + i, path: '/p' + i }));
     recents.push({ name: 'bad' }); // no path → dropped

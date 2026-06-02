@@ -64,7 +64,8 @@ const { state: State, subscribe } = createState({
   findIdx: 0,
   zoomFactor: 1,
   calendar: 'gregorian',
-  arabicKashida: false
+  arabicKashida: false,
+  italicRecolor: true
 });
 
 // Export for testing via window (smoke tests only)
@@ -461,6 +462,9 @@ const MENU_DEFS = {
       { kind: 'label', text: 'Arabic' },
       { kind: 'check', name: 'Kashida Justification', checked: () => State.arabicKashida, action: () => toggleKashida() },
       { kind: 'divider' },
+      { kind: 'label', text: 'Typography' },
+      { kind: 'check', name: 'Recolour Italics', checked: () => State.italicRecolor, action: () => toggleItalicRecolor() },
+      { kind: 'divider' },
       { kind: 'label', text: 'Zoom' },
       { kind: 'item', icon: '+', name: 'Zoom In',    shortcut: 'Ctrl+=', action: () => { zoomIn();    closeMenu(); } },
       { kind: 'item', icon: '−', name: 'Zoom Out',   shortcut: 'Ctrl+-', action: () => { zoomOut();   closeMenu(); } },
@@ -808,6 +812,20 @@ function setKashida(on) {
 function toggleKashida() { setKashida(!State.arabicKashida); }
 window.setKashida = setKashida;
 window.toggleKashida = toggleKashida;
+
+// T-F11: italic recolor is ON by default (rendered <em> picks up the plum accent). This is an
+// OPT-OUT — when disabled, emphasis keeps the body ink colour (only the slant distinguishes it).
+// Persisted (F8). The `.no-italic-recolor` class neutralizes the accent in #noteContent.
+function applyItalicRecolor() { appBody.classList.toggle('no-italic-recolor', !State.italicRecolor); }
+function setItalicRecolor(on) {
+  State.italicRecolor = !!on; // triggers persistSettings via the subscribe hook
+  applyItalicRecolor();
+  closeMenu();
+  if (!_restoring) showToast(`Italic recolour: ${State.italicRecolor ? 'on' : 'off'}`, 'info');
+}
+function toggleItalicRecolor() { setItalicRecolor(!State.italicRecolor); }
+window.setItalicRecolor = setItalicRecolor;
+window.toggleItalicRecolor = toggleItalicRecolor;
 
 // =====================================================================
 // EDIT MENU COMMANDS
@@ -1631,6 +1649,7 @@ const PALETTE_COMMANDS = [
   { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
   { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
   { sec: 'View', icon: 'ـ', name: 'Toggle Arabic Kashida Justification', meta: 'view', act: toggleKashida },
+  { sec: 'View', icon: 'i', name: 'Toggle Italic Recolour', meta: 'view', act: toggleItalicRecolor },
   { sec: 'View', icon: '+', name: 'Zoom In',    meta: 'view', sk: 'Ctrl+=', act: zoomIn },
   { sec: 'View', icon: '−', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
   { sec: 'View', icon: '1', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
@@ -1933,7 +1952,7 @@ const SettingsBridge =
   (window.electronAPI && typeof window.electronAPI.getSettings === 'function')
     ? window.electronAPI : null;
 const PERSISTED_KEYS = new Set([
-  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
+  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor',
 ]);
 let _persistTimer = null;
 function persistSettings() {
@@ -1950,6 +1969,7 @@ function persistSettings() {
         recents: State.recents.map(r => ({ name: r.name, path: r.path })),
         calendar: State.calendar,
         arabicKashida: State.arabicKashida,
+        italicRecolor: State.italicRecolor,
       });
     } catch (_) { /* persistence is best-effort; never break the UI */ }
   }, 200);
@@ -1989,6 +2009,7 @@ async function restoreSettings() {
     }
     if (s.calendar === 'hijri' || s.calendar === 'gregorian') State.calendar = s.calendar;
     if (typeof s.arabicKashida === 'boolean') { State.arabicKashida = s.arabicKashida; applyKashida(); }
+    if (typeof s.italicRecolor === 'boolean') { State.italicRecolor = s.italicRecolor; applyItalicRecolor(); }
   } finally {
     _restoring = false;
   }

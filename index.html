@@ -132,6 +132,7 @@ body {
   background: #2A2620;
   -webkit-font-smoothing: antialiased;
   font-synthesis: none; /* T2: ship real weights/italics — never fake bold or oblique */
+  font-optical-sizing: auto; /* T6: Fraunces (variable opsz) adapts its cut to the font-size */
   display: grid;
   place-items: center;
   padding: 24px;
@@ -438,6 +439,13 @@ body {
 .reveal-strip:hover { background: var(--accent); color: white; }
 .reveal-sidebar  { left: 0;  border-left: none;  border-radius: 0 6px 6px 0; }
 .reveal-inspector { right: 0; border-right: none; border-radius: 6px 0 0 6px; }
+/* T-F11: directional chevrons (collapse/reveal sidebar & inspector) point toward the panel
+   edge. When the UI itself is RTL (html[dir="rtl"] — set by R7), mirror them so they keep
+   pointing the right way. scaleX(-1) flips any chevron glyph without swapping characters. */
+html[dir="rtl"] #sidebarToggleBtn,
+html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
+/* The reveal strips keep their vertical-centering translate AND mirror. */
+html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
 .app-body.no-sidebar .reveal-sidebar { display: flex; }
 .app-body.no-inspector .reveal-inspector { display: flex; }
 
@@ -880,6 +888,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 .editor p { margin-bottom: 16px; }
 .editor p em { color: var(--plum); font-style: italic; }
+/* T-F11: italic recolour is opt-OUT. With `.no-italic-recolor` set, emphasis keeps the
+   body ink colour — only the (real, T2) italic slant distinguishes it. */
+.no-italic-recolor #noteContent em { color: inherit; }
 #editor[dir="rtl"] p { text-align: right; }
 #editor[dir="rtl"] p em { font-style: normal; font-weight: 600; }
 .editor p strong { font-weight: 600; }

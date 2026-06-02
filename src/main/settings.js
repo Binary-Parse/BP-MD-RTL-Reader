@@ -19,6 +19,7 @@ const DEFAULTS = Object.freeze({
   numerals: 'western',
   calendar: 'gregorian',
   arabicKashida: false,
+  italicRecolor: true,
   recents: [],
   window: { w: 1280, h: 820, maximized: false },
   lastSession: null,
@@ -51,6 +52,7 @@ function migrate(raw) {
   if (raw.numerals === 'arabic-indic' || raw.numerals === 'western') out.numerals = raw.numerals;
   if (raw.calendar === 'hijri' || raw.calendar === 'gregorian') out.calendar = raw.calendar;
   if (typeof raw.arabicKashida === 'boolean') out.arabicKashida = raw.arabicKashida;
+  if (typeof raw.italicRecolor === 'boolean') out.italicRecolor = raw.italicRecolor;
   if (Array.isArray(raw.recents)) {
     out.recents = raw.recents
       .filter(r => r && typeof r.path === 'string')

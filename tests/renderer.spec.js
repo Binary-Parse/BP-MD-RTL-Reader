@@ -25,6 +25,35 @@ test.describe('index.html — ALL exported functions', () => {
     expect(result.out).toContain('h1');
   });
 
+  // AI2/B4: the viewer render now goes through trusted.js sanitizeHtml — the
+  // sanitizer, not just CSP, strips the exfil/active vectors. Real vendored
+  // DOMPurify + marked pipeline (not a mock).
+  test('window.parseMarkdown strips inline style/iframe/on* but keeps safe content', async ({ page }) => {
+    const out = await page.evaluate(() => window.parseMarkdown(
+      '<p style="position:fixed;background:url(https://evil/x)">styled</p>\n' +
+      '<iframe src="https://evil"></iframe>\n' +
+      '<img src="x" onerror="alert(1)">\n\n' +
+      '[link](https://example.com) and [[Note|alias]]\n\n' +
+      '| A | B |\n| :--- | ---: |\n| x | y |\n'
+    ));
+    // hardened: no inline style (CSS exfil), no iframe, no onerror handler
+    expect(out).not.toMatch(/\sstyle=/i);
+    expect(out).not.toMatch(/<iframe/i);
+    expect(out).not.toMatch(/onerror/i);
+    // preserved: real link href, wikilink data-target, GFM table alignment (align attr, not style)
+    expect(out).toMatch(/href="https:\/\/example\.com"/);
+    expect(out).toMatch(/class="wikilink"/);
+    expect(out).toMatch(/data-target="Note"/);
+    expect(out).toMatch(/align="right"/);
+  });
+
+  test('window.parseMarkdown keeps heading id (outline anchors) + dir/lang (bidi)', async ({ page }) => {
+    const out = await page.evaluate(() => window.parseMarkdown('<h2 id="sec" dir="rtl" lang="ar">عنوان</h2>'));
+    expect(out).toMatch(/id="sec"/);
+    expect(out).toMatch(/dir="rtl"/);
+    expect(out).toMatch(/lang="ar"/);
+  });
+
   test('window.isArabicHeavy — Arabic text', async ({ page }) => {
     const result = await page.evaluate(() => window.isArabicHeavy('مرحبا بالعالم'));
     expect(result).toBe(true);

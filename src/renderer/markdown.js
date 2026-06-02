@@ -3,6 +3,8 @@
  * Near-pure functions: accept marked/DOMPurify/escapeHtml as injected dependencies.
  */
 
+import { sanitizeHtml } from './trusted.js';
+
 export function wikilinkTokenizer(src) {
   const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
   if (m) {
@@ -65,7 +67,12 @@ export function parseMarkdown(md, { marked, DOMPurify, escapeHtml } = {}) {
   }
   const raw = marked.parse(md || '');
   if (DOMPurify && typeof DOMPurify.sanitize === 'function') {
-    return DOMPurify.sanitize(raw, { ADD_ATTR: ['id', 'data-target'] });
+    // Route the viewer through the SINGLE hardened sanitize stage (AI2 follow-up to
+    // B4): strips inline `style=`, <iframe>/<object>/<embed>, and on* handlers so the
+    // sanitizer — not CSP alone — is the control (defense-in-depth). Still keeps the
+    // outline/wikilink hooks (id, data-target) and the bidi attrs (dir, lang); KaTeX
+    // (post-processed via sanitizeMath) and code highlighting already use this stage.
+    return sanitizeHtml(raw, DOMPurify);
   }
   return raw;
 }

@@ -22,6 +22,8 @@ describe('sanitizeHtml', () => {
     expect(out).not.toMatch(/<script/i);
     expect(rec[0].cfg.FORBID_TAGS).toEqual(expect.arrayContaining(['script', 'iframe']));
     expect(rec[0].cfg.ADD_ATTR).toEqual(expect.arrayContaining(['dir', 'lang']));
+    // the inline style="" attribute is forbidden too (CSS-exfil defense, AI2/B4)
+    expect(rec[0].cfg.FORBID_ATTR).toEqual(expect.arrayContaining(['style', 'onerror']));
   });
 });
 

@@ -13,7 +13,11 @@ export function sanitizeHtml(html, DOMPurify) {
   return DOMPurify.sanitize(html, {
     ADD_ATTR: ['id', 'data-target', 'dir', 'lang'],
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick'],
+    // `style` here forbids the inline style="" ATTRIBUTE (FORBID_TAGS above only
+    // drops the <style> ELEMENT) — kills CSS-exfil via inline styles. Math keeps its
+    // positioning styles through the separate sanitizeMath stage; marked emits table
+    // alignment as the `align` attribute, not inline style, so this is loss-free.
+    FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
   });
 }
 

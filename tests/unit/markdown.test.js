@@ -19,11 +19,18 @@ describe('parseMarkdown pipeline', () => {
     expect(result).toBe('<p>hello</p>');
   });
 
-  test('sanitizes with DOMPurify when available', () => {
+  test('routes through the hardened sanitizeHtml stage (AI2/B4)', () => {
     const marked = { parse: vi.fn(() => '<p>hello</p>') };
     const DOMPurify = { sanitize: vi.fn((html) => `sanitized:${html}`) };
     const result = parseMarkdown('hello', { marked, DOMPurify, escapeHtml });
-    expect(DOMPurify.sanitize).toHaveBeenCalledWith('<p>hello</p>', { ADD_ATTR: ['id', 'data-target'] });
+    // Delegates to trusted.js sanitizeHtml: forbids style/iframe/active handlers,
+    // keeps id/data-target (outline+wikilinks) and dir/lang (bidi) — NOT the old
+    // loose `{ADD_ATTR:['id','data-target']}` config.
+    expect(DOMPurify.sanitize).toHaveBeenCalledWith('<p>hello</p>', expect.objectContaining({
+      ADD_ATTR: expect.arrayContaining(['id', 'data-target', 'dir', 'lang']),
+      FORBID_TAGS: expect.arrayContaining(['style', 'iframe', 'script']),
+      FORBID_ATTR: expect.arrayContaining(['style', 'onerror', 'onload', 'onclick']),
+    }));
     expect(result).toBe('sanitized:<p>hello</p>');
   });
 

@@ -7,7 +7,7 @@ import { vaultSearch as _vaultSearch } from './search.js';
 import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader } from './markdown.js';
 import { execEditCmd as _execEditCmdImpl } from './edit-commands.js';
 import { applyBidi } from './bidi-dom.js';
-import { resolveDirection, slugify, resolveDocDirection } from './bidi.js';
+import { resolveDirection, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
 import { transformCallouts } from './callouts.js';
 import { activeHeading } from './outline.js';
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
@@ -129,6 +129,7 @@ function applyBidiToNote(content) {
     content: resolveDirection(body, 'ltr'),
   });
   applyBidi(noteContent, { baseDir: docDir, escape: escapeHtml });
+  wireTableNav(noteContent); // T-R9: logical (EC-C2) arrow-key cell traversal in rendered tables
   // Front matter (or a manual toggle) flips the whole note's container direction;
   // otherwise the container stays neutral and each block resolves its own (R1/R2).
   const editorEl = $('editor');
@@ -150,6 +151,32 @@ function applyBidiToNote(content) {
   }
 }
 window.applyBidiToNote = applyBidiToNote;
+
+// T-R9: make rendered table cells keyboard-navigable with LOGICAL arrow keys (EC-C2).
+// Roving tabindex (one focusable cell) + a per-table keydown handler; all the
+// direction-aware index math lives in the pure nextCellIndex (bidi.js). Re-run on every
+// render (noteContent is rebuilt, so prior handlers die with the old DOM).
+function wireTableNav(root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  root.querySelectorAll('table').forEach((table) => {
+    const cells = [...table.querySelectorAll('th, td')];
+    if (!cells.length) return;
+    cells.forEach((c, i) => c.setAttribute('tabindex', i === 0 ? '0' : '-1'));
+    table.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const cell = e.target.closest && e.target.closest('th, td');
+      if (!cell || !table.contains(cell)) return;
+      const rowCells = [...cell.parentElement.children].filter((c) => c.matches('th, td'));
+      const idx = rowCells.indexOf(cell);
+      const next = nextCellIndex(idx, rowCells.length, e.key, table.getAttribute('dir') || 'ltr');
+      if (next === idx) return;
+      e.preventDefault();
+      cells.forEach((c) => c.setAttribute('tabindex', '-1'));
+      rowCells[next].setAttribute('tabindex', '0');
+      rowCells[next].focus();
+    });
+  });
+}
 
 // Code highlighting + KaTeX math (T-F9). Runs on the rendered DOM BEFORE the bidi
 // pass so code blocks (forced dir=ltr) and KaTeX spans (dir=ltr, ltr-isolated)

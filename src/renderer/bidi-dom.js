@@ -45,6 +45,23 @@ export function applyBlockDirection(root, baseDir = 'ltr') {
   return root;
 }
 
+/**
+ * Table-level direction (T-R9): set dir on each <table> from its first-strong char so
+ * RTL tables MIRROR their column order. Done as a SEPARATE pass (not via BLOCK_SELECTOR,
+ * which drives the .closest() isolation scoping — adding 'table' there would corrupt it).
+ * Per-cell dir is left to applyBlockDirection (td/th stay explicit, not "auto", so the
+ * Arabic-font CSS keyed on td[dir="rtl"]/th[dir="rtl"] keeps matching).
+ */
+export function applyTableDirection(root, baseDir = 'ltr') {
+  if (!root || typeof root.querySelectorAll !== 'function') return root;
+  root.querySelectorAll('table').forEach((t) => {
+    const dir = resolveDirection(t.textContent || '', baseDir);
+    t.setAttribute('dir', dir);
+    t.setAttribute('data-dir', dir);
+  });
+  return root;
+}
+
 function wrapInBdi(el) {
   const bdi = el.ownerDocument.createElement('bdi');
   el.parentNode.insertBefore(bdi, el);
@@ -111,6 +128,7 @@ export function isolateInlineRuns(root, baseDir = 'ltr', escape = (s) => s) {
 /** Apply both passes: per-block direction then inline isolation. */
 export function applyBidi(root, { baseDir = 'ltr', escape = (s) => s } = {}) {
   applyBlockDirection(root, baseDir);
+  applyTableDirection(root, baseDir); // T-R9: mirror RTL table columns (after cells get their dir)
   isolateInlineRuns(root, baseDir, escape);
   return root;
 }

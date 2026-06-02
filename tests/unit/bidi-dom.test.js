@@ -6,7 +6,7 @@
  * per-block direction + inline isolation logic is unit-tested without Playwright.
  */
 import { describe, test, expect, beforeEach } from 'vitest';
-import { applyBlockDirection, isolateInlineRuns, applyBidi } from '../../src/renderer/bidi-dom.js';
+import { applyBlockDirection, isolateInlineRuns, applyBidi, applyTableDirection } from '../../src/renderer/bidi-dom.js';
 import { escapeHtml } from '../../src/renderer/i18n.js';
 
 function frag(html) {
@@ -14,6 +14,40 @@ function frag(html) {
   root.innerHTML = html;
   return root;
 }
+
+describe('applyTableDirection (T-R9 table column mirror)', () => {
+  test('Arabic-first table → table dir="rtl" (columns mirror)', () => {
+    const root = frag('<table><thead><tr><th>المفتاح</th><th>Value</th></tr></thead><tbody><tr><td>واحد</td><td>1</td></tr></tbody></table>');
+    applyBidi(root, { baseDir: 'ltr', escape: escapeHtml });
+    expect(root.querySelector('table').getAttribute('dir')).toBe('rtl');
+  });
+  test('English-first table stays ltr', () => {
+    const root = frag('<table><thead><tr><th>Name</th><th>قيمة</th></tr></thead></table>');
+    applyBidi(root, { baseDir: 'ltr', escape: escapeHtml });
+    expect(root.querySelector('table').getAttribute('dir')).toBe('ltr');
+  });
+  test('neutral-only table inherits the base direction', () => {
+    const root = frag('<table><tr><td>123</td><td>456</td></tr></table>');
+    applyBidi(root, { baseDir: 'rtl', escape: escapeHtml });
+    expect(root.querySelector('table').getAttribute('dir')).toBe('rtl');
+  });
+  test('per-cell dir is UNCHANGED (explicit, not "auto" — protects the Arabic-font CSS)', () => {
+    const root = frag('<table><tr><td>واحد</td><td>two</td></tr></table>');
+    applyBidi(root, { baseDir: 'ltr', escape: escapeHtml });
+    const cells = root.querySelectorAll('td');
+    expect(cells[0].getAttribute('dir')).toBe('rtl'); // Arabic cell
+    expect(cells[1].getAttribute('dir')).toBe('ltr'); // English cell — NOT 'auto'
+  });
+  test('still isolates inline neutral runs inside RTL cells (table pass composes)', () => {
+    const root = frag('<table><tr><td>صفحة 42 هنا</td></tr></table>');
+    applyBidi(root, { baseDir: 'rtl', escape: escapeHtml });
+    expect(root.querySelector('td bdi')).toBeTruthy(); // the 42 is still wrapped
+  });
+  test('safe no-op on a null/non-element root', () => {
+    expect(() => applyTableDirection(null)).not.toThrow();
+    expect(applyTableDirection(null)).toBe(null);
+  });
+});
 
 describe('applyBlockDirection (T-R1)', () => {
   test('Arabic block → dir/data-dir rtl + lang="ar" (EC-C6)', () => {

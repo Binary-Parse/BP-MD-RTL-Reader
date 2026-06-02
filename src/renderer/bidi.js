@@ -84,3 +84,16 @@ export function slugify(text) {
     .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '');
 }
+
+/**
+ * Logical horizontal cell index for arrow-key table traversal (T-R9 / EC-C2).
+ * In an RTL table the physical arrows are swapped so ArrowLeft advances in reading
+ * order. Clamped to [0, len-1]; never wraps. Non-arrow keys return the index as-is.
+ */
+export function nextCellIndex(i, len, key, dir = 'ltr') {
+  const fwd = dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
+  const back = dir === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
+  if (key === fwd) return Math.min(len - 1, i + 1);
+  if (key === back) return Math.max(0, i - 1);
+  return i;
+}

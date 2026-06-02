@@ -1078,7 +1078,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .editor hr::before { content: '⁂'; }
 
 .editor table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.875rem; }
+.editor table[dir="rtl"] { direction: rtl; } /* T-R9: mirror RTL table column order */
 .editor th, .editor td { border: 1px solid var(--rule); padding: 8px 12px; text-align: start; }
+.editor th:focus, .editor td:focus { outline: 2px solid var(--accent); outline-offset: -2px; } /* T-R9 traversal focus ring */
 .editor th { background: var(--paper-deep); font-weight: 600; }
 
 /* welcome */

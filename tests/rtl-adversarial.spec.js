@@ -890,3 +890,50 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// T-R9 — bidi tables + logical cursor (column mirror + EC-C2 traversal)
+// ---------------------------------------------------------------------------
+test.describe('[T-R9] bidi tables + logical cursor', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+  });
+
+  test('RTL table mirrors columns, cells keep explicit dir, arrows traverse logically', async ({ page }) => {
+    await injectMarkdown(page, '# جدول\n\n| المفتاح | Value |\n| --- | --- |\n| واحد | 1 |\n| two | اثنان |\n');
+    await page.waitForTimeout(80);
+
+    // (1) the table itself is RTL → columns mirror.
+    await expect(page.locator('#noteContent table').first()).toHaveAttribute('dir', 'rtl');
+
+    // (2) GEOMETRY (real mirror, not a keyword): the logical-first Arabic header
+    //     column is physically RIGHTMOST in the RTL table.
+    const mirrored = await page.$$eval('#noteContent thead th',
+      (ths) => ths[0].getBoundingClientRect().left > ths[1].getBoundingClientRect().left);
+    expect(mirrored).toBe(true);
+
+    // (3) per-cell dir stays EXPLICIT (rtl + ltr present, never 'auto').
+    const cellDirs = await page.$$eval('#noteContent td, #noteContent th', (els) => els.map((e) => e.getAttribute('dir')));
+    expect(cellDirs).toContain('rtl');
+    expect(cellDirs).toContain('ltr');
+    expect(cellDirs).not.toContain('auto');
+
+    // (4) EC-C2 logical traversal: from the first header, ArrowLeft advances in
+    //     reading order to 'Value'; ArrowRight returns to 'المفتاح'.
+    await page.$eval('#noteContent thead th', (el) => el.focus());
+    await page.keyboard.press('ArrowLeft');
+    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Value');
+    await page.keyboard.press('ArrowRight');
+    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('المفتاح');
+  });
+
+  test('an English-first table stays LTR (no spurious mirror)', async ({ page }) => {
+    await injectMarkdown(page, '| Name | قيمة |\n| --- | --- |\n| one | واحد |\n');
+    await page.waitForTimeout(80);
+    await expect(page.locator('#noteContent table').first()).toHaveAttribute('dir', 'ltr');
+    const ltrFirstLeftmost = await page.$$eval('#noteContent thead th',
+      (ths) => ths[0].getBoundingClientRect().left < ths[1].getBoundingClientRect().left);
+    expect(ltrFirstLeftmost).toBe(true);
+  });
+});

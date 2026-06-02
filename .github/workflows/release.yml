@@ -1,0 +1,82 @@
+name: Release
+
+# Tag-triggered packaging + publish. CI (ci.yml) never packages; this is the
+# only workflow that runs electron-builder. Pushing a vX.Y.Z tag builds the
+# installers on each platform's native runner and uploads them to the matching
+# GitHub Release. This also covers the mac/linux artifacts that can't be built
+# from the Windows dev box (the B7 "platform-blocked" follow-up).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never interrupt a publish mid-upload
+
+jobs:
+  release:
+    name: Build + publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: write # create/upload the GitHub Release assets
+    strategy:
+      fail-fast: false # one platform failing must not abort the others
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # packaging needs no browsers
+    steps:
+      - name: Harden runner (egress audit)
+        if: runner.os == 'Linux' # harden-runner supports Linux runners only
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      # Gate the release on the (fast, cross-platform) unit suite + coverage so a
+      # broken build never ships. The heavy e2e/visual sweep is covered by ci.yml.
+      - name: Unit tests + coverage gate
+        run: npm run test:unit:coverage
+      - name: Build + publish installers
+        # electron-builder builds the CURRENT runner's targets (build.win on
+        # Windows, build.mac on macOS, build.linux on Linux) and publishes to the
+        # GitHub Release for this tag. Code signing/notarization activate ONLY when
+        # the corresponding secrets are present; otherwise builds are unsigned.
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # electron-builder GitHub publish
+          # Windows Authenticode (optional — set in repo secrets to enable):
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # macOS signing + notarization (optional):
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+          retention-days: 14
+          if-no-files-found: ignore

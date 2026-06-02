@@ -20,6 +20,11 @@ describe('buildSession', () => {
     expect(buildSession(null, files, 0)).toBe(null);
     expect(buildSession('/vault', [], null)).toBe(null);
     expect(buildSession('/vault', [{}, {}], 0)).toBe(null); // no disk paths
+    expect(buildSession(123, files, 0)).toBe(null);         // type guard: truthy non-string vaultPath
+  });
+
+  test('activePath is undefined when the active file path is not a string', () => {
+    expect(buildSession('/vault', [{ path: 'a.md' }, { path: 42 }], 1).activePath).toBeUndefined();
   });
 
   test('activePath is undefined when the active index is null/out of range', () => {
@@ -45,5 +50,10 @@ describe('pickActiveIndex', () => {
     expect(pickActiveIndex(files, 'gone.md')).toBe(0);
     expect(pickActiveIndex(files, undefined)).toBe(0);
     expect(pickActiveIndex([], 'a.md')).toBe(0);
+  });
+
+  test('returns 0 without throwing for a non-array files argument', () => {
+    expect(pickActiveIndex(null, 'a.md')).toBe(0);
+    expect(pickActiveIndex(undefined, 'x')).toBe(0);
   });
 });

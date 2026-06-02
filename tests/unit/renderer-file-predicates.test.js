@@ -16,6 +16,8 @@ describe('isDroppableFile (renderer)', () => {
     expect(isDroppableFile('a.md.exe')).toBe(false);
     expect(isDroppableFile(42)).toBe(false);
     expect(isDroppableFile(null)).toBe(false);
+    // type guard: a non-string that COERCES to a matching name is still rejected
+    expect(isDroppableFile(['a.txt'])).toBe(false);
   });
 });
 
@@ -25,5 +27,7 @@ describe('isVaultFile (renderer)', () => {
     expect(isVaultFile('a.markdown')).toBe(true);
     expect(isVaultFile('a.txt')).toBe(false);
     expect(isVaultFile('a.png')).toBe(false);
+    expect(isVaultFile('a.md.bak')).toBe(false);   // the extension must be at the END (anchored)
+    expect(isVaultFile(['a.md'])).toBe(false);      // type guard: coerces to a match but isn't a string
   });
 });

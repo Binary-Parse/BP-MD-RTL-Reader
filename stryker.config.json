@@ -17,7 +17,9 @@
     "src/renderer/search.js",
     "src/renderer/state.js",
     "src/renderer/theme.js",
-    "src/renderer/edit-commands.js"
+    "src/renderer/edit-commands.js",
+    "src/renderer/session.js",
+    "src/renderer/file-predicates.js"
   ],
   "thresholds": {
     "high": 95,

@@ -22,6 +22,15 @@ describe('t (translate) — T-R7', () => {
   test('en and ar catalogs cover the same keys (no missing translations)', () => {
     expect(Object.keys(MESSAGES.ar).sort()).toEqual(Object.keys(MESSAGES.en).sort());
   });
+
+  test('catalog covers the inspector + status chrome (T-R7 expansion)', () => {
+    for (const key of ['panel.inspector', 'panel.outline', 'panel.properties',
+      'prop.file', 'prop.words', 'prop.read', 'prop.direction', 'prop.mode', 'status.markdown']) {
+      expect(MESSAGES.en[key], `en missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `ar missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key]).not.toBe(MESSAGES.en[key]); // actually translated
+    }
+  });
 });
 
 describe('localeDirection — T-R7', () => {

@@ -10,14 +10,18 @@ export const MESSAGES = {
     'action.openFolder': 'Open Folder', 'action.openFile': 'Open File',
     'action.newNote': 'New Note', 'action.save': 'Save', 'action.export': 'Export HTML',
     'panel.files': 'Files', 'panel.tags': 'Tags', 'panel.search': 'Search',
-    'status.words': 'words', 'status.ready': 'ready', 'doc.note': 'note',
+    'panel.inspector': 'Inspector', 'panel.outline': 'Outline', 'panel.properties': 'Properties',
+    'prop.file': 'File', 'prop.words': 'Words', 'prop.read': 'Read', 'prop.direction': 'Direction', 'prop.mode': 'Mode',
+    'status.words': 'words', 'status.ready': 'ready', 'status.markdown': 'markdown', 'doc.note': 'note',
   },
   ar: {
     'menu.file': 'ملف', 'menu.edit': 'تحرير', 'menu.view': 'عرض', 'menu.help': 'مساعدة',
     'action.openFolder': 'فتح مجلد', 'action.openFile': 'فتح ملف',
     'action.newNote': 'ملاحظة جديدة', 'action.save': 'حفظ', 'action.export': 'تصدير HTML',
     'panel.files': 'الملفات', 'panel.tags': 'الوسوم', 'panel.search': 'بحث',
-    'status.words': 'كلمة', 'status.ready': 'جاهز', 'doc.note': 'مقالة',
+    'panel.inspector': 'المعاينة', 'panel.outline': 'المخطّط', 'panel.properties': 'الخصائص',
+    'prop.file': 'الملف', 'prop.words': 'الكلمات', 'prop.read': 'القراءة', 'prop.direction': 'الاتجاه', 'prop.mode': 'الوضع',
+    'status.words': 'كلمة', 'status.ready': 'جاهز', 'status.markdown': 'ماركداون', 'doc.note': 'مقالة',
   },
 };
 

@@ -34,6 +34,19 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     expect(await page.evaluate(() => window._appState.uiLocale)).toBe('ar');
   });
 
+  test('Arabic UI localizes the inspector + status chrome', async ({ page }) => {
+    await page.evaluate(() => window.setArabicUI(true));
+    expect(await page.locator('.insp-title').textContent()).toBe('المعاينة');
+    expect(await page.locator('.insp-section h4[data-i18n="panel.outline"]').textContent()).toBe('المخطّط');
+    expect(await page.locator('.prop-key[data-i18n="prop.file"]').textContent()).toBe('الملف');
+    expect(await page.locator('.prop-key[data-i18n="prop.direction"]').textContent()).toBe('الاتجاه');
+    expect(await page.locator('[data-i18n="status.markdown"]').textContent()).toBe('ماركداون');
+    // back to English
+    await page.evaluate(() => window.setArabicUI(false));
+    expect(await page.locator('.insp-title').textContent()).toBe('Inspector');
+    expect(await page.locator('.prop-key[data-i18n="prop.file"]').textContent()).toBe('File');
+  });
+
   test('toggling back to English restores the chrome incl. the accelerator underline', async ({ page }) => {
     await page.evaluate(() => window.setArabicUI(true));
     await page.evaluate(() => window.setArabicUI(false));

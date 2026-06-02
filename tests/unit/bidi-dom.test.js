@@ -157,6 +157,12 @@ describe('isolateInlineRuns (T-R2)', () => {
     expect(() => isolateInlineRuns(null)).not.toThrow();
   });
 
+  test('does not isolate digits inside a Mermaid diagram (T-F16 composition)', () => {
+    const root = frag('<p>مخطط <span class="mermaid" dir="ltr"><svg><text>step 2</text></svg></span> هنا</p>');
+    applyBidi(root, { escape: escapeHtml });
+    expect(root.querySelector('.mermaid bdi')).toBeNull();
+  });
+
   test('does not isolate digits inside KaTeX math (T-F9 composition)', () => {
     const root = frag('<p>قيمة <span class="math-inline" dir="ltr"><span class="katex">x<span class="mord">2</span></span></span> هنا</p>');
     applyBidi(root, { escape: escapeHtml });

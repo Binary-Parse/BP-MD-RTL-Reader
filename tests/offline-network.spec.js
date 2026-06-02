@@ -36,17 +36,19 @@ test.describe('local-first / network', () => {
     expect(libs.katex).toBe('object');
     expect(libs.hljs).toBe('object');
 
-    // Render a note with math + a code block — both must work offline.
+    // Render a note with math + a code block + a Mermaid diagram — all must work offline.
     await page.evaluate(() => {
-      window._appState.files = [{ name: 't.md', path: 't.md', content: '$x^2 + 1$\n\n```js\nconst y = 2;\n```\n', dirty: false }];
+      window._appState.files = [{ name: 't.md', path: 't.md', content: '$x^2 + 1$\n\n```js\nconst y = 2;\n```\n\n```mermaid\ngraph TD; A-->B\n```\n', dirty: false }];
       window.renderFile(0);
     });
     await page.waitForTimeout(200);
     await expect(page.locator('#noteContent .math-inline .katex')).toHaveCount(1);
     await expect(page.locator('#noteContent pre code.hljs')).toHaveCount(1);
+    // Mermaid lazy-loads from the local vendor bundle and renders even offline.
+    await expect(page.locator('#noteContent .mermaid svg')).toHaveCount(1, { timeout: 15000 });
 
-    // None of the F9 deps (or any CDN) were requested — they are vendored locally.
-    const cdnish = external.filter((u) => /katex|highlight|hljs|jsdelivr|unpkg|cdnjs/i.test(u));
+    // None of the F9/F16 deps (or any CDN) were requested — they are vendored locally.
+    const cdnish = external.filter((u) => /katex|highlight|hljs|mermaid|d3|jsdelivr|unpkg|cdnjs/i.test(u));
     expect(cdnish).toEqual([]);
   });
 });

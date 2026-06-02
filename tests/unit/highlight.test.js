@@ -58,6 +58,12 @@ describe('highlightCode (T-F9)', () => {
     expect(root.querySelector('code').innerHTML).toBe(once);
   });
 
+  test('does not highlight ```mermaid blocks (left for the diagram renderer, T-F16)', () => {
+    const root = frag('<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>');
+    highlightCode(root, { hljs: fakeHljs });
+    expect(root.querySelector('code').classList.contains('hljs')).toBe(false);
+  });
+
   test('null root / missing hljs → safe no-op', () => {
     expect(() => highlightCode(null, { hljs: fakeHljs })).not.toThrow();
     const root = frag('<pre><code>x</code></pre>');

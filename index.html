@@ -939,6 +939,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .math-block { display: block; text-align: center; margin: 16px 0; direction: ltr; unicode-bidi: isolate; overflow-x: auto; }
 .math-inline { direction: ltr; unicode-bidi: isolate; }
 #editor .katex { direction: ltr; }
+
+/* Mermaid diagrams (T-F16): always LTR, centred, responsive. */
+.mermaid { display: block; direction: ltr; text-align: center; margin: 20px 0; overflow-x: auto; }
+.mermaid svg { max-width: 100%; height: auto; }
 .editor code {
   background: var(--paper-deep);
   border: 1px solid var(--rule);
@@ -1712,7 +1716,8 @@ import { parseFrontMatter, frontMatterDirection } from './src/renderer/frontmatt
 import { dailyNoteName } from './src/renderer/dates.js';
 import { highlightCode } from './src/renderer/highlight.js';
 import { mathExtension, restoreMath } from './src/renderer/math.js';
-import { sanitizeHtml } from './src/renderer/trusted.js';
+import { sanitizeHtml, sanitizeSvg } from './src/renderer/trusted.js';
+import { renderMermaid } from './src/renderer/mermaid.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1850,8 +1855,48 @@ function decorateCodeAndMath() {
   if (typeof katex !== 'undefined') {
     restoreMath(noteContent, { katex, DOMPurify });
   }
+  // Mermaid (T-F16): heavy, so lazy-load the vendored engine only when a diagram
+  // is present, then render asynchronously (SVG sanitized; dir=ltr; failures fall
+  // back to the code block).
+  if (noteContent.querySelector('pre > code.language-mermaid')) {
+    loadMermaid()
+      .then((mermaid) => renderMermaid(noteContent, {
+        mermaid,
+        sanitize: (svg) => sanitizeSvg(svg, DOMPurify),
+        idPrefix: `mmd-${_mmdSeq++}`,
+      }))
+      .catch(() => { /* engine failed to load — code-block fallback remains */ });
+  }
 }
 window.decorateCodeAndMath = decorateCodeAndMath;
+
+// Lazy-load the vendored Mermaid engine once (3 MB — never on the critical path).
+// securityLevel:'strict' + htmlLabels:false → SVG-native text (no <foreignObject>),
+// so the SVG profile sanitizer keeps the labels.
+let _mmdSeq = 0;
+let _mermaidPromise = null;
+function loadMermaid() {
+  if (_mermaidPromise) return _mermaidPromise;
+  _mermaidPromise = new Promise((resolve, reject) => {
+    const init = (ns) => {
+      const m = (ns && (ns.default || ns));
+      if (!m || typeof m.render !== 'function') return reject(new Error('mermaid unavailable'));
+      m.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: { htmlLabels: false } });
+      resolve(m);
+    };
+    if (typeof mermaidNS !== 'undefined') return init(mermaidNS);
+    const s = document.createElement('script');
+    s.src = 'assets/vendor/mermaid/mermaid.min.js';
+    s.onload = () => init(window.mermaidNS);
+    s.onerror = () => { s.remove(); reject(new Error('mermaid script failed to load')); };
+    document.head.appendChild(s);
+  });
+  // A transient first-load failure must not disable mermaid for the whole session:
+  // drop the cached rejection so a later diagram retries.
+  _mermaidPromise.catch(() => { _mermaidPromise = null; });
+  return _mermaidPromise;
+}
+window.loadMermaid = loadMermaid;
 
 window.isArabicHeavy = isArabicHeavy;
 

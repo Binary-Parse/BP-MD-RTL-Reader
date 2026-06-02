@@ -10,6 +10,7 @@
 export function highlightCode(root, { hljs, sanitize = (s) => s } = {}) {
   if (!root || typeof root.querySelectorAll !== 'function' || !hljs || typeof hljs.highlight !== 'function') return root;
   root.querySelectorAll('pre > code').forEach((code) => {
+    if (code.classList.contains('language-mermaid')) return; // diagrams are rendered, not highlighted (T-F16)
     const pre = code.parentElement;
     if (pre) pre.setAttribute('dir', 'ltr'); // code is always LTR (compose with R1/R2)
     if (code.classList.contains('hljs')) return; // already highlighted (idempotent)

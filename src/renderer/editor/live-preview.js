@@ -62,6 +62,8 @@ export function createLivePreview(CM6) {
   }
 
   function buildDecorations(view) {
+    // Nothing on screen (collapsed/unfocused editor) → skip even the two doc.lineAt calls below.
+    if (view.visibleRanges.length === 0) return Decoration.set([], true);
     const ranges = [];
     const sel = view.state.selection.main;
     // The active region = every line the selection spans (inclusive). Markers on these

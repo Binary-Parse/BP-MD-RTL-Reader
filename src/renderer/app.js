@@ -21,6 +21,7 @@ import { t as tr, localeDirection } from './locale.js';
 import { buildExportDoc as buildExportDocImpl } from './export.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
 import { isDroppableFile } from './file-predicates.js';
+import { buildSession, pickActiveIndex } from './session.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1208,6 +1209,7 @@ function renderFile(idx) {
   noteContent.querySelectorAll('a.wikilink').forEach(a => {
     a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
   });
+  persistSettings(); // M6: the active tab changed — snapshot the session (debounced, no-op while restoring)
 }
 window.renderFile = renderFile;
 
@@ -1367,6 +1369,8 @@ function filterByTag(tag) {
 // =====================================================================
 // FILE I/O
 // =====================================================================
+// Absolute path of the open vault (M6 session restore); the per-file relPaths live on State.files.
+let _vaultPath = null;
 async function openVault() {
   closeMenu();
   // Branch 1: Electron IPC path — preferred in packaged builds (Bug 1 / AC1)
@@ -1378,6 +1382,7 @@ async function openVault() {
       const entries = await window.electronAPI.readVault(folderPath);
       const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
       State.vaultName = folderName;
+      _vaultPath = folderPath; // remember the absolute root for last-session restore (M6)
       const md = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false }));
       State.files = md;
       $('vaultName').textContent = folderName;
@@ -2250,6 +2255,7 @@ function persistSettings() {
         italicRecolor: State.italicRecolor,
         uiLocale: State.uiLocale,
         uiDirection: State.uiDirection,
+        lastSession: buildSession(_vaultPath, State.files, State.activeFile), // M6
       });
     } catch (_) { /* persistence is best-effort; never break the UI */ }
   }, 200);
@@ -2292,12 +2298,33 @@ async function restoreSettings() {
     if (typeof s.italicRecolor === 'boolean') { State.italicRecolor = s.italicRecolor; applyItalicRecolor(); }
     if (s.uiLocale === 'ar' || s.uiLocale === 'en') setUiLocale(s.uiLocale);       // T-R7
     if (s.uiDirection === 'rtl' || s.uiDirection === 'ltr') setUiDirection(s.uiDirection);
+    await restoreLastSession(s.lastSession); // M6: re-open the last vault + active note
   } finally {
     _restoring = false;
   }
   return true;
 }
 window.restoreSettings = restoreSettings;
+
+// M6: re-open the vault + active note from the previous session. Best-effort — a moved,
+// deleted, or unauthorized vault degrades to the welcome screen without a toast. Runs
+// while _restoring is true, so the renderFile→persistSettings hook is a no-op (no clobber).
+async function restoreLastSession(ls) {
+  if (!ls || typeof ls.vaultPath !== 'string' || !ls.vaultPath) return;
+  if (!window.electronAPI || typeof window.electronAPI.readVault !== 'function') return;
+  let entries;
+  try { entries = await window.electronAPI.readVault(ls.vaultPath); }
+  catch (_) { return; }
+  if (!Array.isArray(entries) || !entries.length) return;
+  const folderName = ls.vaultPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
+  State.vaultName = folderName;
+  _vaultPath = ls.vaultPath;
+  State.files = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false }));
+  const vn = $('vaultName'); if (vn) { vn.textContent = folderName; vn.classList.remove('empty'); }
+  const sv = $('sbVault'); if (sv) sv.textContent = `folder: ${folderName}`;
+  renderTree(State.files);
+  renderFile(pickActiveIndex(State.files, ls.activePath));
+}
 
 // =====================================================================
 // INIT

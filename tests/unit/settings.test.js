@@ -33,6 +33,19 @@ describe('migrate (EC-D1)', () => {
     expect(migrate({}).italicRecolor).toBe(true);
   });
 
+  test('lastSession (M6): round-trips a valid session, sanitizes a corrupt one, defaults null', () => {
+    expect(defaultSettings().lastSession).toBe(null);
+    const ls = { vaultPath: '/vault', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' };
+    expect(migrate({ lastSession: ls }).lastSession).toEqual(ls);
+    // corrupt members are coerced: non-string vaultPath/activePath → undefined, non-array openPaths → []
+    const dirty = migrate({ lastSession: { vaultPath: 42, openPaths: 'nope', activePath: { x: 1 } } }).lastSession;
+    expect(dirty).toEqual({ vaultPath: undefined, openPaths: [], activePath: undefined });
+    // non-string entries are filtered out of openPaths
+    expect(migrate({ lastSession: { openPaths: ['a.md', 7, null, 'b.md'] } }).lastSession.openPaths).toEqual(['a.md', 'b.md']);
+    // a non-object lastSession → null (default)
+    expect(migrate({ lastSession: 'nope' }).lastSession).toBe(null);
+  });
+
   test('recents sanitized + capped at 10', () => {
     const recents = Array.from({ length: 15 }, (_, i) => ({ name: 'n' + i, path: '/p' + i }));
     recents.push({ name: 'bad' }); // no path → dropped

@@ -22,6 +22,7 @@ import { buildExportDoc as buildExportDocImpl } from './export.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
 import { isDroppableFile } from './file-predicates.js';
 import { buildSession, pickActiveIndex } from './session.js';
+import { buildFileTree, flattenTree } from './tree.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1303,22 +1304,60 @@ function highlightTreeActive() {
   });
 }
 
+// Folder collapse state (T-F1/M3): set of collapsed dir paths, persisted to localStorage
+// so the tree shape survives re-renders (vault reconcile, file open) AND relaunch.
+let _treeCollapsed = null;
+function treeCollapsed() {
+  if (_treeCollapsed) return _treeCollapsed;
+  try { _treeCollapsed = new Set(JSON.parse(localStorage.getItem('bpmd-tree-collapsed') || '[]')); }
+  catch (_) { _treeCollapsed = new Set(); }
+  return _treeCollapsed;
+}
+function saveTreeCollapsed() {
+  try { localStorage.setItem('bpmd-tree-collapsed', JSON.stringify([...treeCollapsed()])); } catch (_) { /* best-effort */ }
+}
+
+// Build a nested, collapsible folder tree from the flat vault listing (T-F1/M3). Each
+// row is indented by depth; dir rows toggle (click / Enter / Space / Arrow), file rows
+// open. State.files index travels as fileIdx so highlightTreeActive + open still work.
 function renderTree(entries) {
   treeEl.innerHTML = '';
   treeEl.style.display = 'block';
   sbEmptyEl.style.display = 'none';
-  entries.forEach((entry, i) => {
+  const collapsed = treeCollapsed();
+  const root = buildFileTree(entries.map((f, i) => ({ name: f.name, relPath: f.path, fileIdx: i })));
+  flattenTree(root, collapsed).forEach(row => {
     const node = document.createElement('div');
-    node.className = 'tree-node tree-indent';
-    node.dataset.fileIdx = i;
     node.setAttribute('role', 'treeitem');
     node.setAttribute('tabindex', '0');
-    node.setAttribute('aria-label', entry.name);
-    const nameIsAr = isArabicHeavy(entry.name);
-    node.innerHTML = `<span class="tree-icon">¶</span><span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(entry.name)}</span>`;
-    const activate = () => openFromTree(i);
-    node.addEventListener('click', activate);
-    node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+    node.setAttribute('aria-label', row.name);
+    node.style.paddingInlineStart = `${8 + row.depth * 14}px`;
+    const nameIsAr = isArabicHeavy(row.name);
+    const nameHtml = `<span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(row.name)}</span>`;
+    if (row.type === 'dir') {
+      const isCollapsed = collapsed.has(row.path);
+      node.className = 'tree-node tree-dir';
+      node.setAttribute('aria-expanded', String(!isCollapsed));
+      node.innerHTML = `<span class="tree-twisty">${isCollapsed ? '▸' : '▾'}</span>${nameHtml}`;
+      const setOpen = (open) => {
+        if (open === !collapsed.has(row.path)) return; // no change
+        if (open) collapsed.delete(row.path); else collapsed.add(row.path);
+        saveTreeCollapsed(); renderTree(entries);
+      };
+      node.addEventListener('click', () => setOpen(collapsed.has(row.path)));
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(collapsed.has(row.path)); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); setOpen(true); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); setOpen(false); }
+      });
+    } else {
+      node.className = 'tree-node tree-file';
+      node.dataset.fileIdx = row.fileIdx;
+      node.innerHTML = `<span class="tree-icon">¶</span>${nameHtml}`;
+      const activate = () => openFromTree(row.fileIdx);
+      node.addEventListener('click', activate);
+      node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+    }
     treeEl.appendChild(node);
   });
   renderTags();

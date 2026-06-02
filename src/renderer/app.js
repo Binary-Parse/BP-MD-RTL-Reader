@@ -19,6 +19,7 @@ import { renderMermaid } from './mermaid.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
 import { t as tr, localeDirection } from './locale.js';
 import { buildExportDoc as buildExportDocImpl } from './export.js';
+import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -260,6 +261,7 @@ function toggleRTL() {
     if (editorEl) editorEl.removeAttribute('dir');
     appBody._manualRTL = false;
   }
+  if (cmAdapter) cmAdapter.setDirection(State.direction); // T-F13: flip the CM6 source editor too
   updateDirUI();
   // Re-resolve per-block direction + inline isolation under the new override so
   // neutral-only blocks inherit the new base direction (EC-C1) and isolation is
@@ -599,24 +601,27 @@ function runFind(q) {
   State.findHits = [];
   State.findSourceMatches = [];  // positions for source mode
 
-  // Source mode: search inside the textarea, since the preview is hidden.
+  // Source mode: search inside the source editor, since the preview is hidden. Re-homed
+  // onto the active EditorPort (T-F13) so it works for both the textarea and CodeMirror.
   if (State.editorMode === 'source') {
     if (!q) { $('findInfo').textContent = '0/0'; return; }
-    const re = new RegExp(escapeReg(q), 'gi');
-    const val = srcTextarea.value;
-    let m, matches = [];
-    while ((m = re.exec(val)) !== null) {
-      matches.push({ start: m.index, end: m.index + m[0].length });
-      if (m.index === re.lastIndex) re.lastIndex++; // safety
+    let matches;
+    if (cmAdapter) {
+      matches = cmAdapter.find(q);
+    } else {
+      const re = new RegExp(escapeReg(q), 'gi');
+      const val = srcTextarea.value;
+      let m; matches = [];
+      while ((m = re.exec(val)) !== null) {
+        matches.push({ start: m.index, end: m.index + m[0].length });
+        if (m.index === re.lastIndex) re.lastIndex++; // safety
+      }
     }
     State.findSourceMatches = matches;
     State.findIdx = 0;
     if (matches.length) {
-      srcTextarea.focus();
-      srcTextarea.setSelectionRange(matches[0].start, matches[0].end);
-      // Scroll the textarea to keep the selection visible without moving the
-      // statusbar — textareas handle this natively when setSelectionRange runs
-      // on a focused element, so no extra work needed.
+      if (cmAdapter) { cmAdapter.focus(); cmAdapter.setSelection(matches[0]); }
+      else { srcTextarea.focus(); srcTextarea.setSelectionRange(matches[0].start, matches[0].end); }
     }
     $('findInfo').textContent = `${matches.length ? 1 : 0}/${matches.length}`;
     return;
@@ -686,8 +691,8 @@ function findStep(d) {
     if (!matches.length) return;
     State.findIdx = (State.findIdx + d + matches.length) % matches.length;
     const m = matches[State.findIdx];
-    srcTextarea.focus();
-    srcTextarea.setSelectionRange(m.start, m.end);
+    if (cmAdapter) { cmAdapter.focus(); cmAdapter.setSelection(m); }      // T-F13
+    else { srcTextarea.focus(); srcTextarea.setSelectionRange(m.start, m.end); }
     $('findInfo').textContent = `${State.findIdx + 1}/${matches.length}`;
     return;
   }
@@ -1071,7 +1076,7 @@ function renderFile(idx) {
   noteContent.style.display = 'block';
   toolbarStrip.style.display = 'flex';
 
-  srcTextarea.value = file.content || '';
+  loadIntoEditor(file.content || ''); // textarea (default) or CodeMirror (flag) — T-F13
 
   // Strip YAML front matter (T-R6) so it never renders as body text.
   const { body } = parseFrontMatter(file.content || '');
@@ -1532,15 +1537,16 @@ window.loadDemo = loadDemo;
 // SOURCE TEXTAREA INPUT
 // =====================================================================
 let _srcDebounce = null;
-function onSourceInput() {
+// Shared by the textarea engine and the CodeMirror engine (T-F13): apply an edit from
+// whichever source editor is active. `val` is the full doc text, `pos` the caret offset.
+function applyEditorInput(val, pos) {
   if (State.activeFile === null || !State.files[State.activeFile]) return;
   const f = State.files[State.activeFile];
-  f.content = srcTextarea.value;
+  f.content = val;
   f.dirty = true;
   renderTabs();
   // Fast: cursor position update on every keystroke
-  const pos = srcTextarea.selectionStart;
-  const upto = srcTextarea.value.slice(0, pos);
+  const upto = val.slice(0, pos);
   const ln = upto.split('\n').length;
   const col = pos - upto.lastIndexOf('\n');
   $('cursorPos').textContent = `ln ${ln} · col ${col}`;
@@ -1570,7 +1576,60 @@ function onSourceInput() {
     buildTOC();
   }, 150);
 }
+function onSourceInput() { applyEditorInput(srcTextarea.value, srcTextarea.selectionStart); }
 srcTextarea.addEventListener('input', onSourceInput);
+
+// ── T-F13: optional CodeMirror 6 source engine, behind a flag (the textarea stays the
+// default + fallback, so default behaviour/snapshots are unchanged). Reversible: enable
+// with ?cm=1 or localStorage 'bpmd-cm6'='1'. cmAdapter conforms to the same EditorPort. ──
+let cmAdapter = null;   // non-null ⇒ CodeMirror is the active source engine
+let cmLoading = false;  // suppress onChange while we load a doc programmatically
+let _cmPromise = null;
+function cmFlagOn() {
+  try { return new URLSearchParams(location.search).has('cm') || localStorage.getItem('bpmd-cm6') === '1'; }
+  catch (_) { return false; }
+}
+function loadCM6() {
+  if (_cmPromise) return _cmPromise;
+  _cmPromise = new Promise((resolve, reject) => {
+    if (typeof window.CM6 !== 'undefined') return resolve(window.CM6);
+    const s = document.createElement('script');
+    s.src = 'assets/vendor/codemirror/codemirror.min.js';
+    s.onload = () => (window.CM6 ? resolve(window.CM6) : reject(new Error('CM6 unavailable')));
+    s.onerror = () => { s.remove(); reject(new Error('CM6 failed to load')); };
+    document.head.appendChild(s);
+  });
+  _cmPromise.catch(() => { _cmPromise = null; }); // allow retry after a transient failure
+  return _cmPromise;
+}
+async function initCM6Editor() {
+  if (cmAdapter || !cmFlagOn()) return false;
+  let CM6;
+  try { CM6 = await loadCM6(); } catch (_) { return false; }
+  const pane = document.querySelector('.source-pane');
+  if (!pane) return false;
+  srcTextarea.style.display = 'none';
+  const mount = document.createElement('div');
+  mount.className = 'cm-mount';
+  pane.appendChild(mount);
+  const active = (State.activeFile != null && State.files[State.activeFile]) ? State.files[State.activeFile] : null;
+  cmAdapter = createCodeMirrorAdapter(mount, {
+    CM6,
+    doc: active ? active.content : '',
+    dir: State.direction === 'rtl' ? 'rtl' : 'ltr',
+    onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
+  });
+  window.__cmActive = true;
+  return true;
+}
+// Load a document into whichever source engine is active (used by renderFile).
+function loadIntoEditor(content) {
+  if (cmAdapter) { cmLoading = true; cmAdapter.load(content || ''); cmLoading = false; }
+  else { srcTextarea.value = content || ''; }
+}
+window.loadCM6 = loadCM6;
+window.initCM6Editor = initCM6Editor;
+window.createCodeMirrorAdapter = createCodeMirrorAdapter;
 
 // Bug 7 fix: blockquote Enter handling.
 // - Empty blockquote line (body is whitespace-only): strip prefix, place cursor on blank line.
@@ -1654,6 +1713,15 @@ function replaceInTextarea(ta, start, end, text) {
   }
 }
 function wrapSelection(left, right) {
+  if (cmAdapter) { // T-F13: route through the active EditorPort, NOT the hidden textarea
+    cmAdapter.focus();
+    const { start, end } = cmAdapter.getSelection();
+    const sel = cmAdapter.getValue().slice(start, end) || 'text';
+    cmAdapter.setSelection({ start, end });
+    cmAdapter.replaceSelection(left + sel + right);
+    cmAdapter.setSelection({ start: start + left.length, end: start + left.length + sel.length });
+    return;
+  }
   ensureSourceFocus();
   const ta = srcTextarea;
   const start = ta.selectionStart, end = ta.selectionEnd;
@@ -1663,6 +1731,15 @@ function wrapSelection(left, right) {
   ta.selectionEnd = start + left.length + sel.length;
 }
 function insertText(left, right) {
+  if (cmAdapter) {
+    cmAdapter.focus();
+    const { start, end } = cmAdapter.getSelection();
+    const sel = cmAdapter.getValue().slice(start, end);
+    cmAdapter.setSelection({ start, end });
+    cmAdapter.replaceSelection(left + sel + right);
+    cmAdapter.setSelection({ start: start + left.length + sel.length });
+    return;
+  }
   ensureSourceFocus();
   const ta = srcTextarea;
   const start = ta.selectionStart, end = ta.selectionEnd;
@@ -1671,6 +1748,15 @@ function insertText(left, right) {
   ta.selectionStart = ta.selectionEnd = start + left.length + sel.length;
 }
 function lineStart(prefix) {
+  if (cmAdapter) {
+    cmAdapter.focus();
+    const { start } = cmAdapter.getSelection();
+    const ls = cmAdapter.getValue().slice(0, start).lastIndexOf('\n') + 1;
+    cmAdapter.setSelection({ start: ls, end: ls });
+    cmAdapter.replaceSelection(prefix);
+    cmAdapter.setSelection({ start: start + prefix.length });
+    return;
+  }
   ensureSourceFocus();
   const ta = srcTextarea;
   const start = ta.selectionStart;
@@ -1679,6 +1765,9 @@ function lineStart(prefix) {
   replaceInTextarea(ta, ls, ls, prefix);
   ta.selectionStart = ta.selectionEnd = start + prefix.length;
 }
+window.wrapSelection = wrapSelection;
+window.insertText = insertText;
+window.lineStart = lineStart;
 
 // =====================================================================
 // COMMAND PALETTE
@@ -2149,5 +2238,7 @@ window.restoreSettings = restoreSettings;
 
   showWelcome();
   initDragDrop();
+  // T-F13: if the CodeMirror flag is set, mount it as the source engine (lazy + reversible).
+  initCM6Editor().catch(() => { /* fall back to the textarea */ });
 })();
 

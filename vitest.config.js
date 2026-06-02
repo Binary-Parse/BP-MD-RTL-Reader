@@ -31,7 +31,7 @@ export default defineConfig({
       // <script> they replaced, they are exercised by the Playwright e2e suite, not unit
       // tests — the PURE logic they import (i18n/theme/state/markdown/bidi/…) stays fully
       // unit-covered. Excluding them keeps the gate measuring unit-testable product code.
-      exclude: ['node_modules/', 'dist/', 'coverage/', 'tests/**', 'src/renderer/app.js', 'src/renderer/theme-boot.js'],
+      exclude: ['node_modules/', 'dist/', 'coverage/', 'tests/**', 'src/renderer/app.js', 'src/renderer/theme-boot.js', 'src/renderer/editor/codemirror-adapter.js'],
       // Coverage gate (audit #5): SAFE thresholds set BELOW current measured
       // coverage (≈98% stmt / 95% branch / 100% func / 98% lines) so the gate
       // enforces a regression floor without false-failing on normal runs.

@@ -264,11 +264,21 @@ interface EditorPort {
 **GREEN:** define port; `TextareaAdapter` (parity) behind flag, then `CodeMirrorAdapter`. **Q1**=CM6, **Q4**=drop Split.
 **Acceptance:** UI depends only on port; BidiService green ≥90% mutation.
 
-## ☐ T-F13 — Unified Live Preview (CM6)
-**Files:** `codemirror-adapter.js`, `index.html` (mount, remove 3-mode switch), `tests/editor-live-preview.spec.js`.
-**RED (e2e):** ☐ inactive line renders formatted; ☐ active (cursor) line shows raw tokens; ☐ Source toggle works; ☐ selection+scroll preserved across edits; ☐ per-line direction + cursor correct in mixed text; ☐ `Ctrl+F` via `EditorPort.find` over decorated tokens (EC-C4); ☐ perf: 10k-line doc <100ms initial, <16ms/keystroke region.
-**GREEN:** CM6 decorations (inactive tokens→ZWSP); wire find/save/selection through port.
-**Acceptance (F13):** all RED pass; old modes removed.
+## ◐ T-F13 — Unified Live Preview (CM6) — FOUNDATION shipped; live-preview is the next increment
+**Done (foundation, reversible):** vendored CodeMirror 6 (`assets/vendor/codemirror/codemirror.min.js`,
+esbuild IIFE `window.CM6` from `scripts/codemirror-entry.mjs`); `src/renderer/editor/codemirror-adapter.js`
+= `createCodeMirrorAdapter` implementing the SAME EditorPort contract as the textarea adapter
+(load/getValue/getSelection/setSelection/replaceSelection/onChange/find + setDirection/focus/destroy).
+`app.js` wires it BEHIND A FLAG (`?cm=1` / localStorage `bpmd-cm6=1`): lazy `loadCM6()`, `initCM6Editor()`
+mounts CM6 into `.source-pane` (hides #srcTextarea), `loadIntoEditor()` routes renderFile, `applyEditorInput`
+shared by both engines (`cmLoading` guard prevents spurious dirty on open). **Find, markdown formatting
+helpers, and toggleRTL all re-homed through the active EditorPort** (review caught a data-loss bug where
+Bold/Italic wrote the stale textarea — fixed + regression-tested). DEFAULT = textarea (behaviour/snapshots
+unchanged; CM6 never loaded). Tests: `tests/f13-codemirror.spec.js` (adapter contract; ?cm=1 mount + edit
+sync; no-data-loss on format; toggleRTL flips CM6; default keeps textarea). coverage excludes the adapter (e2e-tested binding).
+**NEXT increment (the flagship UX):** ☐ live-preview decorations (inactive lines render formatted / active line raw) ·
+☐ remove the 3-mode switch · ☐ per-line RTL + logical caret in CM6 · ☐ scroll/selection preserved across edits ·
+☐ perf 10k-line <100ms/<16ms. The EditorPort seam + CM6 engine are now in place to build these on.
 
 ## ☐ T-R9 — Bidi tables + cursor
 **Files:** `codemirror-adapter.js`/table renderer, `bidi.js`, `tests/rtl-adversarial.spec.js`.
@@ -362,7 +372,7 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 **Test status (after Task 5 — fonts + B4 CSP):** 768 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95; app.js/theme-boot.js excluded as e2e-tested glue) · full Playwright e2e 599/599 on win32 under strict CSP (csp e2e proves inline + REMOTE script/img/fetch are refused; KaTeX+mermaid render; accessibility axe loads locally) · eslint 0 errors (app.js now linted, warnings only). Strict CSP active (script-src 'self', no inline script); fonts self-hosted; 0 CDN/network anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
-Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 ✅(core) → F12 ✅(index.html decomposed in B4 + export.js extracted; app.js = composition root) → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
+Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 ✅(core) → F12 ✅ → F13 ◐(CM6 engine+adapter behind EditorPort flag, reversible; live-preview/3-mode-removal next) → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
 
 ---
 

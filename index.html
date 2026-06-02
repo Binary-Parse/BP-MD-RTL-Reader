@@ -794,6 +794,14 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .source-pane::-webkit-scrollbar, .preview-pane::-webkit-scrollbar { width: 8px; }
 .source-pane::-webkit-scrollbar-thumb, .preview-pane::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
 .source-pane { display: none; }
+/* T-F13: CodeMirror 6 mount fills the source pane; inherit the app's mono type/colours. */
+.cm-mount { height: 100%; }
+.cm-mount .cm-editor { height: 100%; background: var(--paper-deep); }
+.cm-mount .cm-scroller { font-family: var(--mono); font-size: 0.875rem; line-height: 1.7; padding: 56px 60px 120px; }
+.cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); }
+.cm-mount .cm-editor.cm-focused { outline: none; }
+.cm-mount .cm-activeLine { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.cm-mount .cm-selectionBackground, .cm-mount .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
 .editor-area.source .source-pane { display: block; }
 .editor-area.source .preview-pane { display: none; }

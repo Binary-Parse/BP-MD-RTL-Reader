@@ -157,6 +157,13 @@ describe('isolateInlineRuns (T-R2)', () => {
     expect(() => isolateInlineRuns(null)).not.toThrow();
   });
 
+  test('does not isolate digits inside KaTeX math (T-F9 composition)', () => {
+    const root = frag('<p>قيمة <span class="math-inline" dir="ltr"><span class="katex">x<span class="mord">2</span></span></span> هنا</p>');
+    applyBidi(root, { escape: escapeHtml });
+    // the "2" lives inside .katex → must NOT be wrapped in a <bdi>
+    expect(root.querySelector('.katex bdi')).toBeNull();
+  });
+
   test('default identity escape still isolates a number run', () => {
     const root = frag('<p dir="rtl">صفحة 7 هنا</p>');
     isolateInlineRuns(root, 'rtl'); // no escape arg → default (s) => s

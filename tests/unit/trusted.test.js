@@ -3,7 +3,7 @@
  * Uses a recording fake DOMPurify to assert configs and a tiny real strip for SVG.
  */
 import { describe, test, expect } from 'vitest';
-import { sanitizeHtml, sanitizeSvg, katexOptions, isSafeHref, renderTrusted } from '../../src/renderer/trusted.js';
+import { sanitizeHtml, sanitizeSvg, sanitizeMath, katexOptions, isSafeHref, renderTrusted } from '../../src/renderer/trusted.js';
 
 function fakeDOMPurify(records) {
   return {
@@ -32,6 +32,23 @@ describe('sanitizeSvg (EC-B3)', () => {
     expect(out).not.toMatch(/foreignObject|script/i);
     expect(rec[0].cfg.USE_PROFILES).toEqual({ svg: true, svgFilters: true });
     expect(rec[0].cfg.FORBID_TAGS).toEqual(expect.arrayContaining(['script', 'foreignObject']));
+  });
+});
+
+describe('sanitizeMath (T-F9: KaTeX HTML+MathML, keep styles, drop active content)', () => {
+  test('uses html+mathMl+svg profiles, keeps style, forbids script/foreignObject', () => {
+    const rec = [];
+    const out = sanitizeMath('<span class="katex" style="top:1px"><math><mn>2</mn></math></span><script>x()</script>', fakeDOMPurify(rec));
+    expect(out).not.toMatch(/<script/i);
+    expect(rec[0].cfg.USE_PROFILES).toEqual({ html: true, mathMl: true, svg: true });
+    expect(rec[0].cfg.ADD_ATTR).toEqual(expect.arrayContaining(['style']));
+    expect(rec[0].cfg.FORBID_TAGS).toEqual(expect.arrayContaining(['script', 'foreignObject']));
+    // keeps the accessible x-tex annotation, but forbids the annotation-xml escape hatch
+    expect(rec[0].cfg.ADD_TAGS).toEqual(expect.arrayContaining(['annotation', 'semantics']));
+    expect(rec[0].cfg.FORBID_TAGS).toEqual(expect.arrayContaining(['annotation-xml']));
+  });
+  test('returns empty string when DOMPurify is absent', () => {
+    expect(sanitizeMath('<span>x</span>', null)).toBe('');
   });
 });
 

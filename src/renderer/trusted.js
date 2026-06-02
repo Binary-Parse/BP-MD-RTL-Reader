@@ -27,6 +27,24 @@ export function sanitizeSvg(svg, DOMPurify) {
   });
 }
 
+/**
+ * Sanitize KaTeX output (T-F9). KaTeX emits HTML spans (with positioning inline
+ * styles) plus MathML (and occasionally SVG), so we allow those profiles + the
+ * `style` attribute it needs, while dropping any active/script content.
+ */
+export function sanitizeMath(html, DOMPurify) {
+  if (!DOMPurify || typeof DOMPurify.sanitize !== 'function') return '';
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true, mathMl: true, svg: true },
+    // Keep KaTeX's accessible MathML (semantics + the x-tex annotation), but NOT
+    // <annotation-xml> (a MathML→HTML escape hatch / known XSS vector).
+    ADD_TAGS: ['semantics', 'annotation'],
+    ADD_ATTR: ['style', 'aria-hidden', 'encoding'],
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'foreignObject', 'annotation-xml'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick'],
+  });
+}
+
 /** Hardened KaTeX options (EC-B4): no \href trust, bounded macro expansion. */
 export function katexOptions(overrides = {}) {
   return {

@@ -71,6 +71,7 @@ function isolateTextRuns(root, escape) {
     acceptNode(node) {
       const p = node.parentNode;
       if (!p || SKIP_PARENT.has(p.nodeName) || typeof p.closest !== 'function') return NodeFilter.FILTER_REJECT;
+      if (p.closest('.katex')) return NodeFilter.FILTER_REJECT; // never isolate inside KaTeX (T-F9)
       const block = p.closest(BLOCK_SELECTOR);
       if (!block || block.getAttribute('dir') !== 'rtl') return NodeFilter.FILTER_REJECT;
       return HAS_RUN.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;

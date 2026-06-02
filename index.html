@@ -11,6 +11,10 @@
 <!-- Vendored locally (T-B3): no CDN, no runtime network for the engine/sanitizer. -->
 <script src="assets/vendor/marked.umd.js"></script>
 <script src="assets/vendor/purify.min.js"></script>
+<!-- Math (KaTeX) + code highlighting (highlight.js), vendored locally (T-F9): no CDN. -->
+<link rel="stylesheet" href="assets/vendor/katex/katex.min.css">
+<script src="assets/vendor/katex/katex.min.js"></script>
+<script src="assets/vendor/highlight/highlight.min.js"></script>
 <style>
 :root {
   --paper: #FAF7F0;
@@ -917,6 +921,24 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--ink-soft);
 }
 .editor pre code { background: transparent; border: none; padding: 0; color: inherit; font-size: 13px; }
+
+/* Code syntax highlighting (T-F9) — theme-aware token colours (highlight.js).
+   Scoped to #editor so they out-specify `.editor pre code { color: inherit }`. */
+#editor .hljs-comment, #editor .hljs-quote { color: var(--ink-mute); font-style: italic; }
+#editor .hljs-keyword, #editor .hljs-selector-tag, #editor .hljs-type, #editor .hljs-literal { color: var(--plum); }
+#editor .hljs-string, #editor .hljs-regexp, #editor .hljs-addition { color: var(--green); }
+#editor .hljs-number, #editor .hljs-built_in, #editor .hljs-symbol { color: var(--gold); }
+#editor .hljs-title, #editor .hljs-section, #editor .hljs-name { color: var(--accent); }
+#editor .hljs-attr, #editor .hljs-attribute, #editor .hljs-variable, #editor .hljs-property, #editor .hljs-template-variable { color: var(--accent); }
+#editor .hljs-meta, #editor .hljs-tag { color: var(--ink-mute); }
+#editor .hljs-bullet, #editor .hljs-link { color: var(--accent); }
+#editor .hljs-emphasis { font-style: italic; }
+#editor .hljs-strong { font-weight: 600; }
+
+/* KaTeX math (T-F9): block centred; math is always LTR — isolated in RTL prose. */
+.math-block { display: block; text-align: center; margin: 16px 0; direction: ltr; unicode-bidi: isolate; overflow-x: auto; }
+.math-inline { direction: ltr; unicode-bidi: isolate; }
+#editor .katex { direction: ltr; }
 .editor code {
   background: var(--paper-deep);
   border: 1px solid var(--rule);
@@ -1688,6 +1710,9 @@ import { transformCallouts } from './src/renderer/callouts.js';
 import { activeHeading } from './src/renderer/outline.js';
 import { parseFrontMatter, frontMatterDirection } from './src/renderer/frontmatter.js';
 import { dailyNoteName } from './src/renderer/dates.js';
+import { highlightCode } from './src/renderer/highlight.js';
+import { mathExtension, restoreMath } from './src/renderer/math.js';
+import { sanitizeHtml } from './src/renderer/trusted.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1771,6 +1796,9 @@ const editorArea = $('editorArea');
 const srcTextarea = $('srcTextarea');
 
 configureMarked(marked);
+// T-F9: tokenize math BEFORE markdown so the LaTeX source is never corrupted by
+// markdown's escape/emphasis rules (restored from placeholders after sanitize).
+marked.use(mathExtension());
 
 function parseMarkdown(md) {
   return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
@@ -1811,6 +1839,19 @@ function applyBidiToNote(content) {
   }
 }
 window.applyBidiToNote = applyBidiToNote;
+
+// Code highlighting + KaTeX math (T-F9). Runs on the rendered DOM BEFORE the bidi
+// pass so code blocks (forced dir=ltr) and KaTeX spans (dir=ltr, ltr-isolated)
+// compose with R1/R2. Both libraries are vendored locally and sanitized.
+function decorateCodeAndMath() {
+  if (typeof hljs !== 'undefined') {
+    highlightCode(noteContent, { hljs, sanitize: (h) => sanitizeHtml(h, DOMPurify) });
+  }
+  if (typeof katex !== 'undefined') {
+    restoreMath(noteContent, { katex, DOMPurify });
+  }
+}
+window.decorateCodeAndMath = decorateCodeAndMath;
 
 window.isArabicHeavy = isArabicHeavy;
 
@@ -2267,6 +2308,7 @@ function exportHTML() {
   });
   const exportEl = document.createElement('div');
   exportEl.innerHTML = parseMarkdown(body);
+  if (typeof katex !== 'undefined') restoreMath(exportEl, { katex, DOMPurify }); // T-F9
   applyBidi(exportEl, { baseDir: exportDir, escape: escapeHtml });
   const html = exportEl.innerHTML;
   const fullHtml = `<!DOCTYPE html>
@@ -2561,6 +2603,8 @@ function renderFile(idx) {
   // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
   // the bidi pass so callout bodies still get per-block direction (R1/R2).
   transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
+  // Code highlighting + math (T-F9): also before the bidi pass.
+  decorateCodeAndMath();
   // Per-block direction + inline bidi isolation (T-R1/R2), replacing the old
   // whole-document isArabicHeavy flip. The manual ⇄ toggle remains the override.
   applyBidiToNote(file.content || '');
@@ -2996,6 +3040,7 @@ function onSourceInput() {
       ${html}
     `;
     transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
+    decorateCodeAndMath();
     applyBidiToNote(f.content);
     $('propWords').textContent = wordCount;
     $('propRead').textContent = `≈ ${readMin} min`;

@@ -86,3 +86,15 @@ test.describe('[T-T6] Fraunces optical sizing', () => {
     expect(os).toBe('auto');
   });
 });
+
+test.describe('[T-F10] status-bar stats are not falsely clickable', () => {
+  test('.sb-stat spans use the default cursor, not pointer', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    // None of the status-bar stats (utf-8 / markdown / word count / cursor pos …)
+    // have a click handler, so the pointer cursor was a false affordance.
+    const cursors = await page.$$eval('.sb-stat', (els) => els.map((e) => getComputedStyle(e).cursor));
+    expect(cursors.length).toBeGreaterThan(0);
+    expect(cursors.every((c) => c !== 'pointer')).toBe(true);
+  });
+});

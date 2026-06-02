@@ -1288,8 +1288,8 @@ mark.find-hit.current { background: var(--accent); color: white; }
   text-transform: uppercase;
 }
 .sb-spacer { flex: 1; }
-.sb-stat { display: flex; align-items: center; gap: 5px; cursor: pointer; opacity: 0.85; }
-.sb-stat:hover { opacity: 1; }
+/* status-bar stats are read-only — no cursor:pointer/hover affordance (T-F10) */
+.sb-stat { display: flex; align-items: center; gap: 5px; cursor: default; opacity: 0.85; }
 .sb-stat.ok::before { content: '●'; color: var(--green); font-size: 0.6875rem; }
 .sb-stat.dir { color: var(--accent-soft); font-weight: 600; }
 

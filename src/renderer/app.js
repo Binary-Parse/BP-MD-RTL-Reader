@@ -20,6 +20,7 @@ import { getFocusable, trapTab, rovingNext } from './focus.js';
 import { t as tr, localeDirection } from './locale.js';
 import { buildExportDoc as buildExportDocImpl } from './export.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
+import { isDroppableFile } from './file-predicates.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -2157,7 +2158,6 @@ document.addEventListener('click', e => {
 // DRAG-DROP (Issue #7)
 // =====================================================================
 function initDragDrop() {
-  const ALLOWED_EXT = /\.(md|markdown|txt)$/i;
   const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
   document.body.addEventListener('dragover', e => {
@@ -2170,7 +2170,7 @@ function initDragDrop() {
     const files = Array.from(e.dataTransfer.files || []);
     let loaded = 0;
     for (const file of files) {
-      if (!ALLOWED_EXT.test(file.name)) {
+      if (!isDroppableFile(file.name)) {
         showToast(`Skipped "${file.name}" — only .md/.markdown/.txt files`, 'info');
         continue;
       }

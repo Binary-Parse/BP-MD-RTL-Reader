@@ -57,6 +57,24 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     expect(await page.locator('.sb-tab[data-pane="files"]').textContent()).toBe('Files');
   });
 
+  test('Arabic UI localizes the dropdown MENU items (File menu)', async ({ page }) => {
+    await page.evaluate(() => window.setArabicUI(true));
+    await page.locator('.tb-menu-item[data-menu="file"]').click();
+    const names = await page.locator('#dropdown .dd-name').allTextContents();
+    expect(names).toContain('ملاحظة جديدة');        // New Note → Arabic
+    expect(names).toContain('فتح مجلد…');            // Open Folder… (ellipsis preserved)
+    // No Latin leaks into the Arabic menu — except the acronyms that ARE the content (HTML/PDF).
+    const leftover = names.map((n) => n.replace(/HTML|PDF/g, '')).join('');
+    expect(/[A-Za-z]/.test(leftover)).toBe(false);
+  });
+
+  test('English MENU items are unchanged by default (exact strings incl. ellipsis)', async ({ page }) => {
+    await page.locator('.tb-menu-item[data-menu="file"]').click();
+    const names = await page.locator('#dropdown .dd-name').allTextContents();
+    expect(names).toContain('Open Folder…');         // dedicated key preserves the exact string
+    expect(names).toContain('Export PDF');
+  });
+
   test('English note CONTENT stays LTR even when the UI is Arabic/RTL (no leak)', async ({ page }) => {
     await page.evaluate(() => {
       window.setArabicUI(true); // chrome → rtl

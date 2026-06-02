@@ -420,89 +420,89 @@ const MENU_DEFS = {
   file: {
     x: 76,
     items: [
-      { kind: 'label', text: 'Open' },
-      { kind: 'item', icon: '⌂', name: 'Open Folder…', shortcut: 'Ctrl+Shift+O', action: () => openVault() },
-      { kind: 'item', icon: '¶', name: 'Open File…', shortcut: 'Ctrl+O', action: () => openSingleFile() },
+      { kind: 'label', text: 'Open', key: 'menu.open' },
+      { kind: 'item', icon: '⌂', name: 'Open Folder…', key: 'menu.openFolder', shortcut: 'Ctrl+Shift+O', action: () => openVault() },
+      { kind: 'item', icon: '¶', name: 'Open File…', key: 'menu.openFile', shortcut: 'Ctrl+O', action: () => openSingleFile() },
       { kind: 'divider' },
-      { kind: 'label', text: 'New' },
-      { kind: 'item', icon: '+', name: 'New Note', shortcut: 'Ctrl+N', action: () => newNote() },
-      { kind: 'item', icon: '◷', name: 'New Daily Note', shortcut: 'Ctrl+Shift+N', action: () => newDailyNote() },
+      { kind: 'label', text: 'New', key: 'menu.new' },
+      { kind: 'item', icon: '+', name: 'New Note', key: 'menu.newNote', shortcut: 'Ctrl+N', action: () => newNote() },
+      { kind: 'item', icon: '◷', name: 'New Daily Note', key: 'menu.newDaily', shortcut: 'Ctrl+Shift+N', action: () => newDailyNote() },
       { kind: 'divider' },
-      { kind: 'item', icon: '↓', name: 'Save', shortcut: 'Ctrl+S', action: () => saveCurrent() },
-      { kind: 'item', icon: '⇣', name: 'Save As…', shortcut: 'Ctrl+Shift+S', action: () => saveAs() },
+      { kind: 'item', icon: '↓', name: 'Save', key: 'menu.save', shortcut: 'Ctrl+S', action: () => saveCurrent() },
+      { kind: 'item', icon: '⇣', name: 'Save As…', key: 'menu.saveAs', shortcut: 'Ctrl+Shift+S', action: () => saveAs() },
       { kind: 'divider' },
-      { kind: 'item', icon: '⇪', name: 'Export HTML', action: () => exportHTML() },
-      { kind: 'item', icon: '⎙', name: 'Export PDF', action: () => exportPDF() },
+      { kind: 'item', icon: '⇪', name: 'Export HTML', key: 'menu.exportHtml', action: () => exportHTML() },
+      { kind: 'item', icon: '⎙', name: 'Export PDF', key: 'menu.exportPdf', action: () => exportPDF() },
       { kind: 'divider' },
-      { kind: 'item', icon: '★', name: 'Load Demo Notes', action: () => loadDemo() },
+      { kind: 'item', icon: '★', name: 'Load Demo Notes', key: 'menu.loadDemo', action: () => loadDemo() },
       { kind: 'divider' },
-      { kind: 'item', icon: '×', name: 'Close Tab', shortcut: 'Ctrl+W', action: () => { if (State.activeFile !== null) closeTab(State.activeFile); closeMenu(); } },
-      { kind: 'item', icon: '×', name: 'Close Window', shortcut: 'Alt+F4', action: () => winClose() }
+      { kind: 'item', icon: '×', name: 'Close Tab', key: 'menu.closeTab', shortcut: 'Ctrl+W', action: () => { if (State.activeFile !== null) closeTab(State.activeFile); closeMenu(); } },
+      { kind: 'item', icon: '×', name: 'Close Window', key: 'menu.closeWindow', shortcut: 'Alt+F4', action: () => winClose() }
     ]
   },
   edit: {
     x: 110,
     items: [
-      { kind: 'item', icon: '↶', name: 'Undo', shortcut: 'Ctrl+Z', action: () => execEditCmd('undo') },
-      { kind: 'item', icon: '↷', name: 'Redo', shortcut: 'Ctrl+Y', action: () => execEditCmd('redo') },
+      { kind: 'item', icon: '↶', name: 'Undo', key: 'menu.undo', shortcut: 'Ctrl+Z', action: () => execEditCmd('undo') },
+      { kind: 'item', icon: '↷', name: 'Redo', key: 'menu.redo', shortcut: 'Ctrl+Y', action: () => execEditCmd('redo') },
       { kind: 'divider' },
-      { kind: 'item', icon: '✂', name: 'Cut', shortcut: 'Ctrl+X', action: () => execEditCmd('cut') },
-      { kind: 'item', icon: '⧉', name: 'Copy', shortcut: 'Ctrl+C', action: () => execEditCmd('copy') },
-      { kind: 'item', icon: '⎘', name: 'Paste', shortcut: 'Ctrl+V', action: () => execEditCmd('paste') },
-      { kind: 'item', icon: '⊟', name: 'Select All', shortcut: 'Ctrl+A', action: () => execEditCmd('selectAll') },
+      { kind: 'item', icon: '✂', name: 'Cut', key: 'menu.cut', shortcut: 'Ctrl+X', action: () => execEditCmd('cut') },
+      { kind: 'item', icon: '⧉', name: 'Copy', key: 'menu.copy', shortcut: 'Ctrl+C', action: () => execEditCmd('copy') },
+      { kind: 'item', icon: '⎘', name: 'Paste', key: 'menu.paste', shortcut: 'Ctrl+V', action: () => execEditCmd('paste') },
+      { kind: 'item', icon: '⊟', name: 'Select All', key: 'menu.selectAll', shortcut: 'Ctrl+A', action: () => execEditCmd('selectAll') },
       { kind: 'divider' },
-      { kind: 'item', icon: '⌕', name: 'Find…', shortcut: 'Ctrl+F', action: () => { closeMenu(); openFind(); } },
+      { kind: 'item', icon: '⌕', name: 'Find…', key: 'menu.find', shortcut: 'Ctrl+F', action: () => { closeMenu(); openFind(); } },
       { kind: 'divider' },
-      { kind: 'item', icon: 'B', name: 'Bold', shortcut: 'Ctrl+B', action: () => { closeMenu(); wrapSelection('**', '**'); } },
-      { kind: 'item', icon: 'I', name: 'Italic', shortcut: 'Ctrl+I', action: () => { closeMenu(); wrapSelection('*', '*'); } },
-      { kind: 'item', icon: '∞', name: 'Insert Link', shortcut: 'Ctrl+L', action: () => { closeMenu(); insertText('[', '](url)'); } },
-      { kind: 'item', icon: '[[', name: 'Insert Wikilink', action: () => { closeMenu(); insertText('[[', ']]'); } }
+      { kind: 'item', icon: 'B', name: 'Bold', key: 'menu.bold', shortcut: 'Ctrl+B', action: () => { closeMenu(); wrapSelection('**', '**'); } },
+      { kind: 'item', icon: 'I', name: 'Italic', key: 'menu.italic', shortcut: 'Ctrl+I', action: () => { closeMenu(); wrapSelection('*', '*'); } },
+      { kind: 'item', icon: '∞', name: 'Insert Link', key: 'menu.insertLink', shortcut: 'Ctrl+L', action: () => { closeMenu(); insertText('[', '](url)'); } },
+      { kind: 'item', icon: '[[', name: 'Insert Wikilink', key: 'menu.insertWikilink', action: () => { closeMenu(); insertText('[[', ']]'); } }
     ]
   },
   view: {
     x: 145,
     items: [
-      { kind: 'label', text: 'Mode' },
-      { kind: 'check', name: 'Live Preview', checked: () => State.editorMode === 'live', action: () => { setEditorMode('live'); closeMenu(); } },
-      { kind: 'check', name: 'Split View', checked: () => State.editorMode === 'split', action: () => { setEditorMode('split'); closeMenu(); } },
-      { kind: 'check', name: 'Source Mode', checked: () => State.editorMode === 'source', action: () => { setEditorMode('source'); closeMenu(); } },
+      { kind: 'label', text: 'Mode', key: 'menu.mode' },
+      { kind: 'check', name: 'Live Preview', key: 'menu.livePreview', checked: () => State.editorMode === 'live', action: () => { setEditorMode('live'); closeMenu(); } },
+      { kind: 'check', name: 'Split View', key: 'menu.splitView', checked: () => State.editorMode === 'split', action: () => { setEditorMode('split'); closeMenu(); } },
+      { kind: 'check', name: 'Source Mode', key: 'menu.sourceMode', checked: () => State.editorMode === 'source', action: () => { setEditorMode('source'); closeMenu(); } },
       { kind: 'divider' },
-      { kind: 'label', text: 'Panels' },
-      { kind: 'check', name: 'Show Sidebar', shortcut: 'Ctrl+\\', checked: () => State.sidebarVisible, action: () => { toggleSidebar(); closeMenu(); } },
-      { kind: 'check', name: 'Show Inspector', shortcut: 'Ctrl+Shift+I', checked: () => State.inspectorVisible, action: toggleInspector },
+      { kind: 'label', text: 'Panels', key: 'menu.panels' },
+      { kind: 'check', name: 'Show Sidebar', key: 'menu.showSidebar', shortcut: 'Ctrl+\\', checked: () => State.sidebarVisible, action: () => { toggleSidebar(); closeMenu(); } },
+      { kind: 'check', name: 'Show Inspector', key: 'menu.showInspector', shortcut: 'Ctrl+Shift+I', checked: () => State.inspectorVisible, action: toggleInspector },
       { kind: 'divider' },
-      { kind: 'label', text: 'Theme' },
-      { kind: 'check', name: 'Paper (light)', checked: () => State.theme === 'paper', action: () => setTheme('paper') },
-      { kind: 'check', name: 'Ink (dark)', checked: () => State.theme === 'ink', action: () => setTheme('ink') },
-      { kind: 'check', name: 'Sepia', checked: () => State.theme === 'sepia', action: () => setTheme('sepia') },
+      { kind: 'label', text: 'Theme', key: 'menu.theme' },
+      { kind: 'check', name: 'Paper (light)', key: 'menu.themePaper', checked: () => State.theme === 'paper', action: () => setTheme('paper') },
+      { kind: 'check', name: 'Ink (dark)', key: 'menu.themeInk', checked: () => State.theme === 'ink', action: () => setTheme('ink') },
+      { kind: 'check', name: 'Sepia', key: 'menu.themeSepia', checked: () => State.theme === 'sepia', action: () => setTheme('sepia') },
       { kind: 'divider' },
-      { kind: 'item', icon: '⇄', name: 'Flip Direction (RTL/LTR)', shortcut: 'Ctrl+Shift+L', action: () => { toggleRTL(); closeMenu(); } },
+      { kind: 'item', icon: '⇄', name: 'Flip Direction (RTL/LTR)', key: 'menu.flipDirection', shortcut: 'Ctrl+Shift+L', action: () => { toggleRTL(); closeMenu(); } },
       { kind: 'divider' },
-      { kind: 'label', text: 'Calendar' },
-      { kind: 'check', name: 'Gregorian', checked: () => State.calendar === 'gregorian', action: () => setCalendar('gregorian') },
-      { kind: 'check', name: 'Hijri (Umm al-Qura)', checked: () => State.calendar === 'hijri', action: () => setCalendar('hijri') },
+      { kind: 'label', text: 'Calendar', key: 'menu.calendar' },
+      { kind: 'check', name: 'Gregorian', key: 'menu.gregorian', checked: () => State.calendar === 'gregorian', action: () => setCalendar('gregorian') },
+      { kind: 'check', name: 'Hijri (Umm al-Qura)', key: 'menu.hijri', checked: () => State.calendar === 'hijri', action: () => setCalendar('hijri') },
       { kind: 'divider' },
-      { kind: 'label', text: 'Arabic' },
-      { kind: 'check', name: 'Arabic Interface (العربية)', checked: () => State.uiDirection === 'rtl', action: () => toggleArabicUI() },
-      { kind: 'check', name: 'Kashida Justification', checked: () => State.arabicKashida, action: () => toggleKashida() },
+      { kind: 'label', text: 'Arabic', key: 'menu.arabic' },
+      { kind: 'check', name: 'Arabic Interface (العربية)', key: 'menu.arabicInterface', checked: () => State.uiDirection === 'rtl', action: () => toggleArabicUI() },
+      { kind: 'check', name: 'Kashida Justification', key: 'menu.kashida', checked: () => State.arabicKashida, action: () => toggleKashida() },
       { kind: 'divider' },
-      { kind: 'label', text: 'Typography' },
-      { kind: 'check', name: 'Recolour Italics', checked: () => State.italicRecolor, action: () => toggleItalicRecolor() },
+      { kind: 'label', text: 'Typography', key: 'menu.typography' },
+      { kind: 'check', name: 'Recolour Italics', key: 'menu.recolourItalics', checked: () => State.italicRecolor, action: () => toggleItalicRecolor() },
       { kind: 'divider' },
-      { kind: 'label', text: 'Zoom' },
-      { kind: 'item', icon: '+', name: 'Zoom In',    shortcut: 'Ctrl+=', action: () => { zoomIn();    closeMenu(); } },
-      { kind: 'item', icon: '−', name: 'Zoom Out',   shortcut: 'Ctrl+-', action: () => { zoomOut();   closeMenu(); } },
-      { kind: 'item', icon: '1', name: 'Reset Zoom', shortcut: 'Ctrl+0', action: () => { zoomReset(); closeMenu(); } },
+      { kind: 'label', text: 'Zoom', key: 'menu.zoom' },
+      { kind: 'item', icon: '+', name: 'Zoom In', key: 'menu.zoomIn',    shortcut: 'Ctrl+=', action: () => { zoomIn();    closeMenu(); } },
+      { kind: 'item', icon: '−', name: 'Zoom Out', key: 'menu.zoomOut',   shortcut: 'Ctrl+-', action: () => { zoomOut();   closeMenu(); } },
+      { kind: 'item', icon: '1', name: 'Reset Zoom', key: 'menu.resetZoom', shortcut: 'Ctrl+0', action: () => { zoomReset(); closeMenu(); } },
       { kind: 'divider' },
-      { kind: 'item', icon: '⌘', name: 'Command Palette', shortcut: 'Ctrl+K', action: () => { closeMenu(); openPalette(); } }
+      { kind: 'item', icon: '⌘', name: 'Command Palette', key: 'menu.commandPalette', shortcut: 'Ctrl+K', action: () => { closeMenu(); openPalette(); } }
     ]
   },
   help: {
     x: 184,
     items: [
-      { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
-      { kind: 'item', icon: '⟳', name: 'Check for Updates…', action: () => { closeMenu(); checkForUpdate(); } },
-      { kind: 'item', icon: 'i', name: 'About BP MD RTL Reader', action: showAbout }
+      { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', key: 'menu.shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
+      { kind: 'item', icon: '⟳', name: 'Check for Updates…', key: 'menu.checkUpdates', action: () => { closeMenu(); checkForUpdate(); } },
+      { kind: 'item', icon: 'i', name: 'About BP MD RTL Reader', key: 'menu.about', action: showAbout }
     ]
   }
 };
@@ -546,20 +546,24 @@ function openMenu(e, name) {
 function buildMenu(name) {
   const def = MENU_DEFS[name];
   let html = '';
+  // Resolve the display string via the locale catalog when the item carries a key
+  // (T-R7), falling back to the literal name/text so any un-keyed item still renders.
+  // buildMenu runs on every open, so it reads State.uiLocale live — no applyLocale hook.
+  const label = (it) => (it.key ? tr(it.key, State.uiLocale) : (it.name ?? it.text));
   def.items.forEach((it, i) => {
-    if (it.kind === 'label') html += `<div class="dd-section-label">${escapeHtml(it.text)}</div>`;
+    if (it.kind === 'label') html += `<div class="dd-section-label">${escapeHtml(label(it))}</div>`;
     else if (it.kind === 'divider') html += `<div class="dd-divider"></div>`;
     else if (it.kind === 'check') {
       const checked = it.checked ? it.checked() : false;
       html += `<div class="dd-item${checked ? ' checked' : ''}" data-i="${i}" role="menuitemcheckbox" aria-checked="${checked}" tabindex="0">
         <span class="dd-check">✓</span><span class="dd-icon">·</span>
-        <span class="dd-name">${escapeHtml(it.name)}</span>
+        <span class="dd-name">${escapeHtml(label(it))}</span>
         ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
       </div>`;
     } else {
       html += `<div class="dd-item${it.disabled ? ' disabled' : ''}" data-i="${i}" role="menuitem"${it.disabled ? ' aria-disabled="true"' : ' tabindex="0"'}>
         <span class="dd-icon">${escapeHtml(it.icon || '·')}</span>
-        <span class="dd-name">${escapeHtml(it.name)}</span>
+        <span class="dd-name">${escapeHtml(label(it))}</span>
         ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
       </div>`;
     }

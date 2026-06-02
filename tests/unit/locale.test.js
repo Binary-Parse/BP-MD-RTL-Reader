@@ -23,6 +23,25 @@ describe('t (translate) — T-R7', () => {
     expect(Object.keys(MESSAGES.ar).sort()).toEqual(Object.keys(MESSAGES.en).sort());
   });
 
+  test('catalog covers the dropdown MENU items (T-R7 expansion)', () => {
+    for (const key of [
+      'menu.open', 'menu.openFolder', 'menu.openFile', 'menu.new', 'menu.newNote', 'menu.newDaily',
+      'menu.save', 'menu.saveAs', 'menu.exportHtml', 'menu.exportPdf', 'menu.loadDemo',
+      'menu.closeTab', 'menu.closeWindow',
+      'menu.undo', 'menu.redo', 'menu.cut', 'menu.copy', 'menu.paste', 'menu.selectAll',
+      'menu.find', 'menu.bold', 'menu.italic', 'menu.insertLink', 'menu.insertWikilink',
+      'menu.mode', 'menu.livePreview', 'menu.splitView', 'menu.sourceMode', 'menu.panels',
+      'menu.showSidebar', 'menu.showInspector', 'menu.theme', 'menu.themePaper', 'menu.themeInk',
+      'menu.themeSepia', 'menu.flipDirection', 'menu.calendar', 'menu.gregorian', 'menu.hijri',
+      'menu.arabic', 'menu.arabicInterface', 'menu.kashida', 'menu.typography', 'menu.recolourItalics',
+      'menu.zoom', 'menu.zoomIn', 'menu.zoomOut', 'menu.resetZoom', 'menu.commandPalette',
+      'menu.shortcuts', 'menu.checkUpdates', 'menu.about']) {
+      expect(MESSAGES.en[key], `en missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `ar missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `${key} not translated`).not.toBe(MESSAGES.en[key]);
+    }
+  });
+
   test('catalog covers the inspector + status chrome (T-R7 expansion)', () => {
     for (const key of ['panel.inspector', 'panel.outline', 'panel.properties',
       'prop.file', 'prop.words', 'prop.read', 'prop.direction', 'prop.mode', 'status.markdown']) {

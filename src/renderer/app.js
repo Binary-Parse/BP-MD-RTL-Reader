@@ -396,6 +396,23 @@ function showAbout() {
   openModal('About', html);
 }
 
+// T-Q6: opt-in update CHECK (user-initiated only; never auto-checks/downloads). Asks the
+// main process to compare the running version against the public releases manifest, and
+// reports the result via a toast. Degrades gracefully outside the desktop app.
+async function checkForUpdate() {
+  if (!window.electronAPI || typeof window.electronAPI.checkForUpdate !== 'function') {
+    showToast('Update check needs the desktop app', 'error'); return;
+  }
+  showToast('Checking for updates…', 'info');
+  let res;
+  try { res = await window.electronAPI.checkForUpdate(); } catch (_) { res = { error: 'ipc' }; }
+  if (res && res.updateAvailable) showToast(`Update available: ${res.latest} (you have ${res.current})`);
+  else if (res && res.latest) showToast(`You're up to date (${res.current})`, 'info');
+  else showToast('Could not check for updates', 'error');
+  return res;
+}
+window.checkForUpdate = checkForUpdate;
+
 // =====================================================================
 // DROPDOWN MENUS
 // =====================================================================
@@ -484,6 +501,7 @@ const MENU_DEFS = {
     x: 184,
     items: [
       { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
+      { kind: 'item', icon: '⟳', name: 'Check for Updates…', action: () => { closeMenu(); checkForUpdate(); } },
       { kind: 'item', icon: 'i', name: 'About BP MD RTL Reader', action: showAbout }
     ]
   }

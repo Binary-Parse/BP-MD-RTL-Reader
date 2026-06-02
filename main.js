@@ -15,7 +15,12 @@ const { classifyNavigation, isExternallyOpenable } = require('./src/main/navigat
 const { buildContextMenuTemplate } = require('./src/main/context-menu');
 const { createDocumentStore } = require('./src/main/document-store');
 const { createSettingsStore, clampWindowBounds, migrate } = require('./src/main/settings');
+const { compareVersions } = require('./src/main/version');
 const crypto = require('crypto');
+
+// T-Q6: the public releases manifest consulted ONLY when the user explicitly checks for
+// updates (opt-in, no auto-check, no auto-download, no identifiers sent).
+const UPDATE_MANIFEST_URL = 'https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest';
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
 // All Electron/fs side-effects live inside bootstrap() so the module can be
@@ -28,7 +33,7 @@ const crypto = require('crypto');
 // @param {object} deps.electron - the 'electron' module (or a mock)
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
-function bootstrap({ electron, fs, proc = process }) {
+function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch }) {
   const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session } = electron;
 
   // Reject `promise` if it hasn't settled within `ms` — bounds a stuck PDF render so
@@ -349,6 +354,28 @@ function bootstrap({ electron, fs, proc = process }) {
         if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close();
         fs.promises.unlink(tmpHtml).catch(() => { /* best-effort temp cleanup */ });
       }
+    });
+
+    // ==== update:check (T-Q6) — OPT-IN only, privacy-preserving ====
+    // Invoked SOLELY by an explicit user action ("Check for Updates…"). There is no
+    // auto-check on launch, no auto-download, and no identifiers/telemetry are sent — just
+    // a GET of the public releases manifest + a version compare. (The only outbound request
+    // the app ever makes, and only when the user asks.) Returns whether a newer release exists.
+    ipcMain.handle('update:check', async () => {
+      const current = app.getVersion();
+      if (typeof fetchFn !== 'function') return { error: 'unsupported', current };
+      let res;
+      try {
+        res = await fetchFn(UPDATE_MANIFEST_URL, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'BP-MD-RTL-Reader' } });
+      } catch (_) {
+        return { error: 'network', current };
+      }
+      if (!res || !res.ok) return { error: 'http', current };
+      let data;
+      try { data = await res.json(); } catch (_) { return { error: 'parse', current }; }
+      const latest = String((data && (data.tag_name || data.version)) || '').replace(/^v/i, '');
+      if (!latest) return { error: 'no-version', current };
+      return { current, latest, updateAvailable: compareVersions(latest, current) > 0, url: (data && data.html_url) || '' };
     });
 
     ipcMain.on('edit:command', (event, cmd) => {

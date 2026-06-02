@@ -24,9 +24,9 @@ async function helpItemNames(page) {
 }
 
 test.describe('[HELP] Help menu + About attribution', () => {
-  test('Help menu offers exactly Keyboard Shortcuts and About BP MD RTL Reader', async ({ page }) => {
+  test('Help menu offers Keyboard Shortcuts, Check for Updates, and About', async ({ page }) => {
     await openHelpMenu(page);
-    expect(await helpItemNames(page)).toEqual(['Keyboard Shortcuts', 'About BP MD RTL Reader']);
+    expect(await helpItemNames(page)).toEqual(['Keyboard Shortcuts', 'Check for Updates…', 'About BP MD RTL Reader']);
   });
 
   test('Help menu no longer offers Documentation or Report an Issue', async ({ page }) => {

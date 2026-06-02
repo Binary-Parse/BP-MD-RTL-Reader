@@ -205,6 +205,14 @@ describe('preload.js', () => {
     expect(typeof api.logError).toBe('function');
     expect(typeof api.exportPDF).toBe('function');
     expect(typeof api.onVaultChanged).toBe('function');
+    expect(typeof api.checkForUpdate).toBe('function');
+  });
+
+  test('checkForUpdate invokes update:check with no arguments (T-Q6)', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    getApi().checkForUpdate();
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledWith('update:check');
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
   });
 
   test('onVaultChanged subscribes to the vault:changed channel and unwraps the payload (T-B9)', () => {

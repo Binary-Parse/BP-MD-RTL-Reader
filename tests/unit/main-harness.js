@@ -34,6 +34,7 @@ export function buildMockElectron() {
     whenReady: vi.fn(() => Promise.resolve()),
     on: vi.fn(), quit: vi.fn(),
     getPath: vi.fn((name) => `/mock/userData/${name}`),
+    getVersion: vi.fn(() => '1.0.0'), // T-Q6
   };
   const crashReporter = { start: vi.fn() };
   const BrowserWindow = vi.fn(function (opts) { mockWin._options = opts; return mockWin; });

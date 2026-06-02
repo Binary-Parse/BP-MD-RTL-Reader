@@ -37,6 +37,9 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // T-B9: the main process watches the open vault; this fires (debounced) when files
     // change on disk externally so the renderer can refresh + surface conflicts (EC-A2).
     onVaultChanged: (cb) => ipcRenderer.on('vault:changed', (_e, data) => cb(data)),
+    // T-Q6: opt-in update check — only ever called from an explicit "Check for Updates…"
+    // user action. No auto-check, no auto-download, no identifiers.
+    checkForUpdate: () => ipcRenderer.invoke('update:check'),
     // One-way error reporter: forwards renderer-side errors (window.onerror,
     // unhandledrejection) to the main process, which appends a JSON line to
     // <userData>/logs/bpmdrtlreader.log. NO network, NO third party — local only.

@@ -34,6 +34,9 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // (file association) or dropped one on the macOS dock. The renderer wraps
     // this in addFile() to surface the content immediately.
     onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
+    // T-B9: the main process watches the open vault; this fires (debounced) when files
+    // change on disk externally so the renderer can refresh + surface conflicts (EC-A2).
+    onVaultChanged: (cb) => ipcRenderer.on('vault:changed', (_e, data) => cb(data)),
     // One-way error reporter: forwards renderer-side errors (window.onerror,
     // unhandledrejection) to the main process, which appends a JSON line to
     // <userData>/logs/bpmdrtlreader.log. NO network, NO third party — local only.

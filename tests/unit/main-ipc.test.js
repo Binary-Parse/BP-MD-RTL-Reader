@@ -164,6 +164,29 @@ describe('fs:readVault', () => {
     expect(await readVault({}, '/never-authorized')).toEqual({ error: 'unauthorized-path' });
   });
 
+  // ── T-B9: a successful read starts an fs.watch and pushes vault:changed ──
+  test('after a successful read, watches the vault and sends vault:changed (debounced) on a disk change', async () => {
+    await authorize('/watch-vault');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    const sender = mockElectron._mockWin.webContents;
+    sender.send.mockClear();
+
+    await readVault({ sender }, '/watch-vault');
+    expect(mockFs.watch).toHaveBeenCalledWith('/watch-vault', { recursive: true }, expect.any(Function));
+
+    vi.useFakeTimers();
+    try {
+      mockFs._watchCb('change', 'note.md'); // simulate an external edit
+      vi.advanceTimersByTime(200);          // past the debounce
+    } finally {
+      vi.useRealTimers();
+    }
+    const sent = sender.send.mock.calls.find((c) => c[0] === 'vault:changed');
+    expect(sent, 'should emit vault:changed').toBeTruthy();
+    expect(sent[1].files).toContain('note.md');
+    expect(sent[1].folderPath).toBe('/watch-vault');
+  });
+
   // ── L132 + L134-136: readdir + too-many-files boundary ──
   test('readdir is called with the folderPath and {withFileTypes:true}', async () => {
     await authorize('/readdir-vault');

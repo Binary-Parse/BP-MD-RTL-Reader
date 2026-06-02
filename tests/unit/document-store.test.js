@@ -84,6 +84,40 @@ describe('write (EC-A1/A2/A3)', () => {
   });
 });
 
+describe('watch (T-B9 — external-change notification, EC-A2)', () => {
+  test('debounces a burst of fs.watch events into one changed callback carrying the files', () => {
+    vi.useFakeTimers();
+    let listener;
+    const watcher = { close: vi.fn() };
+    const fs = { ...mockFs(), watch: vi.fn((root, opts, cb) => { listener = cb; return watcher; }) };
+    const store = createDocumentStore({ fs, path: path.posix });
+    const cb = vi.fn();
+    const handle = store.watch('/v', cb, { debounceMs: 100 });
+    expect(fs.watch).toHaveBeenCalledWith('/v', { recursive: true }, expect.any(Function));
+
+    listener('change', 'a.md');
+    listener('change', 'a.md'); // dup coalesced
+    listener('rename', 'b.md');
+    expect(cb).not.toHaveBeenCalled(); // still within the debounce window
+
+    vi.advanceTimersByTime(100);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0].files.sort()).toEqual(['a.md', 'b.md']);
+
+    handle.close();
+    expect(watcher.close).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test('missing fs.watch, or a watch that throws (EMFILE), → safe no-op disposable', () => {
+    const s1 = createDocumentStore({ fs: { ...mockFs() }, path: path.posix }); // no .watch
+    expect(() => s1.watch('/v', () => {}).close()).not.toThrow();
+    const fs2 = { ...mockFs(), watch: () => { throw Object.assign(new Error('too many'), { code: 'EMFILE' }); } };
+    const s2 = createDocumentStore({ fs: fs2, path: path.posix });
+    expect(() => s2.watch('/v', () => {}).close()).not.toThrow();
+  });
+});
+
 describe('listMarkdown (EC-A5)', () => {
   function dirent(name, kind) {
     return { name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' };

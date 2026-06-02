@@ -312,7 +312,7 @@ interface EditorPort {
 | Task | Files | RED/Check | Notes |
 |---|---|---|---|
 | ☐ T-B7 | `package.json` build, CI | mac/linux artifacts build; entitlements for user-selected folders | Q5 signing/notarization |
-| ☐ T-B9 | `main.js` (watch via AI1), `preload.js` | `fs.watch`→`changed`→renderer refresh; conflict path (EC-A2) | |
+| ✅ T-B9 | `src/main/document-store.js` (`watch`), `main.js`, `preload.js` (`onVaultChanged`), `src/renderer/app.js` (`handleVaultChanged`/`resolveConflict`), `tests/{unit/document-store,unit/main-ipc,b9-vault-watch}` | `fs.watch`(recursive, debounced)→`vault:changed`→renderer re-lists & reconciles; non-dirty files adopt disk content, EOL-normalized compare avoids false conflicts; EC-A2: dirty+diverged → conflict banner (Keep edits / Reload from disk) + ⚠ tab marker, never silent overwrite; watcher closed on window-close/quit | EC-A2 |
 | ☐ T-B10 | `src/main-logic.js`, `index.html` | `.txt` consistent across drag-drop + vault filter | |
 | ☐ T-F10 | `index.html` | remove double `◆`; hide/disable dead Recent + fake `.sb-stat` pointer | cosmetics |
 | ✅ T-F11 | `index.html` CSS, `src/{main/settings,renderer/app}.js`, `tests/f11-t6.spec.js` | italic-recolour OPT-OUT (`italicRecolor` setting, default on; `.no-italic-recolor #noteContent em` → ink colour, slant kept) via View ▸ Typography + palette, persisted; chevrons mirror under `html[dir="rtl"]` (dormant until R7 sets UI dir — scoped to UI, not content) | |
@@ -360,7 +360,7 @@ Legend: ☑ done & unit-tested · ◑ partial · ⊘ deferred (needs browser/hea
 **Test status (after Task 5 — fonts + B4 CSP):** 768 unit tests green · coverage 96.45% stmts / 90.17% branch / 95.57% func / 97.47% lines (gate ✓ at 95/88/95/95; app.js/theme-boot.js excluded as e2e-tested glue) · full Playwright e2e 599/599 on win32 under strict CSP (csp e2e proves inline + REMOTE script/img/fetch are refused; KaTeX+mermaid render; accessibility axe loads locally) · eslint 0 errors (app.js now linted, warnings only). Strict CSP active (script-src 'self', no inline script); fonts self-hosted; 0 CDN/network anywhere in shipping code. Local-first holds: offline probe blocks all external network and renders marked/DOMPurify/KaTeX/highlight.js/mermaid from `assets/vendor/` with 0 CDN requests.
 
 ### In-progress autonomous build (this branch)
-Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
+Working order: F16 ✅ → F4+F5 ✅ → T4+T5 ✅ → B6+F6 ✅ → B3-finish/T1/T3/B4 ✅ → R10 ✅ → F11+T6 ✅ → B9 ✅ → R7 → F12 → F13 → B7+Q6. Linux visual baselines deferred to one final regeneration pass (Playwright v1.60.0-jammy Docker).
 
 ---
 

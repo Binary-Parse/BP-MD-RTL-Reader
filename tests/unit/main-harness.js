@@ -62,7 +62,7 @@ export function buildMockElectron() {
 }
 
 export function buildMockFs(overrides = {}) {
-  return {
+  const fs = {
     readFileSync: vi.fn(() => '# Hello'),
     realpathSync: vi.fn((p) => p),
     statSync: vi.fn(() => ({ isFile: () => true, size: 100 })),
@@ -81,6 +81,11 @@ export function buildMockFs(overrides = {}) {
     writeFileSync: vi.fn(), unlinkSync: vi.fn(),
     ...overrides,
   };
+  // T-B9: fs.watch mock that captures the listener so tests can simulate a disk change.
+  if (!fs.watch) {
+    fs.watch = vi.fn((root, opts, cb) => { fs._watchRoot = root; fs._watchOpts = opts; fs._watchCb = cb; fs._watchClose = vi.fn(); return { close: fs._watchClose }; });
+  }
+  return fs;
 }
 
 // EventEmitter-ish process stub so process.on/emit inside bootstrap is isolated

@@ -204,6 +204,17 @@ describe('preload.js', () => {
     expect(typeof api.onOpenFile).toBe('function');
     expect(typeof api.logError).toBe('function');
     expect(typeof api.exportPDF).toBe('function');
+    expect(typeof api.onVaultChanged).toBe('function');
+  });
+
+  test('onVaultChanged subscribes to the vault:changed channel and unwraps the payload (T-B9)', () => {
+    mockElectron.ipcRenderer.on.mockClear();
+    const seen = [];
+    getApi().onVaultChanged((data) => seen.push(data));
+    const call = mockElectron.ipcRenderer.on.mock.calls.find((c) => c[0] === 'vault:changed');
+    expect(call, 'should subscribe to vault:changed').toBeTruthy();
+    call[1]({}, { folderPath: '/v', files: ['a.md'] }); // simulate the main-process emit
+    expect(seen).toEqual([{ folderPath: '/v', files: ['a.md'] }]);
   });
 
   test('exportPDF invokes export:pdf with the payload (T-F6)', () => {

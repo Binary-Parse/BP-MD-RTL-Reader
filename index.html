@@ -868,6 +868,24 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 #editor[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 0.75rem; text-align: right; }
 
+/* T-B9 / EC-A2: disk-conflict resolve banner + background-tab marker. */
+.conflict-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 24px; padding: 12px 16px;
+  background: color-mix(in srgb, var(--gold) 16%, var(--paper));
+  border: 1px solid var(--gold); border-radius: 8px;
+  font-family: var(--sans); font-size: 0.875rem; color: var(--ink);
+}
+.conflict-banner .cf-msg { flex: 1; min-width: 200px; }
+.conflict-banner .cf-btn {
+  font-family: var(--sans); font-size: 0.8125rem; padding: 5px 12px; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--paper); color: var(--ink); cursor: pointer;
+}
+.conflict-banner .cf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.conflict-banner .cf-reload { background: var(--accent); border-color: var(--accent); color: #fff; }
+.conflict-banner .cf-reload:hover { color: #fff; opacity: 0.9; }
+.tab.conflict .tab-conflict { color: var(--gold); margin-inline-end: 4px; }
+
 .editor h2 {
   font-family: var(--serif);
   font-size: 1.75rem;

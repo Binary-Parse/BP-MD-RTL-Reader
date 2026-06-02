@@ -999,10 +999,13 @@ function renderTabs() {
   const addBtn = $('tabAddBtn');
   State.files.forEach((f, i) => {
     const tab = document.createElement('div');
-    tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '');
-    tab.title = f.name;
+    tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '') + (f.conflict ? ' conflict' : '');
+    tab.title = f.conflict ? `${f.name} — changed on disk (unresolved)` : f.name;
     const closeIcon = f.dirty ? '●' : '×';
-    tab.innerHTML = `<span class="tab-name">${escapeHtml(f.name)}</span><span class="close">${closeIcon}</span>`;
+    // T-B9/EC-A2: a ⚠ marks a background tab whose file diverged on disk (surfaces the
+    // conflict even when the tab isn't active; the resolve banner shows on switching to it).
+    const conflictMark = f.conflict ? '<span class="tab-conflict" aria-label="changed on disk">⚠</span>' : '';
+    tab.innerHTML = `${conflictMark}<span class="tab-name">${escapeHtml(f.name)}</span><span class="close">${closeIcon}</span>`;
     tab.querySelector('.close').addEventListener('click', e => { e.stopPropagation(); closeTab(i); });
     tab.addEventListener('click', () => renderFile(i));
     tabsEl.insertBefore(tab, addBtn);
@@ -1057,7 +1060,17 @@ function renderFile(idx) {
   const readMin = Math.max(1, Math.round(wordCount / 220));
   const isAr = isArabicHeavy(body);
 
+  // EC-A2 (T-B9): when the open file diverged on disk while it had unsaved edits, show a
+  // resolve banner — Keep my edits (retain) or Reload from disk (take the disk version).
+  const conflictBanner = file.conflict ? `
+    <div class="conflict-banner" role="alert">
+      <span class="cf-msg">⚠ This note changed on disk while you had unsaved edits.</span>
+      <button class="cf-btn cf-keep" type="button">Keep my edits</button>
+      <button class="cf-btn cf-reload" type="button">Reload from disk</button>
+    </div>` : '';
+
   noteContent.innerHTML = `
+    ${conflictBanner}
     <div class="doc-meta">
       <span>${isAr ? 'مقالة' : 'note'}</span>
       <span>·</span>
@@ -1068,6 +1081,10 @@ function renderFile(idx) {
     </div>
     ${html}
   `;
+  if (file.conflict) {
+    noteContent.querySelector('.cf-keep')?.addEventListener('click', () => resolveConflict(idx, 'keep'));
+    noteContent.querySelector('.cf-reload')?.addEventListener('click', () => resolveConflict(idx, 'reload'));
+  }
 
   // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
   // the bidi pass so callout bodies still get per-block direction (R1/R2).
@@ -1099,6 +1116,21 @@ function renderFile(idx) {
   });
 }
 window.renderFile = renderFile;
+
+// EC-A2 resolve (T-B9): apply the user's choice for a disk-conflicted file.
+function resolveConflict(idx, action) {
+  const f = State.files[idx];
+  if (!f || !f.conflict) return;
+  if (action === 'reload') {
+    if (f.diskContent != null) f.content = f.diskContent; // take the disk version…
+    f.dirty = false;                                       // …discarding local edits
+  } // 'keep' → retain edits + dirty
+  f.conflict = false;
+  f.diskContent = null;
+  renderFile(idx);
+  showToast(action === 'reload' ? 'Reloaded from disk' : 'Kept your edits', 'info');
+}
+window.resolveConflict = resolveConflict;
 
 // Outline (T-F7): full h1–h6 tree with Arabic-aware slugs, matching ids on the
 // rendered headings (click-to-scroll), and scroll-sync highlighting.
@@ -1895,6 +1927,59 @@ function openExternalFile({ name, path: filePath, content }) {
 window.openExternalFile = openExternalFile;
 if (window.electronAPI && typeof window.electronAPI.onOpenFile === 'function') {
   window.electronAPI.onOpenFile(openExternalFile);
+}
+
+// T-B9 + EC-A2: the vault changed on disk (external edit). Re-list it, then reconcile:
+// files with NO local edits silently adopt the disk content; a file with UNSAVED edits
+// whose disk copy diverged is flagged `conflict` (its edits are kept — never silently
+// overwritten — and the disk version is stashed on `diskContent`). The active file is
+// preserved by path across the re-list so tabs/selection survive added/removed files.
+async function handleVaultChanged({ folderPath, files } = {}) {
+  if (!folderPath || !window.electronAPI || typeof window.electronAPI.readVault !== 'function') return;
+  if (State.vaultName !== (String(folderPath).split(/[\\/]/).filter(Boolean).pop() || '')) return; // not the open vault
+  let entries;
+  try { entries = await window.electronAPI.readVault(folderPath); } catch (_) { return; }
+  if (!Array.isArray(entries)) return; // an error object → leave state untouched
+
+  const activePath = State.activeFile != null ? State.files[State.activeFile]?.path : null;
+  const prevByPath = new Map(State.files.map(f => [f.path, f]));
+  // Compare on EOL/CR-normalized text so a CRLF-only or trailing-newline difference is
+  // NOT mistaken for a real change (avoids false conflicts + needless re-renders).
+  const norm = (s) => String(s == null ? '' : s).replace(/\r\n?/g, '\n');
+  let conflictName = null;
+  const changedActive = { reloaded: false };
+
+  const merged = entries.map(e => {
+    const prev = prevByPath.get(e.relPath);
+    if (!prev) return { name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false };
+    if (norm(prev.content) === norm(e.content)) return prev; // unchanged → keep (no churn)
+    if (prev.dirty) {
+      if (e.relPath === activePath) conflictName = prev.name;
+      return { ...prev, conflict: true, diskContent: e.content }; // EC-A2: keep edits, stash disk copy
+    }
+    if (e.relPath === activePath) changedActive.reloaded = true;
+    return { ...prev, content: e.content, conflict: false, diskContent: null }; // adopt disk (no local edits)
+  });
+  // Preserve open-but-now-deleted files as tabs so unsaved work is never lost.
+  for (const f of State.files) {
+    if (!entries.some(e => e.relPath === f.path)) merged.push(f);
+  }
+
+  State.files = merged;
+  if (activePath != null) {
+    const idx = merged.findIndex(f => f.path === activePath);
+    State.activeFile = idx >= 0 ? idx : State.activeFile;
+  }
+  renderTree(State.files);
+  // Re-render the open view if the active file was reloaded OR just became conflicted
+  // (so its EC-A2 resolve banner appears); otherwise just refresh the tabs.
+  if (changedActive.reloaded || conflictName) renderFile(State.activeFile);
+  else renderTabs();
+  if (conflictName) showToast(`"${conflictName}" changed on disk — your edits are kept; resolve in the editor.`, 'error');
+}
+window.handleVaultChanged = handleVaultChanged;
+if (window.electronAPI && typeof window.electronAPI.onVaultChanged === 'function') {
+  window.electronAPI.onVaultChanged(handleVaultChanged);
 }
 
 document.addEventListener('click', e => {

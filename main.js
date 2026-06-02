@@ -134,6 +134,7 @@ function bootstrap({ electron, fs, proc = process }) {
   // ==== DOCUMENT STORE (T-AI1) ====
   // Transactional repository: atomic, encoding-preserving, conflict-aware writes.
   const docStore = createDocumentStore({ fs, path, crypto });
+  let vaultWatcher = null; // T-B9: fs.watch handle for the currently-open vault
 
   // ==== PERSISTENT SETTINGS (T-B5 / T-F8) ====
   // Versioned, fail-safe settings store under <userData>/settings.json. Loaded
@@ -258,6 +259,16 @@ function bootstrap({ electron, fs, proc = process }) {
         content = stripBOM(content);
         results.push({ name: path.basename(relPath), relPath, content });
       }
+
+      // T-B9: watch the opened vault for EXTERNAL changes and notify this renderer
+      // (debounced). The renderer refreshes the tree and surfaces an EC-A2 conflict for
+      // the open file if it changed on disk while dirty. Replaces any prior watcher.
+      try { if (vaultWatcher) vaultWatcher.close(); } catch (_) { /* ignore */ }
+      const sender = event.sender;
+      vaultWatcher = docStore.watch(folderPath, ({ files }) => {
+        if (sender && !sender.isDestroyed()) sender.send('vault:changed', { folderPath, files });
+      });
+
       return results;
     });
 
@@ -412,7 +423,10 @@ function bootstrap({ electron, fs, proc = process }) {
     if (bounds.maximized) win.maximize();
     // Persist geometry when the user closes the window (covers app quit too,
     // which closes the window first).
-    if (typeof win.on === 'function') win.on('close', () => persistWindowState(win));
+    if (typeof win.on === 'function') win.on('close', () => {
+      persistWindowState(win);
+      try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9: close the vault watcher with the window
+    });
 
     win.loadFile('index.html');
     const appUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
@@ -505,9 +519,11 @@ function bootstrap({ electron, fs, proc = process }) {
   app.on('before-quit', () => {
     const wins = BrowserWindow.getAllWindows();
     if (wins.length > 0) persistWindowState(wins[0]);
+    try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9: don't leak the fs.watch
   });
 
   app.on('window-all-closed', () => {
+    try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9
     if (proc.platform !== 'darwin') app.quit();
   });
 

@@ -127,7 +127,36 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     return out;
   }
 
-  return { read, write, listMarkdown };
+  /**
+   * Watch `root` for external changes (T-B9). Coalesces the burst of events fs.watch
+   * emits per save into a single debounced `cb({ files })`. Returns a disposable.
+   * Degrades to a no-op where fs.watch is unavailable or throws (e.g. EMFILE, or
+   * recursive watch unsupported on the platform).
+   */
+  function watch(root, cb, { debounceMs = 150 } = {}) {
+    if (typeof fs.watch !== 'function') return { close() {} };
+    let timer = null;
+    let pending = new Set();
+    function flush() {
+      const files = [...pending];
+      pending = new Set();
+      timer = null;
+      try { cb({ files }); } catch (_) { /* a renderer-notify error must never crash the watcher */ }
+    }
+    let watcher;
+    try {
+      watcher = fs.watch(root, { recursive: true }, (_eventType, filename) => {
+        if (filename) pending.add(String(filename));
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(flush, debounceMs);
+      });
+    } catch (_) {
+      return { close() {} };
+    }
+    return { close() { if (timer) clearTimeout(timer); try { watcher.close(); } catch (_) { /* already gone */ } } };
+  }
+
+  return { read, write, listMarkdown, watch };
 }
 
 module.exports = {

@@ -25,6 +25,11 @@ function classifyBlock(node, doc) {
     const head = doc.sliceString(node.from, doc.lineAt(node.from).to);
     if (/(```|~~~)\s*mermaid\b/i.test(head)) return 'mermaid';
   }
+  if (node.name === 'Blockquote') {
+    const head = doc.sliceString(node.from, doc.lineAt(node.from).to);
+    // Only a GitHub/Obsidian callout (> [!TYPE]) renders; a plain blockquote stays editable.
+    if (/^\s*>\s*\[!(note|tip|important|warning|caution|info)\]/i.test(head)) return 'callout';
+  }
   return null;
 }
 

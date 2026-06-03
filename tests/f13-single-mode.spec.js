@@ -131,4 +131,16 @@ test.describe('[T-F13] single live-preview mode (behind ?cm=1)', () => {
     // the ```mermaid block renders to an <svg> inside the live-preview block widget (vs raw fences)
     await expect(page.locator('.cm-mount .cm-lp-block svg')).toHaveCount(1, { timeout: 12000 });
   });
+
+  test('H — the CM6 editor renders > [!NOTE] callouts inline off the active line', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.evaluate(() => {
+      window.setCmEditor(true);
+      window._appState.files = [{ name: 'c.md', path: 'c.md',
+        content: '# notes\n\n> [!NOTE] Heads up\n> body line\n', dirty: false }];
+      window.renderFile(0);
+    });
+    await expect(page.locator('.cm-mount .cm-lp-block .callout')).toHaveCount(1, { timeout: 8000 });
+  });
 });

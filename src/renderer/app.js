@@ -1751,6 +1751,13 @@ function renderCmBlock(type, source) {
       .catch(() => { /* engine failed to load — the code block stays as the fallback */ });
     return el;
   }
+  if (type === 'callout') {
+    const el = document.createElement('div');
+    el.innerHTML = parseMarkdown(source);
+    transformCallouts(el, { parseCalloutHeader, resolveDirection }); // > [!NOTE] → styled callout (F14)
+    applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
+    return el;
+  }
   return null;
 }
 

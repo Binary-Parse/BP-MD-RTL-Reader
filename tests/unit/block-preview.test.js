@@ -101,3 +101,19 @@ describe('createBlockPreview — mermaid fenced blocks', () => {
     expect(build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges).toEqual([]);
   });
 });
+
+describe('createBlockPreview — callouts', () => {
+  test('a > [!NOTE] blockquote becomes a callout block widget', () => {
+    const DOC = 'intro\n> [!NOTE] Heads up\n> body line\ntail';
+    const nodes = [{ name: 'Blockquote', from: DOC.indexOf('> [!NOTE]'), to: DOC.indexOf('\ntail') }];
+    const r = build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges;
+    expect(r.length).toBe(1);
+    expect(r[0].spec.widget.type).toBe('callout');
+  });
+
+  test('a PLAIN blockquote is left as editable source (not a widget)', () => {
+    const DOC = 'intro\n> just a quote\n> more\ntail';
+    const nodes = [{ name: 'Blockquote', from: DOC.indexOf('> just'), to: DOC.indexOf('\ntail') }];
+    expect(build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges).toEqual([]);
+  });
+});

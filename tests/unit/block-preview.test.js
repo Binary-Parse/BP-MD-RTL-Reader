@@ -117,3 +117,21 @@ describe('createBlockPreview — callouts', () => {
     expect(build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges).toEqual([]);
   });
 });
+
+describe('createBlockPreview — standalone images', () => {
+  test('a line that is JUST an image becomes an image block widget', () => {
+    const DOC = 'intro\n![pic](p.png)\ntail';
+    const from = DOC.indexOf('![pic]');
+    const nodes = [{ name: 'Image', from, to: from + '![pic](p.png)'.length }];
+    const r = build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges;
+    expect(r.length).toBe(1);
+    expect(r[0].spec.widget.type).toBe('image');
+  });
+
+  test('an INLINE image within prose is left as editable source', () => {
+    const DOC = 'intro\nsee ![x](u.png) here\ntail';
+    const from = DOC.indexOf('![x]');
+    const nodes = [{ name: 'Image', from, to: from + '![x](u.png)'.length }];
+    expect(build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges).toEqual([]);
+  });
+});

@@ -156,4 +156,18 @@ test.describe('[T-F13] single live-preview mode (behind ?cm=1)', () => {
     // the inline math renders as a KaTeX span (.math-inline → .katex) inside the editor, not raw $…$
     await expect(page.locator('.cm-mount .math-inline .katex')).toHaveCount(1, { timeout: 8000 });
   });
+
+  test('J — the CM6 editor renders a standalone image inline off the active line', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.evaluate(() => {
+      window.setCmEditor(true);
+      window._appState.files = [{ name: 'p.md', path: 'p.md',
+        content: '# pics\n\n![a picture](https://example.com/x.png)\n', dirty: false }];
+      window.renderFile(0);
+    });
+    const img = page.locator('.cm-mount .cm-lp-image img');
+    await expect(img).toHaveCount(1, { timeout: 8000 });
+    expect(await img.first().getAttribute('src')).toBe('https://example.com/x.png');
+  });
 });

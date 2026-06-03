@@ -30,6 +30,12 @@ function classifyBlock(node, doc) {
     // Only a GitHub/Obsidian callout (> [!TYPE]) renders; a plain blockquote stays editable.
     if (/^\s*>\s*\[!(note|tip|important|warning|caution|info)\]/i.test(head)) return 'callout';
   }
+  if (node.name === 'Image') {
+    // Only a STANDALONE image (a line that is just ![alt](url)) becomes a block widget; an
+    // image inline within prose stays raw so we don't replace the surrounding text.
+    const line = doc.lineAt(node.from);
+    if (doc.sliceString(line.from, line.to).trim() === doc.sliceString(node.from, node.to).trim()) return 'image';
+  }
   return null;
 }
 

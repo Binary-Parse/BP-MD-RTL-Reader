@@ -1758,6 +1758,13 @@ function renderCmBlock(type, source) {
     applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
     return el;
   }
+  if (type === 'image') {
+    // Render the standalone image through the same sanitized pipeline; the <img> loads via the
+    // same src/CSP rules (bpmd:// vault images, data:, file:) as the preview pane.
+    const tmp = document.createElement('div');
+    tmp.innerHTML = parseMarkdown(source);
+    return tmp.querySelector('img') || null;
+  }
   return null;
 }
 

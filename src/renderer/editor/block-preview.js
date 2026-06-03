@@ -16,8 +16,17 @@
  * throw. (Inline marker hiding in live-preview.js can stay a ViewPlugin; block widgets can't.)
  */
 
-// Lezer-markdown block node names we render, mapped to a short type tag.
-const BLOCK_TYPE = { Table: 'table' };
+// Classify a lezer-markdown block node into a renderable type tag (or null to leave it as
+// editable source). Tables render always; fenced code only when its info string is `mermaid`
+// (ordinary code stays highlighted source). More block types are added here over time.
+function classifyBlock(node, doc) {
+  if (node.name === 'Table') return 'table';
+  if (node.name === 'FencedCode') {
+    const head = doc.sliceString(node.from, doc.lineAt(node.from).to);
+    if (/(```|~~~)\s*mermaid\b/i.test(head)) return 'mermaid';
+  }
+  return null;
+}
 
 function makeWidgetClass(CM6, renderBlock) {
   return class BlockWidget extends CM6.WidgetType {
@@ -55,7 +64,7 @@ export function buildBlockDecorations(CM6, renderBlock, state) {
     from: 0,
     to: doc.length,
     enter: (node) => {
-      const type = BLOCK_TYPE[node.name];
+      const type = classifyBlock(node, doc);
       if (!type) return undefined;
       const startLine = doc.lineAt(node.from);
       const endLine = doc.lineAt(node.to);

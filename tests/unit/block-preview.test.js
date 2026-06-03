@@ -85,3 +85,19 @@ describe('createBlockPreview (T-F13 block widgets)', () => {
     expect(build(CM6, fakeView(DOC, NODES, tableFrom + 2)).decorations.ranges).toEqual([]); // cursor in → raw
   });
 });
+
+describe('createBlockPreview — mermaid fenced blocks', () => {
+  test('a ```mermaid fenced block becomes a mermaid block widget (off the active line)', () => {
+    const DOC = 'intro\n```mermaid\ngraph TD; A-->B;\n```\ntail';
+    const nodes = [{ name: 'FencedCode', from: DOC.indexOf('```mermaid'), to: DOC.indexOf('\ntail') }];
+    const r = build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges;
+    expect(r.length).toBe(1);
+    expect(r[0].spec.widget.type).toBe('mermaid');
+  });
+
+  test('an ordinary ```js fenced block is left as editable source (not a widget)', () => {
+    const DOC = 'intro\n```js\nconst x = 1;\n```\ntail';
+    const nodes = [{ name: 'FencedCode', from: DOC.indexOf('```js'), to: DOC.indexOf('\ntail') }];
+    expect(build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges).toEqual([]);
+  });
+});

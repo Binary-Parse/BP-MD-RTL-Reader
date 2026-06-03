@@ -118,4 +118,17 @@ test.describe('[T-F13] single live-preview mode (behind ?cm=1)', () => {
     // the raw pipe syntax is hidden while the table is rendered
     expect(await page.evaluate(() => document.querySelector('.cm-mount .cm-content').textContent.includes('| المفتاح |'))).toBe(false);
   });
+
+  test('G — the CM6 editor renders mermaid diagrams inline (async SVG) off the active line', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.evaluate(() => {
+      window.setCmEditor(true);
+      window._appState.files = [{ name: 'd.md', path: 'd.md',
+        content: '# diagram\n\n```mermaid\ngraph TD; A-->B;\n```\n', dirty: false }];
+      window.renderFile(0);
+    });
+    // the ```mermaid block renders to an <svg> inside the live-preview block widget (vs raw fences)
+    await expect(page.locator('.cm-mount .cm-lp-block svg')).toHaveCount(1, { timeout: 12000 });
+  });
 });

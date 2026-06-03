@@ -1735,6 +1735,22 @@ function renderCmBlock(type, source) {
     wireTableNav(el);
     return el;
   }
+  if (type === 'mermaid') {
+    // Build the <pre><code class="language-mermaid"> shape renderMermaid expects, then render
+    // the SVG asynchronously (engine is lazy-loaded). dir=ltr is forced by renderMermaid.
+    const el = document.createElement('div');
+    const code = source.replace(/^[ \t]*(```|~~~)[^\n]*\n?/, '').replace(/\n?[ \t]*(```|~~~)[ \t]*$/, '');
+    const pre = document.createElement('pre');
+    const codeEl = document.createElement('code');
+    codeEl.className = 'language-mermaid';
+    codeEl.textContent = code;
+    pre.appendChild(codeEl);
+    el.appendChild(pre);
+    loadMermaid()
+      .then((mermaid) => renderMermaid(el, { mermaid, sanitize: (svg) => sanitizeSvg(svg, DOMPurify), idPrefix: `cmmmd-${_mmdSeq++}` }))
+      .catch(() => { /* engine failed to load — the code block stays as the fallback */ });
+    return el;
+  }
   return null;
 }
 

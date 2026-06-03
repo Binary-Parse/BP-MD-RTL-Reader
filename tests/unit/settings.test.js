@@ -33,6 +33,13 @@ describe('migrate (EC-D1)', () => {
     expect(migrate({}).italicRecolor).toBe(true);
   });
 
+  test('cmEditor (A1): defaults false; opt-in via boolean true; non-boolean → default', () => {
+    expect(defaultSettings().cmEditor).toBe(false);
+    expect(migrate({ cmEditor: true }).cmEditor).toBe(true);
+    expect(migrate({ cmEditor: 'yes' }).cmEditor).toBe(false); // non-boolean → default
+    expect(migrate({}).cmEditor).toBe(false);
+  });
+
   test('lastSession (M6): round-trips a valid session, sanitizes a corrupt one, defaults null', () => {
     expect(defaultSettings().lastSession).toBe(null);
     const ls = { vaultPath: '/vault', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' };

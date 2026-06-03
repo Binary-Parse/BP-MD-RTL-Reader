@@ -72,6 +72,7 @@ const { state: State, subscribe } = createState({
   calendar: 'gregorian',
   arabicKashida: false,
   italicRecolor: true,
+  cmEditor: false,
   uiLocale: 'en',
   uiDirection: 'ltr'
 });
@@ -496,6 +497,7 @@ const MENU_DEFS = {
       { kind: 'check', name: 'Live Preview', key: 'menu.livePreview', checked: () => State.editorMode === 'live', action: () => { setEditorMode('live'); closeMenu(); } },
       { kind: 'check', name: 'Split View', key: 'menu.splitView', checked: () => State.editorMode === 'split', action: () => { setEditorMode('split'); closeMenu(); } },
       { kind: 'check', name: 'Source Mode', key: 'menu.sourceMode', checked: () => State.editorMode === 'source', action: () => { setEditorMode('source'); closeMenu(); } },
+      { kind: 'check', name: 'Live-Preview Editor (CodeMirror)', key: 'menu.cmEditor', checked: () => State.cmEditor, action: () => { toggleCmEditor(); closeMenu(); } },
       { kind: 'divider' },
       { kind: 'label', text: 'Panels', key: 'menu.panels' },
       { kind: 'check', name: 'Show Sidebar', key: 'menu.showSidebar', shortcut: 'Ctrl+\\', checked: () => State.sidebarVisible, action: () => { toggleSidebar(); closeMenu(); } },
@@ -1703,7 +1705,8 @@ let cmAdapter = null;   // non-null ⇒ CodeMirror is the active source engine
 let cmLoading = false;  // suppress onChange while we load a doc programmatically
 let _cmPromise = null;
 function cmFlagOn() {
-  try { return new URLSearchParams(location.search).has('cm') || localStorage.getItem('bpmd-cm6') === '1'; }
+  if (State.cmEditor) return true; // the persisted "Live-Preview Editor" setting (A1) is the primary switch
+  try { return new URLSearchParams(location.search).has('cm') || localStorage.getItem('bpmd-cm6') === '1'; } // dev overrides
   catch (_) { return false; }
 }
 function loadCM6() {
@@ -1752,6 +1755,32 @@ function loadIntoEditor(content) {
 window.loadCM6 = loadCM6;
 window.initCM6Editor = initCM6Editor;
 window.createCodeMirrorAdapter = createCodeMirrorAdapter;
+
+// A1: the persisted "Live-Preview Editor" setting governs whether CM6 is the active surface.
+// Toggling it mounts CM6 (single live-preview mode) or tears it back down to the classic
+// textarea — live, no relaunch. Default off, so the textarea + 3-mode UI is the default.
+function teardownCM6Editor() {
+  if (!cmAdapter) return;
+  try { cmAdapter.destroy(); } catch (_) { /* best-effort */ }
+  cmAdapter = null;
+  window.__cmActive = false;
+  document.querySelector('.cm-mount')?.remove();
+  srcTextarea.style.display = '';
+  editorArea.classList.remove('cm-single');
+  toolbarStrip.classList.remove('cm-single');
+  // repopulate the textarea + the (now-visible) preview pane for the active note
+  if (State.activeFile != null && State.files[State.activeFile]) renderFile(State.activeFile);
+}
+async function setCmEditor(on) {
+  on = !!on;
+  State.cmEditor = on; // persists via the subscribe hook (PERSISTED_KEYS)
+  if (on && !cmAdapter) await initCM6Editor();
+  else if (!on && cmAdapter) teardownCM6Editor();
+  if (!_restoring) showToast(`Live-preview editor: ${on ? 'on (CodeMirror)' : 'off (classic)'}`, 'info');
+}
+function toggleCmEditor() { setCmEditor(!State.cmEditor); }
+window.setCmEditor = setCmEditor;
+window.toggleCmEditor = toggleCmEditor;
 
 // Bug 7 fix: blockquote Enter handling.
 // - Empty blockquote line (body is whitespace-only): strip prefix, place cursor on blank line.
@@ -1908,6 +1937,7 @@ const PALETTE_COMMANDS = [
   { sec: 'View', key: 'palette.modeLive', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
   { sec: 'View', key: 'palette.modeSplit', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },
   { sec: 'View', key: 'palette.modeSource', icon: '<>', name: 'Mode: Source', meta: 'view', act: () => setEditorMode('source') },
+  { sec: 'View', key: 'palette.toggleCmEditor', icon: '✦', name: 'Toggle Live-Preview Editor (CodeMirror)', meta: 'view', act: toggleCmEditor },
   { sec: 'View', key: 'palette.flip', icon: '⇄', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
   { sec: 'View', key: 'palette.themePaper', icon: '◐', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
   { sec: 'View', key: 'palette.themeInk', icon: '◐', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
@@ -2278,7 +2308,7 @@ const SettingsBridge =
   (window.electronAPI && typeof window.electronAPI.getSettings === 'function')
     ? window.electronAPI : null;
 const PERSISTED_KEYS = new Set([
-  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor', 'uiLocale', 'uiDirection',
+  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection',
 ]);
 let _persistTimer = null;
 function persistSettings() {
@@ -2296,6 +2326,7 @@ function persistSettings() {
         calendar: State.calendar,
         arabicKashida: State.arabicKashida,
         italicRecolor: State.italicRecolor,
+        cmEditor: State.cmEditor,
         uiLocale: State.uiLocale,
         uiDirection: State.uiDirection,
         lastSession: buildSession(_vaultPath, State.files, State.activeFile), // M6
@@ -2339,6 +2370,7 @@ async function restoreSettings() {
     if (s.calendar === 'hijri' || s.calendar === 'gregorian') State.calendar = s.calendar;
     if (typeof s.arabicKashida === 'boolean') { State.arabicKashida = s.arabicKashida; applyKashida(); }
     if (typeof s.italicRecolor === 'boolean') { State.italicRecolor = s.italicRecolor; applyItalicRecolor(); }
+    if (typeof s.cmEditor === 'boolean') State.cmEditor = s.cmEditor; // A1: governs the startup initCM6Editor() below
     if (s.uiLocale === 'ar' || s.uiLocale === 'en') setUiLocale(s.uiLocale);       // T-R7
     if (s.uiDirection === 'rtl' || s.uiDirection === 'ltr') setUiDirection(s.uiDirection);
     await restoreLastSession(s.lastSession); // M6: re-open the last vault + active note
@@ -2379,19 +2411,21 @@ async function restoreLastSession(ls) {
   // Restore persisted settings from the main process. When there is no bridge
   // (browser/dev), fall back to the localStorage theme exactly as before.
   restoreSettings().then((restored) => {
-    if (restored) return;
-    const stored = localStorage.getItem('bpmdrtlreader-theme');
-    if (stored && THEMES.includes(stored)) {
-      State.theme = stored;
-      document.documentElement.setAttribute('data-theme', stored);
-      $('themeBtn')?.classList.toggle('active', stored !== 'paper');
-      if ($('themeLabel')) $('themeLabel').textContent = stored;
+    if (!restored) {
+      const stored = localStorage.getItem('bpmdrtlreader-theme');
+      if (stored && THEMES.includes(stored)) {
+        State.theme = stored;
+        document.documentElement.setAttribute('data-theme', stored);
+        $('themeBtn')?.classList.toggle('active', stored !== 'paper');
+        if ($('themeLabel')) $('themeLabel').textContent = stored;
+      }
     }
+    // T-F13/A1: mount CM6 if the persisted "Live-Preview Editor" setting (or ?cm=1 / localStorage)
+    // asks for it — AFTER restore so State.cmEditor is in effect. Lazy + reversible; textarea on failure.
+    initCM6Editor().catch(() => { /* fall back to the textarea */ });
   });
 
   showWelcome();
   initDragDrop();
-  // T-F13: if the CodeMirror flag is set, mount it as the source engine (lazy + reversible).
-  initCM6Editor().catch(() => { /* fall back to the textarea */ });
 })();
 

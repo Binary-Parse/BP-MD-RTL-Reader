@@ -20,6 +20,7 @@ const DEFAULTS = Object.freeze({
   calendar: 'gregorian',
   arabicKashida: false,
   italicRecolor: true,
+  cmEditor: false,
   recents: [],
   window: { w: 1280, h: 820, maximized: false },
   lastSession: null,
@@ -53,6 +54,7 @@ function migrate(raw) {
   if (raw.calendar === 'hijri' || raw.calendar === 'gregorian') out.calendar = raw.calendar;
   if (typeof raw.arabicKashida === 'boolean') out.arabicKashida = raw.arabicKashida;
   if (typeof raw.italicRecolor === 'boolean') out.italicRecolor = raw.italicRecolor;
+  if (typeof raw.cmEditor === 'boolean') out.cmEditor = raw.cmEditor;
   if (Array.isArray(raw.recents)) {
     out.recents = raw.recents
       .filter(r => r && typeof r.path === 'string')

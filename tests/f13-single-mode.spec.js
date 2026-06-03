@@ -50,15 +50,55 @@ test.describe('[T-F13] single live-preview mode (behind ?cm=1)', () => {
     expect(await page.evaluate(() => document.getElementById('findInfo').textContent)).toBe('1/2'); // RED today: '0/0' (preview has no '**')
   });
 
-  test('D — default (no flag) keeps the full 3-mode textarea UI intact (reversible)', async ({ page }) => {
+  test('D — the cmEditor SETTING governs the mode: default off = 3-mode textarea; toggling switches live (reversible)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(120);
+
+    // default: the setting is OFF → classic textarea + 3-mode UI, no cm-single, no CM6 mounted
+    expect(await page.evaluate(() => window._appState.cmEditor)).toBe(false);
     expect(await page.evaluate(() => getComputedStyle(document.getElementById('modeSplit')).display)).not.toBe('none');
     expect(await page.evaluate(() => document.querySelector('.editor-area.cm-single') === null)).toBe(true);
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(0);
+    // setEditorMode still works in the classic UI
     await page.evaluate(() => window.setEditorMode('split'));
     expect(await page.evaluate(() => document.getElementById('editorArea').className)).toContain('split');
+
+    // turn the SETTING on → CM6 mounts as the single live-preview surface; the 3 mode buttons hide
+    await page.evaluate(() => window.setCmEditor(true));
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
+    expect(await page.evaluate(() => window._appState.cmEditor)).toBe(true);
+    expect(await page.evaluate(() => document.querySelector('.editor-area.cm-single') !== null)).toBe(true);
+    expect(await page.evaluate(() => getComputedStyle(document.getElementById('modeSplit')).display)).toBe('none');
+
+    // turn it OFF again → live teardown back to the textarea, 3-mode UI restored (reversible)
+    await page.evaluate(() => window.setCmEditor(false));
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(0, { timeout: 8000 });
+    expect(await page.evaluate(() => window._appState.cmEditor)).toBe(false);
+    expect(await page.evaluate(() => document.querySelector('.editor-area.cm-single') === null)).toBe(true);
+    expect(await page.evaluate(() => getComputedStyle(document.getElementById('modeSplit')).display)).not.toBe('none');
     expect(await page.evaluate(() => document.getElementById('srcTextarea').style.display)).not.toBe('none');
+  });
+
+  test('E — the cmEditor setting persists + restores: a saved cmEditor=true mounts CM6 on launch', async ({ page }) => {
+    // inject a bridge whose getSettings reports cmEditor:true BEFORE the app boots
+    await page.addInitScript(() => {
+      const noop = () => {};
+      window.electronAPI = {
+        closeWindow: noop, minimizeWindow: noop, maximizeWindow: noop,
+        openFolder: async () => ({ canceled: true }), readVault: async () => [],
+        writeFile: async () => ({ ok: true }),
+        getSettings: async () => ({ theme: 'paper', zoomFactor: 1, editorMode: 'live', sidebarVisible: true, inspectorVisible: true, uiDirection: 'ltr', uiLocale: 'en', calendar: 'gregorian', arabicKashida: false, italicRecolor: true, cmEditor: true, recents: [], lastSession: null }),
+        setSettings: async () => ({ ok: true }),
+        exportPDF: async () => ({ ok: true }), editCommand: noop, onOpenFile: noop, onVaultChanged: noop,
+        checkForUpdate: async () => ({}), logError: noop,
+      };
+    });
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    // restore set cmEditor=true → the startup initCM6Editor() mounts CM6 (no ?cm flag in the URL)
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
+    expect(await page.evaluate(() => window._appState.cmEditor)).toBe(true);
   });
 });

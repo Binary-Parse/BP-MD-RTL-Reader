@@ -65,4 +65,15 @@ test.describe('[T-F1] collapsible folder tree', () => {
     // c.md is index 3 in State.files
     expect(await page.evaluate(() => window._appState.activeFile)).toBe(3);
   });
+
+  test('the active-file highlight survives collapsing/expanding another folder (regression)', async ({ page }) => {
+    await page.evaluate(() => window.renderFile(0)); // open root.md (top-level, always visible)
+    const activeNames = () => page.locator('.tree-file.active .tree-name').allTextContents();
+    expect(await activeNames()).toEqual(['root.md']);
+    // toggling a DIFFERENT folder re-renders the whole tree — the highlight must persist
+    await page.locator('.tree-dir', { hasText: 'docs' }).click();      // collapse
+    expect(await activeNames()).toEqual(['root.md']);
+    await page.locator('.tree-dir', { hasText: 'docs' }).click();      // expand
+    expect(await activeNames()).toEqual(['root.md']);
+  });
 });

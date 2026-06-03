@@ -1361,6 +1361,7 @@ function renderTree(entries) {
     treeEl.appendChild(node);
   });
   renderTags();
+  highlightTreeActive(); // re-mark the active file: this in-tree rebuild (folder toggle) would otherwise drop it (F1/M3)
 }
 
 async function openFromTree(idx) {
@@ -1453,6 +1454,7 @@ async function openVault() {
       }
       md.sort((a, b) => a.name.localeCompare(b.name));
       State.files = md;
+      _vaultPath = null; // FSA vault has no absolute path for the readVault restore bridge (M6)
       $('vaultName').textContent = handle.name;
       $('vaultName').classList.remove('empty');
       $('sbVault').textContent = `folder: ${handle.name}`;
@@ -1488,6 +1490,7 @@ async function openVault() {
       const folderName = files[0].webkitRelativePath.split('/')[0] || 'folder';
       State.vaultName = folderName;
       State.files = md;
+      _vaultPath = null; // webkitdirectory vault is not restorable via the readVault bridge (M6)
       $('vaultName').textContent = folderName;
       $('vaultName').classList.remove('empty');
       $('sbVault').textContent = `folder: ${folderName}`;
@@ -1635,6 +1638,7 @@ function loadDemo() {
       content: `# في فعلِ القراءة\n\nالصفحةُ ليست شاشةً، والقارئُ لا يُمرِّر النصَّ بل يقلِبُه.\n\n#قراءة #أدب\n\n## قائمةٌ موجزة\n\n- الأدواتُ البطيئة تولّدُ فكراً بطيئاً.\n\n> "الكتابُ شيءٌ بين الأشياء." — بورخيس`
     }
   ];
+  _vaultPath = null; // demos are ephemeral — NOT a restorable Electron vault, so don't persist a conflated session (M6)
   State.files = demos;
   State.vaultName = 'demo';
   $('vaultName').textContent = 'demo';

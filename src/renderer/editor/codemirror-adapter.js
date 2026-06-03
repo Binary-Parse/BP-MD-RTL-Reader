@@ -9,6 +9,7 @@
 
 import { createLivePreview, livePreviewTheme } from './live-preview.js';
 import { createLineDirection } from './line-direction.js';
+import { createBlockPreview } from './block-preview.js';
 
 function escapeReg(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -19,7 +20,7 @@ function escapeReg(s) {
  * @param {object} opts  { CM6, doc, onChange, dir }
  * @returns an EditorPort (+ setDirection/focus/destroy/_view) backed by a CM6 EditorView
  */
-export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true } = {}) {
+export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null } = {}) {
   const {
     EditorState, EditorSelection, EditorView, keymap, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
@@ -44,6 +45,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       markdown(markdownLanguage ? { base: markdownLanguage } : undefined),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
+      ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock)] : []), // T-F13: render BLOCKS (tables…) off the active line
       ...createLineDirection(CM6, () => dir), // R1/R2 in CM6: per-line dir + logical caret (perLineTextDirection)
       highlightActiveLine(),
       drawSelection(),

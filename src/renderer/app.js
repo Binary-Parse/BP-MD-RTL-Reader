@@ -1722,6 +1722,22 @@ function loadCM6() {
   _cmPromise.catch(() => { _cmPromise = null; }); // allow retry after a transient failure
   return _cmPromise;
 }
+// T-F13 parity: render a markdown BLOCK (table…) to a DOM element for the CM6 live-preview
+// block widgets, reusing the SAME pipeline as the rendered preview pane — parseMarkdown
+// (marked → hardened sanitize), then applyBidi (which mirrors RTL table columns via
+// applyTableDirection, R9) and wireTableNav (EC-C2 cell traversal). Returns null for
+// block types not yet supported (the widget then shows raw markdown).
+function renderCmBlock(type, source) {
+  if (type === 'table') {
+    const el = document.createElement('div');
+    el.innerHTML = parseMarkdown(source);
+    applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
+    wireTableNav(el);
+    return el;
+  }
+  return null;
+}
+
 async function initCM6Editor() {
   if (cmAdapter || !cmFlagOn()) return false;
   let CM6;
@@ -1738,6 +1754,7 @@ async function initCM6Editor() {
     doc: active ? active.content : '',
     dir: State.direction === 'rtl' ? 'rtl' : 'ltr',
     onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
+    renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
   });
   window.__cmActive = true;
   // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane,

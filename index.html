@@ -806,6 +806,12 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .cm-mount .cm-editor.cm-focused { outline: none; }
 .cm-mount .cm-activeLine { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .cm-mount .cm-selectionBackground, .cm-mount .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* T-F13 parity: live-preview BLOCK widgets (rendered tables/math/… inline in the single CM6 surface) */
+.cm-mount .cm-lp-block { margin: 12px 0; }
+.cm-mount .cm-lp-block table { border-collapse: collapse; width: 100%; font-size: 0.875rem; margin: 0; }
+.cm-mount .cm-lp-block th, .cm-mount .cm-lp-block td { border: 1px solid var(--rule); padding: 8px 12px; text-align: start; }
+.cm-mount .cm-lp-block th { background: var(--paper-deep); font-weight: 600; }
+.cm-mount .cm-lp-block table[dir="rtl"] { direction: rtl; }
 .editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
 .editor-area.source .source-pane { display: block; }
 .editor-area.source .preview-pane { display: none; }

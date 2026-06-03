@@ -101,4 +101,21 @@ test.describe('[T-F13] single live-preview mode (behind ?cm=1)', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     expect(await page.evaluate(() => window._appState.cmEditor)).toBe(true);
   });
+
+  test('F — the CM6 editor renders Arabic tables inline with MIRRORED (RTL) columns — R9 in the editor', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.evaluate(() => {
+      window.setCmEditor(true);
+      // heading first so the default cursor (pos 0) is OFF the table → the table renders
+      window._appState.files = [{ name: 't.md', path: 't.md',
+        content: '# عنوان عربي\n\n| المفتاح | Value |\n| --- | --- |\n| واحد | 1 |\n', dirty: false }];
+      window.renderFile(0);
+    });
+    const table = page.locator('.cm-mount .cm-lp-block table');
+    await expect(table).toHaveCount(1, { timeout: 8000 });        // rendered inline, not raw pipes
+    expect(await table.first().getAttribute('dir')).toBe('rtl');   // Arabic-first → columns mirror (R9)
+    // the raw pipe syntax is hidden while the table is rendered
+    expect(await page.evaluate(() => document.querySelector('.cm-mount .cm-content').textContent.includes('| المفتاح |'))).toBe(false);
+  });
 });

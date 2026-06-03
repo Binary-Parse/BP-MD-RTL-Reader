@@ -217,6 +217,43 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.text).toContain('alt text');
   });
 
+  test('live-preview renders a TABLE block as a real <table> off the active line, raw inside it (real engine)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const renderBlock = (type, src) => {
+        if (type !== 'table') return null;
+        const el = document.createElement('div');
+        el.innerHTML = window.parseMarkdown(src); // real pipeline → sanitized <table>
+        return el;
+      };
+      const doc = 'intro line\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\noutro line';
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc, renderBlock });
+      const settle = () => new Promise((res) => setTimeout(res, 60));
+
+      ad.setSelection({ start: 0, end: 0 }); // cursor on line 1 → the table is OFF the active line
+      await settle();
+      const renderedTables = div.querySelectorAll('.cm-lp-block table').length;
+      const rawPipesWhenOff = div.querySelector('.cm-content').textContent.includes('| A | B |');
+
+      const tablePos = doc.indexOf('| A | B |') + 2; // cursor INSIDE the table
+      ad.setSelection({ start: tablePos, end: tablePos });
+      await settle();
+      const rawWhenActive = div.querySelector('.cm-content').textContent.includes('| A | B |');
+      const value = ad.getValue();
+      ad.destroy();
+      div.remove();
+      return { renderedTables, rawPipesWhenOff, rawWhenActive, value };
+    });
+    expect(r.renderedTables).toBe(1);    // a real <table> rendered inside the block widget
+    expect(r.rawPipesWhenOff).toBe(false); // raw pipe source hidden while rendered
+    expect(r.rawWhenActive).toBe(true);    // raw markdown shown when the cursor is in the table
+    expect(r.value).toContain('| A | B |'); // document text never altered (no data loss)
+  });
+
   test('live-preview tracks a narrowed viewport on a long scrolled doc (visibleRanges + viewportChanged)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

@@ -106,11 +106,14 @@
 **GREEN:** register `bpmd` as privileged/secure; implement `resolveAsset`; `renderTrusted({md, katexOpts, mermaid})`.
 **REFACTOR:** DOMPurify SVG/MathML profile centralised.
 **Acceptance:** ☐ protocol root-scoped ☐ Mermaid sanitized ☐ KaTeX bounded ☐ enables strict CSP.
-> **Follow-up (from T-B4 review):** the main viewer render (`renderFile`→`parseMarkdown`, `markdown.js`)
-> uses a loose DOMPurify config (`ADD_ATTR` only) — it keeps inline `style=`/`<img>`. The strict CSP
-> (B4) now backstops the exfil risk (no remote img/font/connect → CSS exfil is dead), but AI2 should
-> route the viewer through `trusted.js` `sanitizeHtml` (which `FORBID`s `style`+active img attrs) so the
-> sanitizer — not CSP alone — is the control. Defense-in-depth, not currently exploitable.
+> **Follow-up (from T-B4 review) — ✅ RESOLVED (`c1ecc32`):** `markdown.js` `parseMarkdown` now
+> delegates to `trusted.js` `sanitizeHtml` instead of the loose `ADD_ATTR`-only config, so the viewer,
+> code-highlight, and `renderTrusted` share ONE hardened stage. A real-pipeline e2e also exposed that
+> `sanitizeHtml` only had `style` in `FORBID_TAGS` (drops the `<style>` element) — `style` was added to
+> `FORBID_ATTR` so the inline `style=` attribute (and active `<img>` handlers: `onerror`/`onload`/`onclick`)
+> are genuinely stripped. The sanitizer, not CSP alone, is now the control. Loss-free (math via
+> `sanitizeMath`, table align via the `align` attr). Tests: `markdown.test.js`, `trusted.test.js`,
+> `renderer.spec.js`.
 
 ## ✅ T-T1 / T-T3 / T-T2 — Correct + self-hosted fonts
 **Done:** vendored woff2 in `assets/vendor/fonts/` (10 files + `LICENSES.md`, via @fontsource `--no-save`).

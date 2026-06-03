@@ -193,13 +193,14 @@ describe('createLivePreview', () => {
     const doc = 'inactive\n[t](u)';
     const l2 = 'inactive\n'.length; // 9
     // document order: Link parent (ignored), then the marker/url children.
+    const P = { name: 'Link' }; // a real inline-Link parent → link parts collapse
     const nodes = [
-      { name: 'Link', from: l2, to: l2 + 6 },          // parent — must NOT be hidden
-      { name: 'LinkMark', from: l2, to: l2 + 1 },       // '['
-      { name: 'LinkMark', from: l2 + 2, to: l2 + 3 },   // ']'
-      { name: 'LinkMark', from: l2 + 3, to: l2 + 4 },   // '('
-      { name: 'URL', from: l2 + 4, to: l2 + 5 },        // 'u'
-      { name: 'LinkMark', from: l2 + 5, to: l2 + 6 },   // ')'
+      { name: 'Link', from: l2, to: l2 + 6 },                        // parent — must NOT be hidden
+      { name: 'LinkMark', from: l2, to: l2 + 1, parent: P },          // '['
+      { name: 'LinkMark', from: l2 + 2, to: l2 + 3, parent: P },      // ']'
+      { name: 'LinkMark', from: l2 + 3, to: l2 + 4, parent: P },      // '('
+      { name: 'URL', from: l2 + 4, to: l2 + 5, parent: P },           // 'u'
+      { name: 'LinkMark', from: l2 + 5, to: l2 + 6, parent: P },      // ')'
     ];
     const inst = instantiate(CM6, fakeView(doc, nodes, 0)); // cursor line 1 → link inactive
     expect(inst.decorations.ranges.map((r) => [r.from, r.to])).toEqual([
@@ -224,9 +225,31 @@ describe('createLivePreview', () => {
   test('hides a LinkTitle alongside the url', () => {
     const CM6 = fakeCM6();
     const doc = 'inactive\n[t](u "x")';
-    const nodes = [{ name: 'LinkTitle', from: 14, to: 17 }]; // the "x" title
+    const nodes = [{ name: 'LinkTitle', from: 14, to: 17, parent: { name: 'Link' } }]; // the "x" title
     const inst = instantiate(CM6, fakeView(doc, nodes, 0));
     expect(inst.decorations.ranges.map((r) => [r.from, r.to])).toEqual([[14, 17]]);
+  });
+
+  test('does NOT collapse an angle-bracket autolink <url> (parent Autolink → no label to keep)', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n<http://x>';
+    // The URL sits inside an Autolink, not a Link — hiding it would erase the only visible text.
+    const nodes = [{ name: 'URL', from: 10, to: 17, parent: { name: 'Autolink' } }];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0)); // cursor line 1 → autolink inactive
+    expect(inst.decorations.ranges).toEqual([]); // left raw
+  });
+
+  test('does NOT collapse an image ![alt](url) (parent Image → would leave bare alt)', () => {
+    const CM6 = fakeCM6();
+    const doc = 'inactive\n![a](u)';
+    const P = { name: 'Image' };
+    const nodes = [
+      { name: 'LinkMark', from: 11, to: 12, parent: P }, // '['  (after the '!')
+      { name: 'URL', from: 14, to: 15, parent: P },       // 'u'
+      { name: 'LinkMark', from: 15, to: 16, parent: P },  // ')'
+    ];
+    const inst = instantiate(CM6, fakeView(doc, nodes, 0));
+    expect(inst.decorations.ranges).toEqual([]); // image stays raw, alt not stranded
   });
 
   test('the marker widget is decorative (aria-hidden) and compares by glyph (eq)', () => {

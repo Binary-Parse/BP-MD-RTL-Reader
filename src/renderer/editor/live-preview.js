@@ -16,16 +16,22 @@
 // Prose markers hidden by an empty replace. EmphasisMark covers BOTH emphasis and strong
 // (@lezer/markdown has no separate 'StrongEmphasisMark'); CodeMark covers inline + fences;
 // StrikethroughMark is the GFM '~~' marker (the editor parses GFM via base: markdownLanguage).
-// LinkMark + URL + LinkTitle collapse an inline [text](url "title") down to its styled label
-// (the link text is separate inline content and survives). Known out-of-scope caveats: an
-// angle-bracket autolink <url> has no separate text node (would collapse to nothing) and an
-// image ![alt](url) hides the same way leaving bare alt — both need a parent='Link' guard,
-// which the flat unit harness can't cover, so they're deferred follow-ups. Reference links
-// [text][ref] use LinkLabel (not hidden) so the label stays readable.
-const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark', 'LinkMark', 'URL', 'LinkTitle']);
+const HIDE_NODES = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark']);
+// Link parts ([ ] ( ), the url, the "title"). These collapse an inline [text](url "title")
+// down to its styled label ONLY when the parent is a real Link (decorationFor checks parentName):
+// an angle-bracket autolink <url> (parent Autolink) has no separate label and would vanish, and
+// an image ![alt](url) (parent Image) would collapse to bare alt — both stay raw instead.
+// Reference links [text][ref] use LinkLabel (not in this set) so the label stays readable.
+const LINK_PARTS = new Set(['LinkMark', 'URL', 'LinkTitle']);
 // Unordered list bullets we swap for a single bullet glyph. Ordered markers ('1.', '2)')
 // are left raw — the number IS content.
 const BULLET_MARKERS = new Set(['-', '*', '+']);
+
+// The enclosing node's name. Real engine: node.node.parent.name; the flat unit-test harness
+// supplies node.parent.name directly. Undefined when there is no parent (a top-level node).
+function parentName(node) {
+  return node.node?.parent?.name ?? node.parent?.name;
+}
 
 export function createLivePreview(CM6) {
   const { ViewPlugin, Decoration, syntaxTree, EditorView, WidgetType } = CM6;
@@ -52,6 +58,10 @@ export function createLivePreview(CM6) {
   // Which decoration (if any) applies to a marker node off the active line.
   function decorationFor(view, node) {
     const { name } = node;
+    // Collapse the [ ] ( ) / url / "title" to the styled label ONLY inside a real inline Link.
+    // An Image (![alt](url)) or angle-bracket Autolink (<url>) parent has no separate visible
+    // label to fall back to, so leave those raw rather than collapse them to nothing/bare alt.
+    if (LINK_PARTS.has(name)) return parentName(node) === 'Link' ? HIDE : null;
     if (HIDE_NODES.has(name)) return HIDE;
     if (name === 'ListMark') {
       const text = view.state.doc.sliceString(node.from, node.to).trim();

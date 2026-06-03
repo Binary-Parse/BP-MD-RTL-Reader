@@ -188,6 +188,35 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.valueActive).toBe(r.valueInactive);
   });
 
+  test('live-preview leaves autolinks <url> and images ![alt](url) raw on inactive lines (parent guard, real engine)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      // line1: inline link (collapses) · line2: autolink · line3: image · line4: cursor (so 1-3 are inactive)
+      const doc = '[lbl](https://link.test)\n<https://auto.test>\n![alt text](https://img.test/x.png)\ncursor here';
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc });
+      const content = () => div.querySelector('.cm-content').textContent;
+      await new Promise((res) => setTimeout(res, 60));
+      ad.setSelection({ start: doc.length, end: doc.length }); // cursor on line 4 → lines 1-3 inactive
+      await new Promise((res) => setTimeout(res, 60));
+      const text = content();
+      ad.destroy();
+      div.remove();
+      return { text };
+    });
+    // a real inline Link still collapses to its label…
+    expect(r.text).toContain('lbl');
+    expect(r.text).not.toContain('https://link.test');
+    // …but an autolink's URL is its only visible text — it must NOT vanish
+    expect(r.text).toContain('https://auto.test');
+    // …and an image must stay raw (not collapse to bare alt): url + alt both survive
+    expect(r.text).toContain('https://img.test/x.png');
+    expect(r.text).toContain('alt text');
+  });
+
   test('live-preview tracks a narrowed viewport on a long scrolled doc (visibleRanges + viewportChanged)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

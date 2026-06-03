@@ -13,7 +13,7 @@ import { activeHeading } from './outline.js';
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
 import { dailyNoteName } from './dates.js';
 import { highlightCode } from './highlight.js';
-import { mathExtension, restoreMath } from './math.js';
+import { mathExtension, restoreMath, renderTex } from './math.js';
 import { sanitizeHtml, sanitizeSvg } from './trusted.js';
 import { renderMermaid } from './mermaid.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
@@ -1761,6 +1761,12 @@ function renderCmBlock(type, source) {
   return null;
 }
 
+// T-F13 × F9: render a single $…$ / $$…$$ TeX span for the CM6 inline math widgets, reusing
+// the same hardened KaTeX render+sanitize path (renderTex) as the preview pane (LTR-isolated).
+function renderCmMath(tex, display) {
+  return (typeof katex !== 'undefined') ? renderTex(tex, display, { katex, DOMPurify, doc: document }) : null;
+}
+
 async function initCM6Editor() {
   if (cmAdapter || !cmFlagOn()) return false;
   let CM6;
@@ -1778,6 +1784,7 @@ async function initCM6Editor() {
     dir: State.direction === 'rtl' ? 'rtl' : 'ltr',
     onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
     renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
+    renderMath: renderCmMath,   // T-F13 × F9: inline KaTeX rendering in the single CM6 surface
   });
   window.__cmActive = true;
   // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane,

@@ -143,4 +143,17 @@ test.describe('[T-F13] single live-preview mode (behind ?cm=1)', () => {
     });
     await expect(page.locator('.cm-mount .cm-lp-block .callout')).toHaveCount(1, { timeout: 8000 });
   });
+
+  test('I — the CM6 editor renders inline $…$ math (KaTeX) off the active line', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.evaluate(() => {
+      window.setCmEditor(true);
+      window._appState.files = [{ name: 'm.md', path: 'm.md',
+        content: '# math\n\nPythagoras: $x^2+y^2=z^2$ done\n', dirty: false }];
+      window.renderFile(0);
+    });
+    // the inline math renders as a KaTeX span (.math-inline → .katex) inside the editor, not raw $…$
+    await expect(page.locator('.cm-mount .math-inline .katex')).toHaveCount(1, { timeout: 8000 });
+  });
 });

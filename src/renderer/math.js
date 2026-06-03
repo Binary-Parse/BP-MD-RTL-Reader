@@ -62,7 +62,9 @@ export function mathExtension() {
   };
 }
 
-function renderTex(tex, display, { katex, DOMPurify, doc }) {
+// Render a single TeX string to a sanitized, LTR-isolated KaTeX span (or null on error).
+// Exported so the CM6 live-preview math widgets reuse the EXACT same render+sanitize path.
+export function renderTex(tex, display, { katex, DOMPurify, doc }) {
   let html;
   try { html = katex.renderToString(tex, katexOptions({ displayMode: display })); }
   catch (_) { return null; }

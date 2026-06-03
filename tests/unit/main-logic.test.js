@@ -19,12 +19,39 @@ import {
   wouldExceedCumulative,
   isSymlinkEscape,
   stripBOM,
+  isVaultFile,
+  isDroppableFile,
   filterAndSortMdFiles,
   MAX_OPEN_FILE_BYTES,
   MAX_FILES_PER_DIR,
   MAX_FILE_BYTES,
   MAX_CUMULATIVE_BYTES,
 } from '../../src/main-logic.js';
+
+// T-B10 file-type predicates. Statically imported here (not via createRequire as the old
+// file-predicates.test.js did) so Stryker's per-test coverage actually instruments them —
+// these cases exercise every branch to kill the type-guard / anchor / logical-operator mutants.
+describe('isVaultFile / isDroppableFile (T-B10)', () => {
+  test('isVaultFile: .md/.markdown only, anchored, string-guarded', () => {
+    expect(isVaultFile('a.md')).toBe(true);
+    expect(isVaultFile('a.MARKDOWN')).toBe(true);
+    expect(isVaultFile('a.txt')).toBe(false);
+    expect(isVaultFile('a.png')).toBe(false);
+    expect(isVaultFile('a.md.bak')).toBe(false);   // extension must be at the END (anchored)
+    expect(isVaultFile(['a.md'])).toBe(false);       // non-string that coerces to a match → still false
+    expect(isVaultFile(42)).toBe(false);
+    expect(isVaultFile(null)).toBe(false);
+  });
+  test('isDroppableFile: .md/.markdown/.txt, anchored, string-guarded', () => {
+    expect(isDroppableFile('a.md')).toBe(true);
+    expect(isDroppableFile('notes.txt')).toBe(true);
+    expect(isDroppableFile('a.markdown')).toBe(true);
+    expect(isDroppableFile('a.pdf')).toBe(false);
+    expect(isDroppableFile('a.md.exe')).toBe(false); // anchored
+    expect(isDroppableFile(['a.txt'])).toBe(false);   // type guard
+    expect(isDroppableFile(42)).toBe(false);
+  });
+});
 
 describe('parseFileArg()', () => {
   test('returns null for empty argv', () => {

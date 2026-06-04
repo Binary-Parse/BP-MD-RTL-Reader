@@ -57,13 +57,16 @@ describe('parseMarkdown pipeline', () => {
 });
 
 describe('configureMarked', () => {
-  test('registers wikilink extension on marked instance', () => {
+  test('registers wikilink + footnote extensions on marked instance', () => {
     const useFn = vi.fn();
     const marked = { use: useFn };
     configureMarked(marked);
-    expect(useFn).toHaveBeenCalledOnce();
+    // Two use() calls now: the gfm+wikilink config, then the footnote bundle (R11).
+    expect(useFn).toHaveBeenCalledTimes(2);
     const config = useFn.mock.calls[0][0];
     expect(config.extensions[0].name).toBe('wikilink');
+    const fnConfig = useFn.mock.calls[1][0];
+    expect(fnConfig.extensions.map(e => e.name)).toEqual(['footnoteRef', 'footnoteDef']);
   });
 
   test('no-op when marked is missing', () => {

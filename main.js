@@ -16,6 +16,7 @@ const { buildContextMenuTemplate } = require('./src/main/context-menu');
 const { createDocumentStore } = require('./src/main/document-store');
 const { createSettingsStore, clampWindowBounds, migrate } = require('./src/main/settings');
 const { compareVersions } = require('./src/main/version');
+const { resolveAsset } = require('./src/main/protocol');
 const crypto = require('crypto');
 
 // T-Q6: the public releases manifest consulted ONLY when the user explicitly checks for
@@ -34,7 +35,16 @@ const UPDATE_MANIFEST_URL = 'https://api.github.com/repos/Binary-Parse/BP-MD-RTL
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
 function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch }) {
-  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session } = electron;
+  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session, protocol } = electron;
+
+  // T-AI2: the bpmd:// asset scheme must be declared privileged BEFORE app `ready`
+  // (so it behaves as a standard, secure, fetch-able scheme that the CSP img-src
+  // allow-lists). The handler itself is attached after ready (registerBpmdProtocol).
+  if (protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
+    protocol.registerSchemesAsPrivileged([
+      { scheme: 'bpmd', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+    ]);
+  }
 
   // Reject `promise` if it hasn't settled within `ms` — bounds a stuck PDF render so
   // the export can't hang forever (T-B6). Clears the timer so no listener leaks.
@@ -136,6 +146,37 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
   // ==== SECURITY: ALLOWLIST ====
   const allowedFolders = new Set();
 
+  // T-AI2: the vault root the renderer currently has open. bpmd://vault/<rel> URLs
+  // resolve against THIS root (the app shows one vault at a time). Set on each
+  // successful fs:readVault; used only by the bpmd protocol handler below.
+  let activeVaultRoot = null;
+
+  // Minimal content-type table for the assets a vault note can reference inline.
+  const BPMD_MIME = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.webp': 'image/webp', '.svg': 'image/svg+xml', '.avif': 'image/avif',
+    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+  };
+
+  // Serve a bpmd://vault/<rel> request: resolve it (path-traversal guarded) against
+  // the active vault root, re-check the root is still allow-listed, and stream the
+  // file's bytes. Any miss/escape → 404/403; never throws into Electron.
+  function registerBpmdProtocol() {
+    if (!protocol || typeof protocol.handle !== 'function') return;
+    protocol.handle('bpmd', async (request) => {
+      const res = resolveAsset(request.url, activeVaultRoot, path);
+      if (res.error) return new Response('Not found', { status: 404 });
+      if (!isAuthorizedPath(activeVaultRoot, allowedFolders)) return new Response('Forbidden', { status: 403 });
+      try {
+        const data = await fs.promises.readFile(res.path);
+        const type = BPMD_MIME[path.extname(res.path).toLowerCase()] || 'application/octet-stream';
+        return new Response(data, { headers: { 'content-type': type } });
+      } catch (_) {
+        return new Response('Not found', { status: 404 });
+      }
+    });
+  }
+
   // ==== DOCUMENT STORE (T-AI1) ====
   // Transactional repository: atomic, encoding-preserving, conflict-aware writes.
   const docStore = createDocumentStore({ fs, path, crypto });
@@ -207,6 +248,9 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       if (!isAuthorizedPath(folderPath, allowedFolders)) {
         return { error: 'unauthorized-path' };
       }
+
+      // T-AI2: this is now the vault that bpmd://vault/<rel> asset URLs resolve against.
+      activeVaultRoot = folderPath;
 
       const topEntries = await fs.promises.readdir(folderPath, { withFileTypes: true });
 
@@ -526,6 +570,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       currentSettings = settingsStore.load();
       pendingFileToOpen = parseFileArg(proc.argv, fs);
       registerIpcHandlers();
+      registerBpmdProtocol(); // T-AI2: attach the bpmd:// asset handler (scheme privileged above)
       createWindow();
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

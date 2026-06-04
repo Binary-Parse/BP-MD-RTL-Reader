@@ -49,6 +49,14 @@ export function buildMockElectron() {
   const contextBridge = { exposeInMainWorld: vi.fn() };
   const menuPopup = vi.fn();
   const Menu = { buildFromTemplate: vi.fn(() => ({ popup: menuPopup })), _popup: menuPopup };
+  // T-AI2: bpmd:// custom protocol. registerSchemesAsPrivileged is recorded; handle()
+  // captures the (scheme → handler) so tests can drive the real asset resolver.
+  const protocolHandlers = {};
+  const protocol = {
+    registerSchemesAsPrivileged: vi.fn(),
+    handle: vi.fn((scheme, fn) => { protocolHandlers[scheme] = fn; }),
+    _handlers: protocolHandlers,
+  };
   return {
     app: mockApp, BrowserWindow, ipcMain, ipcRenderer, contextBridge,
     shell: { openExternal: vi.fn() },
@@ -58,7 +66,7 @@ export function buildMockElectron() {
     },
     clipboard: { writeText: vi.fn() },
     screen: { getAllDisplays: vi.fn(() => [{ x: 0, y: 0, width: 1920, height: 1080 }]) },
-    crashReporter, Menu, session, _mockWin: mockWin, _pdfSession: pdfSession,
+    crashReporter, Menu, session, protocol, _mockWin: mockWin, _pdfSession: pdfSession,
   };
 }
 

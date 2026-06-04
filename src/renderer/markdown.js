@@ -4,6 +4,7 @@
  */
 
 import { sanitizeHtml } from './trusted.js';
+import { footnoteExtension } from './footnotes.js';
 
 export function wikilinkTokenizer(src) {
   const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
@@ -42,6 +43,9 @@ export function configureMarked(marked) {
       }
     }]
   });
+  // Footnotes (R11): marked core doesn't support GFM footnotes — add them as a
+  // separate extension+hooks bundle ([^id] refs + [^id]: defs → end-of-doc list).
+  marked.use(footnoteExtension());
 }
 
 // ── Callouts (T-F14): GitHub/Obsidian `> [!NOTE]` admonitions ───────────────

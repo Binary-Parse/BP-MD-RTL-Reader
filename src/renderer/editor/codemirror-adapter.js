@@ -11,6 +11,7 @@ import { createLivePreview, livePreviewTheme } from './live-preview.js';
 import { createLineDirection } from './line-direction.js';
 import { createBlockPreview } from './block-preview.js';
 import { createMathPreview } from './math-preview.js';
+import { createWikilinkPreview } from './wikilink-preview.js';
 // listContinuation lives in its own module so the coverage + mutation gates SEE it (this
 // adapter file is gate-excluded as e2e-only). Re-exported for back-compat with importers.
 import { listContinuation } from './list-continuation.js';
@@ -25,7 +26,7 @@ function escapeReg(s) {
  * @param {object} opts  { CM6, doc, onChange, dir }
  * @returns an EditorPort (+ setDirection/focus/destroy/_view) backed by a CM6 EditorView
  */
-export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null, renderMath = null } = {}) {
+export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null, renderMath = null, onWikilink = null } = {}) {
   const {
     EditorState, EditorSelection, EditorView, keymap, Prec, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
@@ -112,6 +113,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
       ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock)] : []), // T-F13: render BLOCKS (tables…) off the active line
       ...(livePreview && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
+      ...(livePreview ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
       ...createLineDirection(CM6, () => dir), // R1/R2 in CM6: per-line dir + logical caret (perLineTextDirection)
       // F13 Find: the `search` extension draws .cm-searchMatch on EVERY hit of the active
       // SearchQuery (set via setSearchHighlight below) so all matches are visible, not just the

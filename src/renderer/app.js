@@ -119,6 +119,48 @@ function parseMarkdown(md) {
   return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
 }
 
+// ── Vault image resolution (R10) ────────────────────────────────────────────
+// A note-relative image `![](pic.png)` must load from the note's neighbour on
+// disk, not from the app's index.html origin. We rewrite such srcs to
+// `bpmd://vault/<relPath>`, served by the registered bpmd:// protocol (main.js)
+// against the allow-listed vault root. No-op for absolute/scheme/data: srcs and
+// for non-vault notes (browser/dev, new notes — they have no on-disk neighbour).
+// Collapse a path to a clean vault-relative form; null if it escapes the vault.
+function normalizeRel(p) {
+  const parts = [];
+  for (const seg of String(p || '').split(/[\\/]+/)) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') { if (!parts.length) return null; parts.pop(); continue; }
+    parts.push(seg);
+  }
+  return parts.join('/');
+}
+// Resolve a raw <img> src against the note's directory → vault-relative path, or
+// null when it should be left untouched (already a scheme/absolute/anchor).
+function vaultRelImage(src, noteDir) {
+  src = String(src || '');
+  if (!src || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//') || src.startsWith('/') || src.startsWith('#')) return null;
+  const rel = normalizeRel((noteDir ? noteDir + '/' : '') + src);
+  return rel || null;
+}
+// Rewrite every note-relative <img> in `container` to a bpmd:// URL. Uses the
+// active file's vaultRoot/path; a no-op when the note isn't an on-disk vault file.
+function rewriteVaultImages(container) {
+  if (!container) return;
+  const file = State.activeFile != null ? State.files[State.activeFile] : null;
+  if (!file || !file.vaultRoot) return;
+  const noteDir = normalizeRel(String(file.path || '').replace(/[^\\/]*$/, ''));
+  // Decode each segment first (so an already-percent-encoded author path isn't
+  // double-encoded), then encode once — the protocol handler decodes once to the
+  // literal filename. A no-op for plain names.
+  const enc = (seg) => { let d = seg; try { d = decodeURIComponent(seg); } catch (_) { /* keep raw */ } return encodeURIComponent(d); };
+  container.querySelectorAll('img[src]').forEach(img => {
+    const rel = vaultRelImage(img.getAttribute('src'), noteDir);
+    if (rel) img.setAttribute('src', 'bpmd://vault/' + rel.split('/').map(enc).join('/'));
+  });
+}
+window.rewriteVaultImages = rewriteVaultImages;
+
 // Apply per-block direction + inline bidi isolation to the rendered note
 // (T-R1/R2). baseDir is the inherited direction for neutral-only blocks: the
 // manual ⇄ toggle forces rtl, otherwise the document's first-strong char decides
@@ -1181,6 +1223,7 @@ function renderFile(idx) {
     </div>
     ${html}
   `;
+  rewriteVaultImages(noteContent); // R10: note-relative images → bpmd://vault/<rel>
   // EC-A2 (T-B9): the conflict banner must stay VISIBLE — render it in the dedicated
   // #conflictBar above the editor, not inside #noteContent (which is hidden behind the CM6
   // surface now, T-F13). Cleared when the file is not in conflict.
@@ -1434,7 +1477,9 @@ async function openVault() {
       const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
       State.vaultName = folderName;
       _vaultPath = folderPath; // remember the absolute root for last-session restore (M6)
-      const md = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false }));
+      // vaultRoot = the authorized absolute folder; lets saveCurrent() write the note
+      // back in place via the fs:writeFile IPC bridge instead of a Blob download (M08).
+      const md = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: folderPath }));
       State.files = md;
       $('vaultName').textContent = folderName;
       $('vaultName').classList.remove('empty');
@@ -1561,6 +1606,8 @@ async function saveCurrent() {
   closeMenu();
   if (State.activeFile === null || !State.files[State.activeFile]) { showToast('No file to save', 'error'); return; }
   const f = State.files[State.activeFile];
+  // Branch 1: an FSA handle (file opened via showOpenFilePicker / showDirectoryPicker,
+  // browser or dev) — write in place through the File System Access API.
   if (f.handle && f.handle.createWritable) {
     try {
       const w = await f.handle.createWritable();
@@ -1568,13 +1615,30 @@ async function saveCurrent() {
       f.dirty = false; renderTabs();
       showToast(`Saved ${f.name}`);
     } catch(e) { showToast('Could not save', 'error'); }
-  } else {
-    const blob = new Blob([f.content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = f.name; a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Downloaded ${f.name}`);
+    return;
   }
+  // Branch 2: a vault file in the packaged Electron app — handle is null, so write it
+  // back in place through the atomic, allow-listed fs:writeFile IPC bridge (M08). This
+  // is the path the prior code missed: it fell straight to a Blob download of a copy.
+  if (f.vaultRoot && window.electronAPI && typeof window.electronAPI.writeFile === 'function') {
+    try {
+      const res = await window.electronAPI.writeFile({ folderPath: f.vaultRoot, relPath: f.path, content: f.content });
+      if (res && res.ok) {
+        f.dirty = false; renderTabs();
+        showToast(`Saved ${f.name}`);
+      } else {
+        const why = res && res.error ? res.error : 'unknown';
+        showToast(`Could not save ${f.name} (${why})`, 'error');
+      }
+    } catch(e) { showToast('Could not save', 'error'); }
+    return;
+  }
+  // Branch 3: browser fallback (no handle, no IPC) — offer the content as a download.
+  const blob = new Blob([f.content], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = f.name; a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Downloaded ${f.name}`);
 }
 window.saveCurrent = saveCurrent;
 
@@ -1694,6 +1758,7 @@ function applyEditorInput(val, pos) {
       </div>
       ${html}
     `;
+    rewriteVaultImages(noteContent); // R10: note-relative images → bpmd://vault/<rel>
     transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
     decorateCodeAndMath();
     applyBidiToNote(f.content);
@@ -1767,6 +1832,7 @@ function renderCmBlock(type, source) {
     // same src/CSP rules (bpmd:// vault images, data:, file:) as the preview pane.
     const tmp = document.createElement('div');
     tmp.innerHTML = parseMarkdown(source);
+    rewriteVaultImages(tmp); // R10: note-relative images → bpmd://vault/<rel>
     return tmp.querySelector('img') || null;
   }
   return null;
@@ -1798,6 +1864,7 @@ async function initCM6Editor() {
     onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
     renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
     renderMath: renderCmMath,   // T-F13 × F9: inline KaTeX rendering in the single CM6 surface
+    onWikilink: navWikilink,    // R09: clicking a rendered [[wikilink]] in the editor navigates
   });
   window.__cmActive = true;
   // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane,
@@ -2351,7 +2418,7 @@ async function handleVaultChanged({ folderPath, files } = {}) {
 
   const merged = entries.map(e => {
     const prev = prevByPath.get(e.relPath);
-    if (!prev) return { name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false };
+    if (!prev) return { name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: folderPath };
     if (norm(prev.content) === norm(e.content)) return prev; // unchanged → keep (no churn)
     if (prev.dirty) {
       if (e.relPath === activePath) conflictName = prev.name;

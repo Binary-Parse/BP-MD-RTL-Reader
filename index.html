@@ -1013,6 +1013,17 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .wikilink:hover { background: var(--accent); color: white !important; }
 
+/* Footnotes (R11): superscript refs + the end-of-document notes list. */
+.fn-ref { font-size: 0.75em; line-height: 0; }
+.fn-ref a { color: var(--accent); text-decoration: none; padding: 0 1px; }
+.fn-ref a:hover { text-decoration: underline; }
+.footnotes { margin-top: 32px; font-size: 0.9em; color: var(--ink-soft); }
+.footnotes hr { border: none; border-top: 1px solid var(--rule, rgba(0,0,0,.12)); margin: 0 0 12px; }
+.footnotes ol { padding-inline-start: 1.4em; }
+.fn-item { margin: 4px 0; }
+.fn-back { color: var(--accent); text-decoration: none; margin-inline-start: 4px; }
+.fn-back:hover { text-decoration: underline; }
+
 .editor blockquote {
   border-inline-start: 3px solid var(--accent);
   padding-block: 8px;

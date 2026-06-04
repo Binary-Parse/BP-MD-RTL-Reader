@@ -467,14 +467,12 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(await page.evaluate(() => document.querySelector('.cm-mount .cm-editor').getAttribute('dir'))).toBe('rtl');
   });
 
-  test('default (no flag) keeps the textarea engine — CM6 is never loaded', async ({ page }) => {
+  test('default (no flag) NOW mounts CM6 as the sole editor — the textarea is the hidden fallback', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
-    expect(await page.evaluate(() => typeof window.CM6)).toBe('undefined'); // lazy: not pulled in
-    expect(await page.evaluate(() => document.querySelector('.cm-mount') === null)).toBe(true);
-    expect(await page.evaluate(() => document.getElementById('srcTextarea').style.display)).not.toBe('none');
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
+    expect(await page.evaluate(() => document.getElementById('srcTextarea').style.display)).toBe('none');
   });
 
   test('per-line direction: each CM6 line gets dir from its own first-strong char (R1/R2)', async ({ page }) => {

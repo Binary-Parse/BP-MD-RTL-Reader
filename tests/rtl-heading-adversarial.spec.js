@@ -34,6 +34,10 @@ async function injectMarkdown(page, content) {
       handle: null, content: md, dirty: false
     }];
     if (typeof window.renderFile === 'function') window.renderFile(0);
+    // T-F13: CM6 is the on-screen editor; the rendered #noteContent (still produced for
+    // export/outline) is hidden behind `cm-single`. Reveal it so these geometry checks can
+    // measure the RTL render pipeline that export ships.
+    document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
 }
 

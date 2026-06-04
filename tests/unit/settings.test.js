@@ -112,3 +112,93 @@ describe('createSettingsStore', () => {
     expect(loaded.zoomFactor).toBe(1.5);
   });
 });
+
+// ── Mutation-hardening (audit F-3): every migrate field + window clamp branch. ──
+describe('migrate — enum + type coercion (exact, mutation kills)', () => {
+  test('theme: valid kept, invalid → default paper', () => {
+    expect(migrate({ theme: 'ink' }).theme).toBe('ink');
+    expect(migrate({ theme: 'sepia' }).theme).toBe('sepia');
+    expect(migrate({ theme: 'neon' }).theme).toBe('paper');
+    expect(migrate({ theme: 42 }).theme).toBe('paper');
+  });
+  test('editorMode: valid kept, invalid → live', () => {
+    expect(migrate({ editorMode: 'split' }).editorMode).toBe('split');
+    expect(migrate({ editorMode: 'source' }).editorMode).toBe('source');
+    expect(migrate({ editorMode: 'zoomy' }).editorMode).toBe('live');
+  });
+  test('uiDirection rtl/ltr only', () => {
+    expect(migrate({ uiDirection: 'rtl' }).uiDirection).toBe('rtl');
+    expect(migrate({ uiDirection: 'ltr' }).uiDirection).toBe('ltr');
+    expect(migrate({ uiDirection: 'sideways' }).uiDirection).toBe('ltr');
+  });
+  test('uiLocale ar/en, numerals, calendar enums', () => {
+    expect(migrate({ uiLocale: 'ar' }).uiLocale).toBe('ar');
+    expect(migrate({ uiLocale: 'fr' }).uiLocale).toBe('en');
+    expect(migrate({ numerals: 'arabic-indic' }).numerals).toBe('arabic-indic');
+    expect(migrate({ numerals: 'roman' }).numerals).toBe('western');
+    expect(migrate({ calendar: 'hijri' }).calendar).toBe('hijri');
+    expect(migrate({ calendar: 'mayan' }).calendar).toBe('gregorian');
+  });
+  test('boolean flags: true/false preserved, non-boolean → default', () => {
+    for (const k of ['sidebarVisible', 'inspectorVisible', 'arabicKashida', 'italicRecolor', 'cmEditor']) {
+      expect(migrate({ [k]: true })[k]).toBe(true);
+      expect(migrate({ [k]: false })[k]).toBe(false);
+      expect(migrate({ [k]: 'yes' })[k]).toBe(defaultSettings()[k]); // non-boolean ignored
+    }
+  });
+  test('zoomFactor routed through clampZoom', () => {
+    expect(migrate({ zoomFactor: 5 }).zoomFactor).toBe(2.0);
+    expect(migrate({ zoomFactor: 0.1 }).zoomFactor).toBe(0.6);
+    expect(migrate({ zoomFactor: 'x' }).zoomFactor).toBe(1);
+  });
+  test('recents: non-array → []; entries without string path dropped; capped at 10; name coerced', () => {
+    expect(migrate({ recents: 'nope' }).recents).toEqual([]);
+    expect(migrate({ recents: [{ path: 'a' }, { name: 'B', path: 'b' }, { nopath: 1 }, null] }).recents)
+      .toEqual([{ name: '', path: 'a' }, { name: 'B', path: 'b' }]);
+    const many = Array.from({ length: 15 }, (_, i) => ({ path: 'p' + i }));
+    expect(migrate({ recents: many }).recents.length).toBe(10);
+  });
+  test('window: finite x/y kept, non-finite dropped; w/h default; maximized coerced', () => {
+    expect(migrate({ window: { x: 10, y: 20, w: 800, h: 600, maximized: 1 } }).window)
+      .toEqual({ x: 10, y: 20, w: 800, h: 600, maximized: true });
+    expect(migrate({ window: { x: NaN, y: 'q', maximized: 0 } }).window)
+      .toEqual({ x: undefined, y: undefined, w: 1280, h: 820, maximized: false });
+  });
+  test('lastSession mapping filters non-string openPaths', () => {
+    expect(migrate({ lastSession: { vaultPath: '/v', openPaths: ['a', 2, 'b', null], activePath: '/v/a' } }).lastSession)
+      .toEqual({ vaultPath: '/v', openPaths: ['a', 'b'], activePath: '/v/a' });
+    expect(migrate({ lastSession: { openPaths: 'x' } }).lastSession)
+      .toEqual({ vaultPath: undefined, openPaths: [], activePath: undefined });
+  });
+  test('version is always stamped', () => {
+    expect(migrate({ version: 999 }).version).toBe(1);
+  });
+});
+
+describe('clampWindowBounds — geometry branches (exact)', () => {
+  const DISP = [{ x: 0, y: 0, width: 1920, height: 1080 }];
+  test('no win / empty or non-array displays → default size, no x/y', () => {
+    expect(clampWindowBounds(null, DISP)).toEqual({ w: 1280, h: 820, maximized: false });
+    expect(clampWindowBounds({ x: 1, y: 1, w: 800, h: 600 }, [])).toEqual({ w: 1280, h: 820, maximized: false });
+    expect(clampWindowBounds({ x: 1, y: 1 }, 'nope')).toEqual({ w: 1280, h: 820, maximized: false });
+  });
+  test('null x/y → keep size, drop position, coerce maximized', () => {
+    expect(clampWindowBounds({ x: null, y: null, w: 900, h: 700, maximized: 'yes' }, DISP))
+      .toEqual({ w: 900, h: 700, maximized: true });
+    expect(clampWindowBounds({ w: undefined, h: undefined }, DISP)) // missing x/y AND w/h → def w/h
+      .toEqual({ w: 1280, h: 820, maximized: false });
+  });
+  test('on-screen window keeps x/y/w/h', () => {
+    expect(clampWindowBounds({ x: 100, y: 100, w: 800, h: 600, maximized: false }, DISP))
+      .toEqual({ x: 100, y: 100, w: 800, h: 600, maximized: false });
+  });
+  test('fully off-screen window drops x/y (keeps size)', () => {
+    expect(clampWindowBounds({ x: 5000, y: 5000, w: 800, h: 600 }, DISP))
+      .toEqual({ w: 800, h: 600, maximized: false });
+    expect(clampWindowBounds({ x: -2000, y: -2000, w: 800, h: 600 }, DISP))
+      .toEqual({ w: 800, h: 600, maximized: false });
+  });
+  test('partially on-screen (overlaps an edge) is kept', () => {
+    expect(clampWindowBounds({ x: 1900, y: 1000, w: 800, h: 600 }, DISP).x).toBe(1900); // overlaps right/bottom edge
+  });
+});

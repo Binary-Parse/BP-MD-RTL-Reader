@@ -136,16 +136,16 @@ test.describe('[T-F5] toolbar menu roving focus', () => {
   });
 
   test('mouse-opened menu leaves focus on the editor (Copy/Cut still read the live selection)', async ({ page }) => {
+    // T-F13: the editor is the CM6 contenteditable (.cm-content), not the textarea.
     await page.evaluate(() => window.loadDemo());
-    await page.evaluate(() => window.setEditorMode('source'));
-    await page.locator('#srcTextarea').waitFor({ state: 'visible' });
-    await page.locator('#srcTextarea').focus();
-    expect((await activeInfo(page)).id).toBe('srcTextarea');
+    await page.locator('.cm-mount .cm-content').waitFor({ state: 'visible' });
+    await page.locator('.cm-mount .cm-content').click();
+    expect((await activeInfo(page)).cls).toContain('cm-content');
 
     await page.locator('.tb-menu-item[data-menu="edit"]').click(); // mouse → detail 1
     await expect(page.locator('#dropdown')).toHaveClass(/open/);
     // Focus must stay precisely on the editor — not jump into the menu, not fall to body.
-    expect((await activeInfo(page)).id).toBe('srcTextarea');
+    expect((await activeInfo(page)).cls).toContain('cm-content');
   });
 
   test('mouse-opened menu is still keyboard-navigable: ArrowDown pulls focus into the first item', async ({ page }) => {

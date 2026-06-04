@@ -146,3 +146,129 @@ describe('listMarkdown (EC-A5)', () => {
     expect(store.listMarkdown('/v', { maxFiles: 2 })).toHaveLength(2);
   });
 });
+
+// ── Mutation-hardening (audit F-3): EOL heuristic, hash fallback, read meta, write
+//    encoding/conflict/atomic/error branches, and the vault-walk guards. ──
+import { stripBOM } from '../../src/main/document-store.js';
+
+describe('encoding helpers — exact branches (mutation kills)', () => {
+  test('detectEol: pure/mixed/equal/none', () => {
+    expect(detectEol('a\nb\nc')).toBe('\n');               // pure LF
+    expect(detectEol('a\r\nb\r\n')).toBe('\r\n');           // pure CRLF
+    expect(detectEol('a\r\nb\r\nc\nd')).toBe('\r\n');       // crlf(2) >= lf(1)
+    expect(detectEol('a\nb\nc\r\nd')).toBe('\n');           // lf(2) > crlf(1)
+    expect(detectEol('a\r\nb\nc')).toBe('\r\n');            // equal (1==1), crlf>0 → CRLF (>=)
+    expect(detectEol('no newlines here')).toBe('\n');       // crlf 0 → LF
+  });
+  test('applyEol: only CRLF target converts; anything else → LF', () => {
+    expect(applyEol('a\nb\nc', '\r\n')).toBe('a\r\nb\r\nc');
+    expect(applyEol('a\r\nb', '\n')).toBe('a\nb');
+    expect(applyEol('a\r\nb', 'lf-ish')).toBe('a\nb'); // non-CRLF target normalizes to LF
+  });
+  test('stripBOM only strips a leading BOM', () => {
+    expect(stripBOM('﻿hi')).toBe('hi');
+    expect(stripBOM('hi')).toBe('hi');
+    expect(stripBOM('a﻿b')).toBe('a﻿b'); // BOM not at index 0 is kept
+  });
+});
+
+describe('hashContent — crypto path vs deterministic fallback', () => {
+  test('uses crypto.createHash when available', () => {
+    const crypto = { createHash: () => ({ update() { return this; }, digest: () => 'SHA1HEX' }) };
+    expect(hashContent('x', crypto)).toBe('SHA1HEX');
+  });
+  test('fallback hash is deterministic + content-sensitive', () => {
+    expect(hashContent('abc')).toBe(hashContent('abc'));
+    expect(hashContent('abc')).not.toBe(hashContent('abd'));
+    expect(hashContent('')).toBe('0');
+    expect(typeof hashContent('abc')).toBe('string');
+  });
+});
+
+describe('read — faithful meta (mutation kills)', () => {
+  test('captures bom/eol/finalNewline/hash/mtime and normalizes the body', () => {
+    const fs = { ...mockFs({ '/v/a.md': '﻿x\r\ny\r\n' }), statSync: () => ({ mtimeMs: 777 }) };
+    const store = createDocumentStore({ fs, path: path.posix });
+    const { content, meta } = store.read('/v/a.md');
+    expect(content).toBe('x\ny\n'); // BOM stripped, CRLF→LF (trailing newline preserved)
+    expect(meta.bom).toBe(true);
+    expect(meta.eol).toBe('\r\n');
+    expect(meta.finalNewline).toBe(true);
+    expect(meta.mtimeMs).toBe(777);
+    expect(typeof meta.hash).toBe('string');
+  });
+  test('no BOM, no final newline → meta reflects it', () => {
+    const fs = { ...mockFs({ '/v/b.md': 'x\ny' }), statSync: () => ({ mtimeMs: 1 }) };
+    const { meta } = createDocumentStore({ fs, path: path.posix }).read('/v/b.md');
+    expect(meta.bom).toBe(false);
+    expect(meta.finalNewline).toBe(false);
+    expect(meta.eol).toBe('\n');
+  });
+});
+
+describe('write — encoding, conflict, atomic, error branches (mutation kills)', () => {
+  test('finalNewline:false leaves no trailing EOL; bom:false adds no BOM', () => {
+    const fs = mockFs();
+    const store = createDocumentStore({ fs, path: path.posix });
+    store.write('/v/a.md', 'x\ny', { root: '/v', eol: '\n', finalNewline: false, bom: false });
+    expect(fs._files['/v/a.md']).toBe('x\ny'); // no trailing \n, no BOM
+  });
+  test('baseHash null → writes even when the file already exists (no conflict check)', () => {
+    const fs = mockFs({ '/v/a.md': 'whatever' });
+    createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'new', { root: '/v', eol: '\n' });
+    expect(fs._files['/v/a.md']).toBe('new\n');
+  });
+  test('baseHash set but file absent → no conflict, writes', () => {
+    const fs = mockFs();
+    const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'new', { root: '/v', baseHash: 'x', eol: '\n' });
+    expect(r.ok).toBe(true);
+  });
+  test('ENOSPC → {error:enospc}; ENOENT → {error:gone}', () => {
+    const mkFail = (code) => {
+      const fs = mockFs();
+      fs.writeFileSync = vi.fn((p) => { if (String(p).includes('.tmp-')) { const e = new Error('x'); e.code = code; throw e; } });
+      return fs;
+    };
+    expect(createDocumentStore({ fs: mkFail('ENOSPC'), path: path.posix }).write('/v/a.md', 'x', { root: '/v' })).toEqual({ error: 'enospc' });
+    expect(createDocumentStore({ fs: mkFail('ENOENT'), path: path.posix }).write('/v/a.md', 'x', { root: '/v' })).toEqual({ error: 'gone' });
+  });
+  test('fsync best-effort path runs when fs.fsyncSync exists (and never throws out)', () => {
+    const fs = mockFs();
+    fs.fsyncSync = vi.fn(); fs.openSync = vi.fn(() => 7); fs.closeSync = vi.fn();
+    const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
+    expect(r.ok).toBe(true);
+    expect(fs.fsyncSync).toHaveBeenCalledWith(7);
+  });
+  test('returns hash/bom/eol meta on success', () => {
+    const fs = mockFs();
+    const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\r\n', bom: true });
+    expect(r.meta.eol).toBe('\r\n');
+    expect(r.meta.bom).toBe(true);
+    expect(typeof r.meta.hash).toBe('string');
+  });
+  test('no root → path guard skipped (writes anywhere)', () => {
+    const fs = mockFs();
+    expect(createDocumentStore({ fs, path: path.posix }).write('/tmp/x.md', 'x', { eol: '\n' }).ok).toBe(true);
+  });
+});
+
+describe('listMarkdown — guard branches (mutation kills)', () => {
+  const dirent = (name, kind) => ({ name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' });
+  test('maxDepth stops recursion', () => {
+    const tree = { '/v': [dirent('a.md', 'f'), dirent('sub', 'd')], '/v/sub': [dirent('b.md', 'f')] };
+    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
+    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v', { maxDepth: 0 }).map((x) => x.relPath)).toEqual(['a.md']);
+  });
+  test('realpathSync throwing skips the dir (no crash)', () => {
+    const fs = { realpathSync: () => { throw new Error('eacces'); }, readdirSync: () => [dirent('a.md', 'f')] };
+    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v')).toEqual([]);
+  });
+  test('readdirSync throwing skips the dir', () => {
+    const fs = { realpathSync: (p) => p, readdirSync: () => { throw new Error('eperm'); } };
+    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v')).toEqual([]);
+  });
+  test('symlinked .md is included; results are sorted', () => {
+    const fs = { realpathSync: (p) => p, readdirSync: () => [dirent('z.md', 'f'), dirent('a.md', 's'), dirent('img.png', 'f')] };
+    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath)).toEqual(['a.md', 'z.md']);
+  });
+});

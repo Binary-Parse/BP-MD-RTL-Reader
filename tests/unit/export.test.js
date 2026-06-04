@@ -51,3 +51,45 @@ describe('buildExportDoc (T-F12)', () => {
     expect(() => buildExportDoc({ name: 'a', content: '$x$' }, { parseMarkdown: md, katex: null })).not.toThrow();
   });
 });
+
+// ── Mutation-hardening (audit F-3): direction precedence, csp meta, baseName, math. ──
+describe('buildExportDoc — exact output (mutation kills)', () => {
+  const P = (s) => `<p>${s}</p>`;
+  test('manual RTL override forces dir=rtl / lang=ar', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'hello' }, { manualRtl: true, parseMarkdown: P });
+    expect(fullHtml).toContain('dir="rtl"');
+    expect(fullHtml).toContain('lang="ar"');
+  });
+  test('LTR content → dir=ltr / lang=en (no override)', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'plain english' }, { parseMarkdown: P });
+    expect(fullHtml).toContain('dir="ltr"');
+    expect(fullHtml).toContain('lang="en"');
+  });
+  test('Arabic content auto-resolves to rtl without a manual flag', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'هذا نص عربي طويل بما يكفي' }, { parseMarkdown: P });
+    expect(fullHtml).toContain('dir="rtl"');
+  });
+  test('csp:true embeds the strict CSP meta; csp:false omits it', () => {
+    expect(buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P, csp: true }).fullHtml)
+      .toContain("default-src 'none'");
+    expect(buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P, csp: false }).fullHtml)
+      .not.toContain('Content-Security-Policy');
+  });
+  test('baseName strips .md/.markdown/.txt (case-insensitive); empty → "document"', () => {
+    expect(buildExportDoc({ name: 'Note.MD', content: 'x' }, { parseMarkdown: P }).baseName).toBe('Note');
+    expect(buildExportDoc({ name: 'a.markdown', content: 'x' }, { parseMarkdown: P }).baseName).toBe('a');
+    expect(buildExportDoc({ name: 'b.txt', content: 'x' }, { parseMarkdown: P }).baseName).toBe('b');
+    expect(buildExportDoc({ name: '', content: 'x' }, { parseMarkdown: P }).baseName).toBe('document');
+    expect(buildExportDoc({ content: 'x' }, { parseMarkdown: P }).baseName).toBe('document');
+  });
+  test('the parsed body text is embedded in the document body', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'hi there' }, { parseMarkdown: P });
+    expect(fullHtml).toContain('hi there');   // body text survives the bidi pass (attrs may be added)
+    expect(fullHtml).toContain('<body>');
+  });
+  test('katex injected → restoreMath runs (no throw, body text preserved)', () => {
+    const katex = { renderToString: (t) => `<span class="katex">${t}</span>` };
+    const { fullHtml } = buildExportDoc({ name: 'm.md', content: 'E=mc^2' }, { parseMarkdown: P, katex, DOMPurify: null });
+    expect(fullHtml).toContain('E=mc^2'); // builds without error when katex is present
+  });
+});

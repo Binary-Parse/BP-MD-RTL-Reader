@@ -4,7 +4,7 @@
 //     --minify --outfile=assets/vendor/codemirror/codemirror.min.js
 export { EditorState, EditorSelection, Compartment, RangeSetBuilder } from '@codemirror/state';
 export { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, ViewPlugin, WidgetType } from '@codemirror/view';
-export { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+export { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo, selectAll } from '@codemirror/commands';
 export { syntaxHighlighting, defaultHighlightStyle, HighlightStyle, bracketMatching, syntaxTree } from '@codemirror/language';
 export { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 export { tags } from '@lezer/highlight';

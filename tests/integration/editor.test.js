@@ -40,10 +40,9 @@ test('renderFile populates preview with parsed markdown', async ({ page }) => {
 
   await injectAndRender(page, 'test.md', '**bold text** and *italic*');
 
-  // Preview pane should contain parsed HTML
-  const noteContent = page.locator('#noteContent');
-  await expect(noteContent).toBeVisible();
-  const html = await noteContent.innerHTML();
+  // T-F13: #noteContent is the export/render pipeline (now hidden behind the CM6 surface);
+  // assert its parsed HTML rather than on-screen visibility.
+  const html = await page.locator('#noteContent').innerHTML();
   expect(html).toContain('<strong>');
   expect(html).toContain('bold text');
 });
@@ -54,9 +53,8 @@ test('renderFile with wikilink renders <a class="wikilink"> element', async ({ p
 
   await injectAndRender(page, 'wiki.md', '[[Target Note|My Alias]]');
 
-  const noteContent = page.locator('#noteContent');
-  await expect(noteContent).toBeVisible();
-  const html = await noteContent.innerHTML();
+  // T-F13: assert the render pipeline output (#noteContent) directly; it is no longer on-screen.
+  const html = await page.locator('#noteContent').innerHTML();
   expect(html).toContain('wikilink');
   expect(html).toContain('Target Note');
 });
@@ -346,38 +344,36 @@ test('[AC5] #statusbar zoom is unaffected after Ctrl+= zoom', async ({ page }) =
 // =====================================================================
 // AC8 — Select-All branching
 // =====================================================================
-test('[AC8] Ctrl+A in source mode selects all textarea text, not page body', async ({ page }) => {
+test('[AC8] Ctrl+A in the CM6 editor selects all its text, not the page body', async ({ page }) => {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
 
   await injectAndRender(page, 'select-test.md', '# Title\n\nParagraph text.\n\nMore content.');
 
-  await page.evaluate(() => window.setEditorMode('source'));
-  await page.waitForTimeout(100);
-
-  // Focus textarea
-  await page.click('#srcTextarea');
-  await page.waitForTimeout(50);
-
+  // T-F13: CM6 is the sole editor — no source mode.
+  await page.locator('.cm-mount .cm-content').click();
   await page.keyboard.press('Control+a');
   await page.waitForTimeout(100);
 
-  const textareaSelected = await page.evaluate(() => {
-    const ta = document.getElementById('srcTextarea');
-    return ta.selectionStart === 0 && ta.selectionEnd === ta.value.length && ta.value.length > 0;
+  const sel = await page.evaluate(() => {
+    const cm = window.getActiveCmAdapter();
+    return { ...cm.getSelection(), len: cm.getValue().length };
   });
-  expect(textareaSelected).toBe(true);
+  expect(sel.start).toBe(0);
+  expect(sel.end).toBe(sel.len);
+  expect(sel.len).toBeGreaterThan(0);
 });
 
 // =====================================================================
-// T4 — Find-hit click navigation: clicking a mark updates State.findIdx
+// T4 — Find navigation in the CM6 editor: Next advances the match (T-F13)
 // =====================================================================
-test('[T4] clicking second mark.find-hit sets State.findIdx to 1', async ({ page }) => {
+test('[T4] findNext advances to the second match (CM6 selection nav)', async ({ page }) => {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
 
   // Inject a file with three occurrences of 'hello'
   await injectAndRender(page, 'find.md', 'hello world. hello again. hello third.');
+  await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
 
   // Open find bar and run search
   await page.evaluate(() => {
@@ -386,22 +382,13 @@ test('[T4] clicking second mark.find-hit sets State.findIdx to 1', async ({ page
   });
   await page.waitForTimeout(100);
 
-  const hitCount = await page.evaluate(() => window._appState.findHits.length);
+  // T-F13: find runs over the CM6 surface — three matches in findSourceMatches.
+  const hitCount = await page.evaluate(() => window._appState.findSourceMatches.length);
   expect(hitCount).toBe(3);
 
-  // Click the second mark
-  await page.locator('mark.find-hit').nth(1).click();
+  await page.click('#findNextBtn');
   await page.waitForTimeout(50);
 
-  const findIdx = await page.evaluate(() => window._appState.findIdx);
-  expect(findIdx).toBe(1);
-
-  const secondHasCurrent = await page.evaluate(() => {
-    const marks = document.querySelectorAll('mark.find-hit');
-    return marks[1].classList.contains('current');
-  });
-  expect(secondHasCurrent).toBe(true);
-
-  const findInfo = await page.evaluate(() => document.getElementById('findInfo').textContent);
-  expect(findInfo).toBe('2/3');
+  expect(await page.evaluate(() => window._appState.findIdx)).toBe(1);
+  expect(await page.evaluate(() => document.getElementById('findInfo').textContent)).toBe('2/3');
 });

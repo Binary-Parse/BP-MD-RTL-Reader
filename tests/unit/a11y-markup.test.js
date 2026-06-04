@@ -22,7 +22,7 @@ const ICON_BUTTONS = [
   'winMinBtn', 'winMaxBtn', 'winCloseBtn',
   'rtlBtn', 'themeBtn', 'tabAddBtn',
   'sidebarToggleBtn', 'inspectorToggleBtn',
-  'modeLive', 'modeSplit', 'modeSource',
+  // (the modeLive/modeSplit/modeSource view-mode buttons were removed — CM6 is the sole editor)
   'tbBold', 'tbItalic', 'findCloseBtn', 'modalCloseBtn', 'searchBtn',
 ];
 

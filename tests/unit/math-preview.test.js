@@ -75,3 +75,60 @@ describe('buildMathDecorations', () => {
     expect(dom.textContent).toBe('$x+1$');
   });
 });
+
+import { createMathPreview } from '../../src/renderer/editor/math-preview.js';
+
+describe('createMathPreview (ViewPlugin) + widget methods', () => {
+  const DOC = 'heading\nsee $x+1$ here\nend';
+  test('plugin constructor builds decorations; update rebuilds on doc/selection/viewport change', () => {
+    const CM6 = fakeCM6();
+    const plugin = createMathPreview(CM6, () => document.createElement('span'));
+    const view = fakeView(DOC, 0);
+    const inst = new plugin.cls(view);
+    expect(inst.decorations.ranges.length).toBe(1);
+    // update with a no-op change set → still rebuilds (branch true)
+    inst.update({ docChanged: true, selectionSet: false, viewportChanged: false, view });
+    expect(inst.decorations.ranges.length).toBe(1);
+    // update with nothing changed → keeps decorations, no crash (branch false)
+    const before = inst.decorations;
+    inst.update({ docChanged: false, selectionSet: false, viewportChanged: false, view });
+    expect(inst.decorations).toBe(before);
+  });
+
+  test('plugin opts.decorations accessor returns the instance decorations; provide builds atomicRanges', () => {
+    const CM6 = fakeCM6();
+    const plugin = createMathPreview(CM6, () => document.createElement('span'));
+    const inst = new plugin.cls(fakeView(DOC, 0));
+    expect(plugin.opts.decorations(inst)).toBe(inst.decorations);
+    const facet = plugin.opts.provide(plugin);
+    expect(facet.facet).toBe('atomicRanges');
+    // the atomicRanges fn reads view.plugin(plugin)?.decorations, falling back to empty set
+    expect(facet.fn({ plugin: () => inst }).ranges.length).toBe(1);
+    expect(facet.fn({ plugin: () => null }).ranges).toEqual([]); // fallback branch
+  });
+
+  test('widget eq() compares tex+display; ignoreEvent() is false', () => {
+    const r = buildMathDecorations(fakeCM6(), () => document.createElement('span'), fakeView(DOC, 0));
+    const w = r.ranges[0].spec.widget;
+    expect(w.ignoreEvent()).toBe(false);
+    expect(w.eq({ tex: 'x+1', display: false })).toBe(true);
+    expect(w.eq({ tex: 'x+1', display: true })).toBe(false);
+    expect(w.eq({ tex: 'zzz', display: false })).toBe(false);
+  });
+
+  test('toDOM falls back to raw delimiters when renderMath THROWS', () => {
+    const renderMath = () => { throw new Error('katex boom'); };
+    const r = buildMathDecorations(fakeCM6(), renderMath, fakeView(DOC, 0));
+    expect(r.ranges[0].spec.widget.toDOM().textContent).toBe('$x+1$');
+  });
+
+  test('display-math toDOM throw fallback uses $$ delimiters', () => {
+    const r = buildMathDecorations(fakeCM6(), () => { throw new Error('x'); }, fakeView('a\n$$E=mc^2$$\nb', 0));
+    expect(r.ranges[0].spec.widget.toDOM().textContent).toBe('$$E=mc^2$$');
+  });
+
+  test('empty visibleRanges → empty decoration set', () => {
+    const v = fakeView(DOC, 0); v.visibleRanges = [];
+    expect(buildMathDecorations(fakeCM6(), () => document.createElement('span'), v).ranges).toEqual([]);
+  });
+});

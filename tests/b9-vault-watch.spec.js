@@ -51,9 +51,9 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     expect(f.diskContent).toBe('# Different on disk'); // disk version stashed for resolve
     await expect(page.locator('#toast')).toContainText('changed on disk');
     // EC-A2 surface: the active conflicted file shows a resolve banner with both choices.
-    await expect(page.locator('#noteContent .conflict-banner')).toHaveCount(1);
-    await expect(page.locator('#noteContent .cf-reload')).toBeVisible();
-    await expect(page.locator('#noteContent .cf-keep')).toBeVisible();
+    await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(1);
+    await expect(page.locator('#conflictBar .cf-reload')).toBeVisible();
+    await expect(page.locator('#conflictBar .cf-keep')).toBeVisible();
   });
 
   test('EC-A2 resolve: "Reload from disk" takes the disk version + clears conflict/dirty', async ({ page }) => {
@@ -61,12 +61,12 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
       [{ name: 'a.md', path: 'a.md', content: '# My edits', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: '# Disk version' }]);
     await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
-    await page.locator('#noteContent .cf-reload').click();
+    await page.locator('#conflictBar .cf-reload').click();
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(f.content).toBe('# Disk version');
     expect(f.dirty).toBe(false);
     expect(f.conflict).toBe(false);
-    await expect(page.locator('#noteContent .conflict-banner')).toHaveCount(0);
+    await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(0);
   });
 
   test('EC-A2 resolve: "Keep my edits" retains edits + dirty, clears the banner', async ({ page }) => {
@@ -74,12 +74,12 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
       [{ name: 'a.md', path: 'a.md', content: '# My edits', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: '# Disk version' }]);
     await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
-    await page.locator('#noteContent .cf-keep').click();
+    await page.locator('#conflictBar .cf-keep').click();
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(f.content).toBe('# My edits'); // edits retained
     expect(f.dirty).toBe(true);
     expect(f.conflict).toBe(false);
-    await expect(page.locator('#noteContent .conflict-banner')).toHaveCount(0);
+    await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(0);
   });
 
   test('a CRLF-only difference is NOT treated as a conflict (EOL-normalized compare)', async ({ page }) => {
@@ -89,7 +89,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(!!f.conflict).toBe(false);
-    await expect(page.locator('#noteContent .conflict-banner')).toHaveCount(0);
+    await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(0);
   });
 
   test('a background (non-active) dirty file diverging on disk gets a ⚠ tab marker', async ({ page }) => {

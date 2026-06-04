@@ -15,6 +15,8 @@ async function inject(page, content) {
   return page.evaluate((md) => {
     window._appState.files = [{ name: 'doc.md', path: 'doc.md', handle: null, content: md, dirty: false }];
     window.renderFile(0);
+    // T-F13: reveal the rendered preview (export render path) hidden behind `cm-single`.
+    document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
 }
 
@@ -39,18 +41,20 @@ test.describe('[T-F14] callouts', () => {
   });
 
   test('callout titles: explicit title kept; missing title falls back to the type', async ({ page }) => {
-    await expect(page.locator('.callout-note .callout-title-text')).toHaveText('A useful note');
-    await expect(page.locator('.callout-important .callout-title-text')).toHaveText('Important');
+    // Scope to #noteContent (the render pipeline): CM6 ALSO renders callouts inline, so an
+    // unscoped selector would match both surfaces (T-F13).
+    await expect(page.locator('#noteContent .callout-note .callout-title-text')).toHaveText('A useful note');
+    await expect(page.locator('#noteContent .callout-important .callout-title-text')).toHaveText('Important');
   });
 
   test('callout marker line is stripped from the body', async ({ page }) => {
-    const noteBody = await page.locator('.callout-note .callout-body').textContent();
+    const noteBody = await page.locator('#noteContent .callout-note .callout-body').textContent();
     expect(noteBody).toContain('number 42');
     expect(noteBody).not.toContain('[!NOTE]');
   });
 
   test('Arabic callout body composes with R1/R2 (RTL + isolated number)', async ({ page }) => {
-    const info = page.locator('.callout-info');
+    const info = page.locator('#noteContent .callout-info');
     // wrapper resolves RTL from its Arabic content
     const dir = await info.evaluate((el) => getComputedStyle(el).direction);
     expect(dir).toBe('rtl');

@@ -28,14 +28,13 @@ async function injectFile(page, content) {
 }
 
 // ===========================================================================
-// 1 — Find in Source mode
+// 1 — Find in the CM6 editor (T-F13: the sole editor surface)
 // ===========================================================================
-test.describe('[F1] Find works in Source mode', () => {
-  test('runFind matches inside source textarea', async ({ page }) => {
+test.describe('[F1] Find works in the CM6 editor', () => {
+  test('runFind matches the CM6 source surface', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'hello world\nhello again\nhello once more');
-    await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'hello');
     await page.waitForTimeout(200);
@@ -44,25 +43,19 @@ test.describe('[F1] Find works in Source mode', () => {
     expect(count).toMatch(/1\s*\/\s*3/);
   });
 
-  test('findNext cycles through textarea matches', async ({ page }) => {
+  test('findNext cycles through matches in the CM6 editor', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'foo one\nfoo two\nfoo three');
-    await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'foo');
     await page.waitForTimeout(200);
-    const first = await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      return { start: ta.selectionStart, end: ta.selectionEnd };
-    });
+    const first = await page.$eval('#findInfo', el => el.textContent);
     await page.click('#findNextBtn');
     await page.waitForTimeout(150);
-    const second = await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      return { start: ta.selectionStart, end: ta.selectionEnd };
-    });
-    expect(second.start).toBeGreaterThan(first.start);
+    const second = await page.$eval('#findInfo', el => el.textContent);
+    expect(first).toMatch(/1\s*\/\s*3/);
+    expect(second).toMatch(/2\s*\/\s*3/);
   });
 });
 

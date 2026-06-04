@@ -209,24 +209,9 @@ test.describe('[CA4] Sidebar empty-state buttons', () => {
 });
 
 // ===========================================================================
-// 5 — Editor mode buttons
+// 6 — Toolbar buttons (drive the single CM6 editor — T-F13; the 3 mode buttons are gone)
 // ===========================================================================
-test.describe('[CA5] Editor mode buttons', () => {
-  test('modeLive / modeSplit / modeSource update State.editorMode', async ({ page }) => {
-    await goto(page);
-    await injectSample(page);
-    for (const mode of ['live', 'split', 'source']) {
-      await page.click(`#mode${mode.charAt(0).toUpperCase() + mode.slice(1)}`);
-      const cur = await page.evaluate(() => window._appState.editorMode);
-      expect(cur).toBe(mode);
-    }
-  });
-});
-
-// ===========================================================================
-// 6 — Toolbar buttons (12 buttons)
-// ===========================================================================
-test.describe('[CA6] Editor toolbar buttons (split mode)', () => {
+test.describe('[CA6] Editor toolbar buttons (CM6)', () => {
   const cases = [
     ['tbBold',     '**',  '**'],
     ['tbItalic',   '*',   '*'],
@@ -239,41 +224,69 @@ test.describe('[CA6] Editor toolbar buttons (split mode)', () => {
     test(`${id} wraps selection with "${before}…${after}"`, async ({ page }) => {
       await goto(page);
       await injectSample(page);
-      await page.evaluate(() => window.setEditorMode('split'));
-      await page.evaluate(() => {
-        const ta = document.getElementById('srcTextarea');
-        ta.value = 'hello';
-        ta.selectionStart = 0;
-        ta.selectionEnd = 5;
-        ta.focus();
-      });
+      await page.locator('.cm-mount .cm-content').click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type('hello');
+      await page.keyboard.press('Control+a');
       await page.click(`#${id}`);
-      const val = await page.evaluate(() => document.getElementById('srcTextarea').value);
+      const val = await page.evaluate(() => window._appState.files[window._appState.activeFile].content);
       expect(val).toBe(before + 'hello' + after);
     });
   }
 
   const lineCases = [
-    ['tbH1',    '# '],
-    ['tbH2',    '## '],
-    ['tbH3',    '### '],
-    ['tbQuote', '> '],
-    ['tbList',  '- '],
+    ['tbQuote',       '> '],
+    ['tbList',        '- '],
+    ['tbListOrdered', '1. '],
+    ['tbTaskList',    '- [ ] '],
   ];
   for (const [id, prefix] of lineCases) {
     test(`${id} inserts "${prefix}" at line start`, async ({ page }) => {
       await goto(page);
       await injectSample(page);
-      await page.evaluate(() => window.setEditorMode('split'));
-      await page.evaluate(() => {
-        const ta = document.getElementById('srcTextarea');
-        ta.value = 'hello';
-        ta.selectionStart = ta.selectionEnd = 0;
-        ta.focus();
-      });
+      await page.locator('.cm-mount .cm-content').click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type('hello');
       await page.click(`#${id}`);
-      const val = await page.evaluate(() => document.getElementById('srcTextarea').value);
+      const val = await page.evaluate(() => window._appState.files[window._appState.activeFile].content);
       expect(val.startsWith(prefix)).toBe(true);
+    });
+  }
+
+  // Heading levels H1–H6 are now a pop-down (fixes the missing H4/H5/H6).
+  for (const level of [1, 2, 3, 4, 5, 6]) {
+    test(`heading menu → H${level} prefixes "${'#'.repeat(level)} "`, async ({ page }) => {
+      await goto(page);
+      await injectSample(page);
+      await page.locator('.cm-mount .cm-content').click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type('hello');
+      await page.click('#tbHeading');
+      await page.click(`#headingMenu .td-item[data-level="${level}"]`);
+      const val = await page.evaluate(() => window._appState.files[window._appState.activeFile].content);
+      expect(val.startsWith('#'.repeat(level) + ' ')).toBe(true);
+    });
+  }
+
+  // Block inserts: callout / code block / table / horizontal rule / image.
+  const blockCases = [
+    ['tbCallout',   '> [!NOTE]'],
+    ['tbCodeBlock', '```'],
+    ['tbTable',     '| Column |'],
+    ['tbRule',      '---'],
+    ['tbImage',     '!['],
+    ['tbMath',      '$'],
+  ];
+  for (const [id, needle] of blockCases) {
+    test(`${id} inserts ${needle.trim()}`, async ({ page }) => {
+      await goto(page);
+      await injectSample(page);
+      await page.locator('.cm-mount .cm-content').click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type('hello');
+      await page.click(`#${id}`);
+      const val = await page.evaluate(() => window._appState.files[window._appState.activeFile].content);
+      expect(val.includes(needle)).toBe(true);
     });
   }
 });
@@ -302,11 +315,12 @@ test.describe('[CA7] Find bar controls', () => {
       };
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'body');
     await page.waitForTimeout(300);
-    const hitCount = await page.evaluate(() => window._appState.findHits.length);
+    // T-F13: matches tracked over the CM6 surface in findSourceMatches (no preview <mark>s).
+    const hitCount = await page.evaluate(() => window._appState.findSourceMatches.length);
     expect(hitCount).toBeGreaterThan(1);
     const initial = await page.evaluate(() => window._appState.findIdx);
     await page.click('#findNextBtn');
@@ -365,23 +379,19 @@ test.describe('[CA9] Edit menu items', () => {
     }
   });
 
-  test('Edit→Select All targets focused textarea, not document.body', async ({ page }) => {
+  test('Edit→Select All targets the CM6 editor, not document.body', async ({ page }) => {
     await goto(page);
     await injectSample(page);
-    await page.evaluate(() => window.setEditorMode('source'));
-    await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      ta.value = 'select me';
-      ta.focus();
-      ta.selectionStart = ta.selectionEnd = 0;
-    });
+    await page.locator('.cm-mount .cm-content').click();
+    await page.evaluate(() => window.getActiveCmAdapter().setSelection({ start: 0, end: 0 }));
     await page.evaluate(() => window.execEditCmd('selectAll'));
     const sel = await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      return { start: ta.selectionStart, end: ta.selectionEnd, val: ta.value };
+      const cm = window.getActiveCmAdapter();
+      return { ...cm.getSelection(), len: cm.getValue().length };
     });
     expect(sel.start).toBe(0);
-    expect(sel.end).toBe(sel.val.length);
+    expect(sel.end).toBe(sel.len);
+    expect(sel.len).toBeGreaterThan(0);
   });
 });
 
@@ -598,9 +608,10 @@ test.describe('[CA18] Global pageerror sweep', () => {
       'sidebarToggleBtn', 'inspectorToggleBtn', 'themeBtn', 'rtlBtn', 'tabAddBtn', 'searchBtn',
       'wbOpenVault', 'wbOpenFile', 'wbNewNote', 'wbLoadDemo',
       'sbOpenVaultBtn', 'sbOpenFileBtn', 'sbNewNoteBtn',
-      'modeLive', 'modeSplit', 'modeSource',
-      'tbBold', 'tbItalic', 'tbStrike', 'tbH1', 'tbH2', 'tbH3',
-      'tbLink', 'tbQuote', 'tbList', 'tbCode', 'tbWikilink'
+      'tbHeading', 'tbBold', 'tbItalic', 'tbStrike', 'tbCode',
+      'tbLink', 'tbWikilink', 'tbMath',
+      'tbQuote', 'tbCallout', 'tbList', 'tbListOrdered', 'tbTaskList',
+      'tbCodeBlock', 'tbTable', 'tbImage', 'tbRule'
     ];
     for (const id of ids) {
       const el = await page.$(`#${id}`);

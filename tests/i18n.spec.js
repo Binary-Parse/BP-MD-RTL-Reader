@@ -78,6 +78,8 @@ test.describe('I18N & Localization', () => {
         path: 'mixed.md', dirty: false
       }];
       window.renderFile(0);
+      // T-F13: reveal the rendered preview (#editor), hidden behind the CM6 surface, to measure it.
+      document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
       const editor = document.getElementById('editor');
       return { width: editor.offsetWidth, height: editor.offsetHeight };
     });

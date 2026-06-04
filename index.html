@@ -773,6 +773,48 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .tool-btn.active { background: var(--accent); color: white; }
 .tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 5px; }
 .tool-spacer { flex: 1; }
+
+/* ── Vendored Lucide line-icons (T-F2 icon overhaul). One base rule; size per context.
+   stroke=currentColor so each icon takes its button's text colour (incl. hover/active). */
+.ic { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.tool-btn .ic { width: 16px; height: 16px; }
+.tb-btn .ic { width: 15px; height: 15px; }
+.sb-icon-btn .ic { width: 15px; height: 15px; }
+.wb-icon .ic { width: 18px; height: 18px; }
+.sb-empty button .ic { width: 15px; height: 15px; }
+/* Heading button shows the heading glyph + a small caret. */
+.tool-btn.tool-combo { padding-inline: 5px; gap: 1px; grid-auto-flow: column; }
+.tool-btn.tool-combo .ic-caret { width: 11px; height: 11px; opacity: 0.6; }
+
+/* Toolbar pop-down (heading levels) — small menu anchored under its button. */
+.tool-dropdown {
+  position: absolute;
+  top: 34px;
+  inset-inline-start: 14px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 12px 28px -8px rgba(0,0,0,0.25);
+  padding: 5px;
+  z-index: 60;
+  display: none;
+  min-width: 150px;
+}
+.tool-dropdown.open { display: block; }
+.tool-dropdown .td-item {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  font-family: var(--sans); font-size: 0.8125rem; color: var(--ink); white-space: nowrap;
+}
+.tool-dropdown .td-item:hover { background: var(--accent); color: #fff; }
+.tool-dropdown .td-item .td-h { font-family: var(--serif); font-weight: 600; color: var(--ink-mute); width: 1.6em; }
+.tool-dropdown .td-item:hover .td-h { color: rgba(255,255,255,0.85); }
+.tool-dropdown .td-item .td-h1 { font-size: 1.35rem; }
+.tool-dropdown .td-item .td-h2 { font-size: 1.2rem; }
+.tool-dropdown .td-item .td-h3 { font-size: 1.05rem; }
+.tool-dropdown .td-item .td-h4 { font-size: 0.95rem; }
+.tool-dropdown .td-item .td-h5 { font-size: 0.875rem; }
+.tool-dropdown .td-item .td-h6 { font-size: 0.8125rem; }
 .read-time {
   font-family: var(--mono);
   font-size: 0.6875rem;
@@ -800,9 +842,16 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .source-pane { display: none; }
 /* T-F13: CodeMirror 6 mount fills the source pane; inherit the app's mono type/colours. */
 .cm-mount { height: 100%; }
-.cm-mount .cm-editor { height: 100%; background: var(--paper-deep); }
-.cm-mount .cm-scroller { font-family: var(--mono); font-size: 0.875rem; line-height: 1.7; padding: 56px 60px 120px; }
-.cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); }
+/* T-F13 live-preview: the single CM6 surface IS the rendered reading view. So it inherits
+   the prose look of the old preview pane — paper background, sans body at reading size, a
+   centred ~800px measure — NOT a monospace source look. Headings (serif), bold/italic and
+   inline code get their type from the prose HighlightStyle in codemirror-adapter.js; only
+   the few rules below set the BASE surface. */
+.cm-mount .cm-editor { height: 100%; background: var(--paper); }
+.cm-mount .cm-scroller { font-family: var(--sans); font-size: 1.0625rem; line-height: 1.7; padding: 56px 0 120px; }
+.cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
+/* Arabic lines (per-line dir from line-direction.js) take the Arabic face + looser leading. */
+.cm-mount .cm-line[dir="rtl"] { font-family: var(--arabic); line-height: 1.95; }
 .cm-mount .cm-editor.cm-focused { outline: none; }
 .cm-mount .cm-activeLine { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .cm-mount .cm-selectionBackground, .cm-mount .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
@@ -822,9 +871,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
    preview. :not(.split) keeps Split View reachable via the palette/View menu. */
 .editor-area.cm-single .source-pane { display: block; flex: 1; }
 .editor-area.cm-single:not(.split) .preview-pane { display: none; }
-.toolbar-strip.cm-single #modeLive,
-.toolbar-strip.cm-single #modeSplit,
-.toolbar-strip.cm-single #modeSource { display: none; }
+/* T-F13: the welcome card lives in the preview pane, which cm-single hides. When no file is
+   open, show the preview pane (welcome) and hide the empty CM6 surface instead. */
+.editor-area.cm-single.welcome .preview-pane { display: block; flex: 1; }
+.editor-area.cm-single.welcome .source-pane { display: none; }
 
 .source-textarea {
   width: 100%;
@@ -901,7 +951,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 #editor[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 0.75rem; text-align: right; }
 
-/* T-B9 / EC-A2: disk-conflict resolve banner + background-tab marker. */
+/* T-B9 / EC-A2: disk-conflict resolve banner + background-tab marker. The banner lives in
+   #conflictBar (above the editor); pad it only when it actually holds a banner. */
+#conflictBar:not(:empty) { padding: 16px 18px 0; flex-shrink: 0; }
 .conflict-banner {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   margin: 0 0 24px; padding: 12px 16px;
@@ -1586,6 +1638,38 @@ html.electron .tab-add {
 </head>
 <body>
 
+<!-- Vendored Lucide icon sprite (T-F2 icon overhaul). MIT/ISC, sourced from lucide-static and
+     inlined as <symbol>s so the app stays 0-network + CSP-safe (no <img>/remote). Use via
+     <svg class="ic"><use href="#ic-NAME"/></svg>; stroke=currentColor inherits the button colour. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="ic-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+    <symbol id="ic-file-plus" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 15h6"/><path d="M12 18v-6"/></symbol>
+    <symbol id="ic-sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol>
+    <symbol id="ic-flip" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+    <symbol id="ic-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/></symbol>
+    <symbol id="ic-bold" viewBox="0 0 24 24"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></symbol>
+    <symbol id="ic-italic" viewBox="0 0 24 24"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></symbol>
+    <symbol id="ic-strike" viewBox="0 0 24 24"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></symbol>
+    <symbol id="ic-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+    <symbol id="ic-code-block" viewBox="0 0 24 24"><path d="m10 9-3 3 3 3"/><path d="m14 15 3-3-3-3"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+    <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="ic-wikilink" viewBox="0 0 24 24"><path d="M16 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-3"/><path d="M8 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3"/></symbol>
+    <symbol id="ic-heading" viewBox="0 0 24 24"><path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/></symbol>
+    <symbol id="ic-quote" viewBox="0 0 24 24"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></symbol>
+    <symbol id="ic-callout" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="ic-list" viewBox="0 0 24 24"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></symbol>
+    <symbol id="ic-list-ordered" viewBox="0 0 24 24"><path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/></symbol>
+    <symbol id="ic-list-checks" viewBox="0 0 24 24"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></symbol>
+    <symbol id="ic-table" viewBox="0 0 24 24"><path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/></symbol>
+    <symbol id="ic-rule" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="ic-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="ic-math" viewBox="0 0 24 24"><path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2"/></symbol>
+    <symbol id="ic-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  </defs>
+</svg>
+
 <div class="app" id="app">
 
   <!-- TITLEBAR -->
@@ -1612,8 +1696,8 @@ html.electron .tab-add {
         <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </div>
-      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)" aria-label="Flip text direction">⇄</button>
-      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme">◐</button>
+      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)" aria-label="Flip text direction"><svg class="ic"><use href="#ic-flip"/></svg></button>
+      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-theme"/></svg></button>
     </div>
 
     <div class="win-controls">
@@ -1646,9 +1730,9 @@ html.electron .tab-add {
         <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)" aria-label="Toggle sidebar">‹</button>
         <div class="sb-vault-name empty" id="vaultName">No folder opened</div>
         <div class="sb-actions">
-          <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…">⌂</button>
-          <button class="sb-icon-btn" id="sbOpenFileBtn" title="Open file…">¶</button>
-          <button class="sb-icon-btn" id="sbNewNoteBtn" title="New note">+</button>
+          <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…" aria-label="Open folder"><svg class="ic"><use href="#ic-folder"/></svg></button>
+          <button class="sb-icon-btn" id="sbOpenFileBtn" title="Open file…" aria-label="Open file"><svg class="ic"><use href="#ic-file"/></svg></button>
+          <button class="sb-icon-btn" id="sbNewNoteBtn" title="New note" aria-label="New note"><svg class="ic"><use href="#ic-file-plus"/></svg></button>
         </div>
       </div>
 
@@ -1665,9 +1749,9 @@ html.electron .tab-add {
             <div class="ttl">No folder opened</div>
             <p>Open a folder of <code style="font-family: var(--mono); font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px;">.md</code> files, or open a single file.</p>
             <div class="actions">
-              <button id="emptyOpenVault"><span class="ic">⌂</span> Open Folder…</button>
-              <button id="emptyOpenFile"><span class="ic">¶</span> Open File…</button>
-              <button id="emptyLoadDemo"><span class="ic">★</span> Try Demo Notes</button>
+              <button id="emptyOpenVault"><svg class="ic"><use href="#ic-folder"/></svg> Open Folder…</button>
+              <button id="emptyOpenFile"><svg class="ic"><use href="#ic-file"/></svg> Open File…</button>
+              <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> Try Demo Notes</button>
             </div>
           </div>
           <div class="tree" id="tree" style="display: none;"></div>
@@ -1694,26 +1778,47 @@ html.electron .tab-add {
 
     <main class="editor-wrap">
       <div class="toolbar-strip" id="toolbarStrip" style="display:none;">
-        <button class="tool-btn active" id="modeLive" title="Live preview" aria-label="Live preview mode">¶</button>
-        <button class="tool-btn" id="modeSplit" title="Split view" aria-label="Split view mode">‖</button>
-        <button class="tool-btn" id="modeSource" title="Source mode" aria-label="Source mode">&lt;/&gt;</button>
+        <!-- Heading level (H1–H6) pop-down -->
+        <button class="tool-btn tool-combo" id="tbHeading" title="Heading level" aria-label="Heading level" aria-haspopup="true" aria-expanded="false">
+          <svg class="ic"><use href="#ic-heading"/></svg><svg class="ic ic-caret"><use href="#ic-chevron-down"/></svg>
+        </button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" aria-label="Bold" style="font-weight: 700;">B</button>
-        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" aria-label="Italic" style="font-style: italic;">I</button>
-        <button class="tool-btn" id="tbStrike" title="Strike" style="text-decoration: line-through;">S</button>
+        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" aria-label="Bold"><svg class="ic"><use href="#ic-bold"/></svg></button>
+        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" aria-label="Italic"><svg class="ic"><use href="#ic-italic"/></svg></button>
+        <button class="tool-btn" id="tbStrike" title="Strikethrough" aria-label="Strikethrough"><svg class="ic"><use href="#ic-strike"/></svg></button>
+        <button class="tool-btn" id="tbCode" title="Inline code" aria-label="Inline code"><svg class="ic"><use href="#ic-code"/></svg></button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbH1" title="Heading 1">H1</button>
-        <button class="tool-btn" id="tbH2" title="Heading 2">H2</button>
-        <button class="tool-btn" id="tbH3" title="Heading 3">H3</button>
+        <button class="tool-btn" id="tbLink" title="Link" aria-label="Insert link"><svg class="ic"><use href="#ic-link"/></svg></button>
+        <button class="tool-btn" id="tbWikilink" title="Wikilink" aria-label="Insert wikilink"><svg class="ic"><use href="#ic-wikilink"/></svg></button>
+        <button class="tool-btn" id="tbMath" title="Inline math (KaTeX)" aria-label="Insert inline math"><svg class="ic"><use href="#ic-math"/></svg></button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbLink" title="Link">∞</button>
-        <button class="tool-btn" id="tbQuote" title="Quote">"</button>
-        <button class="tool-btn" id="tbList" title="Bulleted list">•</button>
-        <button class="tool-btn" id="tbCode" title="Inline code">{ }</button>
-        <button class="tool-btn" id="tbWikilink" title="Insert wikilink">[[ ]]</button>
+        <button class="tool-btn" id="tbQuote" title="Blockquote" aria-label="Blockquote"><svg class="ic"><use href="#ic-quote"/></svg></button>
+        <button class="tool-btn" id="tbCallout" title="Callout (> [!NOTE])" aria-label="Insert callout"><svg class="ic"><use href="#ic-callout"/></svg></button>
+        <button class="tool-btn" id="tbList" title="Bulleted list" aria-label="Bulleted list"><svg class="ic"><use href="#ic-list"/></svg></button>
+        <button class="tool-btn" id="tbListOrdered" title="Numbered list" aria-label="Numbered list"><svg class="ic"><use href="#ic-list-ordered"/></svg></button>
+        <button class="tool-btn" id="tbTaskList" title="Task list" aria-label="Task list"><svg class="ic"><use href="#ic-list-checks"/></svg></button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" id="tbCodeBlock" title="Code block" aria-label="Insert code block"><svg class="ic"><use href="#ic-code-block"/></svg></button>
+        <button class="tool-btn" id="tbTable" title="Table" aria-label="Insert table"><svg class="ic"><use href="#ic-table"/></svg></button>
+        <button class="tool-btn" id="tbImage" title="Image" aria-label="Insert image"><svg class="ic"><use href="#ic-image"/></svg></button>
+        <button class="tool-btn" id="tbRule" title="Horizontal rule" aria-label="Insert horizontal rule"><svg class="ic"><use href="#ic-rule"/></svg></button>
         <span class="tool-spacer"></span>
         <span class="read-time" id="readTime">— min read</span>
+        <!-- Heading-level pop-down (H1–H6); toggled by #tbHeading. Inside the sticky toolbar so
+             it's positioned relative to it (not .app), and doesn't disturb the find-bar anchor. -->
+        <div class="tool-dropdown" id="headingMenu" role="menu" aria-label="Heading level">
+          <div class="td-item" role="menuitem" data-level="1"><span class="td-h td-h1">H</span>Heading 1</div>
+          <div class="td-item" role="menuitem" data-level="2"><span class="td-h td-h2">H</span>Heading 2</div>
+          <div class="td-item" role="menuitem" data-level="3"><span class="td-h td-h3">H</span>Heading 3</div>
+          <div class="td-item" role="menuitem" data-level="4"><span class="td-h td-h4">H</span>Heading 4</div>
+          <div class="td-item" role="menuitem" data-level="5"><span class="td-h td-h5">H</span>Heading 5</div>
+          <div class="td-item" role="menuitem" data-level="6"><span class="td-h td-h6">H</span>Heading 6</div>
+        </div>
       </div>
+
+      <!-- EC-A2 (T-B9): disk-conflict resolve banner — lives ABOVE the editor so it stays
+           visible (the rendered #noteContent is hidden behind the CM6 surface, T-F13). -->
+      <div id="conflictBar"></div>
 
       <div class="editor-area" id="editorArea">
         <div class="source-pane">
@@ -1728,19 +1833,19 @@ html.electron .tab-add {
                 <p class="lede" data-i18n-html="welcome.lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
                 <div class="welcome-actions">
                   <button class="welcome-btn" id="wbOpenVault">
-                    <div class="wb-title"><span class="wb-icon">⌂</span><span data-i18n="welcome.openFolder">Open Folder</span><span class="wb-shortcut">Ctrl+Shift+O</span></div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-folder"/></svg></span><span data-i18n="welcome.openFolder">Open Folder</span><span class="wb-shortcut">Ctrl+Shift+O</span></div>
                     <div class="wb-sub" data-i18n="welcome.openFolderSub">Pick a folder containing your markdown files.</div>
                   </button>
                   <button class="welcome-btn" id="wbOpenFile">
-                    <div class="wb-title"><span class="wb-icon">¶</span><span data-i18n="welcome.openFile">Open File</span><span class="wb-shortcut">Ctrl+O</span></div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-file"/></svg></span><span data-i18n="welcome.openFile">Open File</span><span class="wb-shortcut">Ctrl+O</span></div>
                     <div class="wb-sub" data-i18n-html="welcome.openFileSub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
                   </button>
                   <button class="welcome-btn" id="wbNewNote">
-                    <div class="wb-title"><span class="wb-icon">+</span><span data-i18n="welcome.newNote">New Note</span><span class="wb-shortcut">Ctrl+N</span></div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-file-plus"/></svg></span><span data-i18n="welcome.newNote">New Note</span><span class="wb-shortcut">Ctrl+N</span></div>
                     <div class="wb-sub" data-i18n="welcome.newNoteSub">Start a fresh note in a new tab.</div>
                   </button>
                   <button class="welcome-btn" id="wbLoadDemo">
-                    <div class="wb-title"><span class="wb-icon">★</span><span data-i18n="welcome.tryDemo">Try Demo</span></div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-sparkles"/></svg></span><span data-i18n="welcome.tryDemo">Try Demo</span></div>
                     <div class="wb-sub" data-i18n="welcome.tryDemoSub">Sample notes in English and Arabic.</div>
                   </button>
                 </div>

@@ -158,25 +158,14 @@ test.describe('index.html — ALL exported functions', () => {
 
   // === EDITOR MODE ===
 
-  test('window.setEditorMode source shows textarea', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('source'));
-    const display = await page.evaluate(() => document.getElementById('srcTextarea').style.display);
-    expect(display).not.toBe('none');
-  });
-
-  test('window.setEditorMode live shows preview only', async ({ page }) => {
+  // CM6 is now the sole editor (T-F13) — there are no source/split view modes. The textarea
+  // stays hidden as a load-failure fallback, and setEditorMode is a vestigial no-op kept only
+  // so legacy callers/persisted state can't crash; it must never reintroduce a second pane.
+  test('window.setEditorMode live keeps the single CM6 surface (no source/split classes)', async ({ page }) => {
     await page.evaluate(() => window.setEditorMode('live'));
     const classes = await page.evaluate(() => document.getElementById('editorArea').className);
     expect(classes).not.toContain('source');
     expect(classes).not.toContain('split');
-  });
-
-  test('window.setEditorMode split shows both', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('split'));
-    const src = await page.evaluate(() => document.getElementById('srcTextarea').style.display);
-    const preview = await page.evaluate(() => document.getElementById('editor').style.display);
-    expect(src).not.toBe('none');
-    expect(preview).not.toBe('none');
   });
 
   test('window.setEditorMode invalid does not crash', async ({ page }) => {

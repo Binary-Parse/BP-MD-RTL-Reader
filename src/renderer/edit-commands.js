@@ -52,6 +52,55 @@ function isField(el) {
   return !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT');
 }
 
+/**
+ * CM6 path (T-F13): CodeMirror is the sole editor, so the Edit menu must act on IT — not the
+ * old textarea (a hidden fallback) nor the hidden rendered preview. Returns a result object
+ * when CM6 is active and handled the command, or `null` when there is no CM6 adapter (the
+ * caller then runs the legacy textarea/preview path — i.e. the CM6-failed-to-load fallback).
+ */
+function cmEdit(cmd, deps) {
+  const cm = deps.getCmAdapter && deps.getCmAdapter();
+  if (!cm) return null;
+  if (deps.closeMenu) deps.closeMenu();
+  cm.focus();
+
+  // selectAll is always renderer-scoped to the editor (never the IPC bridge, which would
+  // select the whole webContents DOM); the execEditCmd shim already passes electronAPI:null.
+  if (cmd === 'selectAll') { cm.selectAll(); return { ok: true }; }
+
+  // In Electron, the native command targets the now-focused CM6 surface: it uses the system
+  // clipboard for copy/cut/paste and CM6's own beforeinput (historyUndo/Redo) handling for
+  // undo/redo. Prefer it. Outside Electron (Playwright/file://) fall through to CM6 directly.
+  if (deps.electronAPI && deps.electronAPI.editCommand) {
+    deps.electronAPI.editCommand(cmd);
+    return { ok: true, reason: 'ipc' };
+  }
+
+  if (cmd === 'undo') { cm.undo(); return { ok: true }; }
+  if (cmd === 'redo') { cm.redo(); return { ok: true }; }
+
+  const sel = cm.getSelection();
+  const val = cm.getValue();
+  if (cmd === 'copy' || cmd === 'cut') {
+    const txt = val.slice(sel.start, sel.end);
+    if (!txt) return { ok: false, reason: 'no-selection' };
+    if (deps.clipboard && deps.clipboard.writeText) {
+      deps.clipboard.writeText(txt).catch(() => { if (deps.showToast) deps.showToast(`${cmd === 'cut' ? 'Cut' : 'Copy'} failed`, 'error'); });
+    }
+    if (cmd === 'cut') cm.replaceSelection('');
+    return { ok: true };
+  }
+  if (cmd === 'paste') {
+    if (!deps.clipboard || !deps.clipboard.readText) {
+      if (deps.showToast) deps.showToast('Paste not supported in this context', 'info');
+      return { ok: false, reason: 'no-clipboard' };
+    }
+    deps.clipboard.readText().then((txt) => { cm.focus(); cm.replaceSelection(txt); });
+    return { ok: true };
+  }
+  return { ok: false, reason: 'unknown-cmd' };
+}
+
 function resolveTarget(deps) {
   const ae = deps.getActiveElement && deps.getActiveElement();
   if (isField(ae)) return ae;
@@ -193,6 +242,10 @@ function pasteField(target, deps) {
 
 export function execEditCmd(cmd, deps) {
   if (!VALID_CMDS.includes(cmd)) return { ok: false, reason: 'unknown-cmd' };
+  // T-F13: when CM6 is the active editor, route every command to it. Falls through to the
+  // legacy textarea/preview path only when no CM6 adapter is present (CM6 failed to load).
+  const viaCm = cmEdit(cmd, deps);
+  if (viaCm) return viaCm;
   if (cmd === 'selectAll') return selectAll(deps);
   return forwardOrFallback(cmd, deps);
 }
@@ -200,6 +253,7 @@ export function execEditCmd(cmd, deps) {
 export const _internal = {
   VALID_CMDS,
   isField,
+  cmEdit,
   resolveTarget,
   selectAll,
   forwardOrFallback,

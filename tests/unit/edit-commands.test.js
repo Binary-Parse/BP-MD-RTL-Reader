@@ -749,3 +749,141 @@ describe('menu lifecycle', () => {
     }
   });
 });
+
+// ── CM6 path (T-F13): when getCmAdapter() returns an adapter, all commands act on CM6. ──
+function makeCmAdapter({ value = 'hello world', start = 0, end = 0 } = {}) {
+  const state = { value, start, end };
+  return {
+    _state: state,
+    focus: vi.fn(),
+    selectAll: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    getSelection: vi.fn(() => ({ start: state.start, end: state.end })),
+    getValue: vi.fn(() => state.value),
+    setSelection: vi.fn(({ start, end }) => { state.start = start; state.end = end == null ? start : end; }),
+    replaceSelection: vi.fn((text) => {
+      state.value = state.value.slice(0, state.start) + text + state.value.slice(state.end);
+      state.start = state.end = state.start + text.length;
+    }),
+  };
+}
+function cmDeps(cm, overrides = {}) {
+  return makeDeps({ getCmAdapter: () => cm, ...overrides });
+}
+
+describe('cmEdit — CM6 is the active editor (T-F13)', () => {
+  test('no adapter → returns null path → falls through to legacy textarea handler', () => {
+    // getCmAdapter absent/null: selectAll still works via the legacy textarea branch.
+    const ta = makeTextarea('abc', 0, 0);
+    const deps = makeDeps({ getCmAdapter: () => null, getMode: () => 'source', srcTextarea: ta });
+    expect(execEditCmd('selectAll', deps)).toEqual({ ok: true });
+    expect(ta.select).toHaveBeenCalled(); // proves legacy path ran, not CM6
+  });
+
+  test('selectAll routes to cm.selectAll(), closes menu, focuses', () => {
+    const cm = makeCmAdapter();
+    const deps = cmDeps(cm);
+    expect(execEditCmd('selectAll', deps)).toEqual({ ok: true });
+    expect(cm.focus).toHaveBeenCalled();
+    expect(cm.selectAll).toHaveBeenCalled();
+    expect(deps.closeMenu).toHaveBeenCalled();
+  });
+
+  test('undo/redo in Electron forward to native editCommand (CM6 handles historyUndo/Redo)', () => {
+    for (const cmd of ['undo', 'redo']) {
+      const cm = makeCmAdapter();
+      const editCommand = vi.fn();
+      const deps = cmDeps(cm, { electronAPI: { editCommand } });
+      expect(execEditCmd(cmd, deps)).toEqual({ ok: true, reason: 'ipc' });
+      expect(editCommand).toHaveBeenCalledWith(cmd);
+      expect(cm.undo).not.toHaveBeenCalled(); // native path, not the adapter command
+      expect(cm.redo).not.toHaveBeenCalled();
+    }
+  });
+
+  test('undo/redo without Electron fall back to the CM6 history commands', () => {
+    const cmU = makeCmAdapter();
+    expect(execEditCmd('undo', cmDeps(cmU, { electronAPI: null }))).toEqual({ ok: true });
+    expect(cmU.undo).toHaveBeenCalled();
+    const cmR = makeCmAdapter();
+    expect(execEditCmd('redo', cmDeps(cmR, { electronAPI: null }))).toEqual({ ok: true });
+    expect(cmR.redo).toHaveBeenCalled();
+  });
+
+  test('copy/cut/paste in Electron forward to native editCommand', () => {
+    for (const cmd of ['copy', 'cut', 'paste']) {
+      const cm = makeCmAdapter();
+      const editCommand = vi.fn();
+      expect(execEditCmd(cmd, cmDeps(cm, { electronAPI: { editCommand } }))).toEqual({ ok: true, reason: 'ipc' });
+      expect(editCommand).toHaveBeenCalledWith(cmd);
+      expect(cm.replaceSelection).not.toHaveBeenCalled();
+    }
+  });
+
+  test('copy (no Electron) writes the CM6 selection to the clipboard', () => {
+    const cm = makeCmAdapter({ value: 'copy me text', start: 0, end: 7 }); // "copy me"
+    const clipboard = makeClipboard();
+    expect(execEditCmd('copy', cmDeps(cm, { clipboard }))).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith('copy me');
+    expect(cm.replaceSelection).not.toHaveBeenCalled(); // copy must NOT mutate
+  });
+
+  test('copy/cut with empty selection → no-selection, nothing written', () => {
+    for (const cmd of ['copy', 'cut']) {
+      const cm = makeCmAdapter({ value: 'abc', start: 2, end: 2 });
+      const clipboard = makeClipboard();
+      expect(execEditCmd(cmd, cmDeps(cm, { clipboard }))).toEqual({ ok: false, reason: 'no-selection' });
+      expect(clipboard.writeText).not.toHaveBeenCalled();
+    }
+  });
+
+  test('cut (no Electron) copies the selection AND removes it from the doc', () => {
+    const cm = makeCmAdapter({ value: 'cut THIS text', start: 4, end: 8 }); // "THIS"
+    const clipboard = makeClipboard();
+    expect(execEditCmd('cut', cmDeps(cm, { clipboard }))).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith('THIS');
+    expect(cm.replaceSelection).toHaveBeenCalledWith('');
+    expect(cm._state.value).toBe('cut  text');
+  });
+
+  test('copy/cut clipboard rejection surfaces an error toast (no throw)', async () => {
+    const cm = makeCmAdapter({ value: 'abcdef', start: 0, end: 3 });
+    const clipboard = makeClipboard({ writeOk: false });
+    const showToast = vi.fn();
+    expect(execEditCmd('copy', cmDeps(cm, { clipboard, showToast }))).toEqual({ ok: true });
+    await Promise.resolve(); await Promise.resolve();
+    expect(showToast).toHaveBeenCalledWith(expect.stringMatching(/copy failed/i), 'error');
+  });
+
+  test('paste (no Electron) inserts clipboard text at the CM6 selection', async () => {
+    const cm = makeCmAdapter({ value: 'beforeafter', start: 6, end: 6 });
+    const clipboard = makeClipboard({ readText: 'MIDDLE' });
+    expect(execEditCmd('paste', cmDeps(cm, { clipboard }))).toEqual({ ok: true });
+    await Promise.resolve(); await Promise.resolve();
+    expect(cm.replaceSelection).toHaveBeenCalledWith('MIDDLE');
+    expect(cm._state.value).toBe('beforeMIDDLEafter');
+  });
+
+  test('paste with no clipboard.readText → no-clipboard + info toast', () => {
+    const cm = makeCmAdapter();
+    const showToast = vi.fn();
+    const r = execEditCmd('paste', cmDeps(cm, { clipboard: { writeText: vi.fn() }, showToast }));
+    expect(r).toEqual({ ok: false, reason: 'no-clipboard' });
+    expect(showToast).toHaveBeenCalledWith(expect.stringMatching(/paste/i), 'info');
+  });
+
+  test('cmEdit closes the menu for every command', () => {
+    for (const cmd of _internal.VALID_CMDS) {
+      const cm = makeCmAdapter({ value: 'abc', start: 0, end: 3 });
+      const deps = cmDeps(cm, { electronAPI: null });
+      execEditCmd(cmd, deps);
+      expect(deps.closeMenu, `cmd ${cmd}`).toHaveBeenCalled();
+    }
+  });
+
+  test('_internal.cmEdit is exported and returns null when no adapter', () => {
+    expect(typeof _internal.cmEdit).toBe('function');
+    expect(_internal.cmEdit('copy', makeDeps({ getCmAdapter: () => null }))).toBeNull();
+  });
+});

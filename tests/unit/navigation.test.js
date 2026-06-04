@@ -51,3 +51,42 @@ describe('isExternallyOpenable', () => {
     }
   });
 });
+
+// ── Mutation-hardening (audit F-3): every guard clause + scheme anchoring. ──
+import { classifyNavigation as _cn, isExternallyOpenable as _ico } from '../../src/main/navigation.js';
+describe('classifyNavigation — guard clauses (mutation kills)', () => {
+  const APP = 'file:///app/index.html';
+  test('non-string OR empty url → block (both clauses of the OR)', () => {
+    expect(_cn(42, APP)).toEqual({ action: 'block' });
+    expect(_cn(null, APP)).toEqual({ action: 'block' });
+    expect(_cn('', APP)).toEqual({ action: 'block' });
+  });
+  test('allow ONLY on exact app-url match (all three clauses matter)', () => {
+    expect(_cn(APP, APP)).toEqual({ action: 'allow' });
+    expect(_cn(APP + '#x', APP)).not.toEqual({ action: 'allow' }); // not exact
+    expect(_cn('https://x', '')).toEqual({ action: 'external' });   // empty appUrl ⇒ no allow
+    expect(_cn('https://x', 42)).toEqual({ action: 'external' });   // non-string appUrl ⇒ no allow
+    expect(_cn(APP, '')).not.toEqual({ action: 'allow' });          // appUrl '' must not allow
+  });
+  test('external schemes route external; everything else blocks', () => {
+    for (const u of ['https://x', 'http://x', 'mailto:a@b', 'tel:+1']) expect(_cn(u, APP)).toEqual({ action: 'external' });
+    for (const u of ['file:///other', 'data:x', 'javascript:x', 'blob:x', 'custom:x']) expect(_cn(u, APP)).toEqual({ action: 'block' });
+  });
+  test('scheme must be ANCHORED at the start (^) — embedded scheme blocks', () => {
+    expect(_cn('xhttps://evil', APP)).toEqual({ action: 'block' });
+    expect(_cn('  https://x', APP)).toEqual({ action: 'block' });
+  });
+});
+describe('isExternallyOpenable — guard + anchoring', () => {
+  test('non-string → false (typeof guard)', () => {
+    expect(_ico(42)).toBe(false);
+    expect(_ico(null)).toBe(false);
+    expect(_ico(undefined)).toBe(false);
+  });
+  test('only anchored http(s)/mailto/tel → true', () => {
+    expect(_ico('https://x')).toBe(true);
+    expect(_ico('mailto:a@b')).toBe(true);
+    expect(_ico('xhttps://x')).toBe(false); // anchoring
+    expect(_ico('javascript:x')).toBe(false);
+  });
+});

@@ -25,8 +25,29 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
   const {
     EditorState, EditorSelection, EditorView, keymap, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
-    syntaxHighlighting, defaultHighlightStyle, markdown, markdownLanguage,
+    syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags, markdown, markdownLanguage,
   } = CM6;
+
+  // T-F13: the prose look. With the markdown markers hidden off the active line (live-preview.js),
+  // the SURVIVING text must read as formatted prose — serif headings at real sizes, true bold /
+  // italic, monospace inline code — NOT flat monospace source. A HighlightStyle styles the
+  // markdown highlight tags directly (font/size/weight, not just colour). Guarded: the fake-CM6
+  // unit harness omits HighlightStyle/tags, so this is added only when both are present.
+  const proseHighlight = (HighlightStyle && tags) ? HighlightStyle.define([
+    { tag: tags.heading1, fontFamily: 'var(--serif)', fontSize: '1.9em', fontWeight: '600', lineHeight: '1.2' },
+    { tag: tags.heading2, fontFamily: 'var(--serif)', fontSize: '1.55em', fontWeight: '600' },
+    { tag: tags.heading3, fontFamily: 'var(--serif)', fontSize: '1.3em', fontWeight: '600' },
+    { tag: tags.heading4, fontFamily: 'var(--serif)', fontSize: '1.15em', fontWeight: '600' },
+    { tag: [tags.heading5, tags.heading6], fontFamily: 'var(--serif)', fontWeight: '600' },
+    { tag: tags.strong, fontWeight: '700' },
+    { tag: tags.emphasis, fontStyle: 'italic', color: 'var(--plum)' },
+    { tag: tags.strikethrough, textDecoration: 'line-through' },
+    { tag: tags.link, color: 'var(--accent)', textDecoration: 'underline' },
+    { tag: tags.url, color: 'var(--ink-mute)' },
+    { tag: tags.monospace, fontFamily: 'var(--mono)', fontSize: '0.9em', color: 'var(--accent)' },
+    { tag: tags.quote, color: 'var(--ink-soft)', fontStyle: 'italic' },
+    { tag: [tags.list, tags.contentSeparator], color: 'var(--accent)' },
+  ]) : null;
 
   let changeCb = onChange;
   const fire = () => { if (changeCb) changeCb(view.state.doc.toString()); };
@@ -44,6 +65,8 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       // matching the preview pipeline (marked is GFM). markdownLanguage is already vendored,
       // so this needs no bundle rebuild. Guarded so the fake-CM6 unit path stays safe.
       markdown(markdownLanguage ? { base: markdownLanguage } : undefined),
+      // prose styling first → higher precedence than the default token colours below
+      ...(proseHighlight ? [syntaxHighlighting(proseHighlight)] : []),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
       ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock)] : []), // T-F13: render BLOCKS (tables…) off the active line
@@ -52,6 +75,9 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       highlightActiveLine(),
       drawSelection(),
       EditorView.lineWrapping,
+      // a11y (T-F2): the contenteditable surface is a role=textbox; give it an accessible
+      // name so screen readers + axe (aria-input-field-name) recognise it as the note editor.
+      ...(EditorView.contentAttributes ? [EditorView.contentAttributes.of({ 'aria-label': 'Markdown note editor' })] : []),
       listener,
     ],
   });
@@ -91,6 +117,11 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     // T-F13 extras beyond the core contract:
     setDirection(d) { view.dom.setAttribute('dir', d === 'rtl' ? 'rtl' : 'ltr'); },
     focus() { view.focus(); },
+    // Edit-menu/keyboard operations routed through CM6's own commands (so the menu
+    // acts on the real editor, not the hidden preview). Guarded for the fake-CM6 unit harness.
+    selectAll() { view.focus(); if (CM6.selectAll) CM6.selectAll(view); else view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) }); },
+    undo() { view.focus(); if (CM6.undo) CM6.undo(view); },
+    redo() { view.focus(); if (CM6.redo) CM6.redo(view); },
     destroy() { view.destroy(); },
     _view: view,
   };

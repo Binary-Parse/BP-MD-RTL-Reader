@@ -138,14 +138,20 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     await page.waitForTimeout(60);
     const names = await page.locator('#palResults .pi-name').allTextContents();
     expect(names).toContain('Open Folder…');
-    expect(names).toContain('Mode: Live preview');
+    // (the 'Mode: …' palette entries were removed with the view modes — T-F13)
     expect(await page.locator('#palResults .pal-section-label').first().textContent()).toBe('Files');
     expect(await page.locator('#palInput').getAttribute('placeholder')).toBe('Type a command, search files…');
   });
 
   test('[Visual] Arabic (RTL) chrome at 1440x900', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.evaluate(() => { window.loadDemo(); window.setArabicUI(true); });
+    await page.evaluate(() => {
+      window.loadDemo();
+      window.setArabicUI(true);
+      // T-F13: reveal the rendered preview (hidden behind cm-single) so the chrome shot keeps
+      // showing rendered content rather than the CM6 source surface.
+      document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
+    });
     await page.waitForTimeout(250);
     await expect(page).toHaveScreenshot('rtl-ui-chrome-1440x900.png', { maxDiffPixels: 8000, threshold: 0.2 });
   });

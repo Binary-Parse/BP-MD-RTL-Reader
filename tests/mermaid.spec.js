@@ -15,6 +15,8 @@ async function inject(page, content) {
   return page.evaluate((md) => {
     window._appState.files = [{ name: 'd.md', path: 'd.md', handle: null, content: md, dirty: false }];
     window.renderFile(0);
+    // T-F13: reveal the rendered preview (export render path) hidden behind `cm-single`.
+    document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
 }
 

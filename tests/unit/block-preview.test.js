@@ -135,3 +135,50 @@ describe('createBlockPreview — standalone images', () => {
     expect(build(fakeCM6(), fakeView(DOC, nodes, 0)).decorations.ranges).toEqual([]);
   });
 });
+
+import { createBlockPreview } from '../../src/renderer/editor/block-preview.js';
+
+describe('createBlockPreview (state-derived facet) + widget identity', () => {
+  // Fake CM6 extended with EditorView.decorations.compute (the facet block widgets use).
+  function fakeCM6Facet() {
+    const base = fakeCM6();
+    base.EditorView.decorations = { compute: (deps, fn) => ({ facet: 'decorations', deps, fn }) };
+    return base;
+  }
+  const DOC = 'intro\n| A | B |\n| - | - |\n| 1 | 2 |\noutro';
+  const NODES = [{ name: 'Table', from: DOC.indexOf('| A | B |'), to: DOC.indexOf('\noutro') }];
+
+  test('returns the decorations.compute facet + an atomicRanges facet', () => {
+    const CM6 = fakeCM6Facet();
+    const ext = createBlockPreview(CM6, () => null);
+    expect(Array.isArray(ext)).toBe(true);
+    expect(ext[0].facet).toBe('decorations');
+    expect(ext[0].deps).toEqual(['doc', 'selection']);
+    expect(ext[1].facet).toBe('atomicRanges');
+  });
+
+  test('the compute callback builds block decorations from state', () => {
+    const CM6 = fakeCM6Facet();
+    const ext = createBlockPreview(CM6, () => null);
+    const view = fakeView(DOC, NODES, 0);
+    const decoSet = ext[0].fn(view.state);   // decorations.compute callback
+    expect(decoSet.ranges.length).toBe(1);
+    expect(decoSet.ranges[0].spec.widget.type).toBe('table');
+  });
+
+  test('the atomicRanges callback reads view.state (and tolerates empty)', () => {
+    const CM6 = fakeCM6Facet();
+    const ext = createBlockPreview(CM6, () => null);
+    expect(ext[1].fn(fakeView(DOC, NODES, 0)).ranges.length).toBe(1);
+    expect(ext[1].fn(fakeView(DOC, [], 0)).ranges).toEqual([]); // no nodes → empty
+  });
+
+  test('widget eq() compares type+source; ignoreEvent() is false', () => {
+    const r = build(fakeCM6(), fakeView(DOC, NODES, 0)).decorations.ranges[0];
+    const w = r.spec.widget;
+    expect(w.ignoreEvent()).toBe(false);
+    expect(w.eq({ type: w.type, source: w.source })).toBe(true);
+    expect(w.eq({ type: 'mermaid', source: w.source })).toBe(false);
+    expect(w.eq({ type: w.type, source: 'different' })).toBe(false);
+  });
+});

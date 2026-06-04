@@ -77,10 +77,10 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
     expect(unknown, `Unknown violations: ${JSON.stringify(unknown.map(v => v.id))}`).toHaveLength(0);
   });
 
-  test('No critical or serious UNKNOWN violations in source mode', async ({ page }) => {
+  test('No critical or serious UNKNOWN violations in the CM6 editor', async ({ page }) => {
+    // T-F13: there is no source mode — the CM6 live-preview editor is the only surface.
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
-    await page.evaluate(() => window.setEditorMode('source'));
+    await page.locator('.cm-mount .cm-editor').first().waitFor({ state: 'visible', timeout: 8000 });
     await page.waitForTimeout(200);
     const results = await runAxe(page);
     const unknown = filterUnknown(results.violations).filter(v => ['critical', 'serious'].includes(v.impact));

@@ -33,6 +33,9 @@ async function injectMarkdown(page, content) {
       handle: null, content: md, dirty: false
     }];
     if (typeof window.renderFile === 'function') window.renderFile(0);
+    // T-F13: reveal the rendered preview (#noteContent) — hidden behind `cm-single` now that
+    // CM6 is the on-screen editor — so RTL geometry checks can measure the render/export path.
+    document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
 }
 
@@ -590,29 +593,22 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     expect(statusbarDir).toBe('ltr');
   });
 
-  test('[E2] RTL toggle while in split-mode does not break layout', async ({ page }) => {
-    // White-box branch: toggleRTL() is called while editorArea has class 'split'.
-    // The editor element must still get dir=rtl and correct computed direction.
+  test('[E2] RTL toggle on the rendered document does not break layout', async ({ page }) => {
+    // T-F13: split mode is gone (CM6 is the sole editor). This still guards that toggleRTL()
+    // flips the rendered document direction (the export/preview render path).
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
     await page.waitForTimeout(200);
 
-    // Enter split mode
-    await page.click('#modeSplit');
-    await page.waitForTimeout(100);
-
-    // Now toggle RTL
+    // Toggle RTL
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
 
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
     const computedDir = await getEditorComputedDirection(page);
     expect(computedDir).toBe('rtl');
-
-    // Split mode class must still be present
-    await expect(page.locator('#editorArea')).toHaveClass(/split/);
   });
 
   test('[E3] #srcTextarea is never dir=rtl: auto per-block load leaves it alone, manual toggle sets dir=auto', async ({ page }) => {

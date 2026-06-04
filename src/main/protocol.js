@@ -23,9 +23,9 @@ function resolveAsset(url, root, pathmod) {
   if (pathmod.isAbsolute(rel)) return { error: 'unauthorized-path' };
   const full = pathmod.resolve(root, rel);
   const back = pathmod.relative(root, full);
+  // Reject anything not strictly INSIDE root: '' = root itself (a directory, not a file);
+  // a leading '..' = escapes the vault; an absolute back-path = a different drive/root.
   if (back === '' || back.startsWith('..') || pathmod.isAbsolute(back)) {
-    // '' means full === root (a directory, not a file); reject too.
-    if (back === '') return { error: 'unauthorized-path' };
     return { error: 'unauthorized-path' };
   }
   return { path: full };

@@ -21,6 +21,9 @@ async function injectMarkdown(page, content) {
       handle: null, content: md, dirty: false
     }];
     if (typeof window.renderFile === 'function') window.renderFile(0);
+    // T-F13: reveal the rendered preview (export render path) hidden behind `cm-single`.
+    const ea = document.getElementById('editorArea');
+    if (ea) ea.classList.remove('cm-single', 'welcome');
   }, content);
 }
 

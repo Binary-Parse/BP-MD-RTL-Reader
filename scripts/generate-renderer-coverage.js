@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { fileURLToPath } = require('url');
 const { spawnSync } = require('child_process');
 const v8toIstanbul = require('v8-to-istanbul');
 const libCoverage = require('istanbul-lib-coverage');
@@ -115,11 +116,18 @@ async function main() {
     if (!Array.isArray(raw)) continue;
 
     for (const entry of raw) {
-      if (!entry || typeof entry.url !== 'string' || !entry.url.includes('index.html')) continue;
+      if (!entry || typeof entry.url !== 'string') continue;
+      // T-F13/audit fix (was: index.html-only): the strict CSP externalised all renderer JS
+      // out of index.html into src/renderer/*.js (ES modules). Capture every first-party
+      // renderer script and map each V8 entry back to its REAL source file on disk, instead
+      // of the old hardcoded INDEX_HTML (which matched 0 entries → 0% → crash).
+      if (!entry.url.includes('/src/renderer/')) continue;
+      let localPath;
+      try { localPath = fileURLToPath(entry.url.split('?')[0].split('#')[0]); }
+      catch (_) { continue; }
+      if (!fs.existsSync(localPath)) continue;
 
-      const converter = v8toIstanbul(INDEX_HTML, 0, {
-        source: entry.source,
-      });
+      const converter = v8toIstanbul(localPath, 0, { source: entry.source });
       await converter.load();
       converter.applyCoverage(entry.functions);
       const istanbulCoverage = converter.toIstanbul();
@@ -130,7 +138,7 @@ async function main() {
 
         // Ensure all required keys exist and are truthy
         const standard = {
-          path: (rest.path && rest.path !== '') ? rest.path : INDEX_HTML,
+          path: (rest.path && rest.path !== '') ? rest.path : localPath,
           statementMap: rest.statementMap || {},
           s: rest.s || {},
           fnMap: rest.fnMap || {},
@@ -140,7 +148,7 @@ async function main() {
         };
 
         // addFileCoverage MERGES (unions hit counts) when the path repeats,
-        // so coverage from every test accumulates onto index.html.
+        // so coverage from every test accumulates per renderer source file.
         coverageMap.addFileCoverage(standard);
         mergedEntries++;
       }
@@ -157,12 +165,16 @@ async function main() {
   reports.create('json').execute(context);
 
   console.log(`Renderer coverage report generated at: ${REPORT_DIR}`);
-  console.log(`Merged ${mergedEntries} index.html coverage entr${mergedEntries === 1 ? 'y' : 'ies'} from ${files.length} JSON file(s).`);
+  console.log(`Merged ${mergedEntries} renderer coverage entr${mergedEntries === 1 ? 'y' : 'ies'} from ${files.length} JSON file(s).`);
 
   // --- Regression guard -----------------------------------------------------
   const summary = coverageMap.getCoverageSummary().toJSON();
-  const funcPct = summary.functions.pct;
-  const stmtPct = summary.statements.pct;
+  // Guard the empty-collection case: an empty coverage map yields non-numeric pct
+  // ("Unknown"/NaN). Coerce to 0 so we report + fail the floor cleanly instead of crashing
+  // (the old `stmtPct.toFixed is not a function` bug when 0 files were collected).
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const funcPct = num(summary.functions && summary.functions.pct);
+  const stmtPct = num(summary.statements && summary.statements.pct);
   console.log(`Renderer coverage: ${stmtPct.toFixed(2)}% stmts / ${funcPct.toFixed(2)}% funcs.`);
 
   if (ENFORCE_FLOOR) {

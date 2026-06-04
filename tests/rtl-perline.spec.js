@@ -16,6 +16,9 @@ async function injectMarkdown(page, content) {
   return page.evaluate((md) => {
     window._appState.files = [{ name: 'mixed.md', path: 'mixed.md', handle: null, content: md, dirty: false }];
     window.renderFile(0);
+    // T-F13: reveal the rendered preview (export render path) hidden behind `cm-single` so the
+    // per-line RTL render is what's snapshotted (CM6's own per-line RTL is covered separately).
+    document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
 }
 

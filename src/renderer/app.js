@@ -493,12 +493,6 @@ const MENU_DEFS = {
   view: {
     x: 145,
     items: [
-      { kind: 'label', text: 'Mode', key: 'menu.mode' },
-      { kind: 'check', name: 'Live Preview', key: 'menu.livePreview', checked: () => State.editorMode === 'live', action: () => { setEditorMode('live'); closeMenu(); } },
-      { kind: 'check', name: 'Split View', key: 'menu.splitView', checked: () => State.editorMode === 'split', action: () => { setEditorMode('split'); closeMenu(); } },
-      { kind: 'check', name: 'Source Mode', key: 'menu.sourceMode', checked: () => State.editorMode === 'source', action: () => { setEditorMode('source'); closeMenu(); } },
-      { kind: 'check', name: 'Live-Preview Editor (CodeMirror)', key: 'menu.cmEditor', checked: () => State.cmEditor, action: () => { toggleCmEditor(); closeMenu(); } },
-      { kind: 'divider' },
       { kind: 'label', text: 'Panels', key: 'menu.panels' },
       { kind: 'check', name: 'Show Sidebar', key: 'menu.showSidebar', shortcut: 'Ctrl+\\', checked: () => State.sidebarVisible, action: () => { toggleSidebar(); closeMenu(); } },
       { kind: 'check', name: 'Show Inspector', key: 'menu.showInspector', shortcut: 'Ctrl+Shift+I', checked: () => State.inspectorVisible, action: toggleInspector },
@@ -952,6 +946,7 @@ function execEditCmd(cmd) {
   const deps = {
     electronAPI: cmd === 'selectAll' ? null : (window.electronAPI || null),
     getMode: () => State.editorMode,
+    getCmAdapter: () => cmAdapter, // T-F13: CM6 is the live editor — Edit menu acts on it
     getSrcTextarea: () => srcTextarea,
     getNoteContent: () => noteContent,
     getLastFocusedEditable: () => _lastFocusedEditable,
@@ -1057,11 +1052,12 @@ function setEditorMode(mode) {
   editorArea.classList.remove('split', 'source');
   if (mode === 'split') editorArea.classList.add('split');
   else if (mode === 'source') editorArea.classList.add('source');
-  $('modeLive').classList.toggle('active', mode === 'live');
-  $('modeSplit').classList.toggle('active', mode === 'split');
-  $('modeSource').classList.toggle('active', mode === 'source');
+  // The 3 mode buttons were removed when CM6 became the sole editor (T-F13); guard the
+  // toggles so the dead textarea-fallback path (ensureSourceFocus) can't throw on null.
+  $('modeLive')?.classList.toggle('active', mode === 'live');
+  $('modeSplit')?.classList.toggle('active', mode === 'split');
+  $('modeSource')?.classList.toggle('active', mode === 'source');
   $('propMode').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
-  showToast(`Mode: ${mode}`, 'info');
 }
 window.setEditorMode = setEditorMode;
 
@@ -1125,6 +1121,8 @@ function showWelcome() {
   welcomeEl.style.display = 'grid';
   noteContent.style.display = 'none';
   toolbarStrip.style.display = 'none';
+  editorArea.classList.add('welcome'); // T-F13: reveal the welcome (preview pane) over the CM6 surface
+  $('conflictBar') && ($('conflictBar').innerHTML = ''); // no open file → no conflict banner
   renderTabs();
   $('propFile').textContent = '—';
   $('propWords').textContent = '0';
@@ -1148,6 +1146,7 @@ function renderFile(idx) {
   welcomeEl.style.display = 'none';
   noteContent.style.display = 'block';
   toolbarStrip.style.display = 'flex';
+  editorArea.classList.remove('welcome'); // T-F13: a file is open → show the CM6 live-preview surface
 
   loadIntoEditor(file.content || ''); // textarea (default) or CodeMirror (flag) — T-F13
 
@@ -1168,7 +1167,6 @@ function renderFile(idx) {
     </div>` : '';
 
   noteContent.innerHTML = `
-    ${conflictBanner}
     <div class="doc-meta">
       <span>${isAr ? 'مقالة' : 'note'}</span>
       <span>·</span>
@@ -1179,9 +1177,16 @@ function renderFile(idx) {
     </div>
     ${html}
   `;
-  if (file.conflict) {
-    noteContent.querySelector('.cf-keep')?.addEventListener('click', () => resolveConflict(idx, 'keep'));
-    noteContent.querySelector('.cf-reload')?.addEventListener('click', () => resolveConflict(idx, 'reload'));
+  // EC-A2 (T-B9): the conflict banner must stay VISIBLE — render it in the dedicated
+  // #conflictBar above the editor, not inside #noteContent (which is hidden behind the CM6
+  // surface now, T-F13). Cleared when the file is not in conflict.
+  const conflictBar = $('conflictBar');
+  if (conflictBar) {
+    conflictBar.innerHTML = conflictBanner;
+    if (file.conflict) {
+      conflictBar.querySelector('.cf-keep')?.addEventListener('click', () => resolveConflict(idx, 'keep'));
+      conflictBar.querySelector('.cf-reload')?.addEventListener('click', () => resolveConflict(idx, 'reload'));
+    }
   }
 
   // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
@@ -1698,17 +1703,12 @@ function applyEditorInput(val, pos) {
 function onSourceInput() { applyEditorInput(srcTextarea.value, srcTextarea.selectionStart); }
 srcTextarea.addEventListener('input', onSourceInput);
 
-// ── T-F13: optional CodeMirror 6 source engine, behind a flag (the textarea stays the
-// default + fallback, so default behaviour/snapshots are unchanged). Reversible: enable
-// with ?cm=1 or localStorage 'bpmd-cm6'='1'. cmAdapter conforms to the same EditorPort. ──
+// ── T-F13: CodeMirror 6 is the ONE and ONLY editor — a single live-preview surface mounted
+// on launch (no source/split modes, no opt-in flag). The textarea (#srcTextarea) stays in the
+// DOM purely as a fallback if the CM6 bundle fails to load. cmAdapter conforms to EditorPort. ──
 let cmAdapter = null;   // non-null ⇒ CodeMirror is the active source engine
 let cmLoading = false;  // suppress onChange while we load a doc programmatically
 let _cmPromise = null;
-function cmFlagOn() {
-  if (State.cmEditor) return true; // the persisted "Live-Preview Editor" setting (A1) is the primary switch
-  try { return new URLSearchParams(location.search).has('cm') || localStorage.getItem('bpmd-cm6') === '1'; } // dev overrides
-  catch (_) { return false; }
-}
 function loadCM6() {
   if (_cmPromise) return _cmPromise;
   _cmPromise = new Promise((resolve, reject) => {
@@ -1775,7 +1775,9 @@ function renderCmMath(tex, display) {
 }
 
 async function initCM6Editor() {
-  if (cmAdapter || !cmFlagOn()) return false;
+  // T-F13: CM6 is now the ONE and ONLY editor — mount it unconditionally on launch. The
+  // textarea remains in the DOM purely as a fallback if the CM6 bundle fails to load.
+  if (cmAdapter) return false;
   let CM6;
   try { CM6 = await loadCM6(); } catch (_) { return false; }
   const pane = document.querySelector('.source-pane');
@@ -1809,6 +1811,9 @@ function loadIntoEditor(content) {
 window.loadCM6 = loadCM6;
 window.initCM6Editor = initCM6Editor;
 window.createCodeMirrorAdapter = createCodeMirrorAdapter;
+// Test hook: the live CM6 EditorPort (or null before mount). Lets e2e tests set selections /
+// read the value precisely against the single editor surface.
+window.getActiveCmAdapter = () => cmAdapter;
 
 // A1: the persisted "Live-Preview Editor" setting governs whether CM6 is the active surface.
 // Toggling it mounts CM6 (single live-preview mode) or tears it back down to the classic
@@ -1970,9 +1975,57 @@ function lineStart(prefix) {
   replaceInTextarea(ta, ls, ls, prefix);
   ta.selectionStart = ta.selectionEnd = start + prefix.length;
 }
+// Insert a block on its OWN line (callout / table / hr / image), cmAdapter-aware. Prefixes a
+// newline if the cursor isn't already at line start so the block parses as its own element.
+function insertBlock(text) {
+  if (cmAdapter) {
+    cmAdapter.focus();
+    const { start, end } = cmAdapter.getSelection();
+    const before = cmAdapter.getValue().slice(0, start);
+    const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
+    cmAdapter.setSelection({ start, end });
+    cmAdapter.replaceSelection(pre + text);
+    return;
+  }
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const before = ta.value.slice(0, start);
+  const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
+  replaceInTextarea(ta, start, end, pre + text);
+  ta.selectionStart = ta.selectionEnd = start + pre.length + text.length;
+}
+// Fenced code block wrapping the selection (or empty), on its own line; cursor lands inside.
+function insertCodeBlock() {
+  if (cmAdapter) {
+    cmAdapter.focus();
+    const { start, end } = cmAdapter.getSelection();
+    const body = cmAdapter.getValue().slice(start, end);
+    const before = cmAdapter.getValue().slice(0, start);
+    const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
+    cmAdapter.setSelection({ start, end });
+    cmAdapter.replaceSelection(pre + '```\n' + body + '\n```\n');
+    const pos = start + pre.length + 4; // just after the opening "```\n"
+    cmAdapter.setSelection({ start: pos, end: pos + body.length });
+    return;
+  }
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const body = ta.value.slice(start, end);
+  const before = ta.value.slice(0, start);
+  const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
+  replaceInTextarea(ta, start, end, pre + '```\n' + body + '\n```\n');
+  const pos = start + pre.length + 4;
+  ta.selectionStart = pos; ta.selectionEnd = pos + body.length;
+}
+const TABLE_TEMPLATE = '| Column | Column |\n| --- | --- |\n| Cell | Cell |\n';
+const CALLOUT_TEMPLATE = '> [!NOTE] Title\n> Body text\n';
 window.wrapSelection = wrapSelection;
 window.insertText = insertText;
 window.lineStart = lineStart;
+window.insertBlock = insertBlock;
+window.insertCodeBlock = insertCodeBlock;
 
 // =====================================================================
 // COMMAND PALETTE
@@ -1988,10 +2041,6 @@ const PALETTE_COMMANDS = [
   { sec: 'Files', key: 'palette.exportHtml', icon: '⇪', name: 'Export HTML', meta: 'command', act: () => exportHTML() },
   { sec: 'Files', key: 'palette.exportPdf', icon: '⎙', name: 'Export PDF', meta: 'command', act: () => exportPDF() },
   { sec: 'Files', key: 'palette.loadDemo', icon: '★', name: 'Load demo notes', meta: 'command', act: loadDemo },
-  { sec: 'View', key: 'palette.modeLive', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
-  { sec: 'View', key: 'palette.modeSplit', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },
-  { sec: 'View', key: 'palette.modeSource', icon: '<>', name: 'Mode: Source', meta: 'view', act: () => setEditorMode('source') },
-  { sec: 'View', key: 'palette.toggleCmEditor', icon: '✦', name: 'Toggle Live-Preview Editor (CodeMirror)', meta: 'view', act: toggleCmEditor },
   { sec: 'View', key: 'palette.flip', icon: '⇄', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
   { sec: 'View', key: 'palette.themePaper', icon: '◐', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
   { sec: 'View', key: 'palette.themeInk', icon: '◐', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
@@ -2220,21 +2269,42 @@ $('wbOpenFile').addEventListener('click', openSingleFile);
 $('wbNewNote').addEventListener('click', newNote);
 $('wbLoadDemo').addEventListener('click', loadDemo);
 
-// Toolbar buttons
-$('modeLive').addEventListener('click', () => setEditorMode('live'));
-$('modeSplit').addEventListener('click', () => setEditorMode('split'));
-$('modeSource').addEventListener('click', () => setEditorMode('source'));
+// Toolbar buttons (CM6 is the sole editor; every action routes through the cmAdapter helpers).
 $('tbBold').addEventListener('click', () => wrapSelection('**', '**'));
 $('tbItalic').addEventListener('click', () => wrapSelection('*', '*'));
 $('tbStrike').addEventListener('click', () => wrapSelection('~~', '~~'));
-$('tbH1').addEventListener('click', () => lineStart('# '));
-$('tbH2').addEventListener('click', () => lineStart('## '));
-$('tbH3').addEventListener('click', () => lineStart('### '));
-$('tbLink').addEventListener('click', () => insertText('[', '](url)'));
-$('tbQuote').addEventListener('click', () => lineStart('> '));
-$('tbList').addEventListener('click', () => lineStart('- '));
 $('tbCode').addEventListener('click', () => wrapSelection('`', '`'));
+$('tbLink').addEventListener('click', () => insertText('[', '](url)'));
 $('tbWikilink').addEventListener('click', () => insertText('[[', ']]'));
+$('tbMath').addEventListener('click', () => wrapSelection('$', '$'));
+$('tbQuote').addEventListener('click', () => lineStart('> '));
+$('tbCallout').addEventListener('click', () => insertBlock(CALLOUT_TEMPLATE));
+$('tbList').addEventListener('click', () => lineStart('- '));
+$('tbListOrdered').addEventListener('click', () => lineStart('1. '));
+$('tbTaskList').addEventListener('click', () => lineStart('- [ ] '));
+$('tbCodeBlock').addEventListener('click', () => insertCodeBlock());
+$('tbTable').addEventListener('click', () => insertBlock(TABLE_TEMPLATE));
+$('tbImage').addEventListener('click', () => insertText('![', '](url)'));
+$('tbRule').addEventListener('click', () => insertBlock('---\n'));
+
+// Heading-level pop-down (H1–H6) — fixes the missing H4/H5/H6.
+const headingMenu = $('headingMenu');
+function closeHeadingMenu() { headingMenu.classList.remove('open'); $('tbHeading').setAttribute('aria-expanded', 'false'); }
+$('tbHeading').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = headingMenu.classList.toggle('open');
+  $('tbHeading').setAttribute('aria-expanded', open ? 'true' : 'false');
+});
+headingMenu.querySelectorAll('.td-item').forEach((it) => {
+  it.addEventListener('click', () => {
+    const n = parseInt(it.getAttribute('data-level'), 10) || 1;
+    lineStart('#'.repeat(n) + ' ');
+    closeHeadingMenu();
+  });
+});
+document.addEventListener('click', (e) => {
+  if (headingMenu.classList.contains('open') && !headingMenu.contains(e.target) && !$('tbHeading').contains(e.target)) closeHeadingMenu();
+});
 
 // Find bar
 $('findInput').addEventListener('input', e => runFind(e.target.value));
@@ -2406,7 +2476,9 @@ async function restoreSettings() {
       if ($('themeLabel')) $('themeLabel').textContent = s.theme;
     }
     if (typeof s.zoomFactor === 'number') setZoom(s.zoomFactor);
-    if (typeof s.editorMode === 'string') setEditorMode(s.editorMode);
+    // CM6 is the sole editor now — always 'live'. Ignore any persisted split/source so an
+    // old setting can't re-show the second pane alongside the live-preview surface (T-F13).
+    setEditorMode('live');
     if (typeof s.sidebarVisible === 'boolean') {
       State.sidebarVisible = s.sidebarVisible;
       appBody.classList.toggle('no-sidebar', !s.sidebarVisible);

@@ -15,6 +15,9 @@ async function inject(page, content) {
   return page.evaluate((md) => {
     window._appState.files = [{ name: 'doc.md', path: 'doc.md', handle: null, content: md, dirty: false }];
     window.renderFile(0);
+    // T-F13: reveal the rendered preview (the export render pipeline) — hidden behind
+    // `cm-single` now that CM6 is the on-screen editor — so this visual test snapshots it.
+    document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
 }
 

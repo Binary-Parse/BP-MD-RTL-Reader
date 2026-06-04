@@ -11,6 +11,10 @@ import { createLivePreview, livePreviewTheme } from './live-preview.js';
 import { createLineDirection } from './line-direction.js';
 import { createBlockPreview } from './block-preview.js';
 import { createMathPreview } from './math-preview.js';
+// listContinuation lives in its own module so the coverage + mutation gates SEE it (this
+// adapter file is gate-excluded as e2e-only). Re-exported for back-compat with importers.
+import { listContinuation } from './list-continuation.js';
+export { listContinuation };
 
 function escapeReg(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -23,9 +27,10 @@ function escapeReg(s) {
  */
 export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null, renderMath = null } = {}) {
   const {
-    EditorState, EditorSelection, EditorView, keymap, highlightActiveLine, drawSelection,
+    EditorState, EditorSelection, EditorView, keymap, Prec, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
     syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags, markdown, markdownLanguage,
+    search, setSearchQuery, SearchQuery,
   } = CM6;
 
   // T-F13: the prose look. With the markdown markers hidden off the active line (live-preview.js),
@@ -49,6 +54,37 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     { tag: [tags.list, tags.contentSeparator], color: 'var(--accent)' },
   ]) : null;
 
+  // Obsidian-style list/blockquote continuation on Enter (uses the PURE listContinuation
+  // helper above so the decision logic stays unit-testable without a real editor). Bound at
+  // Prec.highest below so it beats BOTH defaultKeymap and the markdown language's own Enter.
+  const continueListOnEnter = (v) => {
+    const { state } = v;
+    const sel = state.selection.main;
+    if (!sel.empty) return false; // only a plain caret continues a list
+    const line = state.doc.lineAt(sel.head);
+    if (sel.head !== line.to) return false; // only at the END of the line
+    const cont = listContinuation(line.text);
+    if (!cont) return false;
+    if (cont.empty) {
+      // exit the list/quote: delete the whole marker, then break the line.
+      v.dispatch({
+        changes: { from: line.from, to: line.to, insert: '\n' },
+        selection: EditorSelection.cursor(line.from + 1),
+        scrollIntoView: true,
+        userEvent: 'input',
+      });
+      return true;
+    }
+    const insert = '\n' + cont.prefix;
+    v.dispatch({
+      changes: { from: sel.head, insert },
+      selection: EditorSelection.cursor(sel.head + insert.length),
+      scrollIntoView: true,
+      userEvent: 'input',
+    });
+    return true;
+  };
+
   let changeCb = onChange;
   const fire = () => { if (changeCb) changeCb(view.state.doc.toString()); };
 
@@ -60,7 +96,12 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     doc: doc == null ? '' : String(doc),
     extensions: [
       history(),
-      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      // list/quote continuation on Enter, at Prec.highest so it beats BOTH defaultKeymap's
+      // insertNewlineAndIndent AND the markdown language's own continueMarkup Enter binding
+      // (markdownLanguage registers a keymap via the language facet). Guarded: the fake-CM6
+      // unit harness omits Prec, so fall back to plain ordering (this module is e2e-covered).
+      ...(Prec ? [Prec.highest(keymap.of([{ key: 'Enter', run: continueListOnEnter }]))] : []),
+      keymap.of([...(Prec ? [] : [{ key: 'Enter', run: continueListOnEnter }]), ...defaultKeymap, ...historyKeymap, indentWithTab]),
       // GFM via the `extended` parser (markdownLanguage) — strikethrough + tables parse,
       // matching the preview pipeline (marked is GFM). markdownLanguage is already vendored,
       // so this needs no bundle rebuild. Guarded so the fake-CM6 unit path stays safe.
@@ -72,6 +113,11 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock)] : []), // T-F13: render BLOCKS (tables…) off the active line
       ...(livePreview && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
       ...createLineDirection(CM6, () => dir), // R1/R2 in CM6: per-line dir + logical caret (perLineTextDirection)
+      // F13 Find: the `search` extension draws .cm-searchMatch on EVERY hit of the active
+      // SearchQuery (set via setSearchHighlight below) so all matches are visible, not just the
+      // selected one. No panel/keymap is wired — Find is driven by the app's own find-bar.
+      // Guarded: the fake-CM6 unit harness omits `search`.
+      ...(search ? [search()] : []),
       highlightActiveLine(),
       drawSelection(),
       EditorView.lineWrapping,
@@ -113,6 +159,13 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
         if (m.index === re.lastIndex) re.lastIndex++;
       }
       return matches;
+    },
+    // F13 Find: highlight ALL matches of `query` (drawn as .cm-searchMatch by the `search`
+    // extension). An empty/falsy query clears the highlight. Guarded for the fake-CM6 unit
+    // harness, which omits setSearchQuery/SearchQuery (this path is e2e-covered).
+    setSearchHighlight(query) {
+      if (!setSearchQuery || !SearchQuery) return;
+      view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: query == null ? '' : String(query) })) });
     },
     // T-F13 extras beyond the core contract:
     setDirection(d) { view.dom.setAttribute('dir', d === 'rtl' ? 'rtl' : 'ltr'); },

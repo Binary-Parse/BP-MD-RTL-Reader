@@ -272,3 +272,244 @@ describe('listMarkdown — guard branches (mutation kills)', () => {
     expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath)).toEqual(['a.md', 'z.md']);
   });
 });
+
+// ── Mutation-hardening round 2: kill the residual survivors precisely. ───────
+describe('document-store — residual mutation survivors', () => {
+  const dirent = (name, kind) => ({ name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' });
+
+  // 13:10 — hasBOM's `typeof content === 'string' &&` guard (ConditionalExpression→true).
+  test('hasBOM returns false for non-string input (guard not just true)', () => {
+    expect(hasBOM(0xFEFF)).toBe(false);     // a number whose value equals BOM code point
+    expect(hasBOM(null)).toBe(false);
+    expect(hasBOM(undefined)).toBe(false);
+  });
+
+  // 21:29 Regex + 21:48 ArrayDeclaration — detectEol's lf counter `/(^|[^\r])\n/g`.
+  // A leading bare LF only matches via the `^` alternation; the `||[]` fallback only
+  // matters when match() returns null (no LF at all).
+  test('detectEol counts a leading bare LF (anchored ^ alternation)', () => {
+    // one CRLF, two bare LF (one is leading) → lf(2) > crlf(1) → LF wins.
+    expect(detectEol('\na\r\nb\nc')).toBe('\n');
+  });
+  test('detectEol with zero newlines hits the ||[] fallback → LF', () => {
+    expect(detectEol('plain')).toBe('\n'); // both matches null → 0/0 → '\n'
+  });
+
+  // 36:30/36:61 — createHash('sha1') / digest('hex') string args.
+  test('hashContent passes sha1/hex to crypto', () => {
+    const calls = {};
+    const crypto = {
+      createHash: (algo) => { calls.algo = algo; return { update() { return this; }, digest: (enc) => { calls.enc = enc; return 'H'; } }; },
+    };
+    expect(hashContent('x', crypto)).toBe('H');
+    expect(calls.algo).toBe('sha1');
+    expect(calls.enc).toBe('hex');
+  });
+
+  // 40:51 — fallback hash arithmetic `h * 31 + charCodeAt(i)`.
+  // Pin exact known values so * → / and + → - mutants die.
+  test('fallback hash exact value (kills *31 → /31 and + → -)', () => {
+    // 'A' = 65; h = (0*31 + 65)>>>0 = 65
+    expect(hashContent('A')).toBe('65');
+    // 'AB': h='65' step then (65*31 + 66)>>>0 = 2015+66 = 2081
+    expect(hashContent('AB')).toBe('2081');
+  });
+
+  // 81:26 — `out.endsWith(eol)` (MethodExpression→startsWith). finalNewline should NOT
+  // double-append when content already ends with the EOL.
+  test('finalNewline does not double-append when out already ends with eol', () => {
+    const fs = mockFs();
+    createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x\n', { root: '/v', eol: '\n', finalNewline: true });
+    expect(fs._files['/v/a.md']).toBe('x\n'); // startsWith('x') would wrongly append → 'x\n\n'
+  });
+
+  // 53:42 / 70:48? / 75:60 — readFileSync('utf8') encoding arg in read() and write()'s
+  // conflict re-read. mock asserts the encoding is forwarded.
+  test('read + write forward the utf8 encoding to readFileSync', () => {
+    const encs = [];
+    const base = mockFs({ '/v/a.md': 'old\n' });
+    const fs = { ...base, readFileSync: (p, enc) => { encs.push(enc); return base._files[p]; } };
+    const store = createDocumentStore({ fs, path: path.posix });
+    store.read('/v/a.md');
+    store.write('/v/a.md', 'new', { root: '/v', baseHash: hashContent('old\n'), eol: '\n' });
+    expect(encs).toEqual(['utf8', 'utf8']);
+  });
+
+  // 87:34 / 89:43 — writeFileSync('utf8') + openSync(tmp, 'r+') string args.
+  test('writeFileSync receives utf8 and openSync receives r+', () => {
+    const fs = mockFs();
+    let wEnc; let openFlag;
+    fs.writeFileSync = (p, c, enc) => { wEnc = enc; fs._files[p] = c; };
+    fs.fsyncSync = vi.fn(); fs.openSync = (p, flag) => { openFlag = flag; return 7; }; fs.closeSync = vi.fn();
+    createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
+    expect(wEnc).toBe('utf8');
+    expect(openFlag).toBe('r+');
+  });
+
+  // 85:37 — Math.random().toString(36) radix; tmp name must be derived (not literal).
+  test('temp file name is randomized (radix-36 suffix), distinct per write', () => {
+    const fs = mockFs();
+    const tmps = [];
+    fs.writeFileSync = (p, c) => { if (String(p).includes('.tmp-')) tmps.push(p); fs._files[p] = c; };
+    const store = createDocumentStore({ fs, path: path.posix });
+    store.write('/v/a.md', 'x', { root: '/v', eol: '\n' });
+    store.write('/v/b.md', 'y', { root: '/v', eol: '\n' });
+    expect(tmps[0]).toMatch(/^\/v\/a\.md\.tmp-[0-9a-z]+$/);
+    expect(tmps[1]).toMatch(/^\/v\/b\.md\.tmp-[0-9a-z]+$/);
+  });
+
+  // 88:11 / 93 — fsyncSync-absent branch (ConditionalExpression→true would call it).
+  test('no fsyncSync → write still succeeds without touching openSync', () => {
+    const fs = mockFs();
+    fs.openSync = vi.fn();
+    // deliberately no fs.fsyncSync
+    const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
+    expect(r.ok).toBe(true);
+    expect(fs.openSync).not.toHaveBeenCalled();
+  });
+
+  // 93:11/93:17 — cleanup branch: on rename failure, an EXISTING tmp is unlinked.
+  test('rename failure unlinks the leftover temp file (cleanup branch)', () => {
+    const fs = mockFs();
+    const unlinked = [];
+    fs.renameSync = vi.fn(() => { throw Object.assign(new Error('x'), { code: 'EPERM' }); });
+    fs.unlinkSync = (p) => { unlinked.push(p); delete fs._files[p]; };
+    createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
+    expect(unlinked).toHaveLength(1);
+    expect(unlinked[0]).toMatch(/\.tmp-/); // the temp, not the target
+  });
+  test('rename failure with NO leftover temp → unlinkSync not called (existsSync false)', () => {
+    const fs = mockFs();
+    fs.renameSync = vi.fn(() => { throw Object.assign(new Error('x'), { code: 'EPERM' }); });
+    // writeFileSync that never records the tmp, so existsSync(tmp) === false
+    fs.writeFileSync = vi.fn();
+    fs.unlinkSync = vi.fn();
+    const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
+    expect(r).toEqual({ error: 'write-failed' });
+    expect(fs.unlinkSync).not.toHaveBeenCalled();
+  });
+
+  // 109:31 — `out.length >= maxFiles` top-of-walk guard (>= vs >, and →false).
+  // With maxFiles:1 and two md files, exactly one is returned; a `>` mutant would
+  // allow a 2nd dir-recursion to overshoot.
+  test('listMarkdown maxFiles is an inclusive cap across nested dirs (>= not >)', () => {
+    const tree = {
+      '/v': [dirent('a.md', 'f'), dirent('sub', 'd')],
+      '/v/sub': [dirent('b.md', 'f')],
+    };
+    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
+    const out = createDocumentStore({ fs, path: path.posix }).listMarkdown('/v', { maxFiles: 1 });
+    expect(out.map((x) => x.relPath)).toEqual(['a.md']); // recursion into /sub blocked by the guard
+  });
+
+  // 112:11 — visited cycle guard: a self-loop dir must be visited only once.
+  test('listMarkdown cycle guard: realpath repeat is pruned (visited.has)', () => {
+    const tree = {
+      '/v': [dirent('a.md', 'f'), dirent('loop', 'd')],
+      '/v/loop': [dirent('b.md', 'f'), dirent('again', 'd')],
+      '/v/loop/again': [dirent('c.md', 'f')],
+    };
+    // /v/loop/again resolves back to /v/loop → already visited → pruned (c.md excluded)
+    const real = { '/v': '/v', '/v/loop': '/v/loop', '/v/loop/again': '/v/loop' };
+    const fs = { realpathSync: (p) => real[p] || p, readdirSync: (p) => tree[p] || [] };
+    const out = createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath);
+    expect(out).toEqual(['a.md', 'loop/b.md']);
+  });
+
+  // 115:43 / 115:60 — readdirSync second arg `{ withFileTypes: true }`.
+  test('readdirSync is called with { withFileTypes: true }', () => {
+    let opts;
+    const fs = { realpathSync: (p) => p, readdirSync: (p, o) => { opts = o; return [dirent('a.md', 'f')]; } };
+    createDocumentStore({ fs, path: path.posix }).listMarkdown('/v');
+    expect(opts).toEqual({ withFileTypes: true });
+  });
+
+  // 120:19 / 120:56 — entry classification: only (isFile||isSymbolicLink) AND /\.(md|markdown)$/i.
+  test('a directory named like markdown is recursed, not pushed (isFile/isSymlink guard)', () => {
+    const tree = {
+      '/v': [dirent('a.md', 'd'), dirent('real.md', 'f'), dirent('note.markdown', 'f'), dirent('x.mdx', 'f'), dirent('y.md.txt', 'f')],
+      '/v/a.md': [dirent('inner.md', 'f')],
+    };
+    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
+    const out = createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath).sort();
+    // a.md (dir) recursed → a.md/inner.md; .mdx and .md.txt excluded by the anchored regex
+    expect(out).toEqual(['a.md/inner.md', 'note.markdown', 'real.md']);
+  });
+
+  // 137:9 — watch's `typeof fs.watch !== 'function'` guard (ConditionalExpression→false
+  // would try to call a non-function). Already covered by no-op test; add: a real
+  // function IS used (guard not always-false) by asserting fs.watch gets called.
+  test('watch with a real fs.watch function actually subscribes (guard not false)', () => {
+    const watcher = { close: vi.fn() };
+    const fs = { ...mockFs(), watch: vi.fn(() => watcher) };
+    const h = createDocumentStore({ fs, path: path.posix }).watch('/v', () => {});
+    expect(fs.watch).toHaveBeenCalledTimes(1);
+    h.close();
+  });
+
+  // 149:13 — `if (filename) pending.add(...)`: a null filename must NOT be added.
+  test('watch ignores a null filename (does not add empty/garbage to the set)', () => {
+    vi.useFakeTimers();
+    let listener;
+    const fs = { ...mockFs(), watch: vi.fn((r, o, cb) => { listener = cb; return { close() {} }; }) };
+    const cb = vi.fn();
+    createDocumentStore({ fs, path: path.posix }).watch('/v', cb, { debounceMs: 50 });
+    listener('change', null);      // filename falsy → not added
+    listener('change', 'a.md');
+    vi.advanceTimersByTime(50);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0].files).toEqual(['a.md']); // only the real file
+    vi.useRealTimers();
+  });
+
+  // 150:13 — `if (timer) clearTimeout(timer)`: a 2nd event before flush must reset the
+  // debounce (so only one flush fires after the LAST event, not the first).
+  test('watch debounce is re-armed by each event (clearTimeout on existing timer)', () => {
+    vi.useFakeTimers();
+    let listener;
+    const fs = { ...mockFs(), watch: vi.fn((r, o, cb) => { listener = cb; return { close() {} }; }) };
+    const cb = vi.fn();
+    createDocumentStore({ fs, path: path.posix }).watch('/v', cb, { debounceMs: 100 });
+    listener('change', 'a.md');
+    vi.advanceTimersByTime(60);   // not yet
+    listener('change', 'b.md');   // re-arms: must extend the window
+    vi.advanceTimersByTime(60);   // 120ms since first, but only 60ms since last → no fire yet
+    expect(cb).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(40);   // now 100ms since last
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0].files.sort()).toEqual(['a.md', 'b.md']);
+    vi.useRealTimers();
+  });
+
+  // 153:17 — the fs.watch-throws catch returns a real disposable ({close(){}}), not
+  // an empty body. A close() must exist and be callable.
+  test('fs.watch throwing returns a disposable whose close() is a function', () => {
+    const fs = { ...mockFs(), watch: () => { throw new Error('EMFILE'); } };
+    const h = createDocumentStore({ fs, path: path.posix }).watch('/v', () => {});
+    expect(typeof h.close).toBe('function');
+    expect(() => h.close()).not.toThrow();
+  });
+
+  // 156:28 — disposable close(): `if (timer) clearTimeout(timer)` then watcher.close().
+  test('close() clears a pending timer AND closes the watcher (both branches)', () => {
+    vi.useFakeTimers();
+    let listener;
+    const watcher = { close: vi.fn() };
+    const fs = { ...mockFs(), watch: vi.fn((r, o, cb) => { listener = cb; return watcher; }) };
+    const cb = vi.fn();
+    const h = createDocumentStore({ fs, path: path.posix }).watch('/v', cb, { debounceMs: 100 });
+    listener('change', 'a.md'); // arms a timer
+    h.close();
+    expect(watcher.close).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(200); // the timer was cleared → cb never fires
+    expect(cb).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+  test('close() with no pending timer still closes the watcher (timer falsy branch)', () => {
+    const watcher = { close: vi.fn() };
+    const fs = { ...mockFs(), watch: vi.fn(() => watcher) };
+    const h = createDocumentStore({ fs, path: path.posix }).watch('/v', () => {});
+    h.close(); // no event fired → timer stayed null
+    expect(watcher.close).toHaveBeenCalledTimes(1);
+  });
+});

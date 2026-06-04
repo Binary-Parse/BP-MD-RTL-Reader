@@ -69,4 +69,44 @@ describe('update:check (T-Q6)', () => {
     await setup(null); // null is NOT replaced by the destructuring default (only undefined is)
     expect(await handler()).toEqual({ error: 'unsupported', current: '1.0.0' });
   });
+
+  // L23 + L369: the exact GitHub releases URL + the precise request headers.
+  test('GETs the exact releases manifest URL with Accept + User-Agent headers', async () => {
+    const fetchFn = vi.fn(() => Promise.resolve(okJson({ tag_name: 'v1.0.0' })));
+    await setup(fetchFn);
+    await handler();
+    const [url, opts] = fetchFn.mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest');
+    expect(opts.headers).toEqual({ Accept: 'application/vnd.github+json', 'User-Agent': 'BP-MD-RTL-Reader' });
+  });
+
+  // L376: `.replace(/^v/i, '')` strips ONLY a LEADING v. A tag whose FIRST 'v' is
+  // NOT at position 0 must be left untouched — kills the `/^v/i` → `/v/i` mutant,
+  // which (un-anchored) would strip that interior 'v'.
+  test('a tag with NO leading v but an interior v is left untouched (anchor required)', async () => {
+    await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: '2.0.0-rev1' }))));
+    // `/^v/i`: no leading v → unchanged '2.0.0-rev1'. `/v/i`: would strip the v in "rev".
+    expect((await handler()).latest).toBe('2.0.0-rev1');
+  });
+  // Plus the common leading-v case still works.
+  test('a leading v IS stripped', async () => {
+    await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: 'v3.1.0' }))));
+    expect((await handler()).latest).toBe('3.1.0');
+  });
+
+  // L378: `(data && data.html_url) || ''` — a release with NO html_url yields url:''.
+  test('release with no html_url → url is the empty string (not undefined)', async () => {
+    await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: 'v2.0.0' }))));
+    const r = await handler();
+    expect(r.updateAvailable).toBe(true);
+    expect(r.url).toBe('');
+  });
+
+  // L378: compareVersions(...) > 0 — an EQUAL version is not "available" (boundary).
+  test('exactly-equal version → updateAvailable:false (kills the > 0 boundary mutant)', async () => {
+    await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: 'v1.0.0', html_url: 'https://x' }))));
+    const r = await handler();
+    expect(r.updateAvailable).toBe(false);
+    expect(r.url).toBe('https://x');
+  });
 });

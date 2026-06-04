@@ -77,6 +77,23 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     expect(await set({}, 42)).toEqual({ error: 'invalid' });
   });
 
+  // L307: `if (res && res.ok) currentSettings = merged` — a FAILED save must NOT
+  // update the in-memory currentSettings (so settings:get still returns the prior
+  // value). Kills the forced-true / `||` / dropped-guard mutants.
+  test('a FAILED save leaves currentSettings unchanged (settings:get returns the prior value)', async () => {
+    // First, a successful save establishes a known theme.
+    expect(await set({}, { theme: 'ink' })).toEqual({ ok: true });
+    expect((await get()).theme).toBe('ink');
+
+    // Now make the atomic write fail so settingsStore.save returns a non-ok result.
+    fsMock.writeFileSync = vi.fn(() => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); });
+    const res = await set({}, { theme: 'sepia' });
+    expect(res.ok).not.toBe(true); // save reported failure
+
+    // currentSettings must still hold the LAST successful value, not 'sepia'.
+    expect((await get()).theme).toBe('ink');
+  });
+
   test('settings:set sanitizes/migrates (invalid mode → default, zoom clamped, junk dropped)', async () => {
     await set({}, { editorMode: 'bogus', zoomFactor: 99, evil: true });
     const got = await get();
@@ -125,8 +142,23 @@ describe('window geometry restore on launch (EC-D2)', () => {
     const opts = el.BrowserWindow.mock.calls[0][0];
     expect(opts.x).toBeUndefined();
     expect(opts.y).toBeUndefined();
+    // L433/L434: when bounds.x/y are null the `{ x } : {}` spread must contribute
+    // NOTHING — the key must be ABSENT, not present-with-undefined (kills the
+    // ConditionalExpression→true mutant that would always spread the key).
+    expect('x' in opts).toBe(false);
+    expect('y' in opts).toBe(false);
     expect(opts.width).toBe(1000);
     expect(opts.height).toBe(700);
+  });
+
+  test('restored on-screen bounds DO include x/y keys (proves the spread is conditional)', async () => {
+    const fs = memFs({ [SETTINGS_FILE]: JSON.stringify({ window: { x: 100, y: 80, w: 1000, h: 700 } }) });
+    const el = await boot(fs);
+    const opts = el.BrowserWindow.mock.calls[0][0];
+    expect('x' in opts).toBe(true);
+    expect('y' in opts).toBe(true);
+    expect(opts.x).toBe(100);
+    expect(opts.y).toBe(80);
   });
 
   test('maximizes the window when saved maximized', async () => {

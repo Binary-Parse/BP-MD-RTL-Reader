@@ -81,3 +81,45 @@ test.describe('[T-F13] Edit menu / commands act on the CM6 editor', () => {
     expect(await cmValue(page)).toBe('base X');
   });
 });
+
+test.describe('[T-F13] Obsidian-style list/blockquote continuation on Enter', () => {
+  test('Enter continues a bullet list with the same marker', async ({ page }) => {
+    await open(page, '- one');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('two');
+    expect(await cmValue(page)).toBe('- one\n- two');
+  });
+
+  test('Enter continues a blockquote', async ({ page }) => {
+    await open(page, '> quote');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('more');
+    expect(await cmValue(page)).toBe('> quote\n> more');
+  });
+
+  test('Enter increments an ordered list', async ({ page }) => {
+    await open(page, '1. first');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('second');
+    expect(await cmValue(page)).toBe('1. first\n2. second');
+  });
+
+  test('Enter continues a task item with a fresh unchecked box', async ({ page }) => {
+    await open(page, '- [x] done');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('next');
+    expect(await cmValue(page)).toBe('- [x] done\n- [ ] next');
+  });
+
+  test('Enter on an EMPTY item exits the list (removes the marker)', async ({ page }) => {
+    await open(page, '- ');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('plain');
+    expect(await cmValue(page)).toBe('\nplain');
+  });
+});

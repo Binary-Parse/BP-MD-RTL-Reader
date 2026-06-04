@@ -187,6 +187,76 @@ describe('fs:readVault', () => {
     expect(sent[1].folderPath).toBe('/watch-vault');
   });
 
+  // ── L274: vault:changed only fires for a LIVE sender (sender && !isDestroyed) ──
+  test('a destroyed sender → vault:changed is NOT sent (kills && → || and forced-true)', async () => {
+    await authorize('/watch-dead');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    const sender = { isDestroyed: vi.fn(() => true), send: vi.fn() };
+    await readVault({ sender }, '/watch-dead');
+    vi.useFakeTimers();
+    try {
+      mockFs._watchCb('change', 'x.md');
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    // isDestroyed() true → the guard short-circuits → no send (a || mutant would
+    // either throw or send; a forced-true would send).
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  // ── L271: opening a second vault closes the PRIOR watcher first ──
+  test('a second successful read closes the previous vault watcher (no fs.watch leak)', async () => {
+    await authorize('/watch-first');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    await readVault({ sender: mockElectron._mockWin.webContents }, '/watch-first');
+    const firstClose = mockFs._watchClose; // captured handle's close()
+
+    await authorize('/watch-second');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    await readVault({ sender: mockElectron._mockWin.webContents }, '/watch-second');
+
+    // The first watcher must have been closed when the second read replaced it.
+    expect(firstClose).toHaveBeenCalledTimes(1);
+  });
+
+  // ── L455: closing the window closes the live vault watcher (T-B9 teardown) ──
+  test('the window "close" handler closes the active vault watcher', async () => {
+    await authorize('/watch-onclose');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    await readVault({ sender: mockElectron._mockWin.webContents }, '/watch-onclose');
+    const closeFn = mockFs._watchClose;
+    // The win 'close' listener registered in createWindow().
+    const onClose = mockElectron._mockWin.on.mock.calls.find((c) => c[0] === 'close')?.[1];
+    expect(typeof onClose).toBe('function');
+    onClose();
+    expect(closeFn).toHaveBeenCalledTimes(1);
+  });
+
+  // ── L549: app 'before-quit' closes the active vault watcher (no fs.watch leak) ──
+  test('app "before-quit" closes the active vault watcher', async () => {
+    await authorize('/watch-quit');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    await readVault({ sender: mockElectron._mockWin.webContents }, '/watch-quit');
+    const closeFn = mockFs._watchClose;
+    const onQuit = mockElectron.app.on.mock.calls.find((c) => c[0] === 'before-quit')?.[1];
+    expect(typeof onQuit).toBe('function');
+    onQuit();
+    expect(closeFn).toHaveBeenCalledTimes(1);
+  });
+
+  // ── L553: app 'window-all-closed' closes the active vault watcher ──
+  test('app "window-all-closed" closes the active vault watcher', async () => {
+    await authorize('/watch-allclosed');
+    mockFs.promises.readdir.mockResolvedValueOnce([]);
+    await readVault({ sender: mockElectron._mockWin.webContents }, '/watch-allclosed');
+    const closeFn = mockFs._watchClose;
+    const onAllClosed = mockElectron.app.on.mock.calls.find((c) => c[0] === 'window-all-closed')?.[1];
+    expect(typeof onAllClosed).toBe('function');
+    onAllClosed();
+    expect(closeFn).toHaveBeenCalledTimes(1);
+  });
+
   // ── L132 + L134-136: readdir + too-many-files boundary ──
   test('readdir is called with the folderPath and {withFileTypes:true}', async () => {
     await authorize('/readdir-vault');

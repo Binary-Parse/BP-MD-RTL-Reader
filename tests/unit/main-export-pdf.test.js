@@ -8,7 +8,7 @@
  *
  * Drives the real bootstrap({ electron, fs, proc }) via the shared harness seam.
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { bootstrap } from '../../main.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
@@ -132,5 +132,120 @@ describe('export:pdf (T-B6)', () => {
     const res = await handler({}, { html: HTML, defaultName: 'note.pdf' });
     expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[0]).toBeNull(); // parent passed through as null
     expect(res).toEqual({ ok: true, path: '/out/note.pdf' });
+  });
+
+  // L326: defaultName fallback — a missing/non-string defaultName → 'document.pdf'.
+  test('missing defaultName → save dialog defaultPath is "document.pdf"', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
+    await handler({}, { html: HTML }); // no defaultName
+    expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[1].defaultPath).toBe('document.pdf');
+  });
+  test('empty-string defaultName → falls back to "document.pdf" (kills the && short-circuit mutant)', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
+    await handler({}, { html: HTML, defaultName: '' });
+    expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[1].defaultPath).toBe('document.pdf');
+  });
+  test('non-string defaultName → "document.pdf"', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
+    await handler({}, { html: HTML, defaultName: 123 });
+    expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[1].defaultPath).toBe('document.pdf');
+  });
+
+  // L328: the save-dialog title literal.
+  test('save dialog title is exactly "Export PDF"', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
+    await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[1].title).toBe('Export PDF');
+  });
+
+  // L332: `result.canceled || !result.filePath` — NOT canceled but an empty filePath
+  // must STILL be treated as cancel (kills the || → && mutant).
+  test('not canceled but empty filePath → { canceled: true }, nothing rendered', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '' });
+    electron._mockWin.webContents.printToPDF.mockClear();
+    const res = await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    expect(res).toEqual({ canceled: true });
+    expect(electron._mockWin.webContents.printToPDF).not.toHaveBeenCalled();
+  });
+
+  // L341: the temp html is written with the 'utf8' encoding.
+  test('temp html is written with utf8 encoding', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
+    await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    const tmpWrite = fs.promises.writeFile.mock.calls[0];
+    expect(tmpWrite[2]).toBe('utf8');
+  });
+
+  // L344: contextIsolation:true on the offscreen window (not asserted elsewhere here).
+  test('offscreen window has contextIsolation:true', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
+    await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    const opts = electron.BrowserWindow.mock.calls.at(-1)[0];
+    expect(opts.webPreferences.contextIsolation).toBe(true);
+  });
+
+  // L346: setWindowOpenHandler returns exactly { action: 'deny' } (kills ()=>undefined).
+  test('offscreen window-open handler denies all popups ({ action: "deny" })', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
+    await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    const denyHandler = electron._mockWin.webContents.setWindowOpenHandler.mock.calls.at(-1)[0];
+    expect(typeof denyHandler).toBe('function');
+    expect(denyHandler()).toEqual({ action: 'deny' });
+  });
+
+  // L354: `if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close()` — when the offscreen
+  // window is ALREADY destroyed, close() must NOT be called again (kills &&→|| and
+  // the forced-true mutant, which would call close on a destroyed window).
+  test('a destroyed offscreen window is not close()d again in the finally', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
+    electron._mockWin.webContents.printToPDF.mockRejectedValueOnce(new Error('boom'));
+    electron._mockWin.isDestroyed.mockReturnValue(true); // window reports destroyed
+    electron._mockWin.close.mockClear();
+    const res = await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    expect(res).toEqual({ error: 'export-failed' });
+    expect(electron._mockWin.close).not.toHaveBeenCalled();
+    electron._mockWin.isDestroyed.mockReturnValue(false); // restore for other tests
+  });
+
+  // L43-44 (withTimeout): a loadFile that NEVER resolves must be rejected by the
+  // 30s timeout → { error: "export-failed" }, and the window is still cleaned up.
+  // Kills the setTimeout(()=>reject) ArrowFunction/BlockStatement mutants (without
+  // the reject the race would hang forever, timing the test out).
+  test('a hung loadFile is bounded by the 30s timeout → export-failed', async () => {
+    vi.useFakeTimers();
+    try {
+      electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
+      // loadFile never resolves → only the timeout can settle the race.
+      electron._mockWin.loadFile.mockReturnValueOnce(new Promise(() => {}));
+      const p = handler({}, { html: HTML, defaultName: 'n.pdf' });
+      // Let the temp-html writeFile microtask flush, then trip the 30s timer.
+      await vi.advanceTimersByTimeAsync(30000);
+      const res = await p;
+      expect(res).toEqual({ error: 'export-failed' });
+      expect(electron._mockWin.close).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // L338: the temp filename embeds a monotonically-INCREASING export sequence
+  // (pdfExportSeq++). Two exports → two distinct temp paths whose seq suffix grows.
+  test('each export uses a distinct temp filename (sequence increments, not decrements)', async () => {
+    electron.dialog.showSaveDialog
+      .mockResolvedValueOnce({ canceled: false, filePath: '/out/a.pdf' })
+      .mockResolvedValueOnce({ canceled: false, filePath: '/out/b.pdf' });
+    await handler({}, { html: HTML, defaultName: 'a.pdf' });
+    const tmp1 = fs.promises.writeFile.mock.calls.find((c) => /bpmd-export-.*\.html$/.test(String(c[0])))[0];
+    fs.promises.writeFile.mockClear();
+    await handler({}, { html: HTML, defaultName: 'b.pdf' });
+    const tmp2 = fs.promises.writeFile.mock.calls.find((c) => /bpmd-export-.*\.html$/.test(String(c[0])))[0];
+    expect(tmp1).not.toBe(tmp2);
+    // Capture the SIGNED trailing sequence (a `--` mutant would make it negative).
+    const seqOf = (p) => Number(String(p).match(/-(-?\d+)\.html$/)[1]);
+    expect(seqOf(tmp1)).toBeGreaterThanOrEqual(0);
+    // pdfExportSeq++ → the 2nd seq is strictly greater AND non-negative;
+    // a `--` mutant yields a negative 2nd seq → this fails.
+    expect(seqOf(tmp2)).toBeGreaterThan(seqOf(tmp1));
+    expect(seqOf(tmp2)).toBeGreaterThanOrEqual(0);
   });
 });

@@ -108,7 +108,7 @@ test.describe('Sidebar integration tests', () => {
   });
 
   test('toggle sidebar hides and shows sidebar', async ({ page }) => {
-    // Sidebar should be visible initially
+    // Sidebar should be visible initially (browser/dev default; the packaged app opens collapsed)
     await expect(page.locator('.sidebar')).toBeVisible();
 
     // Toggle via keyboard shortcut Ctrl+\

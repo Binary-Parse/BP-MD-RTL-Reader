@@ -773,6 +773,16 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .tool-btn:hover { background: var(--paper-edge); color: var(--ink); }
 .tool-btn.active { background: var(--accent); color: white; }
+/* Active-state: the caret is inside this construct (bold/heading/list/quote/code). Tinted, not
+   solid, so it reads as "currently applied" without looking like a pressed/disabled control. */
+.tool-btn.is-active { background: var(--accent-soft); color: var(--accent); }
+.tool-btn.is-active:hover { background: var(--accent); color: white; }
+/* Table controls — a slim secondary strip revealed only when the caret is in a table. */
+.table-controls { display: none; align-items: center; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--paper-edge); background: var(--paper); }
+.table-controls.show { display: flex; }
+.table-controls .tc-label { font-size: 0.6875rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mute); margin-inline-end: 4px; }
+.tc-btn { font: inherit; font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--paper-edge); border-radius: 5px; background: var(--paper-deep); color: var(--ink); cursor: pointer; }
+.tc-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 5px; }
 .tool-spacer { flex: 1; }
 
@@ -1023,6 +1033,13 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .fn-item { margin: 4px 0; }
 .fn-back { color: var(--accent); text-decoration: none; margin-inline-start: 4px; }
 .fn-back:hover { text-decoration: underline; }
+
+/* Custom inline marks — the rendered preview (#noteContent) and the CM6 editor surface
+   (.cm-* decoration classes from inline-marks-preview.js) share the same look. */
+#noteContent mark, .cm-mount .cm-hl { background: var(--accent-soft); color: inherit; padding: 0 2px; border-radius: 2px; }
+#noteContent sub, .cm-mount .cm-sub { vertical-align: sub; font-size: 0.75em; line-height: 0; }
+#noteContent sup, .cm-mount .cm-sup { vertical-align: super; font-size: 0.75em; line-height: 0; }
+#noteContent u, .cm-mount .cm-u { text-decoration: underline; }
 
 .editor blockquote {
   border-inline-start: 3px solid var(--accent);
@@ -1667,6 +1684,14 @@ html.electron .tab-add {
     <symbol id="ic-bold" viewBox="0 0 24 24"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></symbol>
     <symbol id="ic-italic" viewBox="0 0 24 24"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></symbol>
     <symbol id="ic-strike" viewBox="0 0 24 24"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></symbol>
+    <symbol id="ic-underline" viewBox="0 0 24 24"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></symbol>
+    <symbol id="ic-highlighter" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+    <symbol id="ic-subscript" viewBox="0 0 24 24"><path d="m4 5 8 8"/><path d="m12 5-8 8"/><path d="M20 19h-4c0-1.5.44-2 1.5-2.5S20 15.33 20 14c0-.47-.17-.93-.48-1.29a2.11 2.11 0 0 0-2.62-.44c-.42.24-.74.62-.9 1.07"/></symbol>
+    <symbol id="ic-superscript" viewBox="0 0 24 24"><path d="m4 19 8-8"/><path d="m12 19-8-8"/><path d="M20 12h-4c0-1.5.442-2 1.5-2.5S20 8.334 20 7.002c0-.472-.17-.93-.484-1.29a2.105 2.105 0 0 0-2.617-.436c-.42.239-.738.614-.899 1.06"/></symbol>
+    <symbol id="ic-eraser" viewBox="0 0 24 24"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></symbol>
+    <symbol id="ic-asterisk" viewBox="0 0 24 24"><path d="M12 6v12"/><path d="M17.196 9 6.804 15"/><path d="m6.804 9 10.392 6"/></symbol>
+    <symbol id="ic-indent-increase" viewBox="0 0 24 24"><path d="M21 5H11"/><path d="M21 12H11"/><path d="M21 19H11"/><path d="m3 8 4 4-4 4"/></symbol>
+    <symbol id="ic-indent-decrease" viewBox="0 0 24 24"><path d="M21 5H11"/><path d="M21 12H11"/><path d="M21 19H11"/><path d="m7 8-4 4 4 4"/></symbol>
     <symbol id="ic-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
     <symbol id="ic-code-block" viewBox="0 0 24 24"><path d="m10 9-3 3 3 3"/><path d="m14 15 3-3-3-3"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
     <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
@@ -1828,17 +1853,25 @@ html.electron .tab-add {
         <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" aria-label="Bold"><svg class="ic"><use href="#ic-bold"/></svg></button>
         <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" aria-label="Italic"><svg class="ic"><use href="#ic-italic"/></svg></button>
         <button class="tool-btn" id="tbStrike" title="Strikethrough" aria-label="Strikethrough"><svg class="ic"><use href="#ic-strike"/></svg></button>
+        <button class="tool-btn" id="tbUnderline" title="Underline" aria-label="Underline"><svg class="ic"><use href="#ic-underline"/></svg></button>
         <button class="tool-btn" id="tbCode" title="Inline code" aria-label="Inline code"><svg class="ic"><use href="#ic-code"/></svg></button>
+        <button class="tool-btn" id="tbHighlight" title="Highlight (==)" aria-label="Highlight"><svg class="ic"><use href="#ic-highlighter"/></svg></button>
+        <button class="tool-btn" id="tbSub" title="Subscript (~x~)" aria-label="Subscript"><svg class="ic"><use href="#ic-subscript"/></svg></button>
+        <button class="tool-btn" id="tbSup" title="Superscript (^x^)" aria-label="Superscript"><svg class="ic"><use href="#ic-superscript"/></svg></button>
+        <button class="tool-btn" id="tbClear" title="Clear formatting" aria-label="Clear formatting"><svg class="ic"><use href="#ic-eraser"/></svg></button>
         <span class="tool-divider"></span>
         <button class="tool-btn" id="tbLink" title="Link" aria-label="Insert link"><svg class="ic"><use href="#ic-link"/></svg></button>
         <button class="tool-btn" id="tbWikilink" title="Wikilink" aria-label="Insert wikilink"><svg class="ic"><use href="#ic-wikilink"/></svg></button>
         <button class="tool-btn" id="tbMath" title="Inline math (KaTeX)" aria-label="Insert inline math"><svg class="ic"><use href="#ic-math"/></svg></button>
+        <button class="tool-btn" id="tbFootnote" title="Footnote" aria-label="Insert footnote"><svg class="ic"><use href="#ic-asterisk"/></svg></button>
         <span class="tool-divider"></span>
         <button class="tool-btn" id="tbQuote" title="Blockquote" aria-label="Blockquote"><svg class="ic"><use href="#ic-quote"/></svg></button>
         <button class="tool-btn" id="tbCallout" title="Callout (> [!NOTE])" aria-label="Insert callout"><svg class="ic"><use href="#ic-callout"/></svg></button>
         <button class="tool-btn" id="tbList" title="Bulleted list" aria-label="Bulleted list"><svg class="ic"><use href="#ic-list"/></svg></button>
         <button class="tool-btn" id="tbListOrdered" title="Numbered list" aria-label="Numbered list"><svg class="ic"><use href="#ic-list-ordered"/></svg></button>
         <button class="tool-btn" id="tbTaskList" title="Task list" aria-label="Task list"><svg class="ic"><use href="#ic-list-checks"/></svg></button>
+        <button class="tool-btn" id="tbOutdent" title="Outdent (Shift+Tab)" aria-label="Outdent"><svg class="ic"><use href="#ic-indent-decrease"/></svg></button>
+        <button class="tool-btn" id="tbIndent" title="Indent (Tab)" aria-label="Indent"><svg class="ic"><use href="#ic-indent-increase"/></svg></button>
         <span class="tool-divider"></span>
         <button class="tool-btn" id="tbCodeBlock" title="Code block" aria-label="Insert code block"><svg class="ic"><use href="#ic-code-block"/></svg></button>
         <button class="tool-btn" id="tbTable" title="Table" aria-label="Insert table"><svg class="ic"><use href="#ic-table"/></svg></button>
@@ -1856,6 +1889,14 @@ html.electron .tab-add {
           <div class="td-item" role="menuitem" data-level="5"><span class="td-h td-h5">H</span>Heading 5</div>
           <div class="td-item" role="menuitem" data-level="6"><span class="td-h td-h6">H</span>Heading 6</div>
         </div>
+      </div>
+      <!-- Table row/column controls — shown only while the caret is inside a table (E). -->
+      <div class="table-controls" id="tableControls" role="toolbar" aria-label="Table controls">
+        <span class="tc-label">Table</span>
+        <button class="tc-btn" id="tcRowAfter" title="Insert row below">+ Row</button>
+        <button class="tc-btn" id="tcRowDelete" title="Delete row">− Row</button>
+        <button class="tc-btn" id="tcColAfter" title="Insert column right">+ Col</button>
+        <button class="tc-btn" id="tcColDelete" title="Delete column">− Col</button>
       </div>
 
       <!-- EC-A2 (T-B9): disk-conflict resolve banner — lives ABOVE the editor so it stays

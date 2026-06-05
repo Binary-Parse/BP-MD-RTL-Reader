@@ -41,6 +41,35 @@ export function configureMarked(marked) {
         const safe = t.target.replace(/['"]/g, '');
         return `<a class="wikilink" data-target="${safe}">${t.alias}</a>`;
       }
+    }, {
+      // Highlight ==text== → <mark> (Typora/Obsidian). Inner is inline-parsed so **bold** etc.
+      // still work inside. Requires non-space right after == so "a == b" stays literal text.
+      name: 'highlight', level: 'inline',
+      start(src) { return src.indexOf('=='); },
+      tokenizer(src) {
+        const m = /^==(?=\S)([\s\S]*?\S)==/.exec(src);
+        if (m) return { type: 'highlight', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+      },
+      renderer(t) { return `<mark>${this.parser.parseInline(t.tokens)}</mark>`; },
+    }, {
+      // Subscript ~text~ (single tilde) → <sub>. The negative lookarounds keep GFM
+      // strikethrough ~~text~~ working (handed off to the core tokenizer).
+      name: 'subscript', level: 'inline',
+      start(src) { const i = src.search(/(?<![~\\])~(?!~)/); return i < 0 ? undefined : i; },
+      tokenizer(src) {
+        const m = /^(?<![~])~(?!~)([^~\s][^~\n]*?)~(?!~)/.exec(src);
+        if (m) return { type: 'subscript', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+      },
+      renderer(t) { return `<sub>${this.parser.parseInline(t.tokens)}</sub>`; },
+    }, {
+      // Superscript ^text^ → <sup> (no spaces inside, e.g. X^2^).
+      name: 'superscript', level: 'inline',
+      start(src) { return src.indexOf('^'); },
+      tokenizer(src) {
+        const m = /^\^([^\^\s]+?)\^/.exec(src);
+        if (m) return { type: 'superscript', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+      },
+      renderer(t) { return `<sup>${this.parser.parseInline(t.tokens)}</sup>`; },
     }]
   });
   // Footnotes (R11): marked core doesn't support GFM footnotes — add them as a

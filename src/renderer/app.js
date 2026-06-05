@@ -16,6 +16,7 @@ import { highlightCode } from './highlight.js';
 import { mathExtension, restoreMath, renderTex } from './math.js';
 import { sanitizeHtml, sanitizeSvg } from './trusted.js';
 import { renderMermaid } from './mermaid.js';
+import { tableEdit } from './table-edit.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
 import { t as tr, localeDirection } from './locale.js';
 import { buildExportDoc as buildExportDocImpl } from './export.js';
@@ -1944,6 +1945,8 @@ async function initCM6Editor() {
     renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
     renderMath: renderCmMath,   // T-F13 × F9: inline KaTeX rendering in the single CM6 surface
     onWikilink: navWikilink,    // R09: clicking a rendered [[wikilink]] in the editor navigates
+    onSelectionChange: updateToolbarActiveState, // highlight toolbar buttons for the caret's construct
+    onTab: tableTab,            // Tab/Shift-Tab navigate table cells when inside a table
   });
   window.__cmActive = true;
   // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane,
@@ -2076,36 +2079,65 @@ function replaceInTextarea(ta, start, end, text) {
     ta.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
-// Toggle an inline wrap (bold/italic/strike/code/math). If the selection is ALREADY
-// wrapped — either the markers are inside the selection (`**world**`) or immediately
-// surround it (markers just outside a word-select) — clicking again UNWRAPS it instead
-// of stacking another pair. Otherwise it wraps (inserting a 'text' placeholder when the
-// selection is empty). Fixes the "**** stacks forever" defect.
+// Word boundaries around `pos` in `v`, excluding markdown punctuation so a caret in a word
+// expands to the word (not adjacent markers). null when there's no word at the caret.
+function wordBounds(v, pos) {
+  const isW = (c) => !!c && !/[\s`*_~$=\[\]()<>#!|]/.test(c);
+  if (!isW(v[pos]) && !isW(v[pos - 1])) return null;
+  let s = pos, e = pos;
+  while (s > 0 && isW(v[s - 1])) s--;
+  while (e < v.length && isW(v[e])) e++;
+  return s < e ? { start: s, end: e } : null;
+}
+// Toggle an inline wrap (bold/italic/strike/code/math/highlight/sub/sup). Best-practice
+// semantics (verified via the markdown-toolbar research): re-applying UNWRAPS (markers inside
+// OR just outside the selection); an empty selection expands to the surrounding WORD (else
+// inserts empty delimiters with the caret between them); a multi-line selection wraps each
+// non-blank line's content individually (inline marks can't span newlines). A selection stays
+// selected afterward.
 function wrapSelection(left, right) {
   if (cmAdapter) { // T-F13: route through the active EditorPort, NOT the hidden textarea
     cmAdapter.focus();
-    const { start, end } = cmAdapter.getSelection();
+    let { start, end } = cmAdapter.getSelection();
     const v = cmAdapter.getValue();
+    if (start === end) { const w = wordBounds(v, start); if (w) { start = w.start; end = w.end; } }
     const sel = v.slice(start, end);
-    // already wrapped, markers INSIDE the selection → unwrap
+    // multi-line → per-line wrap/unwrap
+    if (sel.includes('\n')) {
+      const lines = sel.split('\n');
+      const ne = lines.filter((l) => l.trim() !== '');
+      const wrapped = (core) => core.length >= left.length + right.length && core.startsWith(left) && core.endsWith(right);
+      const allWrapped = ne.length > 0 && ne.every((l) => wrapped(l.trim()));
+      const out = lines.map((l) => {
+        if (l.trim() === '') return l;
+        const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(l); const lead = m[1], core = m[2], trail = m[3];
+        return lead + (allWrapped ? core.slice(left.length, core.length - right.length) : left + core + right) + trail;
+      }).join('\n');
+      cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(out);
+      cmAdapter.setSelection({ start, end: start + out.length });
+      return;
+    }
+    // markers INSIDE the selection → unwrap
     if (sel.length >= left.length + right.length && sel.startsWith(left) && sel.endsWith(right)) {
       const inner = sel.slice(left.length, sel.length - right.length);
-      cmAdapter.setSelection({ start, end });
-      cmAdapter.replaceSelection(inner);
+      cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(inner);
       cmAdapter.setSelection({ start, end: start + inner.length });
       return;
     }
-    // already wrapped, markers immediately OUTSIDE the selection → unwrap
+    // markers just OUTSIDE the selection → unwrap
     if (v.slice(start - left.length, start) === left && v.slice(end, end + right.length) === right) {
       cmAdapter.setSelection({ start: start - left.length, end: end + right.length });
       cmAdapter.replaceSelection(sel);
       cmAdapter.setSelection({ start: start - left.length, end: start - left.length + sel.length });
       return;
     }
-    const body = sel || 'text';
-    cmAdapter.setSelection({ start, end });
-    cmAdapter.replaceSelection(left + body + right);
-    cmAdapter.setSelection({ start: start + left.length, end: start + left.length + body.length });
+    if (!sel) { // no word at caret → empty delimiters, caret between them
+      cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(left + right);
+      cmAdapter.setSelection({ start: start + left.length });
+      return;
+    }
+    cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(left + sel + right);
+    cmAdapter.setSelection({ start: start + left.length, end: start + left.length + sel.length });
     return;
   }
   ensureSourceFocus();
@@ -2151,48 +2183,81 @@ function lineStart(prefix) {
   replaceInTextarea(ta, ls, ls, prefix);
   ta.selectionStart = ta.selectionEnd = start + prefix.length;
 }
-// Insert a block on its OWN line (callout / table / hr / image), cmAdapter-aware. Prefixes a
-// newline if the cursor isn't already at line start so the block parses as its own element.
+// Insert a block (callout / table / hr / image) on its OWN line — never splitting the caret's
+// line mid-word (the prior bug: "hel|lo" + Table → "hel\n<table>\nlo"). If the caret is on a
+// blank line the block lands there; otherwise it goes on a fresh, blank-line-separated line
+// AFTER the current line. The caret is placed at the start of the inserted block.
 function insertBlock(text) {
+  const block = String(text).replace(/\n+$/, '');
   if (cmAdapter) {
     cmAdapter.focus();
-    const { start, end } = cmAdapter.getSelection();
-    const before = cmAdapter.getValue().slice(0, start);
-    const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
-    cmAdapter.setSelection({ start, end });
-    cmAdapter.replaceSelection(pre + text);
+    const v = cmAdapter.getValue();
+    const { end } = cmAdapter.getSelection();
+    const lineStartIdx = v.slice(0, end).lastIndexOf('\n') + 1;
+    let lineEnd = v.indexOf('\n', end); if (lineEnd === -1) lineEnd = v.length;
+    if (v.slice(lineStartIdx, lineEnd).trim() === '') {
+      cmAdapter.setSelection({ start: lineStartIdx, end: lineEnd });
+      cmAdapter.replaceSelection(block);
+      cmAdapter.setSelection({ start: lineStartIdx });
+    } else {
+      cmAdapter.setSelection({ start: lineEnd, end: lineEnd });
+      cmAdapter.replaceSelection('\n\n' + block);
+      cmAdapter.setSelection({ start: lineEnd + 2 });
+    }
     return;
   }
   ensureSourceFocus();
   const ta = srcTextarea;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const before = ta.value.slice(0, start);
-  const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
-  replaceInTextarea(ta, start, end, pre + text);
-  ta.selectionStart = ta.selectionEnd = start + pre.length + text.length;
+  const start = ta.selectionStart;
+  let lineEnd = ta.value.indexOf('\n', start); if (lineEnd === -1) lineEnd = ta.value.length;
+  const lineStartIdx = ta.value.slice(0, start).lastIndexOf('\n') + 1;
+  if (ta.value.slice(lineStartIdx, lineEnd).trim() === '') {
+    replaceInTextarea(ta, lineStartIdx, lineEnd, block);
+    ta.selectionStart = ta.selectionEnd = lineStartIdx;
+  } else {
+    replaceInTextarea(ta, lineEnd, lineEnd, '\n\n' + block);
+    ta.selectionStart = ta.selectionEnd = lineEnd + 2;
+  }
 }
-// Fenced code block wrapping the selection (or empty), on its own line; cursor lands inside.
+// Fenced code block on its OWN line. With a selection, fence it in place (caret start at a
+// line boundary so it never splits text); empty, drop an empty fence on a fresh line after the
+// current one (or on the current blank line) with the caret inside, ready to type.
 function insertCodeBlock() {
   if (cmAdapter) {
     cmAdapter.focus();
+    const v = cmAdapter.getValue();
     const { start, end } = cmAdapter.getSelection();
-    const body = cmAdapter.getValue().slice(start, end);
-    const before = cmAdapter.getValue().slice(0, start);
-    const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
-    cmAdapter.setSelection({ start, end });
-    cmAdapter.replaceSelection(pre + '```\n' + body + '\n```\n');
-    const pos = start + pre.length + 4; // just after the opening "```\n"
-    cmAdapter.setSelection({ start: pos, end: pos + body.length });
+    const body = v.slice(start, end);
+    if (body) {
+      const atLineStart = start === 0 || v[start - 1] === '\n';
+      const lead = atLineStart ? '' : '\n';
+      cmAdapter.setSelection({ start, end });
+      cmAdapter.replaceSelection(lead + '```\n' + body + '\n```');
+      const pos = start + lead.length + 4; // after the opening ```\n
+      cmAdapter.setSelection({ start: pos, end: pos + body.length });
+    } else {
+      const lineStartIdx = v.slice(0, start).lastIndexOf('\n') + 1;
+      let lineEnd = v.indexOf('\n', start); if (lineEnd === -1) lineEnd = v.length;
+      if (v.slice(lineStartIdx, lineEnd).trim() === '') {
+        cmAdapter.setSelection({ start: lineStartIdx, end: lineEnd });
+        cmAdapter.replaceSelection('```\n\n```');
+        cmAdapter.setSelection({ start: lineStartIdx + 4 });
+      } else {
+        cmAdapter.setSelection({ start: lineEnd, end: lineEnd });
+        cmAdapter.replaceSelection('\n\n```\n\n```');
+        cmAdapter.setSelection({ start: lineEnd + 2 + 4 });
+      }
+    }
     return;
   }
   ensureSourceFocus();
   const ta = srcTextarea;
   const start = ta.selectionStart, end = ta.selectionEnd;
   const body = ta.value.slice(start, end);
-  const before = ta.value.slice(0, start);
-  const pre = (before.length && !before.endsWith('\n')) ? '\n' : '';
-  replaceInTextarea(ta, start, end, pre + '```\n' + body + '\n```\n');
-  const pos = start + pre.length + 4;
+  const atLineStart = start === 0 || ta.value[start - 1] === '\n';
+  const lead = atLineStart ? '' : '\n';
+  replaceInTextarea(ta, start, end, lead + '```\n' + body + '\n```');
+  const pos = start + lead.length + 4;
   ta.selectionStart = pos; ta.selectionEnd = pos + body.length;
 }
 // Operate on EVERY line the selection spans: fn(lines[]) -> lines[]. Replaces that block
@@ -2275,8 +2340,106 @@ function toggleList(kind) {
   });
 }
 
+// Strip inline formatting markers (**bold**, *em*, ~~strike~~, `code`, ==hl==, <u>, ~sub~, ^sup^)
+// from the selection (or the word at the caret). Pairs only; leaves prose untouched.
+function clearFormatting() {
+  const strip = (s) => s
+    .replace(/\*\*([\s\S]*?)\*\*/g, '$1').replace(/__([\s\S]*?)__/g, '$1')
+    .replace(/\*([\s\S]*?)\*/g, '$1').replace(/(?<!\w)_([\s\S]*?)_(?!\w)/g, '$1')
+    .replace(/~~([\s\S]*?)~~/g, '$1').replace(/==([\s\S]*?)==/g, '$1')
+    .replace(/`([^`]*?)`/g, '$1').replace(/<\/?u>/gi, '')
+    .replace(/\^([^\^\s]+?)\^/g, '$1').replace(/~([^~\n]+?)~/g, '$1');
+  if (cmAdapter) {
+    cmAdapter.focus();
+    let { start, end } = cmAdapter.getSelection();
+    const v = cmAdapter.getValue();
+    if (start === end) { const w = wordBounds(v, start); if (w) { start = w.start; end = w.end; } }
+    const cleaned = strip(v.slice(start, end));
+    cmAdapter.setSelection({ start, end });
+    cmAdapter.replaceSelection(cleaned);
+    cmAdapter.setSelection({ start, end: start + cleaned.length });
+    return;
+  }
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const cleaned = strip(ta.value.slice(ta.selectionStart, ta.selectionEnd));
+  replaceInTextarea(ta, ta.selectionStart, ta.selectionEnd, cleaned);
+}
+window.clearFormatting = clearFormatting;
+
+// Insert a numbered footnote: a [^N] reference at the caret + a "[^N]: " definition appended at
+// the end of the document, with the caret left after the colon to type the note (R11).
+function insertFootnote() {
+  if (!cmAdapter) { insertText('[^1]', ''); return; }
+  cmAdapter.focus();
+  const v = cmAdapter.getValue();
+  const used = [...v.matchAll(/\[\^(\d+)\]/g)].map((m) => parseInt(m[1], 10));
+  const n = (used.length ? Math.max(...used) : 0) + 1;
+  const { start, end } = cmAdapter.getSelection();
+  cmAdapter.setSelection({ start, end });
+  cmAdapter.replaceSelection(`[^${n}]`);
+  const v2 = cmAdapter.getValue();
+  const sep = v2.endsWith('\n\n') ? '' : v2.endsWith('\n') ? '\n' : '\n\n';
+  cmAdapter.setSelection({ start: v2.length, end: v2.length });
+  cmAdapter.replaceSelection(`${sep}[^${n}]: `);
+  cmAdapter.setSelection({ start: cmAdapter.getValue().length });
+}
+window.insertFootnote = insertFootnote;
+
+// Interactive table editing: apply a structural op (rowAfter/rowBefore/rowDelete/colAfter/
+// colBefore/colDelete/nextCell/prevCell) to the table at the caret. Returns true if a table was
+// found + edited. Pure engine in table-edit.js; here we just splice the result into CM6.
+function tableOp(kind) {
+  if (!cmAdapter) return false;
+  const r = tableEdit(cmAdapter.getValue(), cmAdapter.getSelection().start, kind);
+  if (!r) return false;
+  cmAdapter.focus();
+  cmAdapter.setSelection({ start: r.from, end: r.to });
+  cmAdapter.replaceSelection(r.md);
+  cmAdapter.setSelection({ start: r.caret });
+  return true;
+}
+window.tableOp = tableOp;
+// Tab handler bound in the CM6 keymap: navigate table cells when inside a table, else let Tab
+// fall through to indentWithTab. `shift` = previous cell.
+function tableTab(shift) { return tableOp(shift ? 'prevCell' : 'nextCell'); }
+
+// Indent (+1) / outdent (-1) the spanned lines by two spaces — for nesting list items (Tab /
+// Shift+Tab also do this via CM6's indentWithTab; these are the toolbar equivalents).
+function indentSelection(delta) {
+  applyBlock((lines) => lines.map((l) => {
+    if (l.trim() === '') return l;
+    return delta > 0 ? '  ' + l : l.replace(/^( {1,2}|\t)/, '');
+  }));
+}
+window.indentSelection = indentSelection;
+
 const TABLE_TEMPLATE = '| Column | Column |\n| --- | --- |\n| Cell | Cell |\n';
 const CALLOUT_TEMPLATE = '> [!NOTE] Title\n> Body text\n';
+
+// Highlight toolbar buttons for the construct(s) the caret is currently inside (active-state).
+// Driven by cmAdapter.getActiveMarks() on every selection/doc change (wired in initCM6Editor).
+function updateToolbarActiveState() {
+  if (!cmAdapter || typeof cmAdapter.getActiveMarks !== 'function') return;
+  const m = cmAdapter.getActiveMarks();
+  const set = (id, on) => { const el = $(id); if (el) el.classList.toggle('is-active', !!on); };
+  set('tbBold', m.has('bold'));
+  set('tbItalic', m.has('italic'));
+  set('tbStrike', m.has('strike'));
+  set('tbCode', m.has('code'));
+  set('tbQuote', m.has('quote'));
+  set('tbList', m.has('bullet') && !m.has('task'));
+  set('tbListOrdered', m.has('ordered'));
+  set('tbTaskList', m.has('task'));
+  set('tbCodeBlock', m.has('codeblock'));
+  set('tbHeading', m.has('heading'));
+  set('tbTable', m.has('table'));
+  // Reveal the table row/column controls only while the caret is inside a table.
+  const tc = $('tableControls');
+  if (tc) tc.classList.toggle('show', m.has('table'));
+}
+window.updateToolbarActiveState = updateToolbarActiveState;
+
 window.wrapSelection = wrapSelection;
 window.insertText = insertText;
 window.lineStart = lineStart;
@@ -2452,6 +2615,9 @@ document.addEventListener('keydown', e => {
   }
   else if (cmd && !inInput && e.key.toLowerCase() === 'b') { e.preventDefault(); wrapSelection('**', '**'); }
   else if (cmd && !inInput && e.key.toLowerCase() === 'i') { e.preventDefault(); wrapSelection('*', '*'); }
+  // Ctrl/Cmd+1–6 → set heading level (toggle off if already at that level). Conventional
+  // (Typora). Ctrl+0 stays Zoom-Reset (app convention), so re-click/re-press the level to clear.
+  else if (cmd && !e.shiftKey && !inInput && /^[1-6]$/.test(e.key)) { e.preventDefault(); toggleHeading(parseInt(e.key, 10)); }
   else if (e.key === 'Escape') {
     if (palOverlay.classList.contains('open')) closePalette();
     else if (modalOverlay.classList.contains('open')) closeModal();
@@ -2532,19 +2698,32 @@ $('wbLoadDemo').addEventListener('click', loadDemo);
 $('tbBold').addEventListener('click', () => wrapSelection('**', '**'));
 $('tbItalic').addEventListener('click', () => wrapSelection('*', '*'));
 $('tbStrike').addEventListener('click', () => wrapSelection('~~', '~~'));
+$('tbUnderline').addEventListener('click', () => wrapSelection('<u>', '</u>'));
 $('tbCode').addEventListener('click', () => wrapSelection('`', '`'));
+$('tbHighlight').addEventListener('click', () => wrapSelection('==', '=='));
+$('tbSub').addEventListener('click', () => wrapSelection('~', '~'));
+$('tbSup').addEventListener('click', () => wrapSelection('^', '^'));
+$('tbClear').addEventListener('click', () => clearFormatting());
 $('tbLink').addEventListener('click', () => insertText('[', '](url)'));
 $('tbWikilink').addEventListener('click', () => insertText('[[', ']]'));
 $('tbMath').addEventListener('click', () => wrapSelection('$', '$'));
+$('tbFootnote').addEventListener('click', () => insertFootnote());
 $('tbQuote').addEventListener('click', () => toggleQuote());
 $('tbCallout').addEventListener('click', () => insertBlock(CALLOUT_TEMPLATE));
 $('tbList').addEventListener('click', () => toggleList('bullet'));
 $('tbListOrdered').addEventListener('click', () => toggleList('ordered'));
 $('tbTaskList').addEventListener('click', () => toggleList('task'));
+$('tbOutdent').addEventListener('click', () => indentSelection(-1));
+$('tbIndent').addEventListener('click', () => indentSelection(1));
 $('tbCodeBlock').addEventListener('click', () => insertCodeBlock());
 $('tbTable').addEventListener('click', () => insertBlock(TABLE_TEMPLATE));
 $('tbImage').addEventListener('click', () => insertText('![', '](url)'));
 $('tbRule').addEventListener('click', () => insertBlock('---\n'));
+// Table row/column controls (shown only when the caret is inside a table).
+$('tcRowAfter').addEventListener('click', () => tableOp('rowAfter'));
+$('tcRowDelete').addEventListener('click', () => tableOp('rowDelete'));
+$('tcColAfter').addEventListener('click', () => tableOp('colAfter'));
+$('tcColDelete').addEventListener('click', () => tableOp('colDelete'));
 
 // Heading-level pop-down (H1–H6) — fixes the missing H4/H5/H6.
 const headingMenu = $('headingMenu');

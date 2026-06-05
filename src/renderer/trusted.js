@@ -12,6 +12,10 @@ export function sanitizeHtml(html, DOMPurify) {
   if (!DOMPurify || typeof DOMPurify.sanitize !== 'function') return '';
   return DOMPurify.sanitize(html, {
     ADD_ATTR: ['id', 'data-target', 'dir', 'lang'],
+    // Keep the inline formatting tags the toolbar/extensions emit: <mark> (==highlight==),
+    // <u> (underline), <sub>/<sup> (~sub~ / ^sup^). All are in DOMPurify's default allow-list
+    // except where a profile narrows it; ADD_TAGS makes the intent explicit + future-proof.
+    ADD_TAGS: ['mark', 'u', 'sub', 'sup'],
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed'],
     // `style` here forbids the inline style="" ATTRIBUTE (FORBID_TAGS above only
     // drops the <style> ELEMENT) — kills CSS-exfil via inline styles. Math keeps its

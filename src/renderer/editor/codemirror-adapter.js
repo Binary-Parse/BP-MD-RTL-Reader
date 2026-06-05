@@ -12,6 +12,7 @@ import { createLineDirection } from './line-direction.js';
 import { createBlockPreview } from './block-preview.js';
 import { createMathPreview } from './math-preview.js';
 import { createWikilinkPreview } from './wikilink-preview.js';
+import { createInlineMarksPreview } from './inline-marks-preview.js';
 // listContinuation lives in its own module so the coverage + mutation gates SEE it (this
 // adapter file is gate-excluded as e2e-only). Re-exported for back-compat with importers.
 import { listContinuation } from './list-continuation.js';
@@ -26,12 +27,12 @@ function escapeReg(s) {
  * @param {object} opts  { CM6, doc, onChange, dir }
  * @returns an EditorPort (+ setDirection/focus/destroy/_view) backed by a CM6 EditorView
  */
-export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null, renderMath = null, onWikilink = null } = {}) {
+export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null, renderMath = null, onWikilink = null, onSelectionChange = null, onTab = null } = {}) {
   const {
     EditorState, EditorSelection, EditorView, keymap, Prec, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
     syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags, markdown, markdownLanguage,
-    search, setSearchQuery, SearchQuery,
+    search, setSearchQuery, SearchQuery, syntaxTree,
   } = CM6;
 
   // T-F13: the prose look. With the markdown markers hidden off the active line (live-preview.js),
@@ -91,6 +92,11 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
 
   const listener = EditorView.updateListener.of((u) => {
     if (u.docChanged && changeCb) changeCb(view.state.doc.toString());
+    // Active-state: notify when the caret/selection moves (or the doc changes) so the toolbar
+    // can highlight the construct the cursor is inside. Wrapped so a callback error can't break typing.
+    if ((u.selectionSet || u.docChanged) && typeof onSelectionChange === 'function') {
+      try { onSelectionChange(); } catch (_) { /* never let the toolbar break the editor */ }
+    }
   });
 
   const state = EditorState.create({
@@ -101,7 +107,12 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       // insertNewlineAndIndent AND the markdown language's own continueMarkup Enter binding
       // (markdownLanguage registers a keymap via the language facet). Guarded: the fake-CM6
       // unit harness omits Prec, so fall back to plain ordering (this module is e2e-covered).
-      ...(Prec ? [Prec.highest(keymap.of([{ key: 'Enter', run: continueListOnEnter }]))] : []),
+      ...(Prec ? [Prec.highest(keymap.of([
+        { key: 'Enter', run: continueListOnEnter },
+        // Tab / Shift-Tab move to the next/previous cell when the caret is inside a table
+        // (onTab returns true if it handled it); otherwise fall through to indentWithTab below.
+        ...(onTab ? [{ key: 'Tab', run: () => onTab(false) }, { key: 'Shift-Tab', run: () => onTab(true) }] : []),
+      ]))] : []),
       keymap.of([...(Prec ? [] : [{ key: 'Enter', run: continueListOnEnter }]), ...defaultKeymap, ...historyKeymap, indentWithTab]),
       // GFM via the `extended` parser (markdownLanguage) — strikethrough + tables parse,
       // matching the preview pipeline (marked is GFM). markdownLanguage is already vendored,
@@ -114,6 +125,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock)] : []), // T-F13: render BLOCKS (tables…) off the active line
       ...(livePreview && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
       ...(livePreview ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
+      ...(livePreview ? [createInlineMarksPreview(CM6)] : []), // ==highlight==/<u>/~sub~/^sup^ rendered off the active line
       ...createLineDirection(CM6, () => dir), // R1/R2 in CM6: per-line dir + logical caret (perLineTextDirection)
       // F13 Find: the `search` extension draws .cm-searchMatch on EVERY hit of the active
       // SearchQuery (set via setSearchHighlight below) so all matches are visible, not just the
@@ -168,6 +180,32 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     setSearchHighlight(query) {
       if (!setSearchQuery || !SearchQuery) return;
       view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: query == null ? '' : String(query) })) });
+    },
+    // Active formatting constructs at the caret (for toolbar active-state). Walks the markdown
+    // syntax tree up from the cursor; returns a Set of tags ('bold','italic','strike','code',
+    // 'heading','quote','bullet','ordered','task','codeblock'). lang-markdown ships no such API,
+    // so this is derived from the tree (research: must be hand-built). Empty if syntaxTree absent.
+    getActiveMarks() {
+      const marks = new Set();
+      if (typeof syntaxTree !== 'function') return marks;
+      const pos = view.state.selection.main.head;
+      let node = syntaxTree(view.state).resolveInner(pos, -1);
+      while (node) {
+        const n = node.name;
+        if (n === 'StrongEmphasis') marks.add('bold');
+        else if (n === 'Emphasis') marks.add('italic');
+        else if (n === 'Strikethrough') marks.add('strike');
+        else if (n === 'InlineCode') marks.add('code');
+        else if (/^(ATXHeading[1-6]|SetextHeading[12])$/.test(n)) marks.add('heading');
+        else if (n === 'Blockquote') marks.add('quote');
+        else if (n === 'OrderedList') marks.add('ordered');
+        else if (n === 'BulletList') marks.add('bullet');
+        else if (n === 'Task' || n === 'TaskMarker') marks.add('task');
+        else if (n === 'FencedCode' || n === 'CodeBlock') marks.add('codeblock');
+        else if (n === 'Table') marks.add('table');
+        node = node.parent;
+      }
+      return marks;
     },
     // T-F13 extras beyond the core contract:
     setDirection(d) { view.dom.setAttribute('dir', d === 'rtl' ? 'rtl' : 'ltr'); },

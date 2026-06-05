@@ -228,13 +228,22 @@ function wireTableNav(root) {
 // Code highlighting + KaTeX math (T-F9). Runs on the rendered DOM BEFORE the bidi
 // pass so code blocks (forced dir=ltr) and KaTeX spans (dir=ltr, ltr-isolated)
 // compose with R1/R2. Both libraries are vendored locally and sanitized.
-function decorateCodeAndMath() {
+// Highlight code + restore KaTeX math placeholders inside a freshly-rendered element. Shared
+// by the preview pane (decorateCodeAndMath) and the CM6 block widgets (renderCmBlock) so math/
+// code render consistently in BOTH — previously a `$…$` inside a callout/table widget showed a
+// raw placeholder hash because only the preview ran restoreMath. Mermaid is handled separately
+// (async, per-surface) by the callers.
+function decorateBlockContent(el) {
+  if (!el) return;
   if (typeof hljs !== 'undefined') {
-    highlightCode(noteContent, { hljs, sanitize: (h) => sanitizeHtml(h, DOMPurify) });
+    highlightCode(el, { hljs, sanitize: (h) => sanitizeHtml(h, DOMPurify) });
   }
   if (typeof katex !== 'undefined') {
-    restoreMath(noteContent, { katex, DOMPurify });
+    restoreMath(el, { katex, DOMPurify });
   }
+}
+function decorateCodeAndMath() {
+  decorateBlockContent(noteContent);
   // Mermaid (T-F16): heavy, so lazy-load the vendored engine only when a diagram
   // is present, then render asynchronously (SVG sanitized; dir=ltr; failures fall
   // back to the code block).
@@ -1880,6 +1889,7 @@ function renderCmBlock(type, source) {
   if (type === 'table') {
     const el = document.createElement('div');
     el.innerHTML = parseMarkdown(source);
+    decorateBlockContent(el); // highlight code + render KaTeX inside cells (F9 parity)
     applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
     wireTableNav(el);
     return el;
@@ -1904,6 +1914,7 @@ function renderCmBlock(type, source) {
     const el = document.createElement('div');
     el.innerHTML = parseMarkdown(source);
     transformCallouts(el, { parseCalloutHeader, resolveDirection }); // > [!NOTE] → styled callout (F14)
+    decorateBlockContent(el); // highlight code + render KaTeX inside the callout body (F9 parity)
     applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
     return el;
   }

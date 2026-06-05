@@ -103,3 +103,26 @@ test.describe('[T-F9] code highlighting + KaTeX math', () => {
     await expect(page).toHaveScreenshot('code-math-1440x900.png', { maxDiffPixels: 6000, threshold: 0.2 });
   });
 });
+
+// Math/code inside the CM6 block widgets (callout + table) must render too — the widget path
+// previously skipped restoreMath, leaving a raw KaTeX placeholder hash on screen.
+test.describe('[T-F9] math renders inside CM6 block widgets', () => {
+  test('KaTeX renders inside a callout and a table cell (no placeholder)', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForFunction(() => !!window._appState && !!window.getActiveCmAdapter, null, { timeout: 8000 });
+    await page.evaluate(() => {
+      window._appState.files = [{ name: 'm.md', path: 'm.md', content:
+        '# Title\n\n> [!NOTE] Math\n> Mass-energy: $E = mc^2$ inline.\n\n| Eq | Value |\n| --- | --- |\n| $a^2+b^2$ | $c^2$ |\n\nend\n', dirty: false }];
+      window.renderFile(0);
+    });
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
+    // caret on line 1 so the callout + table render as block widgets (not the active raw line)
+    await page.evaluate(() => window.getActiveCmAdapter().setSelection({ start: 0, end: 0 }));
+    await page.waitForTimeout(400);
+    await expect(page.locator('.cm-mount .cm-lp-callout .katex')).toHaveCount(1);
+    await expect(page.locator('.cm-mount .cm-lp-table .katex')).toHaveCount(2);
+    // the raw placeholder (a long hex run) must not be visible anywhere in the editor
+    const text = await page.evaluate(() => document.querySelector('.cm-mount .cm-content')?.textContent || '');
+    expect(/\b[0-9a-f]{12,}\b/.test(text)).toBe(false);
+  });
+});

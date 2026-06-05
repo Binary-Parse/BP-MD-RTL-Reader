@@ -70,6 +70,28 @@ test.describe('new inline marks', () => {
   });
 });
 
+test('a wide image is constrained to the editor width (no horizontal overflow)', async ({ page }) => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="300"><rect width="2000" height="300" fill="#44aaaa"/></svg>';
+  const url = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  await open(page, `# T\n\n![chart](${url})\n\ntail\n`);
+  await caret(page, 0); // off the image line so the block widget renders
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => {
+    const img = document.querySelector('.cm-mount .cm-lp-image img') || document.querySelector('.cm-mount .cm-lp-block img');
+    const content = document.querySelector('.cm-mount .cm-content');
+    const scroller = document.querySelector('.cm-mount .cm-scroller');
+    return {
+      imgW: img ? Math.round(img.getBoundingClientRect().width) : -1,
+      contentW: Math.round(content.getBoundingClientRect().width),
+      maxW: img ? getComputedStyle(img).maxWidth : null,
+      horiz: scroller.scrollWidth > scroller.clientWidth + 1,
+    };
+  });
+  expect(r.maxW).toBe('100%');
+  expect(r.imgW).toBeLessThanOrEqual(r.contentW + 1); // a 2000px image fits the column
+  expect(r.horiz).toBe(false); // no horizontal scrollbar
+});
+
 test('clear formatting strips inline markers from the selection', async ({ page }) => {
   await open(page, 'a **bold** b\n');
   await select(page, 2, 10); // "**bold**"

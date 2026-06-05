@@ -17,6 +17,7 @@ describe('buildExportDoc (T-F12)', () => {
     expect(fullHtml).toContain('<!DOCTYPE html>');
     expect(fullHtml).toMatch(/<p[^>]*>hi<\/p>/); // applyBidi adds a dir attribute to the block
     expect(fullHtml).toContain('<title>Report</title>');
+    expect(fullHtml).toContain('img { max-width: 100%; height: auto; }'); // responsive images in PDF
   });
 
   test('strips .md/.markdown/.txt case-insensitively; empty name → "document"', () => {

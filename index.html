@@ -873,6 +873,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .cm-mount .cm-lp-block th, .cm-mount .cm-lp-block td { border: 1px solid var(--rule); padding: 8px 12px; text-align: start; }
 .cm-mount .cm-lp-block th { background: var(--paper-deep); font-weight: 600; }
 .cm-mount .cm-lp-block table[dir="rtl"] { direction: rtl; }
+/* Images must never exceed the editor column — a wide image (e.g. a chart) was overflowing the
+   pane and forcing a horizontal scrollbar. Constrain to the content width, keep aspect ratio. */
+.cm-mount .cm-content img, .cm-mount .cm-lp-block img { max-width: 100%; height: auto; }
 .editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
 .editor-area.source .source-pane { display: block; }
 .editor-area.source .preview-pane { display: none; }
@@ -1040,6 +1043,8 @@ mark.find-hit.current { background: var(--accent); color: white; }
 #noteContent sub, .cm-mount .cm-sub { vertical-align: sub; font-size: 0.75em; line-height: 0; }
 #noteContent sup, .cm-mount .cm-sup { vertical-align: super; font-size: 0.75em; line-height: 0; }
 #noteContent u, .cm-mount .cm-u { text-decoration: underline; }
+/* Responsive images in the rendered preview (powers outline/export) — same fix as the editor. */
+#noteContent img { max-width: 100%; height: auto; }
 
 .editor blockquote {
   border-inline-start: 3px solid var(--accent);

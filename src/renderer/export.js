@@ -40,6 +40,7 @@ h1,h2,h3 { font-weight: 600; line-height: 1.2; }
 a { color: #C0492C; }
 code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; }
 pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; overflow-x: auto; }
+img { max-width: 100%; height: auto; }
 blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding-inline-start: 20px; margin: 24px 0; font-style: italic; }
 </style>
 </head>

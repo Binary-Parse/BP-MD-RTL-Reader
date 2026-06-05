@@ -1993,14 +1993,36 @@ function replaceInTextarea(ta, start, end, text) {
     ta.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
+// Toggle an inline wrap (bold/italic/strike/code/math). If the selection is ALREADY
+// wrapped — either the markers are inside the selection (`**world**`) or immediately
+// surround it (markers just outside a word-select) — clicking again UNWRAPS it instead
+// of stacking another pair. Otherwise it wraps (inserting a 'text' placeholder when the
+// selection is empty). Fixes the "**** stacks forever" defect.
 function wrapSelection(left, right) {
   if (cmAdapter) { // T-F13: route through the active EditorPort, NOT the hidden textarea
     cmAdapter.focus();
     const { start, end } = cmAdapter.getSelection();
-    const sel = cmAdapter.getValue().slice(start, end) || 'text';
+    const v = cmAdapter.getValue();
+    const sel = v.slice(start, end);
+    // already wrapped, markers INSIDE the selection → unwrap
+    if (sel.length >= left.length + right.length && sel.startsWith(left) && sel.endsWith(right)) {
+      const inner = sel.slice(left.length, sel.length - right.length);
+      cmAdapter.setSelection({ start, end });
+      cmAdapter.replaceSelection(inner);
+      cmAdapter.setSelection({ start, end: start + inner.length });
+      return;
+    }
+    // already wrapped, markers immediately OUTSIDE the selection → unwrap
+    if (v.slice(start - left.length, start) === left && v.slice(end, end + right.length) === right) {
+      cmAdapter.setSelection({ start: start - left.length, end: end + right.length });
+      cmAdapter.replaceSelection(sel);
+      cmAdapter.setSelection({ start: start - left.length, end: start - left.length + sel.length });
+      return;
+    }
+    const body = sel || 'text';
     cmAdapter.setSelection({ start, end });
-    cmAdapter.replaceSelection(left + sel + right);
-    cmAdapter.setSelection({ start: start + left.length, end: start + left.length + sel.length });
+    cmAdapter.replaceSelection(left + body + right);
+    cmAdapter.setSelection({ start: start + left.length, end: start + left.length + body.length });
     return;
   }
   ensureSourceFocus();
@@ -2090,6 +2112,86 @@ function insertCodeBlock() {
   const pos = start + pre.length + 4;
   ta.selectionStart = pos; ta.selectionEnd = pos + body.length;
 }
+// Operate on EVERY line the selection spans: fn(lines[]) -> lines[]. Replaces that block
+// and keeps it selected so a repeated click toggles the same region. cmAdapter-aware; the
+// textarea path mirrors it (CM6-load-failure fallback only). Powers the smart line tools
+// below so headings/quote/lists REPLACE or TOGGLE rather than stacking markers.
+function applyBlock(fn) {
+  if (cmAdapter) {
+    cmAdapter.focus();
+    const v = cmAdapter.getValue();
+    const { start, end } = cmAdapter.getSelection();
+    const from = v.slice(0, start).lastIndexOf('\n') + 1;
+    let to = v.indexOf('\n', end); if (to === -1) to = v.length;
+    const out = fn(v.slice(from, to).split('\n')).join('\n');
+    cmAdapter.setSelection({ start: from, end: to });
+    cmAdapter.replaceSelection(out);
+    cmAdapter.setSelection({ start: from, end: from + out.length });
+    return;
+  }
+  ensureSourceFocus();
+  const ta = srcTextarea;
+  const v = ta.value;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const from = v.slice(0, start).lastIndexOf('\n') + 1;
+  let to = v.indexOf('\n', end); if (to === -1) to = v.length;
+  const out = fn(v.slice(from, to).split('\n')).join('\n');
+  replaceInTextarea(ta, from, to, out);
+  ta.selectionStart = from; ta.selectionEnd = from + out.length;
+}
+
+const HEADING_RE = /^(#{1,6})[ \t]+/;
+// Set the heading level on the spanned line(s). A line already AT this level is demoted
+// back to a paragraph (toggle off); a line at a different level (or none) is set to it.
+function toggleHeading(level) {
+  applyBlock((lines) => lines.map((line) => {
+    if (line.trim() === '') return line;
+    const m = HEADING_RE.exec(line);
+    if (m) return m[1].length === level ? line.slice(m[0].length) : '#'.repeat(level) + ' ' + line.slice(m[0].length);
+    return '#'.repeat(level) + ' ' + line;
+  }));
+}
+
+const QUOTE_RE = /^[ \t]*>[ \t]?/;
+// Toggle blockquote: if every non-blank line is already quoted, unquote all; else quote all.
+function toggleQuote() {
+  applyBlock((lines) => {
+    const ne = lines.filter((l) => l.trim() !== '');
+    const allQuoted = ne.length > 0 && ne.every((l) => QUOTE_RE.test(l));
+    return lines.map((l) => (l.trim() === '' ? l : allQuoted ? l.replace(QUOTE_RE, '') : '> ' + l));
+  });
+}
+
+const TASK_RE = /^[ \t]*[-*+][ \t]+\[[ xX]\][ \t]+/;
+const ORDERED_RE = /^[ \t]*\d+\.[ \t]+/;
+const BULLET_RE = /^[ \t]*[-*+][ \t]+/;
+function listKind(line) {
+  if (TASK_RE.test(line)) return 'task';
+  if (ORDERED_RE.test(line)) return 'ordered';
+  if (BULLET_RE.test(line)) return 'bullet';
+  return null;
+}
+function stripList(line) {
+  return line.replace(/^[ \t]*(?:[-*+][ \t]+\[[ xX]\][ \t]+|[-*+][ \t]+|\d+\.[ \t]+)/, '');
+}
+// Bulleted / numbered / task list. If every non-blank line is ALREADY this kind, strip the
+// markers (toggle off); otherwise REPLACE any existing list marker with this kind's (ordered
+// renumbers 1., 2., …) — so switching bullet→numbered swaps cleanly instead of stacking.
+function toggleList(kind) {
+  applyBlock((lines) => {
+    const ne = lines.filter((l) => l.trim() !== '');
+    const allKind = ne.length > 0 && ne.every((l) => listKind(l) === kind);
+    let n = 0;
+    return lines.map((line) => {
+      if (line.trim() === '') return line;
+      if (allKind) return stripList(line);
+      n += 1;
+      const marker = kind === 'bullet' ? '- ' : kind === 'task' ? '- [ ] ' : n + '. ';
+      return marker + stripList(line);
+    });
+  });
+}
+
 const TABLE_TEMPLATE = '| Column | Column |\n| --- | --- |\n| Cell | Cell |\n';
 const CALLOUT_TEMPLATE = '> [!NOTE] Title\n> Body text\n';
 window.wrapSelection = wrapSelection;
@@ -2097,6 +2199,9 @@ window.insertText = insertText;
 window.lineStart = lineStart;
 window.insertBlock = insertBlock;
 window.insertCodeBlock = insertCodeBlock;
+window.toggleHeading = toggleHeading;
+window.toggleQuote = toggleQuote;
+window.toggleList = toggleList;
 
 // =====================================================================
 // COMMAND PALETTE
@@ -2348,11 +2453,11 @@ $('tbCode').addEventListener('click', () => wrapSelection('`', '`'));
 $('tbLink').addEventListener('click', () => insertText('[', '](url)'));
 $('tbWikilink').addEventListener('click', () => insertText('[[', ']]'));
 $('tbMath').addEventListener('click', () => wrapSelection('$', '$'));
-$('tbQuote').addEventListener('click', () => lineStart('> '));
+$('tbQuote').addEventListener('click', () => toggleQuote());
 $('tbCallout').addEventListener('click', () => insertBlock(CALLOUT_TEMPLATE));
-$('tbList').addEventListener('click', () => lineStart('- '));
-$('tbListOrdered').addEventListener('click', () => lineStart('1. '));
-$('tbTaskList').addEventListener('click', () => lineStart('- [ ] '));
+$('tbList').addEventListener('click', () => toggleList('bullet'));
+$('tbListOrdered').addEventListener('click', () => toggleList('ordered'));
+$('tbTaskList').addEventListener('click', () => toggleList('task'));
 $('tbCodeBlock').addEventListener('click', () => insertCodeBlock());
 $('tbTable').addEventListener('click', () => insertBlock(TABLE_TEMPLATE));
 $('tbImage').addEventListener('click', () => insertText('![', '](url)'));
@@ -2369,7 +2474,7 @@ $('tbHeading').addEventListener('click', (e) => {
 headingMenu.querySelectorAll('.td-item').forEach((it) => {
   it.addEventListener('click', () => {
     const n = parseInt(it.getAttribute('data-level'), 10) || 1;
-    lineStart('#'.repeat(n) + ' ');
+    toggleHeading(n);
     closeHeadingMenu();
   });
 });

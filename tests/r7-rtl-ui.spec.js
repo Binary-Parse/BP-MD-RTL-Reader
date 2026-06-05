@@ -143,7 +143,7 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     expect(await page.locator('#palInput').getAttribute('placeholder')).toBe('Type a command, search files…');
   });
 
-  test('[Visual] Arabic (RTL) chrome at 1440x900', async ({ page }) => {
+  test('[Visual] Arabic (RTL) chrome at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(() => {
       window.loadDemo();

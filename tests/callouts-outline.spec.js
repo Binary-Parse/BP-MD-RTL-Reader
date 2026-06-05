@@ -142,7 +142,7 @@ test.describe('[T-F7] document outline', () => {
     expect(active).toBe(2); // h3 is the third of the six headings
   });
 
-  test('[Visual] callouts + outline render at 1440x900', async ({ page }) => {
+  test('[Visual] callouts + outline render at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForTimeout(200);
     await expect(page).toHaveScreenshot('callouts-outline-1440x900.png', {

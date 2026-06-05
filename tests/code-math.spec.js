@@ -97,7 +97,7 @@ test.describe('[T-F9] code highlighting + KaTeX math', () => {
     expect(hrefs.some((h) => /javascript:/i.test(h))).toBe(false);
   });
 
-  test('[Visual] code + math render at 1440x900', async ({ page }) => {
+  test('[Visual] code + math render at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForTimeout(250);
     await expect(page).toHaveScreenshot('code-math-1440x900.png', { maxDiffPixels: 6000, threshold: 0.2 });

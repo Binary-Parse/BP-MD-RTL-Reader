@@ -96,7 +96,7 @@ test.describe('[T-R1/R2] live per-line RTL on a mixed AR/EN document', () => {
 
   // ── Visual baseline ──────────────────────────────────────────────────────
 
-  test('[Visual] mixed per-line RTL renders correctly at 1440x900', async ({ page }) => {
+  test('[Visual] mixed per-line RTL renders correctly at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForTimeout(200);
     await expect(page).toHaveScreenshot('mixed-perline-1440x900.png', {

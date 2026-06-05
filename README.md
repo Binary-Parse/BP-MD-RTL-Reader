@@ -47,9 +47,9 @@ plain files that stay on your machine.
 | :-------------: | :----------: | :-----: |
 | <img src="docs/assets/theme-paper.png" alt="Paper theme"> | <img src="docs/assets/theme-ink.png" alt="Ink theme"> | <img src="docs/assets/theme-sepia.png" alt="Sepia theme"> |
 
-|  Arabic / RTL  |  Split view  |  Command palette  |
-| :------------: | :----------: | :---------------: |
-| <img src="docs/assets/rtl-arabic.png" alt="Right-to-left Arabic rendering"> | <img src="docs/assets/split-view.png" alt="Split source and preview"> | <img src="docs/assets/command-palette.png" alt="Command palette"> |
+|  Arabic / RTL  |  Live-preview editor  |  Command palette  |
+| :------------: | :-------------------: | :---------------: |
+| <img src="docs/assets/rtl-arabic.png" alt="Right-to-left Arabic rendering"> | <img src="docs/assets/editor.png" alt="Live-preview editor: formatting toolbar, rendered note, and table controls"> | <img src="docs/assets/command-palette.png" alt="Command palette"> |
 
 ---
 
@@ -78,7 +78,7 @@ The installer is available for **x64, 32-bit, and ARM64**; the portable build li
    ⇄ (`Ctrl+Shift+L`), and press `Ctrl+K` for the command palette.
 
 New to the app? The **[User Guide](docs/USER_GUIDE.md)** walks through every feature —
-vaults, tabs, search, tags, wiki-links, view modes, the inspector, and HTML export.
+vaults, tabs, search, tags, wiki-links, the writing toolbar, the inspector, and export.
 
 ---
 
@@ -86,12 +86,13 @@ vaults, tabs, search, tags, wiki-links, view modes, the inspector, and HTML expo
 
 | | |
 | --- | --- |
-| **Reading** | Live Preview · Split · Source modes · zoom (60–200%) · document outline & properties inspector |
-| **Bilingual** | Automatic Arabic RTL detection · manual direction flip · Arabic-aware fonts & alignment |
+| **Editor** | A single CodeMirror 6 **live-preview** surface — text renders as you type; the line with the caret shows raw Markdown · zoom (60–200%) · document outline & properties inspector |
+| **Writing** | Formatting toolbar that **toggles** (Bold/Italic/Strike/Code, H1–H6, lists, quote, callout) · interactive **tables** (add/remove rows & columns, `Tab` between cells) · links, images, footnotes · highlight, sub/superscript, clear-formatting, indent/outdent · active-state buttons + shortcuts (`Ctrl+B/I`, `Ctrl+1–6`) |
+| **Bilingual** | Automatic Arabic RTL detection · manual direction flip · per-line direction & bidi isolation · Arabic-aware fonts & alignment |
 | **Library** | Open file or folder ("vault") · tabbed editing · file tree · cross-vault search · `#tags` · recent files |
 | **Linking** | `[[wiki-links]]` with `[[target\|alias]]` aliases · click to jump |
-| **Markdown** | Headings, lists, tables, code blocks, blockquotes, emphasis — rendered with [marked](https://marked.js.org/), sanitised with [DOMPurify](https://github.com/cure53/DOMPurify) |
-| **Productivity** | Command palette (`Ctrl+K`) · find-in-document (`Ctrl+F`) · daily notes · HTML export · drag-and-drop |
+| **Markdown** | Headings, lists & task lists, tables, blockquotes, **callouts**, **footnotes**, code blocks with **syntax highlighting**, **KaTeX math**, **Mermaid diagrams**, ==highlight==, `<u>`, sub/superscript — rendered with [marked](https://marked.js.org/) + [DOMPurify](https://github.com/cure53/DOMPurify), [KaTeX](https://katex.org/), [highlight.js](https://highlightjs.org/) & [Mermaid](https://mermaid.js.org/), all **bundled (0-network)** |
+| **Productivity** | Command palette (`Ctrl+K`) · find-in-document (`Ctrl+F`) · daily notes · **PDF & HTML export** · drag-and-drop |
 | **Comfort** | Three themes remembered across sessions · custom frameless window · keyboard-first |
 
 See the full **[Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)** reference (or press `Ctrl+/` in the app).

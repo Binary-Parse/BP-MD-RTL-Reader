@@ -148,6 +148,7 @@ sequenceDiagram
 ```
 
 ### 3.3 Unified editor (F13) — hybrid Live Preview decision flow
+> **Implemented:** shipped as the sole editor (single CodeMirror 6 live-preview surface; no `?cm=1` flag, no separate modes). The `bpmd://` asset protocol (AI2) is registered and serves vault-relative images.
 ```mermaid
 flowchart TD
   A["Document loaded into CodeMirror 6"] --> B{"Line contains cursor?"}
@@ -488,7 +489,7 @@ flowchart TB
 ### 11.3 AI3 — `EditorPort` (ports & adapters) + pure `BidiService`
 The UI depends on an interface, not CodeMirror 6 directly — keeping TDD/DI discipline through the biggest rewrite.
 
-- **`EditorPort`:** `load/save, getSelection, setDecorations, find, setDirection(line), onChange`. `CodeMirrorAdapter` and a fallback `TextareaAdapter` coexist behind a flag → incremental, reversible migration (F13).
+- **`EditorPort`:** `load/save, getSelection, setDecorations, find, setDirection(line), onChange`. `CodeMirrorAdapter` and a fallback `TextareaAdapter` coexist behind a flag → incremental, reversible migration (F13). *(Implemented: `CodeMirrorAdapter` shipped as the **sole** editor — no flag, no live/split/source modes; the textarea is now only a load-failure fallback.)*
 - **`BidiService` (pure, no DOM):** per-line direction inheritance (EC-C1), logical caret stepping (EC-C2), inline isolation rules, IME handling (EC-C3), Arabic slugs (EC-C5), `lang` tagging (EC-C6). The single tested home of the RTL moat.
 
 ```mermaid

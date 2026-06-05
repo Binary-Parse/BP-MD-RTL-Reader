@@ -31,18 +31,30 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 | Shortcut | Action |
 | -------- | ------ |
 | `Ctrl+Z` | Undo |
-| `Ctrl+Y` | Redo |
-| `Ctrl+X` | Cut *(Source / Split view)* |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| `Ctrl+X` | Cut |
 | `Ctrl+C` | Copy |
-| `Ctrl+V` | Paste *(Source / Split view)* |
-| `Ctrl+A` | Select all *(scoped to the focused editor)* |
-| `Ctrl+B` | **Bold** the selection |
-| `Ctrl+I` | *Italic* the selection |
-| `Ctrl+L` | Insert a link |
+| `Ctrl+V` | Paste |
+| `Ctrl+A` | Select all *(scoped to the editor)* |
+| `Ctrl+B` | **Bold** the selection (toggles) |
+| `Ctrl+I` | *Italic* the selection (toggles) |
+| `Ctrl+1` … `Ctrl+6` | Set heading level 1–6 (same level again → paragraph) |
 | `Ctrl+F` | Find in the document |
 
-> Cut and Paste are intentionally limited to **Source** and **Split** views — in
-> Live Preview there is no editable text to act on.
+> Insert **Link**, **Wiki-link**, **Footnote**, highlight, sub/superscript, lists,
+> callouts, tables, and more from the **formatting toolbar** above the editor (or the
+> command palette). Most are toggles — applying again removes the formatting.
+
+## Tables
+
+| Shortcut | Action |
+| -------- | ------ |
+| `Tab` | Move to the next cell (adds a row past the last cell) |
+| `Shift+Tab` | Move to the previous cell |
+
+> Row/column controls (**+ Row / − Row / + Col / − Col**) appear above the editor
+> whenever the cursor is inside a table. `Tab` / `Shift+Tab` also indent/outdent list
+> items when the cursor is in a list.
 
 ## View
 
@@ -56,6 +68,5 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 | `Ctrl+-` | Zoom out |
 | `Ctrl+0` | Reset zoom to 100% |
 
-Additional actions — **Insert Wiki-link**, **Export HTML**, **Load Demo Notes**,
-and switching **view modes** — live in the menu bar and the command palette
-(`Ctrl+K`).
+Additional actions — **Export PDF/HTML**, **Load Demo Notes**, **Check for Updates**,
+and the full writing toolbar — live in the menu bar and the command palette (`Ctrl+K`).

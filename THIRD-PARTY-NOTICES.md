@@ -6,28 +6,40 @@ permissive licenses compatible with MIT.
 
 ## Bundled with the application
 
+The app makes **no network requests** at runtime (strict Content-Security-Policy); every
+asset below is **vendored** under `assets/vendor/` and shipped inside the build. The
+application declares **no production npm dependencies**.
+
+### Runtime (the Electron shell)
+
 | Component | License | Notes |
 | --------- | ------- | ----- |
 | [Electron](https://www.electronjs.org/) | MIT | The desktop runtime. Its copy of the license ships as `LICENSE.electron.txt`. |
 | [Chromium](https://www.chromium.org/) (via Electron) | BSD-3-Clause and others | Full notices ship as `LICENSES.chromium.html` alongside the installed app. |
 | [Node.js](https://nodejs.org/) (via Electron) | MIT | Bundled inside the Electron runtime. |
 
-> The application itself declares **no production npm dependencies**, so no other
-> third-party packages are bundled into the app.
+### Vendored libraries (`assets/vendor/`)
 
-## Loaded at runtime from a CDN (not redistributed)
+| Component | License | Used for |
+| --------- | ------- | -------- |
+| [CodeMirror 6](https://codemirror.net/) | MIT | The live-preview editor (bundled IIFE via esbuild) |
+| [marked](https://marked.js.org/) | MIT | Markdown parsing |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | Apache-2.0 OR MPL-2.0 | HTML sanitisation |
+| [KaTeX](https://katex.org/) | MIT | Math rendering |
+| [highlight.js](https://highlightjs.org/) | BSD-3-Clause | Code syntax highlighting |
+| [Mermaid](https://mermaid.js.org/) | MIT | Diagrams |
+| [Lucide](https://lucide.dev/) | ISC | Toolbar / menu / palette icons (inlined as SVG `<symbol>`s, sourced from `lucide-static`) |
 
-These are fetched on first run when online, with Subresource Integrity, and are not
-shipped inside the installer:
+### Vendored fonts (`assets/vendor/fonts/`)
 
 | Component | License |
 | --------- | ------- |
-| [marked](https://marked.js.org/) | MIT |
-| [DOMPurify](https://github.com/cure53/DOMPurify) | Apache-2.0 OR MPL-2.0 |
 | [Inter](https://rsms.me/inter/) | SIL Open Font License 1.1 |
 | [Fraunces](https://fonts.google.com/specimen/Fraunces) | SIL Open Font License 1.1 |
 | [JetBrains Mono](https://www.jetbrains.com/lp/mono/) | SIL Open Font License 1.1 |
 | [IBM Plex Sans Arabic](https://www.ibm.com/plex/) | SIL Open Font License 1.1 |
+
+See [`assets/vendor/fonts/LICENSES.md`](assets/vendor/fonts/LICENSES.md) for the full font notices.
 
 ## Development & build tools (not distributed)
 

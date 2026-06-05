@@ -4,6 +4,14 @@
 > **Methodology:** strict TDD (RED → GREEN → REFACTOR). **No production line is written before a failing test.**
 > **How to read a card:** Objective → Files → RED (write these tests first) → GREEN (minimal impl) → REFACTOR → Edge cases→test → Acceptance (checkable) → DoD.
 
+> **⚠️ Post-v1.0 status note (current source of truth — the per-card ☐/◐ below may lag):**
+> The following shipped to `master` after this board was last reconciled — trust this note + git log over the older checkboxes:
+> - **T-F13 — CM6 is now the SOLE editor**, mounted on launch (no `?cm=1` flag; the live/split/source modes are gone). The textarea remains only as a load-failure fallback.
+> - **T-AI2 — `bpmd://` is registered + wired** in `main.js`; vault-relative images load via `bpmd://vault/<rel>`.
+> - **Writing toolbar overhaul** — toggle/replace semantics, active-state, `Ctrl+1–6`; new tools: underline, highlight (`==`), sub (`~x~`), sup (`^x^`), footnote insert, clear-formatting, indent/outdent; **interactive tables** (row/col controls + `Tab` cell nav).
+> - **Footnotes** (`[^1]`) and inline marks render in both the editor and the preview.
+> - **Save** writes back to the original file atomically via `fs:writeFile` (not a Blob download); **outline drives the editor**; images are width-constrained.
+
 ---
 
 ## Conventions
@@ -93,7 +101,7 @@
 **GREEN:** copy `marked`/`dompurify` to `assets/vendor`; reference locally; bundle in `build.files`.
 **Acceptance (B3):** ☐ 0 external requests ☐ assets from bundle ☐ SRI removed.
 
-## ☐ T-AI2 — Secure asset protocol + content pipeline
+## ✅ T-AI2 — Secure asset protocol + content pipeline  *(SHIPPED: `bpmd://` registered + wired in main.js; vault images load)*
 **Objective:** `bpmd://` privileged scheme for vendor + vault images; one `renderTrusted()` stage.
 **Files:** **new** `src/main/protocol.js`, **new** `src/renderer/trusted.js`, `main.js` (register scheme), `src/renderer/markdown.js`, `tests/unit/protocol.test.js`, `tests/unit/trusted.test.js`.
 **RED — protocol:**
@@ -267,7 +275,7 @@ interface EditorPort {
 **GREEN:** define port; `TextareaAdapter` (parity) behind flag, then `CodeMirrorAdapter`. **Q1**=CM6, **Q4**=drop Split.
 **Acceptance:** UI depends only on port; BidiService green ≥90% mutation.
 
-## ◐ T-F13 — Unified Live Preview (CM6) — FOUNDATION + live-preview decorations shipped (behind ?cm=1)
+## ✅ T-F13 — Unified Live Preview (CM6) — SHIPPED as the SOLE editor (no flag; live/split/source modes removed)
 **Done (foundation, reversible):** vendored CodeMirror 6 (`assets/vendor/codemirror/codemirror.min.js`,
 esbuild IIFE `window.CM6` from `scripts/codemirror-entry.mjs`); `src/renderer/editor/codemirror-adapter.js`
 = `createCodeMirrorAdapter` implementing the SAME EditorPort contract as the textarea adapter

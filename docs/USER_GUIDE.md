@@ -12,7 +12,8 @@ A tour of everything **BP MD RTL Reader** can do. For the full key list see
 
 - [The window at a glance](#the-window-at-a-glance)
 - [Opening your notes](#opening-your-notes)
-- [Reading & view modes](#reading--view-modes)
+- [The editor](#the-editor)
+- [Writing & formatting](#writing--formatting)
 - [Themes](#themes)
 - [Arabic & right-to-left](#arabic--right-to-left)
 - [Finding things](#finding-things)
@@ -57,20 +58,45 @@ association during install — it opens in a new tab.
 
 ---
 
-## Reading & view modes
+## The editor
 
-Switch modes from the toolbar or the **View** menu:
-
-- **Live Preview** — the rendered document only. The calm default.
-- **Split** — source on one side, live preview on the other.
-- **Source** — the raw Markdown text.
+There is a single, unified **live-preview** editor. Your text renders as you read it —
+headings, bold/italic, links, callouts, tables, math, and images all appear formatted —
+while the line your cursor is on shows the raw Markdown so you can edit it. Move the
+cursor away and that line renders too. There are no separate "source" or "split" modes
+to juggle: writing and reading are the same surface.
 
 <div align="center">
-<img src="assets/split-view.png" width="700" alt="Split view: source and preview side by side">
+<img src="assets/editor.png" width="760" alt="The live-preview editor: formatting toolbar, a rendered note, and the table controls">
 </div>
 
-**Zoom** the editor and preview with `Ctrl+=`, `Ctrl+-`, and `Ctrl+0` (60–200%); the
-rest of the interface stays put.
+**Zoom** with `Ctrl+=`, `Ctrl+-`, and `Ctrl+0` (60–200%); the rest of the interface stays put.
+
+---
+
+## Writing & formatting
+
+A formatting toolbar sits above the editor. The tools are **toggles**, not blunt inserts —
+applying a style again removes it, and switching heading level or list type *replaces*
+rather than stacks markers. With nothing selected, an inline style wraps the word under
+the cursor; with a selection, the selection stays selected afterward. A button lights up
+when the cursor is inside that construct.
+
+- **Headings** — the **H▾** dropdown sets H1–H6 (or `Ctrl+1`–`Ctrl+6`); choosing the
+  current level again turns it back into a paragraph.
+- **Inline** — **Bold** (`Ctrl+B`), *Italic* (`Ctrl+I`), ~~Strikethrough~~, <u>Underline</u>,
+  `Inline code`, ==Highlight==, Subscript (`~x~`), Superscript (`^x^`), and **Clear
+  formatting** (strip styles from the selection).
+- **Insert** — Link, Wiki-link (`[[note]]`), Math (`$…$`), and **Footnote** (drops a `[^1]`
+  reference plus a definition at the end of the note).
+- **Blocks** — Blockquote, Callout (`> [!NOTE]`), Bulleted / Numbered / Task lists, with
+  **Indent / Outdent** (or `Tab` / `Shift+Tab`) to nest list items.
+- **Big blocks** — Code block, Table, Image, and Horizontal rule. These always land on
+  their own line — inserting one never splits the text you're on.
+
+**Tables are interactive.** When the cursor is inside a table, a controls bar appears with
+**+ Row / − Row / + Col / − Col**, and `Tab` / `Shift+Tab` move between cells (pressing
+`Tab` past the last cell adds a new row).
 
 ---
 

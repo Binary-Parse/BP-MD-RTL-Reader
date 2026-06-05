@@ -172,6 +172,18 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     // T-F13 extras beyond the core contract:
     setDirection(d) { view.dom.setAttribute('dir', d === 'rtl' ? 'rtl' : 'ltr'); },
     focus() { view.focus(); },
+    // Scroll a document position into view (outline navigation). `select:true` also places the
+    // caret there. Used by the outline now that CM6 is the sole surface (the old preview pane is
+    // hidden in cm-single mode, so scrolling it did nothing).
+    scrollToPos(pos, { select = false } = {}) {
+      const len = view.state.doc.length;
+      const p = Math.max(0, Math.min(pos == null ? 0 : pos, len));
+      view.dispatch({
+        ...(select ? { selection: EditorSelection.cursor(p) } : {}),
+        effects: EditorView.scrollIntoView(p, { y: 'start', yMargin: 16 }),
+      });
+      view.focus();
+    },
     // Edit-menu/keyboard operations routed through CM6's own commands (so the menu
     // acts on the real editor, not the hidden preview). Guarded for the fake-CM6 unit harness.
     selectAll() { view.focus(); if (CM6.selectAll) CM6.selectAll(view); else view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) }); },

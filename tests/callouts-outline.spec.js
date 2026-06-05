@@ -103,45 +103,43 @@ test.describe('[T-F7] document outline', () => {
     await expect(page.locator('#tocList .toc-item').first()).toHaveText('Use code and bold here');
   });
 
-  test('clicking an outline item scrolls its heading into view', async ({ page }) => {
-    const before = await page.evaluate(() => document.querySelector('.preview-pane').scrollTop);
-    await page.locator('#tocList .toc-item.h6').click();
+  test('clicking an outline item scrolls the editor to its heading', async ({ page }) => {
+    // T-F13: CM6 is the sole surface, so the outline now scrolls the EDITOR (the preview pane is
+    // hidden) and places the caret on the heading line. Restore cm-single (the beforeEach inject
+    // strips it — a leftover workaround for the old preview-pane outline) and rebuild the outline.
+    await page.evaluate(() => { document.getElementById('editorArea').classList.add('cm-single'); window.buildTOC && window.buildTOC(); });
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
+    const before = await page.evaluate(() => window.getActiveCmAdapter()._view.scrollDOM.scrollTop);
+    await page.locator('#tocList .toc-item.h5').click(); // "Deeper heading five" — Latin, far down
     await page.waitForTimeout(400);
-    const after = await page.evaluate(() => document.querySelector('.preview-pane').scrollTop);
-    expect(after).toBeGreaterThan(before);
-    // the h6 heading is now within the visible pane
-    const visible = await page.evaluate(() => {
-      const h6 = document.querySelector('#noteContent h6');
-      const wrap = document.querySelector('.preview-pane');
-      const hr = h6.getBoundingClientRect();
-      const wr = wrap.getBoundingClientRect();
-      return hr.top >= wr.top - 4 && hr.top <= wr.bottom;
+    const after = await page.evaluate(() => {
+      const a = window.getActiveCmAdapter();
+      return { scroll: a._view.scrollDOM.scrollTop, caretLine: a._view.state.doc.lineAt(a.getSelection().start).text };
     });
-    expect(visible).toBe(true);
+    expect(after.scroll).toBeGreaterThan(before);
+    expect(after.caretLine).toContain('Deeper heading five');
   });
 
-  test('scroll-sync highlights the active heading as the pane scrolls', async ({ page }) => {
+  test('scroll-sync highlights the active heading as the editor scrolls', async ({ page }) => {
+    await page.evaluate(() => { document.getElementById('editorArea').classList.add('cm-single'); window.buildTOC && window.buildTOC(); });
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
     // at the top, the first heading is active
-    const firstActive = await page.evaluate(() => {
-      const items = [...document.querySelectorAll('#tocList .toc-item')];
-      return items.findIndex((i) => i.classList.contains('active'));
-    });
+    const firstActive = await page.evaluate(() =>
+      [...document.querySelectorAll('#tocList .toc-item')].findIndex((i) => i.classList.contains('active')));
     expect(firstActive).toBe(0);
 
-    // scroll to the last heading's position; it becomes the active outline item
+    // Put the h3 heading ("### Subsection 2.1", a mid-doc heading that can reach the viewport
+    // top) at the top of the CM6 scroller → it becomes the active outline item (index 2).
     await page.evaluate(() => {
-      const wrap = document.querySelector('.preview-pane');
-      const h6 = document.querySelector('#noteContent h6');
-      const top = h6.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
-      wrap.scrollTop = top + 5;
-      wrap.dispatchEvent(new Event('scroll'));
+      const v = window.getActiveCmAdapter()._view;
+      const idx = v.state.doc.toString().search(/^### /m);
+      v.scrollDOM.scrollTop = v.lineBlockAt(idx).top;
+      v.scrollDOM.dispatchEvent(new Event('scroll'));
     });
     await page.waitForTimeout(150);
-    const active = await page.evaluate(() => {
-      const items = [...document.querySelectorAll('#tocList .toc-item')];
-      return items.findIndex((i) => i.classList.contains('active'));
-    });
-    expect(active).toBe(5); // h6 is the last of the six headings
+    const active = await page.evaluate(() =>
+      [...document.querySelectorAll('#tocList .toc-item')].findIndex((i) => i.classList.contains('active')));
+    expect(active).toBe(2); // h3 is the third of the six headings
   });
 
   test('[Visual] callouts + outline render at 1440x900', async ({ page }) => {

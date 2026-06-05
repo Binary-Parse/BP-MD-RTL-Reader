@@ -1285,7 +1285,27 @@ window.resolveConflict = resolveConflict;
 
 // Outline (T-F7): full h1–h6 tree with Arabic-aware slugs, matching ids on the
 // rendered headings (click-to-scroll), and scroll-sync highlighting.
-let _tocHeadings = []; // [{ el, item }] in document order, for scroll-sync
+let _tocHeadings = []; // [{ el, item, pos }] in document order, for scroll-sync (pos = CM6 source offset)
+
+// Scan the CM6 source for ATX heading lines → [{ pos, level, text }] in document order.
+// Skips fenced code blocks so a `# comment` inside ``` isn't mistaken for a heading. Used to
+// map each rendered-DOM outline entry back to a position in the editor (CM6 is the sole surface
+// now, so the outline must scroll the editor, not the hidden preview pane).
+function cmHeadingPositions(src) {
+  const out = [];
+  let off = 0, inFence = false;
+  for (const line of String(src || '').split('\n')) {
+    const isFence = /^[ \t]{0,3}(```|~~~)/.test(line);
+    if (isFence) inFence = !inFence;
+    else if (!inFence) {
+      const m = /^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
+      if (m) out.push({ pos: off, level: m[1].length, text: m[2].trim() });
+    }
+    off += line.length + 1;
+  }
+  return out;
+}
+const _normHeading = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 function buildTOC() {
   // Derive the outline from the RENDERED DOM headings (the source of truth for
@@ -1304,29 +1324,62 @@ function buildTOC() {
   }
   tocList.className = '';
   tocList.innerHTML = '';
+  // CM6 source heading offsets, to map each rendered heading → an editor position. Aligned by
+  // index (rendered heading i ↔ source heading i), with a text-match fallback for the cases
+  // where counts drift (e.g. an inline-styled heading whose rendered text differs).
+  const srcHeads = cmAdapter ? cmHeadingPositions(cmAdapter.getValue()) : [];
+  const usedSrc = new Set();
   const seen = new Map();
-  rendered.forEach((el) => {
+  rendered.forEach((el, i) => {
     const text = (el.textContent || '').trim();
     let slug = slugify(text);
     if (seen.has(slug)) { const k = seen.get(slug) + 1; seen.set(slug, k); slug = `${slug}-${k}`; }
     else seen.set(slug, 0);
     el.id = slug;
+    // Resolve the CM6 source position for this heading.
+    let pos = null;
+    if (cmAdapter && srcHeads.length) {
+      if (srcHeads[i] && !usedSrc.has(i) && _normHeading(srcHeads[i].text) === _normHeading(text)) {
+        pos = srcHeads[i].pos; usedSrc.add(i);
+      } else {
+        const j = srcHeads.findIndex((h, k) => !usedSrc.has(k) && _normHeading(h.text) === _normHeading(text));
+        if (j >= 0) { pos = srcHeads[j].pos; usedSrc.add(j); }
+        else if (srcHeads[i] && !usedSrc.has(i)) { pos = srcHeads[i].pos; usedSrc.add(i); } // last-resort index
+      }
+    }
     const item = document.createElement('div');
     item.className = `toc-item h${el.tagName.charAt(1)}` + (_tocHeadings.length === 0 ? ' active' : '');
     item.textContent = text; // clean rendered text (no raw markdown punctuation)
     item.setAttribute('dir', 'auto'); // Arabic outline entries render RTL
-    item.addEventListener('click', () => scrollToHeading(el));
+    const entry = { el, item, pos };
+    item.addEventListener('click', () => scrollToHeading(entry));
     tocList.appendChild(item);
-    _tocHeadings.push({ el, item });
+    _tocHeadings.push(entry);
   });
   setupScrollSync();
 }
+window.buildTOC = buildTOC; // test hook + used to rebuild the outline after the async CM6 mount
 
 // The rendered note scrolls inside .preview-pane (.editor-area is overflow:hidden,
 // so .editor-wrap itself never scrolls).
 function previewScroller() { return document.querySelector('.preview-pane'); }
 
-function scrollToHeading(el) {
+// Outline click → jump to the heading. CM6 is the sole surface now, so scroll the EDITOR to the
+// heading line (and place the caret there); the old .preview-pane path stays for the textarea
+// fallback (CM6-load failure), where the rendered pane IS the visible reading surface.
+function scrollToHeading(entry) {
+  if (cmAdapter && entry) {
+    // Resolve the editor position on demand if it wasn't known when the outline was built
+    // (e.g. the outline predated the CM6 mount): match the entry's text against the live source.
+    let pos = entry.pos;
+    if (pos == null && entry.el) {
+      const want = _normHeading(entry.el.textContent);
+      const hit = cmHeadingPositions(cmAdapter.getValue()).find((h) => _normHeading(h.text) === want);
+      if (hit) pos = entry.pos = hit.pos;
+    }
+    if (pos != null) { cmAdapter.scrollToPos(pos, { select: true }); return; }
+  }
+  const el = entry && entry.el;
   const wrap = previewScroller();
   if (!wrap || !el) return;
   const top = el.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
@@ -1334,6 +1387,29 @@ function scrollToHeading(el) {
 }
 
 function setupScrollSync() {
+  // CM6 path: track the editor's own scroller and highlight the last heading at/above its top.
+  if (cmAdapter && cmAdapter._view) {
+    const view = cmAdapter._view;
+    const sc = view.scrollDOM;
+    if (sc._tocSyncWired) return;
+    sc._tocSyncWired = true;
+    const sync = () => {
+      if (!_tocHeadings.length) return;
+      // The doc offset at the very top of the viewport (robust for off-screen headings, which
+      // coordsAtPos can't measure). Active = the last heading at or before that offset.
+      let topPos;
+      try { topPos = view.lineBlockAtHeight(sc.scrollTop).from; } catch (_) { topPos = 0; }
+      let idx = 0;
+      for (let i = 0; i < _tocHeadings.length; i++) {
+        const p = _tocHeadings[i].pos;
+        if (p != null && p <= topPos + 4) idx = i;
+      }
+      _tocHeadings.forEach(({ item }, i) => item.classList.toggle('active', i === idx));
+    };
+    sc.addEventListener('scroll', sync, { passive: true });
+    return;
+  }
+  // Textarea-fallback path: the visible rendered preview pane scrolls.
   const wrap = previewScroller();
   if (!wrap || wrap._tocSyncWired) return;
   wrap._tocSyncWired = true;
@@ -1341,8 +1417,6 @@ function setupScrollSync() {
     if (!_tocHeadings.length) return;
     const wrapTop = wrap.getBoundingClientRect().top;
     const offsets = _tocHeadings.map(({ el }) => el.getBoundingClientRect().top - wrapTop + wrap.scrollTop);
-    // At the very bottom the last heading's section is in view even if the heading
-    // itself can't reach the top — highlight it explicitly.
     const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 2;
     const idx = atBottom ? _tocHeadings.length - 1 : activeHeading(wrap.scrollTop, offsets);
     _tocHeadings.forEach(({ item }, i) => item.classList.toggle('active', i === idx));
@@ -1745,6 +1819,11 @@ function applyEditorInput(val, pos) {
   // Heavy: markdown render debounced at 150ms
   clearTimeout(_srcDebounce);
   _srcDebounce = setTimeout(() => {
+    // Bail if the user switched files during the debounce: this closure captured `f`, and
+    // #noteContent / the outline are SHARED globals — rendering the now-inactive file here
+    // would clobber the active file's display + outline with stale content (the "content not
+    // transferred to display" / wrong-outline bug). renderFile already rendered the new file.
+    if (State.activeFile === null || State.files[State.activeFile] !== f) return;
     const { body } = parseFrontMatter(f.content); // T-R6: keep front matter out of the body
     const html = parseMarkdown(body);
     const wordCount = (body.match(/\S+/g) || []).length;
@@ -1872,6 +1951,10 @@ async function initCM6Editor() {
   // successful mount, so a CM6 load failure leaves the full 3-mode UI intact.
   editorArea.classList.add('cm-single');
   toolbarStrip.classList.add('cm-single');
+  // CM6 mounts async + unawaited at startup, so a file may already be open (its outline built
+  // with no editor positions + scroll-sync wired to the now-hidden preview pane). Rebuild the
+  // outline now that the editor exists, so clicks/active-tracking drive CM6.
+  if (State.activeFile != null && noteContent.querySelector('h1,h2,h3,h4,h5,h6')) buildTOC();
   return true;
 }
 // Load a document into whichever source engine is active (used by renderFile).

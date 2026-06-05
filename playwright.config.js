@@ -52,9 +52,11 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
       } catch (err) {
         return;
       }
-      // Keep only index.html entries to bound the JSON size.
+      // Keep first-party renderer scripts (src/renderer/*.js — app.js + its ES-module imports).
+      // The strict CSP externalised all JS out of index.html, so filtering on 'index.html'
+      // captured nothing; the report script maps each entry back to its real source file.
       const entries = (coverage || []).filter(
-        (e) => e && typeof e.url === 'string' && e.url.includes('index.html')
+        (e) => e && typeof e.url === 'string' && e.url.includes('/src/renderer/')
       );
       if (entries.length === 0) return;
 

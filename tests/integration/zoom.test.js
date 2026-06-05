@@ -65,15 +65,16 @@ test.describe('Zoom controls (Issue #5)', () => {
     expect(factor).toBe(1);
   });
 
-  test('zoom is applied to #editorArea inline style', async ({ page }) => {
+  test('zoom scales the rem base on :root (app-wide), clearing the old #editorArea zoom (T-T4)', async ({ page }) => {
     await page.keyboard.press('Control+=');
     await page.waitForTimeout(50);
 
-    const inlineZoom = await page.evaluate(() => {
-      return document.getElementById('editorArea').style.zoom;
-    });
-    expect(inlineZoom).toBeTruthy();
-    expect(parseFloat(inlineZoom)).toBeGreaterThan(1);
+    const z = await page.evaluate(() => ({
+      rootFs: parseFloat(document.documentElement.style.fontSize),
+      editor: document.getElementById('editorArea').style.zoom,
+    }));
+    expect(z.rootFs).toBeGreaterThan(16); // rem base grew → whole UI (chrome + content) scales
+    expect(z.editor).toBe('');            // old content-only zoom is cleared (no double-scale)
   });
 
   test('statusbar zoom is unaffected by Ctrl+=', async ({ page }) => {

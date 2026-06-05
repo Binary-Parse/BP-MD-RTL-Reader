@@ -1,12 +1,17 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Accessibility tests using axe-core.
- * Run via page.evaluate() injecting axe-core from CDN or inline.
- * We load axe-core from CDN, run checks, and assert zero critical violations.
+ * axe-core is loaded from the LOCAL node_modules via page.addInitScript (a CDP injection
+ * that runs before page scripts and is exempt from the page CSP) — the strict CSP (T-B4,
+ * script-src 'self') blocks the old CDN <script> load, and the app must stay 0-network.
  * Known serious violations (color-contrast design choices, missing tree parent,
  * scrollable pane focus) are documented but do not fail the build.
  */
+
+const AXE_SOURCE = fs.readFileSync(path.resolve(__dirname, '../node_modules/axe-core/axe.min.js'), 'utf8');
 
 const KNOWN_VIOLATIONS = new Set([
   'color-contrast',
@@ -16,21 +21,13 @@ const KNOWN_VIOLATIONS = new Set([
 
 test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript({ content: AXE_SOURCE }); // inject axe before navigation (CSP-exempt)
     await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
   });
 
   async function runAxe(page, context = null) {
     return page.evaluate(async (ctx) => {
-      if (typeof axe === 'undefined') {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/axe-core@4.10.2/axe.min.js';
-          s.onload = resolve;
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
       const options = {
         runOnly: {
           type: 'tag',
@@ -80,10 +77,10 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
     expect(unknown, `Unknown violations: ${JSON.stringify(unknown.map(v => v.id))}`).toHaveLength(0);
   });
 
-  test('No critical or serious UNKNOWN violations in source mode', async ({ page }) => {
+  test('No critical or serious UNKNOWN violations in the CM6 editor', async ({ page }) => {
+    // T-F13: there is no source mode — the CM6 live-preview editor is the only surface.
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
-    await page.evaluate(() => window.setEditorMode('source'));
+    await page.locator('.cm-mount .cm-editor').first().waitFor({ state: 'visible', timeout: 8000 });
     await page.waitForTimeout(200);
     const results = await runAxe(page);
     const unknown = filterUnknown(results.violations).filter(v => ['critical', 'serious'].includes(v.impact));
@@ -118,15 +115,6 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('Interactive elements have accessible names', async ({ page }) => {
     const results = await page.evaluate(async () => {
-      if (typeof axe === 'undefined') {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/axe-core@4.10.2/axe.min.js';
-          s.onload = resolve;
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
       return axe.run(document.body, {
         runOnly: ['button-name', 'link-name', 'aria-required-children', 'aria-required-parent'],
       });

@@ -16,6 +16,16 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // Open Folder IPC bridge (Bug 1 / AC1)
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
+    // Write a note back to disk (T-B1): atomic, allow-listed, conflict-aware.
+    writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
+    // Persistent app settings (T-B5/T-F8): the renderer restores theme/zoom/
+    // mode/panels/recents on launch and writes changes back. Main owns the
+    // on-disk truth in <userData>/settings.json.
+    getSettings: () => ipcRenderer.invoke('settings:get'),
+    setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+    // Export the current note to PDF (T-B6/F6): the renderer passes the standalone
+    // note HTML; main renders it offscreen and printToPDFs it to a chosen path.
+    exportPDF: (payload) => ipcRenderer.invoke('export:pdf', payload),
     // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
     // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
     // editable regardless of JS-side focus juggling caused by the menu opening.
@@ -24,6 +34,12 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // (file association) or dropped one on the macOS dock. The renderer wraps
     // this in addFile() to surface the content immediately.
     onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
+    // T-B9: the main process watches the open vault; this fires (debounced) when files
+    // change on disk externally so the renderer can refresh + surface conflicts (EC-A2).
+    onVaultChanged: (cb) => ipcRenderer.on('vault:changed', (_e, data) => cb(data)),
+    // T-Q6: opt-in update check — only ever called from an explicit "Check for Updates…"
+    // user action. No auto-check, no auto-download, no identifiers.
+    checkForUpdate: () => ipcRenderer.invoke('update:check'),
     // One-way error reporter: forwards renderer-side errors (window.onerror,
     // unhandledrejection) to the main process, which appends a JSON line to
     // <userData>/logs/bpmdrtlreader.log. NO network, NO third party — local only.

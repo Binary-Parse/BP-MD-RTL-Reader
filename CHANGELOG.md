@@ -5,6 +5,29 @@ All notable changes to **BP MD RTL Reader** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Collapsible folder tree** — the sidebar now shows your vault's real folder
+  structure with expand/collapse (click, Enter/Space, or ←/→); the collapsed state is
+  remembered across sessions.
+- **Session restore** — relaunching reopens your last folder and the note you were
+  reading.
+- **Fuller Arabic interface** — the welcome screen, command palette, and the
+  find/search bars are now localized when the Arabic interface is on (joining the
+  menus, inspector, and status bar).
+- **Experimental unified live-preview editor** (opt-in via `?cm=1`) — a single
+  CodeMirror 6 surface with per-line RTL/LTR and logical caret movement; the default
+  editor is unchanged.
+
+### Changed
+- Rendered notes now pass through the hardened sanitizer — inline `style`, `<iframe>`,
+  and event-handler attributes are stripped, so the sanitizer (not just the Content
+  Security Policy) is the control. No change to how your Markdown looks.
+
+### Fixed
+- Status-bar items no longer show a pointer cursor — they were never clickable.
+
 ## [1.0.0] — 2026-05-29
 
 First public release. 🎉

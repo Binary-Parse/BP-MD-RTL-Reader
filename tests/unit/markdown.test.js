@@ -19,11 +19,18 @@ describe('parseMarkdown pipeline', () => {
     expect(result).toBe('<p>hello</p>');
   });
 
-  test('sanitizes with DOMPurify when available', () => {
+  test('routes through the hardened sanitizeHtml stage (AI2/B4)', () => {
     const marked = { parse: vi.fn(() => '<p>hello</p>') };
     const DOMPurify = { sanitize: vi.fn((html) => `sanitized:${html}`) };
     const result = parseMarkdown('hello', { marked, DOMPurify, escapeHtml });
-    expect(DOMPurify.sanitize).toHaveBeenCalledWith('<p>hello</p>', { ADD_ATTR: ['id', 'data-target'] });
+    // Delegates to trusted.js sanitizeHtml: forbids style/iframe/active handlers,
+    // keeps id/data-target (outline+wikilinks) and dir/lang (bidi) — NOT the old
+    // loose `{ADD_ATTR:['id','data-target']}` config.
+    expect(DOMPurify.sanitize).toHaveBeenCalledWith('<p>hello</p>', expect.objectContaining({
+      ADD_ATTR: expect.arrayContaining(['id', 'data-target', 'dir', 'lang']),
+      FORBID_TAGS: expect.arrayContaining(['style', 'iframe', 'script']),
+      FORBID_ATTR: expect.arrayContaining(['style', 'onerror', 'onload', 'onclick']),
+    }));
     expect(result).toBe('sanitized:<p>hello</p>');
   });
 
@@ -50,13 +57,16 @@ describe('parseMarkdown pipeline', () => {
 });
 
 describe('configureMarked', () => {
-  test('registers wikilink extension on marked instance', () => {
+  test('registers wikilink + footnote extensions on marked instance', () => {
     const useFn = vi.fn();
     const marked = { use: useFn };
     configureMarked(marked);
-    expect(useFn).toHaveBeenCalledOnce();
+    // Two use() calls now: the gfm+wikilink config, then the footnote bundle (R11).
+    expect(useFn).toHaveBeenCalledTimes(2);
     const config = useFn.mock.calls[0][0];
     expect(config.extensions[0].name).toBe('wikilink');
+    const fnConfig = useFn.mock.calls[1][0];
+    expect(fnConfig.extensions.map(e => e.name)).toEqual(['footnoteRef', 'footnoteDef']);
   });
 
   test('no-op when marked is missing', () => {

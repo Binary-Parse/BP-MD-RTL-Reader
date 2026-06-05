@@ -78,6 +78,7 @@ function buildMockElectron() {
     contextBridge,
     shell: { openExternal: vi.fn() },
     dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
+    clipboard: { writeText: vi.fn() },
     crashReporter,
     Menu,
     _mockWin: mockWin,
@@ -191,7 +192,7 @@ describe('preload.js', () => {
     return mockElectron.contextBridge.exposeInMainWorld.mock.calls[0][1];
   }
 
-  test('exposes 8 electronAPI methods (incl. logError from #15)', () => {
+  test('exposes electronAPI methods (incl. logError #15, exportPDF T-F6)', () => {
     expect(mockElectron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('electronAPI', expect.any(Object));
     const api = getApi();
     expect(typeof api.closeWindow).toBe('function');
@@ -202,6 +203,34 @@ describe('preload.js', () => {
     expect(typeof api.editCommand).toBe('function');
     expect(typeof api.onOpenFile).toBe('function');
     expect(typeof api.logError).toBe('function');
+    expect(typeof api.exportPDF).toBe('function');
+    expect(typeof api.onVaultChanged).toBe('function');
+    expect(typeof api.checkForUpdate).toBe('function');
+  });
+
+  test('checkForUpdate invokes update:check with no arguments (T-Q6)', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    getApi().checkForUpdate();
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledWith('update:check');
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  test('onVaultChanged subscribes to the vault:changed channel and unwraps the payload (T-B9)', () => {
+    mockElectron.ipcRenderer.on.mockClear();
+    const seen = [];
+    getApi().onVaultChanged((data) => seen.push(data));
+    const call = mockElectron.ipcRenderer.on.mock.calls.find((c) => c[0] === 'vault:changed');
+    expect(call, 'should subscribe to vault:changed').toBeTruthy();
+    call[1]({}, { folderPath: '/v', files: ['a.md'] }); // simulate the main-process emit
+    expect(seen).toEqual([{ folderPath: '/v', files: ['a.md'] }]);
+  });
+
+  test('exportPDF invokes export:pdf with the payload (T-F6)', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    const payload = { html: '<html></html>', defaultName: 'note.pdf' };
+    getApi().exportPDF(payload);
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledWith('export:pdf', payload);
+    expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
   });
 
   // ─ window controls (kills NoCoverage on preload.js L4-L6) ──────────
@@ -1043,11 +1072,15 @@ describe('main.js — right-click context menu', () => {
     expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
   });
 
-  test('non-editable, no selection → no menu shown', () => {
+  test('non-editable, no selection → menu shown with Select All (Copy disabled)', () => {
     mockElectron.Menu.buildFromTemplate.mockClear();
     mockElectron.Menu._popup.mockClear();
-    ctxHandler({}, { isEditable: false, selectionText: '   ', editFlags: {} });
-    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
-    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
+    ctxHandler({}, { isEditable: false, selectionText: '   ', editFlags: { canSelectAll: true } });
+    expect(mockElectron.Menu.buildFromTemplate).toHaveBeenCalledTimes(1);
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(byRole.copy).toBe(false);
+    expect(byRole.selectAll).toBe(true);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
   });
 });

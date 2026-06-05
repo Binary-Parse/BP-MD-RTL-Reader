@@ -15,24 +15,22 @@ const path = require('path');
 
 const FILE_URL = 'file:///' + path.resolve(__dirname, '../index.html').replace(/\\/g, '/');
 
+// T-F13: CM6 is the sole editor. Load text into it, then drive selections via the exposed
+// adapter (window.getActiveCmAdapter) so the menu commands act on the real editor surface.
 async function setupWithText(page, text) {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
-  await page.evaluate(() => {
-    const S = window._appState;
-    S.files = [{ name: 'edit.md', path: 'edit.md', handle: null, content: '', dirty: false }];
-    window.renderFile(0);
-    window.setEditorMode('source');
-  });
-  await page.waitForTimeout(150);
   await page.evaluate((t) => {
-    const ta = document.getElementById('srcTextarea');
-    ta.value = t;
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-    ta.focus();
+    const S = window._appState;
+    S.files = [{ name: 'edit.md', path: 'edit.md', handle: null, content: t, dirty: false }];
+    window.renderFile(0);
   }, text);
-  await page.waitForTimeout(100);
+  await page.locator('.cm-mount .cm-editor').first().waitFor({ state: 'visible', timeout: 8000 });
+  await page.locator('.cm-mount .cm-content').click();
+  await page.waitForTimeout(50);
 }
+const cmValue = (page) => page.evaluate(() => window.getActiveCmAdapter().getValue());
+const cmSelect = (page, start, end) => page.evaluate(([s, e]) => window.getActiveCmAdapter().setSelection({ start: s, end: e }), [start, end]);
 
 async function clickEditMenuItem(page, label) {
   await page.click('.tb-menu-item[data-menu="edit"]');
@@ -53,16 +51,13 @@ async function clickEditMenuItem(page, label) {
 
 test.describe('[EM] Edit menu click-through — Copy/Cut/Paste/Undo/Redo/SelectAll', () => {
 
-  test('Select All — selects all text in focused textarea', async ({ page }) => {
+  test('Select All — selects all text in the CM6 editor', async ({ page }) => {
     await setupWithText(page, 'hello world\nsecond line');
-    await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      ta.selectionStart = ta.selectionEnd = 0;
-    });
+    await cmSelect(page, 0, 0);
     await clickEditMenuItem(page, 'Select All');
     const sel = await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      return { start: ta.selectionStart, end: ta.selectionEnd, len: ta.value.length };
+      const cm = window.getActiveCmAdapter();
+      return { ...cm.getSelection(), len: cm.getValue().length };
     });
     expect(sel.start).toBe(0);
     expect(sel.end).toBe(sel.len);
@@ -71,73 +66,56 @@ test.describe('[EM] Edit menu click-through — Copy/Cut/Paste/Undo/Redo/SelectA
   test('Copy — writes selected text to clipboard', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await setupWithText(page, 'copy me text');
-    await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      ta.selectionStart = 0;
-      ta.selectionEnd = 7; // "copy me"
-    });
+    await cmSelect(page, 0, 7); // "copy me"
     await clickEditMenuItem(page, 'Copy');
     const cb = await page.evaluate(() => navigator.clipboard.readText());
     expect(cb).toBe('copy me');
   });
 
-  test('Cut — removes selection from textarea and copies to clipboard', async ({ page, context }) => {
+  test('Cut — removes selection from the editor and copies to clipboard', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await setupWithText(page, 'cut THIS text');
-    await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      ta.selectionStart = 4;
-      ta.selectionEnd = 8; // "THIS"
-    });
+    await cmSelect(page, 4, 8); // "THIS"
     await clickEditMenuItem(page, 'Cut');
-    const val = await page.evaluate(() => document.getElementById('srcTextarea').value);
-    const cb = await page.evaluate(() => navigator.clipboard.readText());
-    expect(val).toBe('cut  text');
-    expect(cb).toBe('THIS');
+    expect(await cmValue(page)).toBe('cut  text');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('THIS');
   });
 
   test('Paste — inserts clipboard text at cursor', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await setupWithText(page, 'before|after');
     await page.evaluate(() => navigator.clipboard.writeText('MIDDLE'));
-    await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      const i = ta.value.indexOf('|');
-      ta.selectionStart = i;
-      ta.selectionEnd = i + 1;
-    });
+    const i = (await cmValue(page)).indexOf('|');
+    await cmSelect(page, i, i + 1);
     await clickEditMenuItem(page, 'Paste');
     await page.waitForTimeout(200);
-    const val = await page.evaluate(() => document.getElementById('srcTextarea').value);
-    expect(val).toBe('beforeMIDDLEafter');
+    expect(await cmValue(page)).toBe('beforeMIDDLEafter');
   });
 
   test('Undo — reverts last input (after a deliberate edit)', async ({ page }) => {
     await setupWithText(page, 'initial');
-    // Simulate a user edit via the textarea (browser must record this in undo history)
-    await page.focus('#srcTextarea');
-    await page.keyboard.press('End');
+    await page.locator('.cm-mount .cm-content').click();
+    await page.keyboard.press('Control+End');
     await page.keyboard.type(' more');
-    const beforeUndo = await page.evaluate(() => document.getElementById('srcTextarea').value);
+    const beforeUndo = await cmValue(page);
     expect(beforeUndo).toBe('initial more');
     await clickEditMenuItem(page, 'Undo');
     await page.waitForTimeout(150);
-    const afterUndo = await page.evaluate(() => document.getElementById('srcTextarea').value);
-    // Undo should remove the typed text (Chromium textarea undo behavior)
+    const afterUndo = await cmValue(page);
     expect(afterUndo).not.toBe('initial more');
   });
 
   test('Redo — re-applies an undone edit', async ({ page }) => {
     await setupWithText(page, 'base');
-    await page.focus('#srcTextarea');
-    await page.keyboard.press('End');
+    await page.locator('.cm-mount .cm-content').click();
+    await page.keyboard.press('Control+End');
     await page.keyboard.type(' X');
     await clickEditMenuItem(page, 'Undo');
     await page.waitForTimeout(150);
-    const afterUndo = await page.evaluate(() => document.getElementById('srcTextarea').value);
+    const afterUndo = await cmValue(page);
     await clickEditMenuItem(page, 'Redo');
     await page.waitForTimeout(150);
-    const afterRedo = await page.evaluate(() => document.getElementById('srcTextarea').value);
+    const afterRedo = await cmValue(page);
     expect(afterRedo).not.toBe(afterUndo);
   });
 });

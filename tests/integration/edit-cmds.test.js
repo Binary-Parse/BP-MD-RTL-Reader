@@ -26,104 +26,64 @@ test.describe('Edit commands (Issue #8)', () => {
     await injectAndRender(page);
   });
 
-  test('Ctrl+A in source mode selects textarea content only', async ({ page }) => {
-    // Switch to source mode
-    await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
-
-    // Focus the textarea
-    await page.click('#srcTextarea');
-    await page.waitForTimeout(50);
-
-    // Press Ctrl+A
+  // T-F13: CM6 is the sole editor — no source/live/split modes.
+  test('Ctrl+A in the CM6 editor selects its content', async ({ page }) => {
+    await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.press('Control+a');
     await page.waitForTimeout(100);
-
-    // The textarea should have all text selected
-    const selected = await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      return ta.selectionStart === 0 && ta.selectionEnd === ta.value.length && ta.value.length > 0;
-    });
-    expect(selected).toBe(true);
-  });
-
-  test('Ctrl+A in live mode selects editor content via Selection API', async ({ page }) => {
-    // Ensure live mode
-    await page.evaluate(() => window.setEditorMode('live'));
-    await page.waitForTimeout(100);
-
-    // Click inside the preview area
-    await page.click('#noteContent');
-    await page.waitForTimeout(50);
-
-    // Press Ctrl+A (our custom handler kicks in)
-    await page.keyboard.press('Control+a');
-    await page.waitForTimeout(100);
-
-    // Check that selection is non-empty and covers note content
-    const selectionInfo = await page.evaluate(() => {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return { empty: true };
-      const range = sel.getRangeAt(0);
-      return {
-        empty: sel.toString().length === 0,
-        containsNote: document.getElementById('noteContent').contains(range.commonAncestorContainer)
-      };
-    });
-    // Selection should be non-empty
-    expect(selectionInfo.empty).toBe(false);
-  });
-
-  test('execEditCmd("selectAll") in source mode calls textarea.select()', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
-
-    // Focus textarea first
-    await page.evaluate(() => document.getElementById('srcTextarea').focus());
-    await page.waitForTimeout(50);
-
-    await page.evaluate(() => window.execEditCmd('selectAll'));
-    await page.waitForTimeout(50);
-
-    const isSelected = await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      return ta.selectionStart === 0 && ta.selectionEnd === ta.value.length && ta.value.length > 0;
-    });
-    expect(isSelected).toBe(true);
-  });
-
-  test('execEditCmd("selectAll") in live mode uses Selection.selectAllChildren', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('live'));
-    await page.waitForTimeout(100);
-
-    await page.evaluate(() => window.execEditCmd('selectAll'));
-    await page.waitForTimeout(50);
-
-    const selLen = await page.evaluate(() => {
-      const sel = window.getSelection();
-      return sel ? sel.toString().length : 0;
-    });
+    const selLen = await page.evaluate(() => { const s = window.getSelection(); return s ? s.toString().length : 0; });
     expect(selLen).toBeGreaterThan(0);
   });
 
-  test('cut/paste in live mode shows info toast instead of error', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('live'));
+  test('Ctrl+A selection stays within the editor, not the sidebar', async ({ page }) => {
+    await page.locator('.cm-mount .cm-content').click();
+    await page.keyboard.press('Control+a');
     await page.waitForTimeout(100);
-
-    await page.evaluate(() => window.execEditCmd('cut'));
-    await page.waitForTimeout(200);
-
-    // Toast element should have 'show' class or have info content
-    const toastState = await page.evaluate(() => {
-      const t = document.getElementById('toast');
+    const info = await page.evaluate(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return { withinEditor: false, withinSidebar: false };
+      const range = sel.getRangeAt(0);
+      const cm = document.querySelector('.cm-mount .cm-content');
+      const sidebar = document.querySelector('.sidebar');
       return {
-        visible: t && t.classList.contains('show'),
-        isInfo: t && t.classList.contains('info'),
-        text: t ? t.textContent : ''
+        withinEditor: cm ? cm.contains(range.commonAncestorContainer) : false,
+        withinSidebar: sidebar ? sidebar.contains(range.commonAncestorContainer) : false,
       };
     });
-    // Either toast is visible with info class, or contains the expected text
-    expect(toastState.visible || toastState.text.length > 0).toBe(true);
+    expect(info.withinSidebar).toBe(false);
+    expect(info.withinEditor).toBe(true);
+  });
+
+  test('execEditCmd("selectAll") selects all text in the CM6 editor', async ({ page }) => {
+    await page.evaluate(() => window.getActiveCmAdapter().setSelection({ start: 0, end: 0 }));
+    await page.evaluate(() => window.execEditCmd('selectAll'));
+    await page.waitForTimeout(50);
+    const sel = await page.evaluate(() => {
+      const cm = window.getActiveCmAdapter();
+      return { ...cm.getSelection(), len: cm.getValue().length };
+    });
+    expect(sel.start).toBe(0);
+    expect(sel.end).toBe(sel.len);
+    expect(sel.len).toBeGreaterThan(0);
+  });
+
+  test('execEditCmd("selectAll") produces a non-empty DOM selection', async ({ page }) => {
+    await page.locator('.cm-mount .cm-content').click();
+    await page.evaluate(() => window.execEditCmd('selectAll'));
+    await page.waitForTimeout(50);
+    const selLen = await page.evaluate(() => { const s = window.getSelection(); return s ? s.toString().length : 0; });
+    expect(selLen).toBeGreaterThan(0);
+  });
+
+  test('cut in the CM6 editor removes the selection without an error toast', async ({ page }) => {
+    await page.evaluate(() => { try { Object.defineProperty(navigator, 'clipboard', { value: { readText: () => Promise.resolve(''), writeText: () => Promise.resolve() }, configurable: true }); } catch (_) {} });
+    await page.locator('.cm-mount .cm-content').click();
+    await page.keyboard.press('Control+a');
+    await page.evaluate(() => window.execEditCmd('cut'));
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.getActiveCmAdapter().getValue())).toBe('');
+    const isError = await page.evaluate(() => { const t = document.getElementById('toast'); return !!(t && t.classList.contains('error')); });
+    expect(isError).toBe(false);
   });
 
   test('font size of .source-textarea is >= 13px', async ({ page }) => {

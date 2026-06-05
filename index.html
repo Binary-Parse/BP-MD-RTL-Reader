@@ -3,15 +3,73 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Strict CSP (T-B4): no inline/remote script (script-src 'self') — the XSS-relevant
+     lock for an app that renders untrusted markdown. style-src keeps 'unsafe-inline'
+     because KaTeX emits inline style= attributes in its math HTML (unavoidable). No
+     remote anything (local-first, SC2): img/font are local + data:/bpmd: only. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: bpmd: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>BP MD RTL Reader</title>
-<script>(function(){const t=localStorage.getItem('bpmdrtlreader-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;1,300&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=IBM+Plex+Sans+Arabic:wght@400;500&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/marked@18.0.3/lib/marked.umd.js" integrity="sha384-coEhNYf+uY/IAdm3afqLaaHhP4vzpDHARAMbRvTGjDwDSCD7DnG5dAKe4sDoUupt" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.2/dist/purify.min.js" integrity="sha384-AX0sZ/phUL4R6LAFP+mob0mJIWg2c3PX8wPn48ctytOl7XKfRQHbakBt5/QID7uh" crossorigin="anonymous"></script>
+<script src="src/renderer/theme-boot.js"></script>
+<!-- Vendored locally (T-B3): no CDN, no runtime network for the engine/sanitizer. Fonts
+     are self-hosted via @font-face in the stylesheet below (T-B3/T1/T3). -->
+<script src="assets/vendor/marked.umd.js"></script>
+<script src="assets/vendor/purify.min.js"></script>
+<!-- Math (KaTeX) + code highlighting (highlight.js), vendored locally (T-F9): no CDN. -->
+<link rel="stylesheet" href="assets/vendor/katex/katex.min.css">
+<script src="assets/vendor/katex/katex.min.js"></script>
+<script src="assets/vendor/highlight/highlight.min.js"></script>
 <style>
+/* ── Self-hosted fonts (T-B3 / T1 / T3) ─────────────────────────────────────────
+   woff2 from @fontsource, served from assets/vendor/fonts/ — 0 runtime network (SC2).
+   Fraunces/Inter/JetBrains are VARIABLE fonts: one file per family covers the whole
+   weight range T1 needs (and Fraunces carries the optical-size axis for T6). IBM Plex
+   Sans Arabic ships as four static weights. font-synthesis:none (T2, on body) means
+   the real weights are used — the browser never fakes bold or italic. */
+@font-face {
+  font-family: 'Fraunces'; font-style: normal; font-weight: 300 700; font-display: swap;
+  src: url('assets/vendor/fonts/fraunces-latin-opsz-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fraunces'; font-style: italic; font-weight: 300 700; font-display: swap;
+  src: url('assets/vendor/fonts/fraunces-latin-opsz-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url('assets/vendor/fonts/inter-latin-wght-normal.woff2') format('woff2');
+}
+@font-face {
+  /* Real italic — font-synthesis:none means body <em> (Inter --sans) would otherwise
+     render upright. */
+  font-family: 'Inter'; font-style: italic; font-weight: 400 600; font-display: swap;
+  src: url('assets/vendor/fonts/inter-latin-wght-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 500; font-display: swap;
+  src: url('assets/vendor/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+}
+@font-face {
+  /* Real italic for code comments/emphasis (--mono). */
+  font-family: 'JetBrains Mono'; font-style: italic; font-weight: 400 500; font-display: swap;
+  src: url('assets/vendor/fonts/jetbrains-mono-latin-wght-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('assets/vendor/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('assets/vendor/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('assets/vendor/fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('assets/vendor/fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2') format('woff2');
+}
 :root {
+  font-size: 16px; /* rem base for app-wide zoom (T-T4) */
   --paper: #FAF7F0;
   --paper-deep: #F2EDE0;
   --paper-edge: #E6DFCC;
@@ -69,10 +127,12 @@
 html, body { height: 100%; overflow: hidden; }
 body {
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--ink);
   background: #2A2620;
   -webkit-font-smoothing: antialiased;
+  font-synthesis: none; /* T2: ship real weights/italics — never fake bold or oblique */
+  font-optical-sizing: auto; /* T6: Fraunces (variable opsz) adapts its cut to the font-size */
   display: grid;
   place-items: center;
   padding: 24px;
@@ -107,7 +167,7 @@ body {
   display: grid; place-items: center;
   background: transparent; border: none; cursor: pointer;
   border-radius: 3px; color: var(--ink-soft);
-  font-size: 16px; line-height: 1;
+  font-size: 1rem; line-height: 1;
 }
 .tb-menu-btn:hover { background: var(--paper-edge); color: var(--ink); }
 .tb-menu-btn.open { background: var(--accent); color: white; }
@@ -115,14 +175,14 @@ body {
 .tb-brand-name {
   font-family: var(--serif);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 0.875rem;
   letter-spacing: -0.01em;
   color: var(--ink);
   display: flex;
   align-items: center;
   gap: 7px;
 }
-.tb-brand-name::before { content: '◆'; color: var(--accent); font-size: 9px; }
+.tb-brand-name::before { content: '◆'; color: var(--accent); font-size: 0.6875rem; }
 
 .tb-menubar { display: flex; align-items: stretch; padding-inline-start: 4px; }
 .tb-menu-item {
@@ -130,7 +190,7 @@ body {
   padding-inline: 10px;
   display: flex;
   align-items: center;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink-soft);
   cursor: pointer;
   border: none;
@@ -160,7 +220,7 @@ body {
   border: 1px solid transparent;
   border-bottom: none;
   border-radius: 5px 5px 0 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-mute);
   cursor: pointer;
   display: flex;
@@ -193,7 +253,7 @@ body {
   width: 16px; height: 16px;
   display: grid; place-items: center;
   border-radius: 3px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--ink-mute);
   flex: 0 0 auto;
 }
@@ -206,7 +266,7 @@ body {
   color: var(--ink-mute);
   cursor: pointer;
   border-radius: 4px;
-  font-size: 16px;
+  font-size: 1rem;
   margin-bottom: 5px;
   margin-inline-start: 3px;
   flex-shrink: 0;
@@ -228,7 +288,7 @@ body {
   border-radius: 4px;
   cursor: pointer;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tb-btn:hover { background: var(--paper-edge); border-color: var(--rule); color: var(--ink); }
 .tb-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
@@ -243,7 +303,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   cursor: pointer;
   width: 200px;
@@ -252,7 +312,7 @@ body {
 .tb-search .kbd-inline {
   margin-inline-start: auto;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   padding: 1px 5px;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
@@ -284,6 +344,10 @@ body {
   padding: 6px;
   z-index: 200;
   display: none;
+  /* At high app-wide zoom (T-T4) a tall menu must scroll inside itself, not clip
+     items past the viewport bottom. */
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
 }
 .dropdown.open { display: block; }
 
@@ -294,7 +358,7 @@ body {
   padding-inline: 32px 12px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink);
   position: relative;
   white-space: nowrap;
@@ -307,13 +371,15 @@ body {
   inset-inline-start: 10px;
   font-family: var(--serif);
   font-style: italic;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--ink-mute);
 }
+/* T-F2: dropdown items now carry a vendored Lucide line-icon, not a glyph. */
+.dd-item .dd-icon .ic { width: 14px; height: 14px; display: block; }
 .dd-item .dd-check {
   position: absolute;
   inset-inline-start: 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--accent);
   display: none;
 }
@@ -323,11 +389,11 @@ body {
 .dd-item.disabled:hover { background: transparent; color: var(--ink-mute); }
 .dd-item.disabled:hover .dd-icon { color: var(--ink-mute); }
 .dd-name { flex: 1; }
-.dd-shortcut { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+.dd-shortcut { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); }
 .dd-divider { height: 1px; background: var(--rule); margin: 4px 0; }
 .dd-section-label {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: var(--ink-mute);
@@ -342,7 +408,9 @@ body {
   overflow: hidden;
   background: var(--paper);
   position: relative;
-  direction: ltr;
+  /* T-R7: no hard LTR lock — the chrome follows the UI direction (html[dir]). In RTL UI the
+     grid's inline axis reverses, so the sidebar's 240px track lands on the right and the
+     inspector's 280px track on the left (mirrored, original widths). Content/math keep dir:ltr. */
 }
 /* CSS Grid with display:none children leaves the remaining items to flow into
    the first available columns. So the column tracks must match the count of
@@ -367,14 +435,22 @@ body {
   border: 1px solid var(--rule);
   color: var(--ink-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   padding: 0;
   z-index: 10;
   transition: background 0.15s, color 0.15s;
 }
 .reveal-strip:hover { background: var(--accent); color: white; }
-.reveal-sidebar  { left: 0;  border-left: none;  border-radius: 0 6px 6px 0; }
-.reveal-inspector { right: 0; border-right: none; border-radius: 6px 0 0 6px; }
+/* T-R7: logical insets so the strips track the panel edge under both LTR and RTL UI. */
+.reveal-sidebar  { inset-inline-start: 0; border-inline-start: none; border-start-end-radius: 6px; border-end-end-radius: 6px; }
+.reveal-inspector { inset-inline-end: 0; border-inline-end: none; border-start-start-radius: 6px; border-end-start-radius: 6px; }
+/* T-F11: directional chevrons (collapse/reveal sidebar & inspector) point toward the panel
+   edge. When the UI itself is RTL (html[dir="rtl"] — set by R7), mirror them so they keep
+   pointing the right way. scaleX(-1) flips any chevron glyph without swapping characters. */
+html[dir="rtl"] #sidebarToggleBtn,
+html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
+/* The reveal strips keep their vertical-centering translate AND mirror. */
+html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
 .app-body.no-sidebar .reveal-sidebar { display: flex; }
 .app-body.no-inspector .reveal-inspector { display: flex; }
 
@@ -396,7 +472,7 @@ body {
 }
 .sb-vault-name {
   font-family: var(--serif);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--ink);
   display: flex;
@@ -407,7 +483,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sb-vault-name::before { content: '⌂'; color: var(--accent); font-size: 13px; }
+.sb-vault-name::before { content: '⌂'; color: var(--accent); font-size: 0.8125rem; }
 .sb-vault-name.empty { color: var(--ink-mute); font-style: italic; font-weight: 400; }
 .sb-vault-name.empty::before { color: var(--ink-mute); }
 
@@ -420,7 +496,7 @@ body {
   cursor: pointer;
   border-radius: 4px;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .sb-icon-btn:hover { background: var(--paper); border-color: var(--rule); color: var(--accent); }
 
@@ -433,7 +509,7 @@ body {
 }
 .sb-tab {
   padding: 7px 10px;
-  font-size: 10px;
+  font-size: 0.6875rem;
   font-family: var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -463,26 +539,26 @@ body {
 .sb-empty .ico {
   font-family: var(--serif);
   font-style: italic;
-  font-size: 36px;
+  font-size: 2.25rem;
   color: var(--accent);
   opacity: 0.5;
   margin-bottom: 12px;
 }
 .sb-empty .ttl {
   font-family: var(--serif);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 500;
   color: var(--ink);
   margin-bottom: 6px;
 }
-.sb-empty p { font-size: 12px; line-height: 1.5; margin-bottom: 16px; }
+.sb-empty p { font-size: 0.75rem; line-height: 1.5; margin-bottom: 16px; }
 .sb-empty .actions { display: flex; flex-direction: column; gap: 6px; }
 .sb-empty button {
   background: var(--paper);
   border: 1px solid var(--rule);
   padding: 8px 14px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   color: var(--ink);
   font-weight: 500;
@@ -492,7 +568,7 @@ body {
   justify-content: center;
 }
 .sb-empty button:hover { background: var(--accent); color: white; border-color: var(--accent); }
-.sb-empty button .ic { font-family: var(--serif); font-style: italic; font-size: 14px; }
+.sb-empty button .ic { font-family: var(--serif); font-style: italic; font-size: 0.875rem; }
 
 .tree { padding: 0 6px; }
 .tree-node {
@@ -501,7 +577,7 @@ body {
   gap: 6px;
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink-soft);
   cursor: pointer;
   user-select: none;
@@ -511,7 +587,7 @@ body {
 .tree-node.active .tree-icon { color: white; opacity: 0.9; }
 .tree-icon {
   font-family: var(--serif);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   width: 14px;
   display: grid;
@@ -519,15 +595,19 @@ body {
   flex-shrink: 0;
 }
 .tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-name.arabic { font-family: var(--arabic); font-size: 13px; direction: rtl; text-align: end; }
+.tree-name.arabic { font-family: var(--arabic); font-size: 0.8125rem; direction: rtl; text-align: end; }
 .tree-indent { padding-inline-start: 18px; }
+/* Collapsible folders (T-F1/M3): a twisty for dir rows; depth indent is set inline. */
+.tree-twisty { width: 14px; flex-shrink: 0; display: grid; place-items: center; font-size: 0.6875rem; color: var(--ink-mute); }
+.tree-dir { font-weight: 500; color: var(--ink); }
+.tree-dir:hover .tree-twisty, .tree-dir:focus .tree-twisty { color: var(--ink); }
 
 /* Tags pane */
 .tags-pane { padding: 12px 14px; }
 .tag-cloud { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
 .tag {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   background: var(--paper);
   border: 1px solid var(--rule);
   padding: 3px 8px;
@@ -540,7 +620,7 @@ body {
 }
 .tag:hover { border-color: var(--accent); color: var(--accent); }
 .tag.active { background: var(--accent); color: white; border-color: var(--accent); }
-.tag .count { opacity: 0.6; font-size: 9px; }
+.tag .count { opacity: 0.6; font-size: 0.6875rem; }
 
 /* Search pane */
 .search-pane { padding: 10px 12px; }
@@ -554,7 +634,7 @@ body {
   border: 1px solid var(--rule);
   border-radius: 5px;
   padding: 7px 12px 7px 28px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-family: var(--sans);
   color: var(--ink);
   outline: none;
@@ -569,9 +649,9 @@ body {
   top: 50%;
   transform: translateY(-50%);
   color: var(--ink-mute);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
-.search-results { font-size: 12px; overflow-wrap: anywhere; }
+.search-results { font-size: 0.75rem; overflow-wrap: anywhere; }
 .search-result {
   padding: 8px 10px;
   border-bottom: 1px dashed var(--rule);
@@ -587,7 +667,7 @@ body {
 }
 .sr-snip {
   color: var(--ink-mute);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 .sr-snip mark {
@@ -598,7 +678,7 @@ body {
   unicode-bidi: isolate;
 }
 .search-empty {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-mute);
   font-style: italic;
   padding: 16px 10px;
@@ -625,7 +705,7 @@ body {
   border: 1px solid var(--rule);
   border-radius: 4px;
   padding: 5px 10px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-family: var(--sans);
   outline: none;
   width: 200px;
@@ -634,7 +714,7 @@ body {
 }
 .find-bar input:focus { border-color: var(--accent); }
 .find-bar input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.find-info { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); padding: 0 6px; }
+.find-info { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); padding: 0 6px; }
 .find-btn {
   width: 24px; height: 24px;
   display: grid; place-items: center;
@@ -643,7 +723,7 @@ body {
   border-radius: 3px;
   cursor: pointer;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .find-btn:hover { background: var(--paper-edge); color: var(--ink); }
 
@@ -689,15 +769,67 @@ mark.find-hit.current { background: var(--accent); color: white; }
   cursor: pointer;
   color: var(--ink-soft);
   font-family: var(--serif);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tool-btn:hover { background: var(--paper-edge); color: var(--ink); }
 .tool-btn.active { background: var(--accent); color: white; }
+/* Active-state: the caret is inside this construct (bold/heading/list/quote/code). Tinted, not
+   solid, so it reads as "currently applied" without looking like a pressed/disabled control. */
+.tool-btn.is-active { background: var(--accent-soft); color: var(--accent); }
+.tool-btn.is-active:hover { background: var(--accent); color: white; }
+/* Table controls — a slim secondary strip revealed only when the caret is in a table. */
+.table-controls { display: none; align-items: center; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--paper-edge); background: var(--paper); }
+.table-controls.show { display: flex; }
+.table-controls .tc-label { font-size: 0.6875rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mute); margin-inline-end: 4px; }
+.tc-btn { font: inherit; font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--paper-edge); border-radius: 5px; background: var(--paper-deep); color: var(--ink); cursor: pointer; }
+.tc-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 5px; }
 .tool-spacer { flex: 1; }
+
+/* ── Vendored Lucide line-icons (T-F2 icon overhaul). One base rule; size per context.
+   stroke=currentColor so each icon takes its button's text colour (incl. hover/active). */
+.ic { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.tool-btn .ic { width: 16px; height: 16px; }
+.tb-btn .ic { width: 15px; height: 15px; }
+.sb-icon-btn .ic { width: 15px; height: 15px; }
+.wb-icon .ic { width: 18px; height: 18px; }
+.sb-empty button .ic { width: 15px; height: 15px; }
+/* Heading button shows the heading glyph + a small caret. */
+.tool-btn.tool-combo { padding-inline: 5px; gap: 1px; grid-auto-flow: column; }
+.tool-btn.tool-combo .ic-caret { width: 11px; height: 11px; opacity: 0.6; }
+
+/* Toolbar pop-down (heading levels) — small menu anchored under its button. */
+.tool-dropdown {
+  position: absolute;
+  top: 34px;
+  inset-inline-start: 14px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 12px 28px -8px rgba(0,0,0,0.25);
+  padding: 5px;
+  z-index: 60;
+  display: none;
+  min-width: 150px;
+}
+.tool-dropdown.open { display: block; }
+.tool-dropdown .td-item {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  font-family: var(--sans); font-size: 0.8125rem; color: var(--ink); white-space: nowrap;
+}
+.tool-dropdown .td-item:hover { background: var(--accent); color: #fff; }
+.tool-dropdown .td-item .td-h { font-family: var(--serif); font-weight: 600; color: var(--ink-mute); width: 1.6em; }
+.tool-dropdown .td-item:hover .td-h { color: rgba(255,255,255,0.85); }
+.tool-dropdown .td-item .td-h1 { font-size: 1.35rem; }
+.tool-dropdown .td-item .td-h2 { font-size: 1.2rem; }
+.tool-dropdown .td-item .td-h3 { font-size: 1.05rem; }
+.tool-dropdown .td-item .td-h4 { font-size: 0.95rem; }
+.tool-dropdown .td-item .td-h5 { font-size: 0.875rem; }
+.tool-dropdown .td-item .td-h6 { font-size: 0.8125rem; }
 .read-time {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -720,11 +852,44 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .source-pane::-webkit-scrollbar, .preview-pane::-webkit-scrollbar { width: 8px; }
 .source-pane::-webkit-scrollbar-thumb, .preview-pane::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
 .source-pane { display: none; }
+/* T-F13: CodeMirror 6 mount fills the source pane; inherit the app's mono type/colours. */
+.cm-mount { height: 100%; }
+/* T-F13 live-preview: the single CM6 surface IS the rendered reading view. So it inherits
+   the prose look of the old preview pane — paper background, sans body at reading size, a
+   centred ~800px measure — NOT a monospace source look. Headings (serif), bold/italic and
+   inline code get their type from the prose HighlightStyle in codemirror-adapter.js; only
+   the few rules below set the BASE surface. */
+.cm-mount .cm-editor { height: 100%; background: var(--paper); }
+.cm-mount .cm-scroller { font-family: var(--sans); font-size: 1.0625rem; line-height: 1.7; padding: 56px 0 120px; }
+.cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
+/* Arabic lines (per-line dir from line-direction.js) take the Arabic face + looser leading. */
+.cm-mount .cm-line[dir="rtl"] { font-family: var(--arabic); line-height: 1.95; }
+.cm-mount .cm-editor.cm-focused { outline: none; }
+.cm-mount .cm-activeLine { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.cm-mount .cm-selectionBackground, .cm-mount .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* T-F13 parity: live-preview BLOCK widgets (rendered tables/math/… inline in the single CM6 surface) */
+.cm-mount .cm-lp-block { margin: 12px 0; }
+.cm-mount .cm-lp-block table { border-collapse: collapse; width: 100%; font-size: 0.875rem; margin: 0; }
+.cm-mount .cm-lp-block th, .cm-mount .cm-lp-block td { border: 1px solid var(--rule); padding: 8px 12px; text-align: start; }
+.cm-mount .cm-lp-block th { background: var(--paper-deep); font-weight: 600; }
+.cm-mount .cm-lp-block table[dir="rtl"] { direction: rtl; }
+/* Images must never exceed the editor column — a wide image (e.g. a chart) was overflowing the
+   pane and forcing a horizontal scrollbar. Constrain to the content width, keep aspect ratio. */
+.cm-mount .cm-content img, .cm-mount .cm-lp-block img { max-width: 100%; height: auto; }
 .editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
 .editor-area.source .source-pane { display: block; }
 .editor-area.source .preview-pane { display: none; }
 .editor-area.split .source-pane { flex: 1; }
 .editor-area.split .preview-pane { flex: 1; }
+/* T-F13 single live-preview mode (behind ?cm=1): the CM6 source pane IS the rendered
+   surface (its own live-preview decorations), so show it and hide the redundant markdown
+   preview. :not(.split) keeps Split View reachable via the palette/View menu. */
+.editor-area.cm-single .source-pane { display: block; flex: 1; }
+.editor-area.cm-single:not(.split) .preview-pane { display: none; }
+/* T-F13: the welcome card lives in the preview pane, which cm-single hides. When no file is
+   open, show the preview pane (welcome) and hide the empty CM6 surface instead. */
+.editor-area.cm-single.welcome .preview-pane { display: block; flex: 1; }
+.editor-area.cm-single.welcome .source-pane { display: none; }
 
 .source-textarea {
   width: 100%;
@@ -737,7 +902,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .source-textarea {
   padding: 56px 60px 120px;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.7;
   background: var(--paper-deep);
   color: var(--ink);
@@ -751,30 +916,44 @@ mark.find-hit.current { background: var(--accent); color: white; }
   margin: 0 auto;
   width: 100%;
   font-family: var(--sans);
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1.7;
   color: var(--ink);
+  /* T-R7: anchor the note CONTENT to LTR independent of the UI chrome direction — so an
+     English note stays LTR even when the Arabic UI sets html[dir="rtl"]. Arabic docs flip
+     via the #editor[dir="rtl"] attribute below (set per-doc by applyBidiToNote). */
+  direction: ltr;
 }
 #editor[dir="rtl"] {
   direction: rtl;
   font-family: var(--arabic);
-  font-size: 19px;
+  font-size: 1.1875rem;
   line-height: 1.95;
+}
+
+/* T-R10: Arabic justification. OFF by default → RTL blocks stay RAGGED (the safe Arabic
+   default). When `.kashida` is set (View ▸ Arabic ▸ Kashida Justification, persisted),
+   RTL note blocks fill the measure via inter-character distribution — the closest CSS gets
+   to OpenType kashida in Chromium — while the last line stays ragged (text-align-last). */
+.kashida #noteContent :is(p, li)[dir="rtl"] {
+  text-align: justify;
+  text-justify: inter-character;
+  text-align-last: start;
 }
 
 .editor h1 {
   font-family: var(--serif);
-  font-size: 42px;
+  font-size: 2.625rem;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin-bottom: 8px;
 }
-#editor[dir="rtl"] h1 { font-family: var(--arabic); font-weight: 700; font-size: 38px; letter-spacing: 0; text-align: right; }
+#editor[dir="rtl"] h1 { font-family: var(--arabic); font-weight: 700; font-size: 2.375rem; letter-spacing: 0; text-align: right; }
 
 .editor .doc-meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   text-transform: uppercase;
   letter-spacing: 0.15em;
@@ -785,21 +964,41 @@ mark.find-hit.current { background: var(--accent); color: white; }
   gap: 16px;
   flex-wrap: wrap;
 }
-#editor[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 12px; text-align: right; }
+#editor[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 0.75rem; text-align: right; }
+
+/* T-B9 / EC-A2: disk-conflict resolve banner + background-tab marker. The banner lives in
+   #conflictBar (above the editor); pad it only when it actually holds a banner. */
+#conflictBar:not(:empty) { padding: 16px 18px 0; flex-shrink: 0; }
+.conflict-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 24px; padding: 12px 16px;
+  background: color-mix(in srgb, var(--gold) 16%, var(--paper));
+  border: 1px solid var(--gold); border-radius: 8px;
+  font-family: var(--sans); font-size: 0.875rem; color: var(--ink);
+}
+.conflict-banner .cf-msg { flex: 1; min-width: 200px; }
+.conflict-banner .cf-btn {
+  font-family: var(--sans); font-size: 0.8125rem; padding: 5px 12px; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--paper); color: var(--ink); cursor: pointer;
+}
+.conflict-banner .cf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.conflict-banner .cf-reload { background: var(--accent); border-color: var(--accent); color: #fff; }
+.conflict-banner .cf-reload:hover { color: #fff; opacity: 0.9; }
+.tab.conflict .tab-conflict { color: var(--gold); margin-inline-end: 4px; }
 
 .editor h2 {
   font-family: var(--serif);
-  font-size: 28px;
+  font-size: 1.75rem;
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -0.015em;
   margin: 36px 0 16px;
 }
-#editor[dir="rtl"] h2 { font-family: var(--arabic); font-weight: 700; font-size: 26px; text-align: right; }
+#editor[dir="rtl"] h2 { font-family: var(--arabic); font-weight: 700; font-size: 1.625rem; text-align: right; }
 
 .editor h3 {
   font-family: var(--serif);
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 500;
   margin: 28px 0 12px;
 }
@@ -807,6 +1006,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 .editor p { margin-bottom: 16px; }
 .editor p em { color: var(--plum); font-style: italic; }
+/* T-F11: italic recolour is opt-OUT. With `.no-italic-recolor` set, emphasis keeps the
+   body ink colour — only the (real, T2) italic slant distinguishes it. */
+.no-italic-recolor #noteContent em { color: inherit; }
 #editor[dir="rtl"] p { text-align: right; }
 #editor[dir="rtl"] p em { font-style: normal; font-weight: 600; }
 .editor p strong { font-weight: 600; }
@@ -824,6 +1026,26 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .wikilink:hover { background: var(--accent); color: white !important; }
 
+/* Footnotes (R11): superscript refs + the end-of-document notes list. */
+.fn-ref { font-size: 0.75em; line-height: 0; }
+.fn-ref a { color: var(--accent); text-decoration: none; padding: 0 1px; }
+.fn-ref a:hover { text-decoration: underline; }
+.footnotes { margin-top: 32px; font-size: 0.9em; color: var(--ink-soft); }
+.footnotes hr { border: none; border-top: 1px solid var(--rule, rgba(0,0,0,.12)); margin: 0 0 12px; }
+.footnotes ol { padding-inline-start: 1.4em; }
+.fn-item { margin: 4px 0; }
+.fn-back { color: var(--accent); text-decoration: none; margin-inline-start: 4px; }
+.fn-back:hover { text-decoration: underline; }
+
+/* Custom inline marks — the rendered preview (#noteContent) and the CM6 editor surface
+   (.cm-* decoration classes from inline-marks-preview.js) share the same look. */
+#noteContent mark, .cm-mount .cm-hl { background: var(--accent-soft); color: inherit; padding: 0 2px; border-radius: 2px; }
+#noteContent sub, .cm-mount .cm-sub { vertical-align: sub; font-size: 0.75em; line-height: 0; }
+#noteContent sup, .cm-mount .cm-sup { vertical-align: super; font-size: 0.75em; line-height: 0; }
+#noteContent u, .cm-mount .cm-u { text-decoration: underline; }
+/* Responsive images in the rendered preview (powers outline/export) — same fix as the editor. */
+#noteContent img { max-width: 100%; height: auto; }
+
 .editor blockquote {
   border-inline-start: 3px solid var(--accent);
   padding-block: 8px;
@@ -831,7 +1053,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   margin: 24px 0;
   font-family: var(--serif);
   font-style: italic;
-  font-size: 19px;
+  font-size: 1.1875rem;
   line-height: 1.6;
   color: var(--ink-soft);
 }
@@ -840,8 +1062,62 @@ mark.find-hit.current { background: var(--accent); color: white; }
   padding-inline-end: 24px;
   font-family: var(--arabic);
   font-style: normal;
-  font-size: 21px;
+  font-size: 1.3125rem;
 }
+
+/* Per-block Arabic typography (T-R1/R3): the bidi engine marks individual blocks
+   dir="rtl" even when the editor container stays ltr (mixed AR/EN docs with no
+   manual flip). Mirror the container RTL styling onto those blocks so Arabic
+   prose keeps the Arabic face, looser leading and no letter-spacing — not only
+   when the whole editor is flipped. */
+#editor p[dir="rtl"], #editor li[dir="rtl"], #editor td[dir="rtl"], #editor th[dir="rtl"] {
+  font-family: var(--arabic);
+  line-height: 1.95;
+  letter-spacing: 0;
+}
+#editor h1[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 2.375rem; letter-spacing: 0; }
+#editor h2[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 1.625rem; }
+#editor h3[dir="rtl"] { font-family: var(--arabic); font-weight: 600; }
+#editor blockquote[dir="rtl"] {
+  padding-inline-start: 0;
+  padding-inline-end: 24px;
+  font-family: var(--arabic);
+  font-style: normal;
+  font-size: 1.3125rem;
+}
+
+/* Callouts (T-F14): calm, theme-aware admonitions. The tinted background uses a
+   theme var so it adapts to paper/ink/sepia; a per-type accent colours the
+   inline-start border + icon. Logical properties keep it correct in RTL. */
+.callout {
+  margin: 20px 0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--paper-deep);
+  border-inline-start: 3px solid var(--callout-color, var(--accent));
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-family: var(--sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--callout-color, var(--accent));
+}
+.callout-icon { font-size: 0.9375rem; line-height: 1; flex: none; }
+.callout-title-text { unicode-bidi: plaintext; }
+.callout-body { color: var(--ink-soft); font-size: 1rem; line-height: 1.7; }
+.callout-body > :first-child { margin-top: 0; }
+.callout-body > :last-child { margin-bottom: 0; }
+.callout-note      { --callout-color: #4a6fa5; }
+.callout-tip       { --callout-color: #4f8a5b; }
+.callout-important { --callout-color: #8a5aa8; }
+.callout-warning   { --callout-color: #b07d2b; }
+.callout-caution   { --callout-color: var(--accent); }
+.callout-info      { --callout-color: #3e7c8c; }
 
 .editor ul, .editor ol { padding-inline-start: 24px; margin-bottom: 16px; }
 .editor li { margin-bottom: 6px; }
@@ -854,21 +1130,43 @@ mark.find-hit.current { background: var(--accent); color: white; }
   padding: 18px 22px;
   margin: 20px 0;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.7;
   overflow-x: auto;
   direction: ltr;
   text-align: start;
   color: var(--ink-soft);
 }
-.editor pre code { background: transparent; border: none; padding: 0; color: inherit; font-size: 13px; }
+.editor pre code { background: transparent; border: none; padding: 0; color: inherit; font-size: 0.8125rem; }
+
+/* Code syntax highlighting (T-F9) — theme-aware token colours (highlight.js).
+   Scoped to #editor so they out-specify `.editor pre code { color: inherit }`. */
+#editor .hljs-comment, #editor .hljs-quote { color: var(--ink-mute); font-style: italic; }
+#editor .hljs-keyword, #editor .hljs-selector-tag, #editor .hljs-type, #editor .hljs-literal { color: var(--plum); }
+#editor .hljs-string, #editor .hljs-regexp, #editor .hljs-addition { color: var(--green); }
+#editor .hljs-number, #editor .hljs-built_in, #editor .hljs-symbol { color: var(--gold); }
+#editor .hljs-title, #editor .hljs-section, #editor .hljs-name { color: var(--accent); }
+#editor .hljs-attr, #editor .hljs-attribute, #editor .hljs-variable, #editor .hljs-property, #editor .hljs-template-variable { color: var(--accent); }
+#editor .hljs-meta, #editor .hljs-tag { color: var(--ink-mute); }
+#editor .hljs-bullet, #editor .hljs-link { color: var(--accent); }
+#editor .hljs-emphasis { font-style: italic; }
+#editor .hljs-strong { font-weight: 600; }
+
+/* KaTeX math (T-F9): block centred; math is always LTR — isolated in RTL prose. */
+.math-block { display: block; text-align: center; margin: 16px 0; direction: ltr; unicode-bidi: isolate; overflow-x: auto; }
+.math-inline { direction: ltr; unicode-bidi: isolate; }
+#editor .katex { direction: ltr; }
+
+/* Mermaid diagrams (T-F16): always LTR, centred, responsive. */
+.mermaid { display: block; direction: ltr; text-align: center; margin: 20px 0; overflow-x: auto; }
+.mermaid svg { max-width: 100%; height: auto; }
 .editor code {
   background: var(--paper-deep);
   border: 1px solid var(--rule);
   padding: 1px 6px;
   border-radius: 3px;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--accent);
 }
 
@@ -879,13 +1177,15 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-family: var(--serif);
   color: var(--accent);
   font-style: italic;
-  font-size: 18px;
+  font-size: 1.125rem;
   letter-spacing: 0.5em;
 }
 .editor hr::before { content: '⁂'; }
 
-.editor table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+.editor table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.875rem; }
+.editor table[dir="rtl"] { direction: rtl; } /* T-R9: mirror RTL table column order */
 .editor th, .editor td { border: 1px solid var(--rule); padding: 8px 12px; text-align: start; }
+.editor th:focus, .editor td:focus { outline: 2px solid var(--accent); outline-offset: -2px; } /* T-R9 traversal focus ring */
 .editor th { background: var(--paper-deep); font-weight: 600; }
 
 /* welcome */
@@ -899,7 +1199,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .welcome-card { max-width: 520px; }
 .welcome-card .logo {
   font-family: var(--serif);
-  font-size: 64px;
+  font-size: 4rem;
   color: var(--accent);
   font-style: italic;
   margin-bottom: 16px;
@@ -907,14 +1207,14 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .welcome-card h1 {
   font-family: var(--serif);
-  font-size: 36px;
+  font-size: 2.25rem;
   font-weight: 500;
   letter-spacing: -0.02em;
   margin-bottom: 10px;
 }
 .welcome-card h1 em { color: var(--accent); font-style: italic; }
 .welcome-card .lede {
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--ink-soft);
   line-height: 1.6;
   margin-bottom: 32px;
@@ -946,36 +1246,36 @@ mark.find-hit.current { background: var(--accent); color: white; }
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 .welcome-btn .wb-icon {
   font-family: var(--serif);
   font-style: italic;
-  font-size: 18px;
+  font-size: 1.125rem;
   color: var(--accent);
 }
 .welcome-btn .wb-shortcut {
   margin-inline-start: auto;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
 }
-.welcome-btn .wb-sub { font-size: 12px; color: var(--ink-mute); line-height: 1.4; }
+.welcome-btn .wb-sub { font-size: 0.75rem; color: var(--ink-mute); line-height: 1.4; }
 
 .recent-list { border-top: 1px solid var(--rule); padding-top: 20px; text-align: start; }
 .recent-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: var(--ink-mute);
   margin-bottom: 10px;
 }
-.recent-empty { font-size: 12px; color: var(--ink-mute); font-style: italic; }
+.recent-empty { font-size: 0.75rem; color: var(--ink-mute); font-style: italic; }
 .recent-item {
   padding: 6px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink-soft);
   cursor: pointer;
   border-bottom: 1px dashed var(--rule);
@@ -987,7 +1287,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .recent-item .r-ic { font-family: var(--serif); font-style: italic; color: var(--accent); }
 .recent-item .r-path {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   margin-inline-start: auto;
 }
@@ -1011,7 +1311,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .insp-title {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: var(--ink-mute);
@@ -1024,7 +1324,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .insp-section:last-child { border-bottom: none; }
 .insp-section h4 {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: var(--ink-mute);
@@ -1033,30 +1333,37 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .toc-item {
   font-family: var(--serif);
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink-soft);
-  padding: 4px 0 4px 12px;
+  padding: 4px 0;
+  padding-inline-start: 12px;
   border-inline-start: 2px solid transparent;
   cursor: pointer;
   line-height: 1.4;
 }
 .toc-item:hover { color: var(--ink); border-inline-start-color: var(--ink-mute); }
 .toc-item.active { color: var(--accent); border-inline-start-color: var(--accent); font-weight: 500; }
-.toc-item.h2 { padding-inline-start: 24px; font-size: 13px; }
-.toc-empty { font-size: 12px; color: var(--ink-mute); font-style: italic; padding: 4px 0; }
+/* Outline depth (T-F7): h1–h6 indentation via logical padding (RTL-aware). */
+.toc-item.h1 { padding-inline-start: 12px; }
+.toc-item.h2 { padding-inline-start: 24px; font-size: 0.8125rem; }
+.toc-item.h3 { padding-inline-start: 36px; font-size: 0.78125rem; }
+.toc-item.h4 { padding-inline-start: 48px; font-size: 0.75rem; }
+.toc-item.h5 { padding-inline-start: 60px; font-size: 0.75rem; }
+.toc-item.h6 { padding-inline-start: 72px; font-size: 0.71875rem; }
+.toc-empty { font-size: 0.75rem; color: var(--ink-mute); font-style: italic; padding: 4px 0; }
 
 .prop-row {
   display: grid;
   grid-template-columns: 1fr 1.2fr;
   padding: 5px 0;
   border-bottom: 1px dashed var(--rule);
-  font-size: 12px;
+  font-size: 0.75rem;
   align-items: center;
 }
 .prop-row:last-child { border-bottom: none; }
 .prop-key {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--ink-mute);
@@ -1073,14 +1380,14 @@ mark.find-hit.current { background: var(--accent); color: white; }
   padding-inline: 14px;
   gap: 16px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .sb-spacer { flex: 1; }
-.sb-stat { display: flex; align-items: center; gap: 5px; cursor: pointer; opacity: 0.85; }
-.sb-stat:hover { opacity: 1; }
-.sb-stat.ok::before { content: '●'; color: var(--green); font-size: 8px; }
+/* status-bar stats are read-only — no cursor:pointer/hover affordance (T-F10) */
+.sb-stat { display: flex; align-items: center; gap: 5px; cursor: default; opacity: 0.85; }
+.sb-stat.ok::before { content: '●'; color: var(--green); font-size: 0.6875rem; }
 .sb-stat.dir { color: var(--accent-soft); font-weight: 600; }
 
 /* palette */
@@ -1116,7 +1423,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   content: '⌘';
   font-family: var(--serif);
   font-style: italic;
-  font-size: 20px;
+  font-size: 1.25rem;
   color: var(--accent);
 }
 .pal-input {
@@ -1124,7 +1431,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   background: transparent;
   border: none;
   outline: none;
-  font-size: 16px;
+  font-size: 1rem;
   color: var(--ink);
   font-family: var(--sans);
 }
@@ -1140,14 +1447,16 @@ mark.find-hit.current { background: var(--accent); color: white; }
   cursor: pointer;
 }
 .pal-item:hover, .pal-item.active { background: var(--accent-soft); color: var(--accent); }
-.pi-icon { font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink-mute); width: 20px; text-align: center; }
+.pi-icon { font-family: var(--serif); font-style: italic; font-size: 0.875rem; color: var(--ink-mute); width: 20px; text-align: center; }
+/* T-F2: palette rows now carry a vendored Lucide line-icon, not a glyph. */
+.pal-item .pi-icon .ic { width: 14px; height: 14px; display: inline-block; vertical-align: middle; }
 .pal-item.active .pi-icon, .pal-item:hover .pi-icon { color: var(--accent); }
-.pi-name { flex: 1; font-size: 13px; color: var(--ink); }
+.pi-name { flex: 1; font-size: 0.8125rem; color: var(--ink); }
 .pal-item.active .pi-name, .pal-item:hover .pi-name { color: var(--accent); }
-.pi-meta { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.08em; }
+.pi-meta { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.08em; }
 .pi-shortcut { display: flex; gap: 3px; }
 .pi-shortcut .kbd {
-  font-family: var(--mono); font-size: 10px;
+  font-family: var(--mono); font-size: 0.6875rem;
   padding: 1px 5px;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
@@ -1158,7 +1467,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .pal-section-label {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: var(--ink-mute);
@@ -1170,7 +1479,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   border-top: 1px solid var(--rule);
   background: var(--paper-deep);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -1178,7 +1487,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   gap: 16px;
 }
 .pal-footer .kbd {
-  font-family: var(--mono); font-size: 9px;
+  font-family: var(--mono); font-size: 0.6875rem;
   padding: 1px 5px;
   background: var(--paper);
   border: 1px solid var(--rule);
@@ -1219,7 +1528,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .modal-title {
   font-family: var(--serif);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 600;
   color: var(--ink);
   letter-spacing: -0.01em;
@@ -1232,18 +1541,18 @@ mark.find-hit.current { background: var(--accent); color: white; }
   border-radius: 4px;
   cursor: pointer;
   color: var(--ink-mute);
-  font-size: 16px;
+  font-size: 1rem;
 }
 .modal-close:hover { background: var(--paper-edge); color: var(--ink); border-color: var(--rule); }
 .modal-body {
   padding: 22px;
   overflow-y: auto;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 .modal-body h3 {
   font-family: var(--serif);
-  font-size: 16px;
+  font-size: 1rem;
   margin: 18px 0 10px;
   color: var(--ink);
 }
@@ -1256,10 +1565,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
   align-items: center;
 }
 .shortcut-row:last-child { border-bottom: none; }
-.shortcut-name { font-size: 13px; color: var(--ink); }
+.shortcut-name { font-size: 0.8125rem; color: var(--ink); }
 .shortcut-keys { display: flex; gap: 3px; }
 .shortcut-keys .kbd {
-  font-family: var(--mono); font-size: 11px;
+  font-family: var(--mono); font-size: 0.6875rem;
   padding: 2px 6px;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
@@ -1270,7 +1579,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .about-logo {
   font-family: var(--serif);
-  font-size: 56px;
+  font-size: 3.5rem;
   color: var(--accent);
   font-style: italic;
   text-align: center;
@@ -1278,13 +1587,13 @@ mark.find-hit.current { background: var(--accent); color: white; }
 }
 .about-name {
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: 1.5rem;
   text-align: center;
   margin-bottom: 4px;
 }
 .about-version {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-mute);
   text-align: center;
   margin-bottom: 18px;
@@ -1295,7 +1604,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   text-align: center;
   font-style: italic;
   font-family: var(--serif);
-  font-size: 16px;
+  font-size: 1rem;
   color: var(--ink-soft);
   margin-bottom: 16px;
 }
@@ -1310,7 +1619,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--paper);
   padding: 10px 18px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   box-shadow: 0 12px 30px rgba(0,0,0,0.3);
   opacity: 0;
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1366,44 +1675,111 @@ html.electron .tab-add {
 </head>
 <body>
 
+<!-- Vendored Lucide icon sprite (T-F2 icon overhaul). MIT/ISC, sourced from lucide-static and
+     inlined as <symbol>s so the app stays 0-network + CSP-safe (no <img>/remote). Use via
+     <svg class="ic"><use href="#ic-NAME"/></svg>; stroke=currentColor inherits the button colour. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="ic-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+    <symbol id="ic-file-plus" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 15h6"/><path d="M12 18v-6"/></symbol>
+    <symbol id="ic-sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol>
+    <symbol id="ic-flip" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+    <symbol id="ic-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/></symbol>
+    <symbol id="ic-bold" viewBox="0 0 24 24"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></symbol>
+    <symbol id="ic-italic" viewBox="0 0 24 24"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></symbol>
+    <symbol id="ic-strike" viewBox="0 0 24 24"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></symbol>
+    <symbol id="ic-underline" viewBox="0 0 24 24"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></symbol>
+    <symbol id="ic-highlighter" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+    <symbol id="ic-subscript" viewBox="0 0 24 24"><path d="m4 5 8 8"/><path d="m12 5-8 8"/><path d="M20 19h-4c0-1.5.44-2 1.5-2.5S20 15.33 20 14c0-.47-.17-.93-.48-1.29a2.11 2.11 0 0 0-2.62-.44c-.42.24-.74.62-.9 1.07"/></symbol>
+    <symbol id="ic-superscript" viewBox="0 0 24 24"><path d="m4 19 8-8"/><path d="m12 19-8-8"/><path d="M20 12h-4c0-1.5.442-2 1.5-2.5S20 8.334 20 7.002c0-.472-.17-.93-.484-1.29a2.105 2.105 0 0 0-2.617-.436c-.42.239-.738.614-.899 1.06"/></symbol>
+    <symbol id="ic-eraser" viewBox="0 0 24 24"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></symbol>
+    <symbol id="ic-asterisk" viewBox="0 0 24 24"><path d="M12 6v12"/><path d="M17.196 9 6.804 15"/><path d="m6.804 9 10.392 6"/></symbol>
+    <symbol id="ic-indent-increase" viewBox="0 0 24 24"><path d="M21 5H11"/><path d="M21 12H11"/><path d="M21 19H11"/><path d="m3 8 4 4-4 4"/></symbol>
+    <symbol id="ic-indent-decrease" viewBox="0 0 24 24"><path d="M21 5H11"/><path d="M21 12H11"/><path d="M21 19H11"/><path d="m7 8-4 4 4 4"/></symbol>
+    <symbol id="ic-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+    <symbol id="ic-code-block" viewBox="0 0 24 24"><path d="m10 9-3 3 3 3"/><path d="m14 15 3-3-3-3"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+    <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="ic-wikilink" viewBox="0 0 24 24"><path d="M16 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-3"/><path d="M8 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3"/></symbol>
+    <symbol id="ic-heading" viewBox="0 0 24 24"><path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/></symbol>
+    <symbol id="ic-quote" viewBox="0 0 24 24"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></symbol>
+    <symbol id="ic-callout" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="ic-list" viewBox="0 0 24 24"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></symbol>
+    <symbol id="ic-list-ordered" viewBox="0 0 24 24"><path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/></symbol>
+    <symbol id="ic-list-checks" viewBox="0 0 24 24"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></symbol>
+    <symbol id="ic-table" viewBox="0 0 24 24"><path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/></symbol>
+    <symbol id="ic-rule" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="ic-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="ic-math" viewBox="0 0 24 24"><path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2"/></symbol>
+    <symbol id="ic-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <!-- Menubar + command-palette icons (T-F2 conversion of the old typographic glyphs). -->
+    <symbol id="ic-calendar-plus" viewBox="0 0 24 24"><path d="M16 19h6"/><path d="M16 2v4"/><path d="M19 16v6"/><path d="M21 12.598V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8.5"/><path d="M3 10h18"/><path d="M8 2v4"/></symbol>
+    <symbol id="ic-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+    <symbol id="ic-file-code" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/></symbol>
+    <symbol id="ic-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="ic-undo-2" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+    <symbol id="ic-redo-2" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></symbol>
+    <symbol id="ic-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></symbol>
+    <symbol id="ic-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="ic-clipboard-paste" viewBox="0 0 24 24"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></symbol>
+    <symbol id="ic-text-select" viewBox="0 0 24 24"><path d="M14 21h1"/><path d="M14 3h1"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 14v1"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M3 9v1"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M7 12h10"/><path d="M7 16h6"/><path d="M7 8h8"/><path d="M9 21h1"/><path d="M9 3h1"/></symbol>
+    <symbol id="ic-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol>
+    <symbol id="ic-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/></symbol>
+    <symbol id="ic-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/></symbol>
+    <symbol id="ic-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+    <symbol id="ic-keyboard" viewBox="0 0 24 24"><path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/></symbol>
+    <symbol id="ic-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="ic-panel-left" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="ic-panel-right" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+    <symbol id="ic-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
+    <symbol id="ic-align-justify" viewBox="0 0 24 24"><path d="M3 5h18"/><path d="M3 12h18"/><path d="M3 19h18"/></symbol>
+    <symbol id="ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="ic-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+    <symbol id="ic-book-open" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+    <symbol id="ic-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  </defs>
+</svg>
+
 <div class="app" id="app">
 
   <!-- TITLEBAR -->
   <div class="titlebar">
     <div class="tb-brand">
-      <span class="tb-brand-mark">◆</span>
+      <!-- Diamond drawn by .tb-brand-name::before; no duplicate glyph here (T-F10). -->
       <span class="tb-brand-name">BP MD RTL Reader</span>
     </div>
 
     <div class="tb-menubar">
-      <button class="tb-menu-item" data-menu="file"><u>F</u>ile</button>
-      <button class="tb-menu-item" data-menu="edit"><u>E</u>dit</button>
-      <button class="tb-menu-item" data-menu="view"><u>V</u>iew</button>
-      <button class="tb-menu-item" data-menu="help"><u>H</u>elp</button>
+      <button class="tb-menu-item" data-menu="file" data-i18n="menu.file"><u>F</u>ile</button>
+      <button class="tb-menu-item" data-menu="edit" data-i18n="menu.edit"><u>E</u>dit</button>
+      <button class="tb-menu-item" data-menu="view" data-i18n="menu.view"><u>V</u>iew</button>
+      <button class="tb-menu-item" data-menu="help" data-i18n="menu.help"><u>H</u>elp</button>
     </div>
 
     <div class="tabs" id="tabs">
-      <button class="tab-add" id="tabAddBtn" title="New tab (Ctrl+N)">+</button>
+      <button class="tab-add" id="tabAddBtn" title="New tab (Ctrl+N)" aria-label="New tab">+</button>
     </div>
 
     <div class="tb-actions">
-      <div class="tb-search" id="searchBtn">
+      <div class="tb-search" id="searchBtn" role="button" tabindex="0" aria-label="Search files">
         <span style="font-family: var(--serif); font-style: italic;">⌘</span>
-        <span>Search files…</span>
+        <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </div>
-      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)">⇄</button>
-      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)">◐</button>
+      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)" aria-label="Flip text direction"><svg class="ic"><use href="#ic-flip"/></svg></button>
+      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-theme"/></svg></button>
     </div>
 
     <div class="win-controls">
-      <button class="win-btn" id="winMinBtn" title="Minimize">
+      <button class="win-btn" id="winMinBtn" title="Minimize" aria-label="Minimize window">
         <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
       </button>
-      <button class="win-btn" id="winMaxBtn" title="Maximize">
+      <button class="win-btn" id="winMaxBtn" title="Maximize" aria-label="Maximize window">
         <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
       </button>
-      <button class="win-btn close" id="winCloseBtn" title="Close">
+      <button class="win-btn close" id="winCloseBtn" title="Close" aria-label="Close window">
         <svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
       </button>
     </div>
@@ -1423,19 +1799,19 @@ html.electron .tab-add {
 
     <aside class="sidebar">
       <div class="sb-header">
-        <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)">‹</button>
+        <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)" aria-label="Toggle sidebar">‹</button>
         <div class="sb-vault-name empty" id="vaultName">No folder opened</div>
         <div class="sb-actions">
-          <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…">⌂</button>
-          <button class="sb-icon-btn" id="sbOpenFileBtn" title="Open file…">¶</button>
-          <button class="sb-icon-btn" id="sbNewNoteBtn" title="New note">+</button>
+          <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…" aria-label="Open folder"><svg class="ic"><use href="#ic-folder"/></svg></button>
+          <button class="sb-icon-btn" id="sbOpenFileBtn" title="Open file…" aria-label="Open file"><svg class="ic"><use href="#ic-file"/></svg></button>
+          <button class="sb-icon-btn" id="sbNewNoteBtn" title="New note" aria-label="New note"><svg class="ic"><use href="#ic-file-plus"/></svg></button>
         </div>
       </div>
 
       <div class="sb-tabs">
-        <button class="sb-tab active" data-pane="files">Files</button>
-        <button class="sb-tab" data-pane="tags">Tags</button>
-        <button class="sb-tab" data-pane="search">Search</button>
+        <button class="sb-tab active" data-pane="files" data-i18n="panel.files">Files</button>
+        <button class="sb-tab" data-pane="tags" data-i18n="panel.tags">Tags</button>
+        <button class="sb-tab" data-pane="search" data-i18n="panel.search">Search</button>
       </div>
 
       <div class="sb-content">
@@ -1445,9 +1821,9 @@ html.electron .tab-add {
             <div class="ttl">No folder opened</div>
             <p>Open a folder of <code style="font-family: var(--mono); font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px;">.md</code> files, or open a single file.</p>
             <div class="actions">
-              <button id="emptyOpenVault"><span class="ic">⌂</span> Open Folder…</button>
-              <button id="emptyOpenFile"><span class="ic">¶</span> Open File…</button>
-              <button id="emptyLoadDemo"><span class="ic">★</span> Try Demo Notes</button>
+              <button id="emptyOpenVault"><svg class="ic"><use href="#ic-folder"/></svg> Open Folder…</button>
+              <button id="emptyOpenFile"><svg class="ic"><use href="#ic-file"/></svg> Open File…</button>
+              <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> Try Demo Notes</button>
             </div>
           </div>
           <div class="tree" id="tree" style="display: none;"></div>
@@ -1462,10 +1838,10 @@ html.electron .tab-add {
         <div class="sb-pane" data-pane="search">
           <div class="search-pane">
             <div class="search-input-wrap">
-              <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…">
+              <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…" data-i18n-placeholder="search.placeholder">
             </div>
             <div class="search-results" id="searchResults">
-              <div class="search-empty">Type to search.</div>
+              <div class="search-empty" data-i18n="search.empty">Type to search.</div>
             </div>
           </div>
         </div>
@@ -1474,26 +1850,63 @@ html.electron .tab-add {
 
     <main class="editor-wrap">
       <div class="toolbar-strip" id="toolbarStrip" style="display:none;">
-        <button class="tool-btn active" id="modeLive" title="Live preview">¶</button>
-        <button class="tool-btn" id="modeSplit" title="Split view">‖</button>
-        <button class="tool-btn" id="modeSource" title="Source mode">&lt;/&gt;</button>
+        <!-- Heading level (H1–H6) pop-down -->
+        <button class="tool-btn tool-combo" id="tbHeading" title="Heading level" aria-label="Heading level" aria-haspopup="true" aria-expanded="false">
+          <svg class="ic"><use href="#ic-heading"/></svg><svg class="ic ic-caret"><use href="#ic-chevron-down"/></svg>
+        </button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" style="font-weight: 700;">B</button>
-        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" style="font-style: italic;">I</button>
-        <button class="tool-btn" id="tbStrike" title="Strike" style="text-decoration: line-through;">S</button>
+        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" aria-label="Bold"><svg class="ic"><use href="#ic-bold"/></svg></button>
+        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" aria-label="Italic"><svg class="ic"><use href="#ic-italic"/></svg></button>
+        <button class="tool-btn" id="tbStrike" title="Strikethrough" aria-label="Strikethrough"><svg class="ic"><use href="#ic-strike"/></svg></button>
+        <button class="tool-btn" id="tbUnderline" title="Underline" aria-label="Underline"><svg class="ic"><use href="#ic-underline"/></svg></button>
+        <button class="tool-btn" id="tbCode" title="Inline code" aria-label="Inline code"><svg class="ic"><use href="#ic-code"/></svg></button>
+        <button class="tool-btn" id="tbHighlight" title="Highlight (==)" aria-label="Highlight"><svg class="ic"><use href="#ic-highlighter"/></svg></button>
+        <button class="tool-btn" id="tbSub" title="Subscript (~x~)" aria-label="Subscript"><svg class="ic"><use href="#ic-subscript"/></svg></button>
+        <button class="tool-btn" id="tbSup" title="Superscript (^x^)" aria-label="Superscript"><svg class="ic"><use href="#ic-superscript"/></svg></button>
+        <button class="tool-btn" id="tbClear" title="Clear formatting" aria-label="Clear formatting"><svg class="ic"><use href="#ic-eraser"/></svg></button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbH1" title="Heading 1">H1</button>
-        <button class="tool-btn" id="tbH2" title="Heading 2">H2</button>
-        <button class="tool-btn" id="tbH3" title="Heading 3">H3</button>
+        <button class="tool-btn" id="tbLink" title="Link" aria-label="Insert link"><svg class="ic"><use href="#ic-link"/></svg></button>
+        <button class="tool-btn" id="tbWikilink" title="Wikilink" aria-label="Insert wikilink"><svg class="ic"><use href="#ic-wikilink"/></svg></button>
+        <button class="tool-btn" id="tbMath" title="Inline math (KaTeX)" aria-label="Insert inline math"><svg class="ic"><use href="#ic-math"/></svg></button>
+        <button class="tool-btn" id="tbFootnote" title="Footnote" aria-label="Insert footnote"><svg class="ic"><use href="#ic-asterisk"/></svg></button>
         <span class="tool-divider"></span>
-        <button class="tool-btn" id="tbLink" title="Link">∞</button>
-        <button class="tool-btn" id="tbQuote" title="Quote">"</button>
-        <button class="tool-btn" id="tbList" title="Bulleted list">•</button>
-        <button class="tool-btn" id="tbCode" title="Inline code">{ }</button>
-        <button class="tool-btn" id="tbWikilink" title="Insert wikilink">[[ ]]</button>
+        <button class="tool-btn" id="tbQuote" title="Blockquote" aria-label="Blockquote"><svg class="ic"><use href="#ic-quote"/></svg></button>
+        <button class="tool-btn" id="tbCallout" title="Callout (> [!NOTE])" aria-label="Insert callout"><svg class="ic"><use href="#ic-callout"/></svg></button>
+        <button class="tool-btn" id="tbList" title="Bulleted list" aria-label="Bulleted list"><svg class="ic"><use href="#ic-list"/></svg></button>
+        <button class="tool-btn" id="tbListOrdered" title="Numbered list" aria-label="Numbered list"><svg class="ic"><use href="#ic-list-ordered"/></svg></button>
+        <button class="tool-btn" id="tbTaskList" title="Task list" aria-label="Task list"><svg class="ic"><use href="#ic-list-checks"/></svg></button>
+        <button class="tool-btn" id="tbOutdent" title="Outdent (Shift+Tab)" aria-label="Outdent"><svg class="ic"><use href="#ic-indent-decrease"/></svg></button>
+        <button class="tool-btn" id="tbIndent" title="Indent (Tab)" aria-label="Indent"><svg class="ic"><use href="#ic-indent-increase"/></svg></button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" id="tbCodeBlock" title="Code block" aria-label="Insert code block"><svg class="ic"><use href="#ic-code-block"/></svg></button>
+        <button class="tool-btn" id="tbTable" title="Table" aria-label="Insert table"><svg class="ic"><use href="#ic-table"/></svg></button>
+        <button class="tool-btn" id="tbImage" title="Image" aria-label="Insert image"><svg class="ic"><use href="#ic-image"/></svg></button>
+        <button class="tool-btn" id="tbRule" title="Horizontal rule" aria-label="Insert horizontal rule"><svg class="ic"><use href="#ic-rule"/></svg></button>
         <span class="tool-spacer"></span>
         <span class="read-time" id="readTime">— min read</span>
+        <!-- Heading-level pop-down (H1–H6); toggled by #tbHeading. Inside the sticky toolbar so
+             it's positioned relative to it (not .app), and doesn't disturb the find-bar anchor. -->
+        <div class="tool-dropdown" id="headingMenu" role="menu" aria-label="Heading level">
+          <div class="td-item" role="menuitem" data-level="1"><span class="td-h td-h1">H</span>Heading 1</div>
+          <div class="td-item" role="menuitem" data-level="2"><span class="td-h td-h2">H</span>Heading 2</div>
+          <div class="td-item" role="menuitem" data-level="3"><span class="td-h td-h3">H</span>Heading 3</div>
+          <div class="td-item" role="menuitem" data-level="4"><span class="td-h td-h4">H</span>Heading 4</div>
+          <div class="td-item" role="menuitem" data-level="5"><span class="td-h td-h5">H</span>Heading 5</div>
+          <div class="td-item" role="menuitem" data-level="6"><span class="td-h td-h6">H</span>Heading 6</div>
+        </div>
       </div>
+      <!-- Table row/column controls — shown only while the caret is inside a table (E). -->
+      <div class="table-controls" id="tableControls" role="toolbar" aria-label="Table controls">
+        <span class="tc-label">Table</span>
+        <button class="tc-btn" id="tcRowAfter" title="Insert row below">+ Row</button>
+        <button class="tc-btn" id="tcRowDelete" title="Delete row">− Row</button>
+        <button class="tc-btn" id="tcColAfter" title="Insert column right">+ Col</button>
+        <button class="tc-btn" id="tcColDelete" title="Delete column">− Col</button>
+      </div>
+
+      <!-- EC-A2 (T-B9): disk-conflict resolve banner — lives ABOVE the editor so it stays
+           visible (the rendered #noteContent is hidden behind the CM6 surface, T-F13). -->
+      <div id="conflictBar"></div>
 
       <div class="editor-area" id="editorArea">
         <div class="source-pane">
@@ -1504,29 +1917,29 @@ html.electron .tab-add {
             <div class="editor-welcome" id="welcome">
               <div class="welcome-card">
                 <div class="logo">BP</div>
-                <h1>Welcome to <em>BP MD RTL Reader</em></h1>
-                <p class="lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
+                <h1 data-i18n-html="welcome.title">Welcome to <em>BP MD RTL Reader</em></h1>
+                <p class="lede" data-i18n-html="welcome.lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
                 <div class="welcome-actions">
                   <button class="welcome-btn" id="wbOpenVault">
-                    <div class="wb-title"><span class="wb-icon">⌂</span>Open Folder<span class="wb-shortcut">Ctrl+Shift+O</span></div>
-                    <div class="wb-sub">Pick a folder containing your markdown files.</div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-folder"/></svg></span><span data-i18n="welcome.openFolder">Open Folder</span><span class="wb-shortcut">Ctrl+Shift+O</span></div>
+                    <div class="wb-sub" data-i18n="welcome.openFolderSub">Pick a folder containing your markdown files.</div>
                   </button>
                   <button class="welcome-btn" id="wbOpenFile">
-                    <div class="wb-title"><span class="wb-icon">¶</span>Open File<span class="wb-shortcut">Ctrl+O</span></div>
-                    <div class="wb-sub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-file"/></svg></span><span data-i18n="welcome.openFile">Open File</span><span class="wb-shortcut">Ctrl+O</span></div>
+                    <div class="wb-sub" data-i18n-html="welcome.openFileSub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
                   </button>
                   <button class="welcome-btn" id="wbNewNote">
-                    <div class="wb-title"><span class="wb-icon">+</span>New Note<span class="wb-shortcut">Ctrl+N</span></div>
-                    <div class="wb-sub">Start a fresh note in a new tab.</div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-file-plus"/></svg></span><span data-i18n="welcome.newNote">New Note</span><span class="wb-shortcut">Ctrl+N</span></div>
+                    <div class="wb-sub" data-i18n="welcome.newNoteSub">Start a fresh note in a new tab.</div>
                   </button>
                   <button class="welcome-btn" id="wbLoadDemo">
-                    <div class="wb-title"><span class="wb-icon">★</span>Try Demo</div>
-                    <div class="wb-sub">Sample notes in English and Arabic.</div>
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-sparkles"/></svg></span><span data-i18n="welcome.tryDemo">Try Demo</span></div>
+                    <div class="wb-sub" data-i18n="welcome.tryDemoSub">Sample notes in English and Arabic.</div>
                   </button>
                 </div>
                 <div class="recent-list">
-                  <div class="recent-label">Recent</div>
-                  <div class="recent-empty" id="recentEmpty">No recent files yet.</div>
+                  <div class="recent-label" data-i18n="welcome.recent">Recent</div>
+                  <div class="recent-empty" id="recentEmpty" data-i18n="welcome.recentEmpty">No recent files yet.</div>
                   <div id="recentList"></div>
                 </div>
               </div>
@@ -1538,31 +1951,31 @@ html.electron .tab-add {
 
       <!-- Find bar -->
       <div class="find-bar" id="findBar">
-        <input type="text" id="findInput" placeholder="Find in note…">
+        <input type="text" id="findInput" placeholder="Find in note…" data-i18n-placeholder="find.placeholder">
         <span class="find-info" id="findInfo">0/0</span>
-        <button class="find-btn" id="findPrevBtn" title="Previous">↑</button>
-        <button class="find-btn" id="findNextBtn" title="Next">↓</button>
-        <button class="find-btn" id="findCloseBtn" title="Close">×</button>
+        <button class="find-btn" id="findPrevBtn" title="Previous" data-i18n-title="find.prev">↑</button>
+        <button class="find-btn" id="findNextBtn" title="Next" data-i18n-title="find.next">↓</button>
+        <button class="find-btn" id="findCloseBtn" title="Close" aria-label="Close find" data-i18n-title="find.close">×</button>
       </div>
     </main>
 
     <aside class="inspector">
       <div class="insp-header">
-        <button class="sb-icon-btn insp-toggle" id="inspectorToggleBtn" title="Hide inspector (Ctrl+Shift+I)">›</button>
-        <span class="insp-title">Inspector</span>
+        <button class="sb-icon-btn insp-toggle" id="inspectorToggleBtn" title="Hide inspector (Ctrl+Shift+I)" aria-label="Toggle inspector">›</button>
+        <span class="insp-title" data-i18n="panel.inspector">Inspector</span>
       </div>
       <div class="insp-content">
         <div class="insp-section">
-          <h4>Outline</h4>
+          <h4 data-i18n="panel.outline">Outline</h4>
           <div id="tocList" class="toc-empty">No document opened.</div>
         </div>
         <div class="insp-section">
-          <h4>Properties</h4>
-          <div class="prop-row"><span class="prop-key">File</span><span class="prop-val" id="propFile">—</span></div>
-          <div class="prop-row"><span class="prop-key">Words</span><span class="prop-val" id="propWords">0</span></div>
-          <div class="prop-row"><span class="prop-key">Read</span><span class="prop-val" id="propRead">—</span></div>
-          <div class="prop-row"><span class="prop-key">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
-          <div class="prop-row"><span class="prop-key">Mode</span><span class="prop-val" id="propMode">Live</span></div>
+          <h4 data-i18n="panel.properties">Properties</h4>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.file">File</span><span class="prop-val" id="propFile">—</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.words">Words</span><span class="prop-val" id="propWords">0</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.read">Read</span><span class="prop-val" id="propRead">—</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.direction">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.mode">Mode</span><span class="prop-val" id="propMode">Live</span></div>
         </div>
       </div>
     </aside>
@@ -1572,7 +1985,7 @@ html.electron .tab-add {
   <div class="statusbar">
     <span class="sb-stat ok" id="sbVault">no folder</span>
     <span class="sb-stat">utf-8</span>
-    <span class="sb-stat">markdown</span>
+    <span class="sb-stat" data-i18n="status.markdown">markdown</span>
     <span class="sb-stat dir" id="dirIndicator">LTR</span>
     <span class="sb-spacer"></span>
     <span class="sb-stat" id="cursorPos">— · —</span>
@@ -1583,1644 +1996,35 @@ html.electron .tab-add {
 
   <!-- COMMAND PALETTE -->
   <div class="palette-overlay" id="palOverlay">
-    <div class="palette">
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
       <div class="pal-input-wrap">
-        <input class="pal-input" id="palInput" placeholder="Type a command, search files…">
+        <input class="pal-input" id="palInput" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">
       </div>
       <div class="pal-results" id="palResults"></div>
       <div class="pal-footer">
-        <span><span class="kbd">↑↓</span> navigate</span>
-        <span><span class="kbd">↵</span> open</span>
-        <span><span class="kbd">esc</span> close</span>
+        <span><span class="kbd">↑↓</span> <span data-i18n="palette.navigate">navigate</span></span>
+        <span><span class="kbd">↵</span> <span data-i18n="palette.openHint">open</span></span>
+        <span><span class="kbd">esc</span> <span data-i18n="palette.close">close</span></span>
       </div>
     </div>
   </div>
 
   <!-- MODAL -->
   <div class="modal-overlay" id="modalOverlay">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <span class="modal-title" id="modalTitle">Modal</span>
-        <button class="modal-close" id="modalCloseBtn">×</button>
+        <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
       </div>
       <div class="modal-body" id="modalBody"></div>
     </div>
   </div>
 
-  <div class="toast" id="toast">Toast</div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 </div>
 
-<script type="module">
-'use strict';
-
-import { isArabicHeavy, escapeHtml, escapeReg } from './src/renderer/i18n.js';
-import { THEMES, getNextTheme, clampZoom } from './src/renderer/theme.js';
-import { createState } from './src/renderer/state.js';
-import { vaultSearch as _vaultSearch } from './src/renderer/search.js';
-import { configureMarked, parseMarkdown as _parseMarkdown } from './src/renderer/markdown.js';
-import { execEditCmd as _execEditCmdImpl } from './src/renderer/edit-commands.js';
-
-// =====================================================================
-// OBSERVABILITY — renderer-side error capture (audit #25)
-// Forwards window.onerror + unhandledrejection to main process, which
-// writes them to <userData>/logs/bpmdrtlreader.log. Local-only. Optional-chain
-// against electronAPI so the page still works when opened outside
-// Electron (e.g. during Playwright file:// tests).
-// =====================================================================
-window.addEventListener('error', (e) => {
-  try {
-    window.electronAPI?.logError?.({
-      message: e.message,
-      stack: e.error?.stack,
-      source: e.filename,
-      line: e.lineno,
-      col: e.colno,
-    });
-  } catch (_) { /* never crash inside the crash handler */ }
-});
-window.addEventListener('unhandledrejection', (e) => {
-  try {
-    const reason = e.reason;
-    window.electronAPI?.logError?.({
-      message: reason instanceof Error ? reason.message : String(reason),
-      stack: reason instanceof Error ? reason.stack : undefined,
-      kind: 'unhandledrejection',
-    });
-  } catch (_) { /* never crash inside the crash handler */ }
-});
-
-// =====================================================================
-// PROXY-BASED OBSERVABLE STATE
-// =====================================================================
-const { state: State, subscribe } = createState({
-  files: [],
-  activeFile: 0,
-  theme: 'paper',
-  direction: 'ltr',
-  editorMode: 'live',
-  sidebarVisible: true,
-  inspectorVisible: true,
-  vaultName: null,
-  recents: [],
-  findHits: [],
-  findIdx: 0,
-  zoomFactor: 1
-});
-
-// Export for testing via window (smoke tests only)
-window._appState = State;
-window._appSubscribe = subscribe;
-
-// =====================================================================
-// CONSTANTS & DOM REFS
-// =====================================================================
-const $ = id => document.getElementById(id);
-const appEl = $('app');
-const appBody = $('appBody');
-const tabsEl = $('tabs');
-const treeEl = $('tree');
-const sbEmptyEl = $('sbEmpty');
-const noteContent = $('noteContent');
-const welcomeEl = $('welcome');
-const toolbarStrip = $('toolbarStrip');
-const tocList = $('tocList');
-const palOverlay = $('palOverlay');
-const palInput = $('palInput');
-const palResults = $('palResults');
-const dropdown = $('dropdown');
-const toastEl = $('toast');
-const fileInput = $('fileInput');
-const modalOverlay = $('modalOverlay');
-const modalTitle = $('modalTitle');
-const modalBody = $('modalBody');
-const editorArea = $('editorArea');
-const srcTextarea = $('srcTextarea');
-
-configureMarked(marked);
-
-function parseMarkdown(md) {
-  return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
-}
-
-window.isArabicHeavy = isArabicHeavy;
-
-// =====================================================================
-// TOAST
-// =====================================================================
-function showToast(msg, kind) {
-  toastEl.textContent = msg;
-  toastEl.classList.remove('error', 'info');
-  if (kind === 'error') toastEl.classList.add('error');
-  else if (kind === 'info') toastEl.classList.add('info');
-  toastEl.classList.add('show');
-  clearTimeout(toastEl._t);
-  toastEl._t = setTimeout(() => toastEl.classList.remove('show'), 2200);
-}
-window.showToast = showToast;
-
-// =====================================================================
-// THEME
-// =====================================================================
-function cycleTheme() {
-  const next = getNextTheme(State.theme);
-  State.theme = next;
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('bpmdrtlreader-theme', next);
-  $('themeBtn').classList.toggle('active', next !== 'paper');
-  if ($('themeLabel')) $('themeLabel').textContent = next;
-  showToast(`Theme: ${next.charAt(0).toUpperCase() + next.slice(1)}`, 'info');
-}
-window.cycleTheme = cycleTheme;
-
-function setTheme(t) {
-  State.theme = t;
-  document.documentElement.setAttribute('data-theme', t);
-  localStorage.setItem('bpmdrtlreader-theme', t);
-  $('themeBtn').classList.toggle('active', t !== 'paper');
-  if ($('themeLabel')) $('themeLabel').textContent = t;
-  closeMenu();
-  showToast(`Theme: ${t.charAt(0).toUpperCase() + t.slice(1)}`, 'info');
-}
-
-// =====================================================================
-// RTL
-// =====================================================================
-function toggleRTL() {
-  const isRTL = State.direction === 'rtl';
-  State.direction = isRTL ? 'ltr' : 'rtl';
-  const editorEl = $('editor');
-  if (State.direction === 'rtl') {
-    srcTextarea.setAttribute('dir', 'auto');
-    if (editorEl) editorEl.setAttribute('dir', 'rtl');
-    appBody._manualRTL = true;
-  } else {
-    srcTextarea.removeAttribute('dir');
-    if (editorEl) editorEl.removeAttribute('dir');
-    appBody._manualRTL = false;
-  }
-  updateDirUI();
-  showToast(`Direction: ${State.direction.toUpperCase()}`);
-}
-window.toggleRTL = toggleRTL;
-
-function updateDirUI() {
-  const isRTL = State.direction === 'rtl';
-  $('dirIndicator').textContent = isRTL ? 'RTL' : 'LTR';
-  $('propDir').textContent = isRTL ? 'RTL' : 'LTR';
-  $('rtlBtn').classList.toggle('active', isRTL);
-}
-
-// =====================================================================
-// SIDEBAR / INSPECTOR TOGGLE
-// =====================================================================
-function toggleSidebar() {
-  State.sidebarVisible = !State.sidebarVisible;
-  appBody.classList.toggle('no-sidebar', !State.sidebarVisible);
-  showToast(`Sidebar: ${State.sidebarVisible ? 'shown' : 'hidden'}`, 'info');
-}
-
-function toggleInspector() {
-  State.inspectorVisible = !State.inspectorVisible;
-  appBody.classList.toggle('no-inspector', !State.inspectorVisible);
-  closeMenu();
-  showToast(`Inspector: ${State.inspectorVisible ? 'shown' : 'hidden'}`, 'info');
-}
-window.toggleInspector = toggleInspector;
-
-// =====================================================================
-// MODAL
-// =====================================================================
-function openModal(title, html) {
-  modalTitle.textContent = title;
-  modalBody.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : html;
-  modalOverlay.classList.add('open');
-}
-function closeModal() { modalOverlay.classList.remove('open'); }
-
-function showShortcuts() {
-  closeMenu();
-  const groups = [
-    ['File', [
-      ['Open Folder…','Ctrl+Shift+O'],
-      ['Open File…','Ctrl+O'],
-      ['New Note','Ctrl+N'],
-      ['New Daily Note','Ctrl+Shift+N'],
-      ['Save','Ctrl+S'],
-      ['Save As…','Ctrl+Shift+S'],
-      ['Close Tab','Ctrl+W']
-    ]],
-    ['Edit', [
-      ['Undo','Ctrl+Z'],
-      ['Redo','Ctrl+Y'],
-      ['Cut','Ctrl+X'],
-      ['Copy','Ctrl+C'],
-      ['Paste','Ctrl+V'],
-      ['Select All','Ctrl+A'],
-      ['Find','Ctrl+F'],
-      ['Bold','Ctrl+B'],
-      ['Italic','Ctrl+I'],
-      ['Link','Ctrl+L'],
-      ['Wikilink','Ctrl+K Ctrl+W']
-    ]],
-    ['View', [
-      ['Toggle Sidebar','Ctrl+\\'],
-      ['Toggle Inspector','Ctrl+Shift+I'],
-      ['Cycle Theme','Ctrl+Shift+D'],
-      ['Flip Direction','Ctrl+Shift+L'],
-      ['Zoom In','Ctrl+='],
-      ['Zoom Out','Ctrl+-'],
-      ['Reset Zoom','Ctrl+0'],
-      ['Command Palette','Ctrl+K']
-    ]],
-    ['Help', [['Keyboard Shortcuts','Ctrl+/']]]
-  ];
-  let html = '';
-  groups.forEach(([heading, rows]) => {
-    html += `<h3>${heading}</h3>`;
-    rows.forEach(([n, k]) => {
-      const keys = k.split('+').map(p => `<span class="kbd">${p}</span>`).join('');
-      html += `<div class="shortcut-row"><span class="shortcut-name">${n}</span><span class="shortcut-keys">${keys}</span></div>`;
-    });
-  });
-  openModal('Keyboard Shortcuts', html);
-}
-
-function showAbout() {
-  closeMenu();
-  const html = `
-    <div class="about-logo">BP</div>
-    <div class="about-name">BP MD RTL Reader</div>
-    <div class="about-version">version 1.0.0 · ${new Date().getFullYear()}</div>
-    <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
-    <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
-      Bilingual to its core — first-class English and Arabic.<br>
-      Plain <code style="font-family: var(--mono); font-size: 12px; background: var(--paper-deep); padding: 1px 5px; border-radius: 3px;">.md</code> files on disk. No proprietary format.
-    </p>
-    <p style="text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 16px;">
-      <strong>Binary Parse</strong> &middot; MIT License
-    </p>
-  `;
-  openModal('About', html);
-}
-
-// =====================================================================
-// DROPDOWN MENUS
-// =====================================================================
-const MENU_DEFS = {
-  file: {
-    x: 76,
-    items: [
-      { kind: 'label', text: 'Open' },
-      { kind: 'item', icon: '⌂', name: 'Open Folder…', shortcut: 'Ctrl+Shift+O', action: () => openVault() },
-      { kind: 'item', icon: '¶', name: 'Open File…', shortcut: 'Ctrl+O', action: () => openSingleFile() },
-      { kind: 'divider' },
-      { kind: 'label', text: 'New' },
-      { kind: 'item', icon: '+', name: 'New Note', shortcut: 'Ctrl+N', action: () => newNote() },
-      { kind: 'item', icon: '◷', name: 'New Daily Note', shortcut: 'Ctrl+Shift+N', action: () => newDailyNote() },
-      { kind: 'divider' },
-      { kind: 'item', icon: '↓', name: 'Save', shortcut: 'Ctrl+S', action: () => saveCurrent() },
-      { kind: 'item', icon: '⇣', name: 'Save As…', shortcut: 'Ctrl+Shift+S', action: () => saveAs() },
-      { kind: 'divider' },
-      { kind: 'item', icon: '⇪', name: 'Export HTML', action: () => exportHTML() },
-      { kind: 'divider' },
-      { kind: 'item', icon: '★', name: 'Load Demo Notes', action: () => loadDemo() },
-      { kind: 'divider' },
-      { kind: 'item', icon: '×', name: 'Close Tab', shortcut: 'Ctrl+W', action: () => { if (State.activeFile !== null) closeTab(State.activeFile); closeMenu(); } },
-      { kind: 'item', icon: '×', name: 'Close Window', shortcut: 'Alt+F4', action: () => winClose() }
-    ]
-  },
-  edit: {
-    x: 110,
-    items: [
-      { kind: 'item', icon: '↶', name: 'Undo', shortcut: 'Ctrl+Z', action: () => execEditCmd('undo') },
-      { kind: 'item', icon: '↷', name: 'Redo', shortcut: 'Ctrl+Y', action: () => execEditCmd('redo') },
-      { kind: 'divider' },
-      { kind: 'item', icon: '✂', name: 'Cut', shortcut: 'Ctrl+X', action: () => execEditCmd('cut') },
-      { kind: 'item', icon: '⧉', name: 'Copy', shortcut: 'Ctrl+C', action: () => execEditCmd('copy') },
-      { kind: 'item', icon: '⎘', name: 'Paste', shortcut: 'Ctrl+V', action: () => execEditCmd('paste') },
-      { kind: 'item', icon: '⊟', name: 'Select All', shortcut: 'Ctrl+A', action: () => execEditCmd('selectAll') },
-      { kind: 'divider' },
-      { kind: 'item', icon: '⌕', name: 'Find…', shortcut: 'Ctrl+F', action: () => { closeMenu(); openFind(); } },
-      { kind: 'divider' },
-      { kind: 'item', icon: 'B', name: 'Bold', shortcut: 'Ctrl+B', action: () => { closeMenu(); wrapSelection('**', '**'); } },
-      { kind: 'item', icon: 'I', name: 'Italic', shortcut: 'Ctrl+I', action: () => { closeMenu(); wrapSelection('*', '*'); } },
-      { kind: 'item', icon: '∞', name: 'Insert Link', shortcut: 'Ctrl+L', action: () => { closeMenu(); insertText('[', '](url)'); } },
-      { kind: 'item', icon: '[[', name: 'Insert Wikilink', action: () => { closeMenu(); insertText('[[', ']]'); } }
-    ]
-  },
-  view: {
-    x: 145,
-    items: [
-      { kind: 'label', text: 'Mode' },
-      { kind: 'check', name: 'Live Preview', checked: () => State.editorMode === 'live', action: () => { setEditorMode('live'); closeMenu(); } },
-      { kind: 'check', name: 'Split View', checked: () => State.editorMode === 'split', action: () => { setEditorMode('split'); closeMenu(); } },
-      { kind: 'check', name: 'Source Mode', checked: () => State.editorMode === 'source', action: () => { setEditorMode('source'); closeMenu(); } },
-      { kind: 'divider' },
-      { kind: 'label', text: 'Panels' },
-      { kind: 'check', name: 'Show Sidebar', shortcut: 'Ctrl+\\', checked: () => State.sidebarVisible, action: () => { toggleSidebar(); closeMenu(); } },
-      { kind: 'check', name: 'Show Inspector', shortcut: 'Ctrl+Shift+I', checked: () => State.inspectorVisible, action: toggleInspector },
-      { kind: 'divider' },
-      { kind: 'label', text: 'Theme' },
-      { kind: 'check', name: 'Paper (light)', checked: () => State.theme === 'paper', action: () => setTheme('paper') },
-      { kind: 'check', name: 'Ink (dark)', checked: () => State.theme === 'ink', action: () => setTheme('ink') },
-      { kind: 'check', name: 'Sepia', checked: () => State.theme === 'sepia', action: () => setTheme('sepia') },
-      { kind: 'divider' },
-      { kind: 'item', icon: '⇄', name: 'Flip Direction (RTL/LTR)', shortcut: 'Ctrl+Shift+L', action: () => { toggleRTL(); closeMenu(); } },
-      { kind: 'divider' },
-      { kind: 'label', text: 'Zoom' },
-      { kind: 'item', icon: '+', name: 'Zoom In',    shortcut: 'Ctrl+=', action: () => { zoomIn();    closeMenu(); } },
-      { kind: 'item', icon: '−', name: 'Zoom Out',   shortcut: 'Ctrl+-', action: () => { zoomOut();   closeMenu(); } },
-      { kind: 'item', icon: '1', name: 'Reset Zoom', shortcut: 'Ctrl+0', action: () => { zoomReset(); closeMenu(); } },
-      { kind: 'divider' },
-      { kind: 'item', icon: '⌘', name: 'Command Palette', shortcut: 'Ctrl+K', action: () => { closeMenu(); openPalette(); } }
-    ]
-  },
-  help: {
-    x: 184,
-    items: [
-      { kind: 'item', icon: '⌨', name: 'Keyboard Shortcuts', shortcut: 'Ctrl+/', action: showShortcuts },
-      { kind: 'item', icon: 'i', name: 'About BP MD RTL Reader', action: showAbout }
-    ]
-  }
-};
-
-function openMenu(e, name) {
-  e.stopPropagation();
-  if (dropdown.classList.contains('open') && dropdown.dataset.menu === name) {
-    closeMenu(); return;
-  }
-  closeMenu();
-  buildMenu(name);
-  document.querySelectorAll('.tb-menu-item').forEach(m => m.classList.remove('open-menu'));
-  if (e.currentTarget.classList.contains('tb-menu-item')) e.currentTarget.classList.add('open-menu');
-  dropdown.classList.add('open');
-  dropdown.dataset.menu = name;
-  dropdown.style.insetInlineStart = MENU_DEFS[name].x + 'px';
-}
-
-function buildMenu(name) {
-  const def = MENU_DEFS[name];
-  let html = '';
-  def.items.forEach((it, i) => {
-    if (it.kind === 'label') html += `<div class="dd-section-label">${escapeHtml(it.text)}</div>`;
-    else if (it.kind === 'divider') html += `<div class="dd-divider"></div>`;
-    else if (it.kind === 'check') {
-      const checked = it.checked ? it.checked() : false;
-      html += `<div class="dd-item${checked ? ' checked' : ''}" data-i="${i}" role="menuitemcheckbox" aria-checked="${checked}" tabindex="0">
-        <span class="dd-check">✓</span><span class="dd-icon">·</span>
-        <span class="dd-name">${escapeHtml(it.name)}</span>
-        ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
-      </div>`;
-    } else {
-      html += `<div class="dd-item${it.disabled ? ' disabled' : ''}" data-i="${i}" role="menuitem"${it.disabled ? ' aria-disabled="true"' : ' tabindex="0"'}>
-        <span class="dd-icon">${escapeHtml(it.icon || '·')}</span>
-        <span class="dd-name">${escapeHtml(it.name)}</span>
-        ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
-      </div>`;
-    }
-  });
-  dropdown.innerHTML = html;
-  dropdown.setAttribute('role', 'menu');
-  dropdown.querySelectorAll('.dd-item:not(.disabled)').forEach(el => {
-    const i = parseInt(el.dataset.i);
-    const activate = () => { try { def.items[i].action(); } catch(err) { console.error(err); } };
-    // Don't let mousedown blur the editor before the action runs — Copy/Cut/Undo
-    // need the textarea to stay focused with its selection intact.
-    el.addEventListener('mousedown', e => e.preventDefault());
-    el.onclick = activate;
-    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } };
-  });
-}
-
-function closeMenu() {
-  dropdown.classList.remove('open');
-  document.querySelectorAll('.tb-menu-item').forEach(m => m.classList.remove('open-menu'));
-}
-
-// =====================================================================
-// FIND IN PAGE (Ctrl+F)
-// =====================================================================
-function openFind() {
-  const findBar = $('findBar');
-  findBar.classList.add('open');
-  setTimeout(() => $('findInput').focus(), 50);
-}
-function closeFind() {
-  const findBar = $('findBar');
-  findBar.classList.remove('open');
-  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
-    const text = document.createTextNode(m.textContent);
-    m.parentNode.replaceChild(text, m);
-  });
-  noteContent.normalize();
-  State.findHits = [];
-  $('findInfo').textContent = '0/0';
-}
-function runFind(q) {
-  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
-    const t = document.createTextNode(m.textContent);
-    m.parentNode.replaceChild(t, m);
-  });
-  noteContent.normalize();
-  State.findHits = [];
-  State.findSourceMatches = [];  // positions for source mode
-
-  // Source mode: search inside the textarea, since the preview is hidden.
-  if (State.editorMode === 'source') {
-    if (!q) { $('findInfo').textContent = '0/0'; return; }
-    const re = new RegExp(escapeReg(q), 'gi');
-    const val = srcTextarea.value;
-    let m, matches = [];
-    while ((m = re.exec(val)) !== null) {
-      matches.push({ start: m.index, end: m.index + m[0].length });
-      if (m.index === re.lastIndex) re.lastIndex++; // safety
-    }
-    State.findSourceMatches = matches;
-    State.findIdx = 0;
-    if (matches.length) {
-      srcTextarea.focus();
-      srcTextarea.setSelectionRange(matches[0].start, matches[0].end);
-      // Scroll the textarea to keep the selection visible without moving the
-      // statusbar — textareas handle this natively when setSelectionRange runs
-      // on a focused element, so no extra work needed.
-    }
-    $('findInfo').textContent = `${matches.length ? 1 : 0}/${matches.length}`;
-    return;
-  }
-
-  if (!q) { $('findInfo').textContent = '0/0'; return; }
-  const re = new RegExp(escapeReg(q), 'gi');
-  const walker = document.createTreeWalker(noteContent, NodeFilter.SHOW_TEXT, null);
-  const textNodes = [];
-  let n; while ((n = walker.nextNode())) textNodes.push(n);
-  textNodes.forEach(node => {
-    const txt = node.nodeValue;
-    if (!re.test(txt)) return;
-    re.lastIndex = 0;
-    const frag = document.createDocumentFragment();
-    let last = 0, m;
-    while ((m = re.exec(txt)) !== null) {
-      if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
-      const mark = document.createElement('mark');
-      mark.className = 'find-hit';
-      mark.textContent = m[0];
-      frag.appendChild(mark);
-      State.findHits.push(mark);
-      last = m.index + m[0].length;
-    }
-    if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
-    node.parentNode.replaceChild(frag, node);
-  });
-  State.findIdx = 0;
-  State.findHits.forEach((mark, idx) => {
-    mark.addEventListener('click', () => {
-      State.findHits.forEach(m => m.classList.remove('current'));
-      State.findIdx = idx;
-      mark.classList.add('current');
-      $('findInfo').textContent = `${idx + 1}/${State.findHits.length}`;
-      // Bug 6 fix: scroll only within the preview-pane container so statusbar never shifts
-      scrollMarkIntoPane(mark);
-    });
-  });
-  if (State.findHits.length) {
-    State.findHits[0].classList.add('current');
-    scrollMarkIntoPane(State.findHits[0]);
-  }
-  $('findInfo').textContent = `${State.findHits.length ? 1 : 0}/${State.findHits.length}`;
-}
-
-// Bug 6 fix: manual scrollTop arithmetic confined to the .preview-pane scroll container.
-// This prevents document-level scrollIntoView from shifting the statusbar.
-function scrollMarkIntoPane(mark) {
-  const scrollEl = document.querySelector('.preview-pane');
-  if (!scrollEl) {
-    // .preview-pane always exists when find-marks are rendered; this branch
-    // is unreachable in practice. Return silently rather than calling
-    // mark.scrollIntoView() which would re-trigger the document-shift bug.
-    return;
-  }
-  const markRect = mark.getBoundingClientRect();
-  const paneRect = scrollEl.getBoundingClientRect();
-  const markTop = markRect.top - paneRect.top + scrollEl.scrollTop;
-  scrollEl.scrollTop = markTop - scrollEl.clientHeight / 2;
-}
-
-function findStep(d) {
-  // Source mode: navigate textarea match positions
-  if (State.editorMode === 'source') {
-    const matches = State.findSourceMatches || [];
-    if (!matches.length) return;
-    State.findIdx = (State.findIdx + d + matches.length) % matches.length;
-    const m = matches[State.findIdx];
-    srcTextarea.focus();
-    srcTextarea.setSelectionRange(m.start, m.end);
-    $('findInfo').textContent = `${State.findIdx + 1}/${matches.length}`;
-    return;
-  }
-  if (!State.findHits.length) return;
-  State.findHits[State.findIdx].classList.remove('current');
-  State.findIdx = (State.findIdx + d + State.findHits.length) % State.findHits.length;
-  State.findHits[State.findIdx].classList.add('current');
-  // Bug 6 fix: use contained scroll instead of scrollIntoView
-  scrollMarkIntoPane(State.findHits[State.findIdx]);
-  $('findInfo').textContent = `${State.findIdx + 1}/${State.findHits.length}`;
-}
-
-// =====================================================================
-// EXPORT HTML
-// =====================================================================
-function exportHTML() {
-  closeMenu();
-  if (State.activeFile === null || !State.files[State.activeFile]) {
-    showToast('No file to export', 'error'); return;
-  }
-  const f = State.files[State.activeFile];
-  const html = parseMarkdown(f.content || '');
-  const fullHtml = `<!DOCTYPE html>
-<html lang="${State.direction === 'rtl' ? 'ar' : 'en'}" dir="${State.direction}">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(f.name.replace(/\.md$/, ''))}</title>
-<style>
-body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; }
-h1,h2,h3 { font-weight: 600; line-height: 1.2; }
-a { color: #C0492C; }
-code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; }
-pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; overflow-x: auto; }
-blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding-inline-start: 20px; margin: 24px 0; font-style: italic; }
-</style>
-</head>
-<body>
-${html}
-</body>
-</html>`;
-  const blob = new Blob([fullHtml], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = f.name.replace(/\.md$/, '.html');
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast(`Exported ${a.download}`);
-}
-window.exportHTML = exportHTML;
-
-// =====================================================================
-// NEW DAILY NOTE
-// =====================================================================
-function newDailyNote() {
-  closeMenu();
-  const d = new Date();
-  const name = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.md`;
-  const existing = State.files.findIndex(f => f.name === name);
-  if (existing >= 0) { renderFile(existing); return; }
-  const dateStr = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  addFile({ name, path: name, handle: null, content: `# ${dateStr}\n\n`, dirty: true });
-}
-
-// =====================================================================
-// EDIT MENU COMMANDS
-// =====================================================================
-async function clipboardCopy(text) {
-  try { await navigator.clipboard.writeText(text); }
-  catch(e) { showToast('Clipboard write failed', 'error'); }
-}
-
-// Track the last-focused editable element (textarea or input). This is needed
-// because clicking the Edit menu blurs the textarea — by the time execEditCmd
-// runs, document.activeElement is the menu DIV, not the textarea.
-let _lastFocusedEditable = null;
-document.addEventListener('focusin', (e) => {
-  const t = e.target;
-  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) {
-    _lastFocusedEditable = t;
-  }
-}, true);
-
-function execEditCmd(cmd) {
-  // All logic lives in src/renderer/edit-commands.js (testable + mutatable).
-  // This shim builds the deps object and forwards. Critically: selectAll is
-  // NEVER routed through electronAPI.editCommand because webContents.selectAll
-  // would select the entire renderer DOM (titlebar/sidebar/statusbar).
-  const deps = {
-    electronAPI: cmd === 'selectAll' ? null : (window.electronAPI || null),
-    getMode: () => State.editorMode,
-    getSrcTextarea: () => srcTextarea,
-    getNoteContent: () => noteContent,
-    getLastFocusedEditable: () => _lastFocusedEditable,
-    getActiveElement: () => document.activeElement,
-    getSelection: () => window.getSelection(),
-    createRange: () => document.createRange(),
-    clipboard: (navigator && navigator.clipboard) || null,
-    showToast: (m, l) => showToast(m, l),
-    closeMenu: () => closeMenu(),
-  };
-  return _execEditCmdImpl(cmd, deps);
-}
-window.execEditCmd = execEditCmd;
-
-// =====================================================================
-// SIDEBAR PANE SWITCHING
-// =====================================================================
-function switchSbPane(name) {
-  document.querySelectorAll('.sb-tab').forEach(t => t.classList.toggle('active', t.dataset.pane === name));
-  document.querySelectorAll('.sb-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
-  if (name === 'tags') renderTags();
-  if (name === 'search') setTimeout(() => $('sbSearchInput').focus(), 50);
-}
-
-// =====================================================================
-// SIDEBAR SEARCH
-// =====================================================================
-
-// ==== VAULT SEARCH ====
-// Pure search function — extracted for unit testing.
-// Returns [{name, fileIdx, hits:[{before, match, after, ellipsisBefore, ellipsisAfter}]}],
-// max 5 hits per file. Raw text segments — no HTML; rendering is done by runSidebarSearch
-// via DOM API to eliminate innerHTML injection risk.
-function vaultSearch(query) {
-  return _vaultSearch(query, State.files);
-}
-window.vaultSearch = vaultSearch;
-
-// ==== SIDEBAR SEARCH RENDERER ====
-// Builds result DOM entirely via createElement + textContent (no innerHTML injection).
-function runSidebarSearch(q) {
-  const out = $('searchResults');
-  q = q.trim();
-  if (q.length < 2) {
-    out.textContent = '';
-    const empty = document.createElement('div');
-    empty.className = 'search-empty';
-    empty.textContent = 'Type to search.';
-    out.appendChild(empty);
-    return;
-  }
-  const results = vaultSearch(q);
-  out.textContent = ''; // clear previous results without innerHTML
-  if (!results.length) {
-    const empty = document.createElement('div');
-    empty.className = 'search-empty';
-    empty.textContent = `No matches for "${q}".`;
-    out.appendChild(empty);
-    return;
-  }
-  results.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'search-result';
-    card.addEventListener('click', () => { renderFile(r.fileIdx); switchSbPane('files'); });
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'sr-name';
-    nameEl.textContent = r.name;
-    card.appendChild(nameEl);
-
-    if (r.hits.length > 0) {
-      r.hits.forEach(h => {
-        const snip = document.createElement('div');
-        snip.className = 'sr-snip';
-        if (h.ellipsisBefore) snip.appendChild(document.createTextNode('… '));
-        snip.appendChild(document.createTextNode(h.before));
-        const markEl = document.createElement('mark');
-        markEl.textContent = h.match;
-        snip.appendChild(markEl);
-        snip.appendChild(document.createTextNode(h.after));
-        if (h.ellipsisAfter) snip.appendChild(document.createTextNode(' …'));
-        card.appendChild(snip);
-      });
-    } else {
-      const snip = document.createElement('div');
-      snip.className = 'sr-snip';
-      const em = document.createElement('em');
-      em.textContent = 'name match';
-      snip.appendChild(em);
-      card.appendChild(snip);
-    }
-
-    out.appendChild(card);
-  });
-}
-
-// =====================================================================
-// EDITOR MODE
-// =====================================================================
-function setEditorMode(mode) {
-  if (!mode || typeof mode !== 'string') return;
-  State.editorMode = mode;
-  editorArea.classList.remove('split', 'source');
-  if (mode === 'split') editorArea.classList.add('split');
-  else if (mode === 'source') editorArea.classList.add('source');
-  $('modeLive').classList.toggle('active', mode === 'live');
-  $('modeSplit').classList.toggle('active', mode === 'split');
-  $('modeSource').classList.toggle('active', mode === 'source');
-  $('propMode').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
-  showToast(`Mode: ${mode}`, 'info');
-}
-window.setEditorMode = setEditorMode;
-
-// =====================================================================
-// ZOOM (Issue #5) — scoped to #editorArea only; chrome unaffected
-// =====================================================================
-function setZoom(factor) {
-  if (typeof factor !== 'number' || isNaN(factor)) return;
-  const clamped = clampZoom(factor);
-  State.zoomFactor = clamped;
-  editorArea.style.zoom = clamped;
-}
-function zoomIn()    { setZoom(State.zoomFactor * 1.1); }
-function zoomOut()   { setZoom(State.zoomFactor / 1.1); }
-function zoomReset() { setZoom(1); }
-window.setZoom   = setZoom;
-window.zoomIn    = zoomIn;
-window.zoomOut   = zoomOut;
-window.zoomReset = zoomReset;
-
-// =====================================================================
-// TABS
-// =====================================================================
-function renderTabs() {
-  tabsEl.querySelectorAll('.tab').forEach(t => t.remove());
-  const addBtn = $('tabAddBtn');
-  State.files.forEach((f, i) => {
-    const tab = document.createElement('div');
-    tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '');
-    tab.title = f.name;
-    const closeIcon = f.dirty ? '●' : '×';
-    tab.innerHTML = `<span class="tab-name">${escapeHtml(f.name)}</span><span class="close">${closeIcon}</span>`;
-    tab.querySelector('.close').addEventListener('click', e => { e.stopPropagation(); closeTab(i); });
-    tab.addEventListener('click', () => renderFile(i));
-    tabsEl.insertBefore(tab, addBtn);
-  });
-}
-
-function closeTab(idx) {
-  const f = State.files[idx];
-  if (f.dirty) {
-    if (!confirm(`"${f.name}" has unsaved changes. Close anyway?`)) return;
-  }
-  State.files.splice(idx, 1);
-  if (State.files.length === 0) { State.activeFile = null; showWelcome(); return; }
-  if (State.activeFile === idx) renderFile(Math.max(0, idx - 1));
-  else { if (State.activeFile > idx) State.activeFile--; renderTabs(); }
-}
-
-function showWelcome() {
-  welcomeEl.style.display = 'grid';
-  noteContent.style.display = 'none';
-  toolbarStrip.style.display = 'none';
-  renderTabs();
-  $('propFile').textContent = '—';
-  $('propWords').textContent = '0';
-  $('propRead').textContent = '—';
-  $('readTime').textContent = '— min read';
-  $('wordCount').textContent = '0 words';
-  $('cursorPos').textContent = '— · —';
-  tocList.className = 'toc-empty';
-  tocList.textContent = 'No document opened.';
-  renderRecents();
-}
-
-// =====================================================================
-// RENDER FILE
-// =====================================================================
-function renderFile(idx) {
-  const file = State.files[idx];
-  if (!file) return;
-  State.activeFile = idx;
-
-  welcomeEl.style.display = 'none';
-  noteContent.style.display = 'block';
-  toolbarStrip.style.display = 'flex';
-
-  srcTextarea.value = file.content || '';
-
-  const html = parseMarkdown(file.content || '');
-  const wordCount = (file.content.match(/\S+/g) || []).length;
-  const readMin = Math.max(1, Math.round(wordCount / 220));
-  const isAr = isArabicHeavy(file.content || '');
-
-  noteContent.innerHTML = `
-    <div class="doc-meta">
-      <span>${isAr ? 'مقالة' : 'note'}</span>
-      <span>·</span>
-      <span>${wordCount} ${isAr ? 'كلمة' : 'words'}</span>
-      <span>·</span>
-      <span>${escapeHtml(file.path)}</span>
-      ${file.dirty ? '<span>·</span><span style="color: var(--accent);">● unsaved</span>' : ''}
-    </div>
-    ${html}
-  `;
-
-  // Auto-RTL: detect Arabic-heavy content and flip layout
-  const editorEl = $('editor');
-  if (isAr && State.direction !== 'rtl') {
-    State.direction = 'rtl';
-    srcTextarea.setAttribute('dir', 'auto');
-    if (editorEl) editorEl.setAttribute('dir', 'rtl');
-    updateDirUI();
-  } else if (!isAr && State.direction === 'rtl' && !appBody._manualRTL) {
-    State.direction = 'ltr';
-    srcTextarea.removeAttribute('dir');
-    if (editorEl) editorEl.removeAttribute('dir');
-    updateDirUI();
-  }
-
-  $('propFile').textContent = file.name;
-  $('propWords').textContent = wordCount;
-  $('propRead').textContent = `≈ ${readMin} min`;
-  $('readTime').textContent = `≈ ${readMin} min read`;
-  $('wordCount').textContent = `${wordCount} words`;
-  $('cursorPos').textContent = 'ln 1 · col 1';
-  $('propMode').textContent = State.editorMode.charAt(0).toUpperCase() + State.editorMode.slice(1);
-
-  buildTOC();
-  renderTabs();
-  highlightTreeActive();
-  pushRecent(file);
-
-  document.querySelector('.editor-wrap').scrollTop = 0;
-
-  // Wire wikilink clicks
-  noteContent.querySelectorAll('a.wikilink').forEach(a => {
-    a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
-  });
-}
-window.renderFile = renderFile;
-
-function buildTOC() {
-  const headings = noteContent.querySelectorAll('h1, h2, h3');
-  if (!headings.length) {
-    tocList.className = 'toc-empty';
-    tocList.textContent = 'No headings.';
-    return;
-  }
-  tocList.className = '';
-  tocList.innerHTML = '';
-  headings.forEach((h, i) => {
-    const el = document.createElement('div');
-    el.className = 'toc-item' + (h.tagName === 'H1' ? '' : ' h2') + (i === 0 ? ' active' : '');
-    el.textContent = h.textContent;
-    el.addEventListener('click', () => {
-      const pane = h.closest('.preview-pane');
-      if (pane) {
-        pane.scrollTo({ top: h.offsetTop - pane.offsetTop, behavior: 'smooth' });
-      } else {
-        h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
-    tocList.appendChild(el);
-  });
-}
-
-// =====================================================================
-// TREE
-// =====================================================================
-function highlightTreeActive() {
-  treeEl.querySelectorAll('.tree-node').forEach(n => {
-    n.classList.toggle('active', parseInt(n.dataset.fileIdx) === State.activeFile);
-  });
-}
-
-function renderTree(entries) {
-  treeEl.innerHTML = '';
-  treeEl.style.display = 'block';
-  sbEmptyEl.style.display = 'none';
-  entries.forEach((entry, i) => {
-    const node = document.createElement('div');
-    node.className = 'tree-node tree-indent';
-    node.dataset.fileIdx = i;
-    node.setAttribute('role', 'treeitem');
-    node.setAttribute('tabindex', '0');
-    node.setAttribute('aria-label', entry.name);
-    const nameIsAr = isArabicHeavy(entry.name);
-    node.innerHTML = `<span class="tree-icon">¶</span><span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(entry.name)}</span>`;
-    const activate = () => openFromTree(i);
-    node.addEventListener('click', activate);
-    node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
-    treeEl.appendChild(node);
-  });
-  renderTags();
-}
-
-async function openFromTree(idx) {
-  const f = State.files[idx];
-  if (f.handle && !f.content) {
-    try { const file = await f.handle.getFile(); f.content = await file.text(); }
-    catch(e) { showToast('Could not read file', 'error'); return; }
-  }
-  renderFile(idx);
-}
-
-// =====================================================================
-// TAGS
-// =====================================================================
-function renderTags() {
-  const tagsPane = $('tagsPane');
-  const tagMap = {};
-  State.files.forEach((f, i) => {
-    const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
-    let m;
-    while ((m = re.exec(f.content || '')) !== null) {
-      if (!tagMap[m[1]]) tagMap[m[1]] = [];
-      if (!tagMap[m[1]].includes(i)) tagMap[m[1]].push(i);
-    }
-  });
-  const tags = Object.entries(tagMap).sort((a, b) => b[1].length - a[1].length);
-  if (!tags.length) {
-    tagsPane.innerHTML = '<div class="search-empty">No tags found.</div>';
-    return;
-  }
-  tagsPane.innerHTML = `<div class="tag-cloud">${tags.map(([t, files]) =>
-    `<span class="tag" data-tag="${escapeHtml(t)}">${escapeHtml(t)}<span class="count">${files.length}</span></span>`
-  ).join('')}</div>`;
-  tagsPane.querySelectorAll('.tag').forEach(el => {
-    el.addEventListener('click', () => filterByTag(el.dataset.tag));
-  });
-}
-
-function filterByTag(tag) {
-  switchSbPane('search');
-  $('sbSearchInput').value = '#' + tag;
-  runSidebarSearch('#' + tag);
-}
-
-// =====================================================================
-// FILE I/O
-// =====================================================================
-async function openVault() {
-  closeMenu();
-  // Branch 1: Electron IPC path — preferred in packaged builds (Bug 1 / AC1)
-  if (window.electronAPI && typeof window.electronAPI.openFolder === 'function') {
-    try {
-      const result = await window.electronAPI.openFolder();
-      if (result.canceled || !result.folderPath) return;
-      const folderPath = result.folderPath;
-      const entries = await window.electronAPI.readVault(folderPath);
-      const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
-      State.vaultName = folderName;
-      const md = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false }));
-      State.files = md;
-      $('vaultName').textContent = folderName;
-      $('vaultName').classList.remove('empty');
-      $('sbVault').textContent = `folder: ${folderName}`;
-      if (md.length === 0) {
-        showToast('Folder opened — no .md files found', 'info');
-      } else {
-        renderTree(md);
-        renderFile(0);
-        showToast(`Opened "${folderName}" — ${md.length} note${md.length === 1 ? '' : 's'}`);
-      }
-    } catch(e) {
-      if (e.name !== 'AbortError') { showToast('Could not open folder', 'error'); }
-    }
-    return;
-  }
-  // Branch 2: File System Access API (browser / dev mode)
-  if ('showDirectoryPicker' in window) {
-    try {
-      const handle = await window.showDirectoryPicker();
-      State.vaultName = handle.name;
-      State.files = [];
-      const md = [];
-      for await (const entry of handle.values()) {
-        if (entry.kind === 'file' && /\.(md|markdown)$/i.test(entry.name)) {
-          md.push({ name: entry.name, path: entry.name, handle: entry, content: '', dirty: false });
-        }
-      }
-      md.sort((a, b) => a.name.localeCompare(b.name));
-      State.files = md;
-      $('vaultName').textContent = handle.name;
-      $('vaultName').classList.remove('empty');
-      $('sbVault').textContent = `folder: ${handle.name}`;
-      if (md.length === 0) {
-        showToast('Folder opened — no .md files found', 'info');
-      } else {
-        renderTree(md);
-        renderFile(0);
-        showToast(`Opened "${handle.name}" — ${md.length} note${md.length === 1 ? '' : 's'}`);
-      }
-    } catch(e) {
-      if (e.name !== 'AbortError') { console.error(e); showToast('Could not open folder', 'error'); }
-    }
-  } else {
-    // FSA unavailable — fall back to a hidden <input webkitdirectory>
-    const inp = document.createElement('input');
-    inp.type = 'file';
-    inp.setAttribute('webkitdirectory', '');
-    inp.setAttribute('multiple', '');
-    inp.accept = '.md,.markdown';
-    inp.style.display = 'none';
-    document.body.appendChild(inp);
-    inp.addEventListener('change', async () => {
-      const files = Array.from(inp.files || []).filter(f => /\.(md|markdown)$/i.test(f.name));
-      document.body.removeChild(inp);
-      if (files.length === 0) return;
-      const md = [];
-      for (const file of files) {
-        const content = await file.text();
-        md.push({ name: file.name, path: file.name, handle: null, content, dirty: false });
-      }
-      md.sort((a, b) => a.name.localeCompare(b.name));
-      const folderName = files[0].webkitRelativePath.split('/')[0] || 'folder';
-      State.vaultName = folderName;
-      State.files = md;
-      $('vaultName').textContent = folderName;
-      $('vaultName').classList.remove('empty');
-      $('sbVault').textContent = `folder: ${folderName}`;
-      renderTree(md);
-      renderFile(0);
-      showToast(`Opened "${folderName}" — ${md.length} note${md.length === 1 ? '' : 's'}`);
-    });
-    inp.click();
-  }
-}
-window.openVault = openVault;
-
-async function openSingleFile() {
-  closeMenu();
-  if ('showOpenFilePicker' in window) {
-    try {
-      const [handle] = await window.showOpenFilePicker({
-        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }]
-      });
-      const file = await handle.getFile();
-      const content = await file.text();
-      addFile({ name: file.name, path: file.name, handle, content, dirty: false });
-      showToast(`Opened ${file.name}`);
-    } catch(e) {
-      if (e.name !== 'AbortError') console.error(e);
-    }
-    return;
-  }
-  fileInput.click();
-}
-window.openSingleFile = openSingleFile;
-
-fileInput.addEventListener('change', async () => {
-  for (const file of fileInput.files) {
-    const content = await file.text();
-    addFile({ name: file.name, path: file.name, handle: null, content, dirty: false });
-  }
-  if (fileInput.files.length > 0) showToast(`Opened ${fileInput.files.length} file(s)`);
-  fileInput.value = '';
-});
-
-function addFile(f) {
-  const existing = State.files.findIndex(x => x.name === f.name && x.path === f.path);
-  if (existing >= 0) { State.files[existing] = f; renderFile(existing); }
-  else { State.files.push(f); renderFile(State.files.length - 1); }
-}
-
-function newNote() {
-  closeMenu();
-  const n = State.files.filter(f => f.name.startsWith('Untitled')).length;
-  const name = `Untitled${n > 0 ? '-' + n : ''}.md`;
-  addFile({ name, path: name, handle: null, content: `# Untitled\n\nStart writing…\n`, dirty: true });
-}
-window.newNote = newNote;
-
-async function saveCurrent() {
-  closeMenu();
-  if (State.activeFile === null || !State.files[State.activeFile]) { showToast('No file to save', 'error'); return; }
-  const f = State.files[State.activeFile];
-  if (f.handle && f.handle.createWritable) {
-    try {
-      const w = await f.handle.createWritable();
-      await w.write(f.content); await w.close();
-      f.dirty = false; renderTabs();
-      showToast(`Saved ${f.name}`);
-    } catch(e) { showToast('Could not save', 'error'); }
-  } else {
-    const blob = new Blob([f.content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = f.name; a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Downloaded ${f.name}`);
-  }
-}
-window.saveCurrent = saveCurrent;
-
-async function saveAs() {
-  closeMenu();
-  if (State.activeFile === null || !State.files[State.activeFile]) { showToast('No file to save', 'error'); return; }
-  const f = State.files[State.activeFile];
-  if ('showSaveFilePicker' in window) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: f.name,
-        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
-      });
-      const w = await handle.createWritable();
-      await w.write(f.content); await w.close();
-      f.handle = handle; f.name = handle.name; f.path = handle.name; f.dirty = false;
-      renderTabs(); renderFile(State.activeFile);
-      showToast(`Saved as ${handle.name}`);
-    } catch(e) { if (e.name !== 'AbortError') showToast('Could not save', 'error'); }
-  } else { saveCurrent(); }
-}
-
-// =====================================================================
-// RECENTS
-// =====================================================================
-function pushRecent(f) {
-  State.recents = [{ name: f.name, path: f.path }, ...State.recents.filter(r => r.path !== f.path)].slice(0, 5);
-  renderRecents();
-}
-function renderRecents() {
-  const list = $('recentList'), empty = $('recentEmpty');
-  if (!list) return;
-  if (State.recents.length === 0) { empty.style.display = 'block'; list.innerHTML = ''; return; }
-  empty.style.display = 'none';
-  list.innerHTML = State.recents.map(r =>
-    `<div class="recent-item" data-path="${escapeHtml(r.path)}"><span class="r-ic">¶</span><span>${escapeHtml(r.name)}</span><span class="r-path">${escapeHtml(r.path)}</span></div>`
-  ).join('');
-  list.querySelectorAll('.recent-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const idx = State.files.findIndex(f => f.path === el.dataset.path);
-      if (idx >= 0) renderFile(idx);
-    });
-  });
-}
-
-// =====================================================================
-// WIKILINKS
-// =====================================================================
-function navWikilink(target) {
-  const t = target.toLowerCase();
-  const idx = State.files.findIndex(f =>
-    f.name.replace(/\.md$/, '').toLowerCase() === t ||
-    f.name.replace(/\.md$/, '').toLowerCase() === t.replace(/-/g, ' ')
-  );
-  if (idx >= 0) renderFile(idx);
-  else showToast(`No note found for "${target}"`, 'error');
-}
-
-// =====================================================================
-// DEMO
-// =====================================================================
-function loadDemo() {
-  closeMenu();
-  const demos = [
-    { name: 'on-reading.md', path: 'essays/on-reading.md', dirty: false, handle: null,
-      content: `# On the act of reading\n\nThe page is not a screen. A reader does not scroll — they *turn*.\n\n**Slowness** is not the enemy of attention. It is its precondition.\n\n#reading #prose\n\n## A short list\n\n- Slow tools beget slow thought.\n- See [[the-quiet-page]] for further argument.\n\n> "A book is a thing among things." — Borges\n\n## Code\n\n\`\`\`js\nconst reader = (words) => words.slow();\n\`\`\`\n\n---\n\nTo be continued. See also [[slow-tools]].`
-    },
-    { name: 'the-quiet-page.md', path: 'essays/the-quiet-page.md', dirty: false, handle: null,
-      content: `# The quiet page\n\nWhat if the most radical interface does almost nothing?\n\n#prose #draft\n\n## Three properties\n\n1. **Receptivity.** The page absorbs without judgment.\n2. **Patience.** It does not interrupt.\n3. **Restraint.** It refuses to be helpful.\n\n> The page that helps you write is helping you not write.\n\nCompare [[on-reading]] for the symmetric argument.`
-    },
-    { name: 'مقالة-القراءة.md', path: 'المسوّدات/مقالة-القراءة.md', dirty: false, handle: null,
-      content: `# في فعلِ القراءة\n\nالصفحةُ ليست شاشةً، والقارئُ لا يُمرِّر النصَّ بل يقلِبُه.\n\n#قراءة #أدب\n\n## قائمةٌ موجزة\n\n- الأدواتُ البطيئة تولّدُ فكراً بطيئاً.\n\n> "الكتابُ شيءٌ بين الأشياء." — بورخيس`
-    }
-  ];
-  State.files = demos;
-  State.vaultName = 'demo';
-  $('vaultName').textContent = 'demo';
-  $('vaultName').classList.remove('empty');
-  $('sbVault').textContent = 'folder: demo';
-  renderTree(demos);
-  renderFile(0);
-  showToast('Demo notes loaded');
-}
-window.loadDemo = loadDemo;
-
-// =====================================================================
-// SOURCE TEXTAREA INPUT
-// =====================================================================
-let _srcDebounce = null;
-function onSourceInput() {
-  if (State.activeFile === null || !State.files[State.activeFile]) return;
-  const f = State.files[State.activeFile];
-  f.content = srcTextarea.value;
-  f.dirty = true;
-  renderTabs();
-  // Fast: cursor position update on every keystroke
-  const pos = srcTextarea.selectionStart;
-  const upto = srcTextarea.value.slice(0, pos);
-  const ln = upto.split('\n').length;
-  const col = pos - upto.lastIndexOf('\n');
-  $('cursorPos').textContent = `ln ${ln} · col ${col}`;
-  // Heavy: markdown render debounced at 150ms
-  clearTimeout(_srcDebounce);
-  _srcDebounce = setTimeout(() => {
-    const html = parseMarkdown(f.content);
-    const wordCount = (f.content.match(/\S+/g) || []).length;
-    const readMin = Math.max(1, Math.round(wordCount / 220));
-    noteContent.innerHTML = `
-      <div class="doc-meta">
-        <span>note</span><span>·</span>
-        <span>${wordCount} words</span><span>·</span>
-        <span>${escapeHtml(f.path)}</span>
-        <span>·</span><span style="color: var(--accent);">● unsaved</span>
-      </div>
-      ${html}
-    `;
-    $('propWords').textContent = wordCount;
-    $('propRead').textContent = `≈ ${readMin} min`;
-    $('readTime').textContent = `≈ ${readMin} min read`;
-    $('wordCount').textContent = `${wordCount} words`;
-    buildTOC();
-  }, 150);
-}
-srcTextarea.addEventListener('input', onSourceInput);
-
-// Bug 7 fix: blockquote Enter handling.
-// - Empty blockquote line (body is whitespace-only): strip prefix, place cursor on blank line.
-// - Non-empty blockquote line: continue with the > prefix on the next line.
-// Only fires when cursor is on a blockquote line. Non-blockquote Enter passes through unmodified.
-function handleBlockquoteEnter(e) {
-  // Guard: ignore IME composition (prevents double-handling on CJK/Arabic input)
-  if (e.isComposing) return;
-  if (e.key !== 'Enter' || e.shiftKey) return;
-
-  const ta = srcTextarea;
-  const pos = ta.selectionStart;
-  const val = ta.value;
-
-  // Find the start and end of the current line
-  const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-  const lineEndRaw = val.indexOf('\n', pos);
-  const lineEnd = lineEndRaw < 0 ? val.length : lineEndRaw;
-  // Use the full line (not just up-to-cursor) to detect emptiness after prefix,
-  // so that a cursor sitting in the middle of "> " still triggers the exit path.
-  const fullLine = val.slice(lineStart, lineEnd);
-  // Also compute the cursor-relative line slice used for prefix detection
-  const currentLine = val.slice(lineStart, pos);
-
-  // Detect blockquote prefix: one or more ">", each optionally preceded by whitespace,
-  // followed by optional trailing whitespace. The non-capturing group (?:\s*>)+ ensures
-  // the full prefix for nested blockquotes (e.g., "> > > ") is captured correctly.
-  const prefixMatch = /^((?:\s*>)+\s*)/.exec(currentLine);
-  if (!prefixMatch) return; // not a blockquote line — let default Enter run
-
-  const prefix = prefixMatch[1];
-  // Emptiness is determined against the full line (not just up-to-cursor slice)
-  const body = fullLine.slice(prefix.length);
-
-  e.preventDefault();
-
-  if (body.trim() === '') {
-    // Empty blockquote line: replace the prefix with a blank non-blockquote line.
-    replaceInTextarea(ta, lineStart, pos, '\n');
-    ta.selectionStart = ta.selectionEnd = lineStart + 1;
-  } else {
-    // Non-empty blockquote line: continue with the same prefix on the next line.
-    replaceInTextarea(ta, pos, pos, '\n' + prefix);
-    ta.selectionStart = ta.selectionEnd = pos + 1 + prefix.length;
-  }
-}
-
-srcTextarea.addEventListener('keydown', handleBlockquoteEnter);
-
-srcTextarea.addEventListener('keyup', () => {
-  const pos = srcTextarea.selectionStart;
-  const upto = srcTextarea.value.slice(0, pos);
-  const ln = upto.split('\n').length;
-  const col = pos - upto.lastIndexOf('\n');
-  $('cursorPos').textContent = `ln ${ln} · col ${col}`;
-});
-
-// =====================================================================
-// TOOLBAR MARKDOWN HELPERS
-// =====================================================================
-function ensureSourceFocus() {
-  // Switch to source mode if needed, then focus SYNCHRONOUSLY so the
-  // execCommand-based edits below run against a focused, editable textarea.
-  if (State.editorMode === 'live') setEditorMode('source');
-  srcTextarea.focus();
-}
-// Replace [start,end) in the textarea with `text` while keeping it on the NATIVE
-// undo stack (execCommand('insertText')), so Ctrl+Z and Undo (Edit menu +
-// right-click) can reverse toolbar/blockquote edits. execCommand fires a native
-// 'input' event, which drives onSourceInput. Falls back to a value-splice (with
-// a manual 'input' dispatch) only if execCommand can't run in this context.
-function replaceInTextarea(ta, start, end, text) {
-  ta.focus();
-  ta.setSelectionRange(start, end);
-  let ok = false;
-  try { ok = document.execCommand('insertText', false, text); } catch (_) { ok = false; }
-  if (!ok) {
-    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
-    ta.selectionStart = ta.selectionEnd = start + text.length;
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-}
-function wrapSelection(left, right) {
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end) || 'text';
-  replaceInTextarea(ta, start, end, left + sel + right);
-  ta.selectionStart = start + left.length;
-  ta.selectionEnd = start + left.length + sel.length;
-}
-function insertText(left, right) {
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end);
-  replaceInTextarea(ta, start, end, left + sel + right);
-  ta.selectionStart = ta.selectionEnd = start + left.length + sel.length;
-}
-function lineStart(prefix) {
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart;
-  const before = ta.value.slice(0, start);
-  const ls = before.lastIndexOf('\n') + 1;
-  replaceInTextarea(ta, ls, ls, prefix);
-  ta.selectionStart = ta.selectionEnd = start + prefix.length;
-}
-
-// =====================================================================
-// COMMAND PALETTE
-// =====================================================================
-const PALETTE_COMMANDS = [
-  { sec: 'Files', icon: '⌂', name: 'Open Folder…', meta: 'command', sk: 'Ctrl+⇧+O', act: openVault },
-  { sec: 'Files', icon: '¶', name: 'Open File…', meta: 'command', sk: 'Ctrl+O', act: openSingleFile },
-  { sec: 'Files', icon: '+', name: 'New Note', meta: 'command', sk: 'Ctrl+N', act: newNote },
-  { sec: 'Files', icon: '↓', name: 'Save', meta: 'command', sk: 'Ctrl+S', act: saveCurrent },
-  { sec: 'Files', icon: '★', name: 'Load demo notes', meta: 'command', act: loadDemo },
-  { sec: 'View', icon: '¶', name: 'Mode: Live preview', meta: 'view', act: () => setEditorMode('live') },
-  { sec: 'View', icon: '‖', name: 'Mode: Split view', meta: 'view', act: () => setEditorMode('split') },
-  { sec: 'View', icon: '<>', name: 'Mode: Source', meta: 'view', act: () => setEditorMode('source') },
-  { sec: 'View', icon: '⇄', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
-  { sec: 'View', icon: '◐', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
-  { sec: 'View', icon: '◐', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
-  { sec: 'View', icon: '◐', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
-  { sec: 'View', icon: '≡', name: 'Toggle Sidebar', meta: 'view', sk: 'Ctrl+\\', act: toggleSidebar },
-  { sec: 'View', icon: 'i', name: 'Toggle Inspector', meta: 'view', act: toggleInspector },
-  { sec: 'View', icon: '+', name: 'Zoom In',    meta: 'view', sk: 'Ctrl+=', act: zoomIn },
-  { sec: 'View', icon: '−', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
-  { sec: 'View', icon: '1', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
-  { sec: 'Help', icon: '⌨', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
-  { sec: 'Help', icon: 'i', name: 'About BP MD RTL Reader', meta: 'help', act: showAbout }
-];
-
-let palIdx = 0, palVisible = [];
-function openPalette() {
-  palOverlay.classList.add('open');
-  palInput.value = '';
-  filterPalette('');
-  setTimeout(() => palInput.focus(), 50);
-}
-function closePalette() { palOverlay.classList.remove('open'); palInput.value = ''; }
-window.openPalette = openPalette;
-window.closePalette = closePalette;
-window.openFind = openFind;
-window.runFind = runFind;
-window.findStep = findStep;
-window.closeFind = closeFind;
-window.showShortcuts = showShortcuts;
-window.newDailyNote = newDailyNote;
-window.renderTree = renderTree;
-window.showWelcome = showWelcome;
-window.parseMarkdown = parseMarkdown;
-window.PALETTE_COMMANDS = PALETTE_COMMANDS;
-
-function filterPalette(q) {
-  q = (q || '').trim().toLowerCase();
-  const items = [];
-  PALETTE_COMMANDS.forEach(c => { if (!q || c.name.toLowerCase().includes(q)) items.push({ ...c, _kind: 'cmd' }); });
-  State.files.forEach((f, i) => {
-    if (!q || f.name.toLowerCase().includes(q)) {
-      items.push({ sec: 'Files in folder', icon: '¶', name: f.name, meta: f.path, _kind: 'file', _idx: i });
-    }
-  });
-  const sections = {};
-  items.forEach(it => { sections[it.sec] = sections[it.sec] || []; sections[it.sec].push(it); });
-  let html = ''; palVisible = [];
-  Object.entries(sections).forEach(([sec, arr]) => {
-    html += `<div class="pal-section-label">${escapeHtml(sec)}</div>`;
-    arr.forEach(it => {
-      palVisible.push(it);
-      const sk = it.sk ? `<span class="pi-shortcut">${it.sk.split('+').map(p => `<span class="kbd">${p}</span>`).join('')}</span>` : '';
-      html += `<div class="pal-item${palVisible.length === 1 ? ' active' : ''}" data-i="${palVisible.length - 1}">
-        <span class="pi-icon">${escapeHtml(it.icon)}</span>
-        <span class="pi-name">${escapeHtml(it.name)}</span>
-        <span class="pi-meta">${escapeHtml(it.meta || '')}</span>
-        ${sk}
-      </div>`;
-    });
-  });
-  if (!items.length) html = '<div class="search-empty" style="padding: 20px;">No matches.</div>';
-  palResults.innerHTML = html;
-  palIdx = 0;
-  palResults.querySelectorAll('.pal-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const i = parseInt(el.dataset.i);
-      const it = palVisible[i];
-      closePalette();
-      if (it._kind === 'cmd') it.act();
-      else if (it._kind === 'file') renderFile(it._idx);
-    });
-  });
-}
-
-palInput.addEventListener('keydown', e => {
-  const items = palResults.querySelectorAll('.pal-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(palIdx + 1, items.length - 1); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); items[palIdx]?.scrollIntoView({ block: 'nearest' }); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(palIdx - 1, 0); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); }
-  else if (e.key === 'Enter') { e.preventDefault(); items[palIdx]?.click(); }
-  else if (e.key === 'Escape') closePalette();
-});
-palInput.addEventListener('input', () => filterPalette(palInput.value));
-
-// =====================================================================
-// WINDOW BUTTONS
-// =====================================================================
-function winMinimize() {
-  if (window.electronAPI) window.electronAPI.minimizeWindow();
-}
-function winMaximize() {
-  if (window.electronAPI) window.electronAPI.maximizeWindow();
-}
-function winClose() {
-  const dirty = State.files.filter(f => f.dirty).length;
-  if (dirty > 0) { if (!confirm(`${dirty} unsaved file${dirty === 1 ? '' : 's'}. Close anyway?`)) return; }
-  if (window.electronAPI) window.electronAPI.closeWindow();
-}
-
-// =====================================================================
-// GLOBAL KEYBOARD SHORTCUTS
-// =====================================================================
-document.addEventListener('keydown', e => {
-  const cmd = e.ctrlKey || e.metaKey;
-  const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
-
-  if (cmd && e.key.toLowerCase() === 'k' && !e.shiftKey) { e.preventDefault(); openPalette(); }
-  else if (cmd && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); openPalette(); }
-  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleRTL(); }
-  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); cycleTheme(); }
-  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); toggleInspector(); }
-  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openVault(); }
-  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openSingleFile(); }
-  else if (cmd && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newDailyNote(); }
-  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newNote(); }
-  else if (cmd && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAs(); }
-  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrent(); }
-  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'w') { e.preventDefault(); if (State.activeFile !== null) closeTab(State.activeFile); }
-  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); }
-  else if (cmd && e.key === '\\') { e.preventDefault(); toggleSidebar(); }
-  else if (cmd && e.key === '/') { e.preventDefault(); showShortcuts(); }
-  // Zoom shortcuts: e.key === '=' for Ctrl+=, '-' for Ctrl+-, '0' for Ctrl+0
-  else if (cmd && !e.shiftKey && e.key === '=') { e.preventDefault(); zoomIn(); }
-  else if (cmd && !e.shiftKey && e.key === '-') { e.preventDefault(); zoomOut(); }
-  else if (cmd && !e.shiftKey && e.key === '0') { e.preventDefault(); zoomReset(); }
-  // Ctrl+A: when a text field (INPUT/TEXTAREA) is focused, leave NATIVE select-all
-  // intact (e.g. #findInput selects its own text). Only scope-select the
-  // live-preview noteContent via execEditCmd when focus is NOT in a field.
-  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'a') {
-    if (inInput) return; // native behavior selects the focused field's text
-    e.preventDefault();
-    execEditCmd('selectAll');
-  }
-  else if (cmd && !inInput && e.key.toLowerCase() === 'b') { e.preventDefault(); wrapSelection('**', '**'); }
-  else if (cmd && !inInput && e.key.toLowerCase() === 'i') { e.preventDefault(); wrapSelection('*', '*'); }
-  else if (e.key === 'Escape') {
-    if (palOverlay.classList.contains('open')) closePalette();
-    else if (modalOverlay.classList.contains('open')) closeModal();
-    else if ($('findBar').classList.contains('open')) closeFind();
-    else if (dropdown.classList.contains('open')) closeMenu();
-  }
-});
-
-// =====================================================================
-// EVENT WIRING
-// =====================================================================
-$('sidebarToggleBtn').addEventListener('click', toggleSidebar);
-$('inspectorToggleBtn').addEventListener('click', toggleInspector);
-$('showSidebarStrip').addEventListener('click', toggleSidebar);
-$('showInspectorStrip').addEventListener('click', toggleInspector);
-$('themeBtn').addEventListener('click', cycleTheme);
-$('rtlBtn').addEventListener('click', toggleRTL);
-$('tabAddBtn').addEventListener('click', newNote);
-$('searchBtn').addEventListener('click', openPalette);
-$('winMinBtn').addEventListener('click', winMinimize);
-$('winMaxBtn').addEventListener('click', winMaximize);
-$('winCloseBtn').addEventListener('click', winClose);
-$('modalCloseBtn').addEventListener('click', closeModal);
-$('modalOverlay').addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
-$('palOverlay').addEventListener('click', e => { if (e.target === palOverlay) closePalette(); });
-
-document.querySelectorAll('.tb-menu-item').forEach(btn => {
-  // Keep the editor focused/selected when opening a menu — a mousedown would
-  // otherwise blur the textarea, breaking Copy/Cut/Undo run from the Edit menu.
-  btn.addEventListener('mousedown', e => e.preventDefault());
-  btn.addEventListener('click', e => openMenu(e, btn.dataset.menu));
-});
-document.querySelectorAll('.sb-tab').forEach(btn => {
-  btn.addEventListener('click', () => switchSbPane(btn.dataset.pane));
-});
-$('sbSearchInput').addEventListener('input', e => runSidebarSearch(e.target.value));
-$('sbOpenVaultBtn').addEventListener('click', openVault);
-$('sbOpenFileBtn').addEventListener('click', openSingleFile);
-$('sbNewNoteBtn').addEventListener('click', newNote);
-$('emptyOpenVault').addEventListener('click', openVault);
-$('emptyOpenFile').addEventListener('click', openSingleFile);
-$('emptyLoadDemo').addEventListener('click', loadDemo);
-$('wbOpenVault').addEventListener('click', openVault);
-$('wbOpenFile').addEventListener('click', openSingleFile);
-$('wbNewNote').addEventListener('click', newNote);
-$('wbLoadDemo').addEventListener('click', loadDemo);
-
-// Toolbar buttons
-$('modeLive').addEventListener('click', () => setEditorMode('live'));
-$('modeSplit').addEventListener('click', () => setEditorMode('split'));
-$('modeSource').addEventListener('click', () => setEditorMode('source'));
-$('tbBold').addEventListener('click', () => wrapSelection('**', '**'));
-$('tbItalic').addEventListener('click', () => wrapSelection('*', '*'));
-$('tbStrike').addEventListener('click', () => wrapSelection('~~', '~~'));
-$('tbH1').addEventListener('click', () => lineStart('# '));
-$('tbH2').addEventListener('click', () => lineStart('## '));
-$('tbH3').addEventListener('click', () => lineStart('### '));
-$('tbLink').addEventListener('click', () => insertText('[', '](url)'));
-$('tbQuote').addEventListener('click', () => lineStart('> '));
-$('tbList').addEventListener('click', () => lineStart('- '));
-$('tbCode').addEventListener('click', () => wrapSelection('`', '`'));
-$('tbWikilink').addEventListener('click', () => insertText('[[', ']]'));
-
-// Find bar
-$('findInput').addEventListener('input', e => runFind(e.target.value));
-$('findPrevBtn').addEventListener('click', () => findStep(-1));
-$('findNextBtn').addEventListener('click', () => findStep(1));
-$('findCloseBtn').addEventListener('click', closeFind);
-
-// ==== EXTERNAL FILE OPEN (Windows file-association / macOS dock drop) ====
-// Main process sends this when the user launches BP MD RTL Reader by double-clicking a
-// .md file with BP MD RTL Reader set as the default handler. We add it as a tab and
-// render it immediately.
-function openExternalFile({ name, path: filePath, content }) {
-  if (!name || typeof content !== 'string') return;
-  addFile({ name, path: filePath || name, handle: null, content, dirty: false });
-}
-window.openExternalFile = openExternalFile;
-if (window.electronAPI && typeof window.electronAPI.onOpenFile === 'function') {
-  window.electronAPI.onOpenFile(openExternalFile);
-}
-
-document.addEventListener('click', e => {
-  if (!e.target.closest('.tb-menu-item') && !e.target.closest('.dropdown') && !e.target.closest('.tb-menu-btn')) closeMenu();
-});
-
-// =====================================================================
-// DRAG-DROP (Issue #7)
-// =====================================================================
-function initDragDrop() {
-  const ALLOWED_EXT = /\.(md|markdown|txt)$/i;
-  const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-
-  document.body.addEventListener('dragover', e => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  });
-
-  document.body.addEventListener('drop', async e => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files || []);
-    let loaded = 0;
-    for (const file of files) {
-      if (!ALLOWED_EXT.test(file.name)) {
-        showToast(`Skipped "${file.name}" — only .md/.markdown/.txt files`, 'info');
-        continue;
-      }
-      if (file.size > MAX_SIZE) {
-        showToast(`Skipped "${file.name}" — file exceeds 10 MB limit`, 'error');
-        continue;
-      }
-      try {
-        const content = await file.text();
-        addFile({ name: file.name, path: file.name, handle: null, content, dirty: false });
-        loaded++;
-      } catch(err) {
-        showToast(`Could not read "${file.name}"`, 'error');
-      }
-    }
-    if (loaded > 0) showToast(`Loaded ${loaded} file${loaded === 1 ? '' : 's'}`);
-  });
-}
-window.initDragDrop = initDragDrop;
-window.renderTags = renderTags;
-window.escapeHtml = escapeHtml;
-
-// =====================================================================
-// INIT
-// =====================================================================
-(function init() {
-  // Detect Electron and apply native-window overrides
-  if (window.electronAPI) document.documentElement.classList.add('electron');
-
-  const stored = localStorage.getItem('bpmdrtlreader-theme');
-  if (stored && THEMES.includes(stored)) {
-    State.theme = stored;
-    document.documentElement.setAttribute('data-theme', stored);
-    $('themeBtn').classList.toggle('active', stored !== 'paper');
-    if ($('themeLabel')) $('themeLabel').textContent = stored;
-  }
-  showWelcome();
-  initDragDrop();
-})();
-</script>
+<script type="module" src="src/renderer/app.js"></script>
 
 </body>
 </html>

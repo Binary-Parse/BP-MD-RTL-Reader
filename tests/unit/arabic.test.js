@@ -4,7 +4,8 @@
  */
 
 import { describe, test, expect } from 'vitest';
-import { isArabicHeavy, escapeHtml, escapeReg } from '../../src/renderer/i18n.js';
+import { isArabicHeavy } from '../../src/renderer/i18n.js';
+import { describeEscapeHtml, describeEscapeReg } from './escape-helpers-suite.js';
 
 describe('isArabicHeavy()', () => {
   test('returns true for Arabic-heavy text', () => {
@@ -69,70 +70,6 @@ describe('isArabicHeavy()', () => {
   });
 });
 
-describe('escapeHtml() — mutation killers (audit #13)', () => {
-  // Mutant L19: '&amp;' → "" — & chars would be deleted instead of escaped
-  test('preserves & as &amp;', () => {
-    expect(escapeHtml('&')).toBe('&amp;');
-    expect(escapeHtml('a & b')).toBe('a &amp; b');
-  });
-
-  // Mutant L20: '&lt;' → "" — < chars would be deleted
-  test('preserves < as &lt;', () => {
-    expect(escapeHtml('<')).toBe('&lt;');
-    expect(escapeHtml('<script>')).toBe('&lt;script&gt;');
-  });
-
-  // Mutant L21: '&gt;' → "" — > chars would be deleted
-  test('preserves > as &gt;', () => {
-    expect(escapeHtml('>')).toBe('&gt;');
-  });
-
-  // Mutant L22: '&quot;' → "" — " chars would be deleted
-  test('preserves " as &quot;', () => {
-    expect(escapeHtml('"')).toBe('&quot;');
-    expect(escapeHtml('say "hi"')).toBe('say &quot;hi&quot;');
-  });
-
-  test('all four entities in one pass, escape order matters', () => {
-    // & must be escaped FIRST so its &amp; doesn't get re-escaped
-    expect(escapeHtml('<a href="x">&y</a>'))
-      .toBe('&lt;a href=&quot;x&quot;&gt;&amp;y&lt;/a&gt;');
-  });
-
-  test('coerces non-string input via String()', () => {
-    expect(escapeHtml(123)).toBe('123');
-    expect(escapeHtml(null)).toBe('null');
-    expect(escapeHtml(undefined)).toBe('undefined');
-  });
-});
-
-describe('escapeReg() — regex metachar escaping (kills NoCoverage on L26)', () => {
-  test('escapes all 14 regex metacharacters', () => {
-    expect(escapeReg('.')).toBe('\\.');
-    expect(escapeReg('*')).toBe('\\*');
-    expect(escapeReg('+')).toBe('\\+');
-    expect(escapeReg('?')).toBe('\\?');
-    expect(escapeReg('^')).toBe('\\^');
-    expect(escapeReg('$')).toBe('\\$');
-    expect(escapeReg('{')).toBe('\\{');
-    expect(escapeReg('}')).toBe('\\}');
-    expect(escapeReg('(')).toBe('\\(');
-    expect(escapeReg(')')).toBe('\\)');
-    expect(escapeReg('|')).toBe('\\|');
-    expect(escapeReg('[')).toBe('\\[');
-    expect(escapeReg(']')).toBe('\\]');
-    expect(escapeReg('\\')).toBe('\\\\');
-  });
-
-  test('leaves non-metacharacters alone', () => {
-    expect(escapeReg('hello world')).toBe('hello world');
-    expect(escapeReg('مرحبا')).toBe('مرحبا');
-  });
-
-  test('produces a string usable in new RegExp()', () => {
-    const dangerous = 'a.b+c*d';
-    const re = new RegExp(escapeReg(dangerous));
-    expect(re.test('a.b+c*d')).toBe(true);   // literal match
-    expect(re.test('aXbYcZd')).toBe(false);  // not treated as metas
-  });
-});
+// escapeHtml() + escapeReg() suites are shared with i18n.test.js (audit #13).
+describeEscapeHtml();
+describeEscapeReg();

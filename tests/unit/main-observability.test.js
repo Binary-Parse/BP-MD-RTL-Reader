@@ -270,6 +270,28 @@ describe('observability — process error handlers (L74-81)', () => {
     expect(mockProc._listeners.unhandledRejection).toHaveLength(1);
   });
 
+  // L128: `err?.message` / `err?.stack` — a NULLISH error (uncaughtException can fire
+  // with a non-Error/undefined) must NOT throw out of the handler (kills the
+  // OptionalChaining→member-access mutants which would TypeError on null).
+  test('uncaughtException with a NULL error does not throw; logs undefined message/stack', () => {
+    mockFs.appendFileSync.mockClear();
+    expect(() => mockProc.emit('uncaughtException', null)).not.toThrow();
+    expect(mockFs.appendFileSync).toHaveBeenCalledTimes(1);
+    const obj = JSON.parse(mockFs.appendFileSync.mock.calls[0][1]);
+    expect(obj.source).toBe('main:uncaughtException');
+    // null?.message → undefined → String(undefined ?? '') → '' message; no stack key.
+    expect(obj.message).toBe('');
+    expect(Object.prototype.hasOwnProperty.call(obj, 'stack')).toBe(false);
+  });
+
+  // L133: the unhandledRejection log line is at level 'error' (StringLiteral kill).
+  test('unhandledRejection is logged at level "error"', () => {
+    mockFs.appendFileSync.mockClear();
+    mockProc.emit('unhandledRejection', new Error('boom'));
+    const obj = JSON.parse(mockFs.appendFileSync.mock.calls.at(-1)[1]);
+    expect(obj.level).toBe('error');
+  });
+
   test('uncaughtException -> source "main:uncaughtException" + the error message + stack', () => {
     const err = new Error('uncaught-boom');
     mockProc.emit('uncaughtException', err);
@@ -456,5 +478,55 @@ describe('observability — log:error rate-limiter + rollover (L189-211)', () =>
     expect(lines.some(l => l.source === 'main:rateLimit')).toBe(false);
     expect(lines).toHaveLength(1);
     expect(lines[0].message).toBe('boundary-entry');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// log:error window boundary (L405) — isolated bootstrap + clock so the COUNT
+// behaviour at exactly +60_000ms is observable.
+//
+// At the boundary `now - logWindowStart > 60_000` is FALSE (no rollover), so a
+// window already AT the cap must keep DROPPING. A `>=` mutant would roll the
+// window over, reset the count, and let the next entry through — which this test
+// detects by asserting the boundary entry is still dropped.
+// ───────────────────────────────────────────────────────────────────────────
+describe('observability — rate-limit window boundary is exclusive (L405 `>` not `>=`)', () => {
+  test('at exactly +60_000ms a capped window does NOT reset → the next entry is still dropped', async () => {
+    const T0 = 1_800_000_000_000;
+    let clock = T0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const electron = buildMockElectron();
+      const fs = buildMockFs();
+      const proc = buildMockProc(['node', 'main.js']);
+      bootstrap({ electron, fs, proc });
+      await new Promise(r => setTimeout(r, 50));
+      const logError = getOn(electron, 'log:error');
+
+      // Fill the window to the 100/min cap (all at instant T0 → no rollover).
+      for (let i = 0; i < 100; i++) logError({}, { message: `fill-${i}` });
+      // One more within the window → dropped.
+      fs.appendFileSync.mockClear();
+      logError({}, { message: 'over-cap' });
+      expect(fs.appendFileSync).not.toHaveBeenCalled(); // confirms we are at the cap
+
+      // Advance to EXACTLY the window length. `> 60_000` is false → no rollover.
+      clock = T0 + 60_000;
+      fs.appendFileSync.mockClear();
+      logError({}, { message: 'at-boundary' });
+      // Correct (`>`): still capped → dropped (no write). A `>=` mutant would reset
+      // and write this entry → the assertion below would fail, killing the mutant.
+      expect(fs.appendFileSync).not.toHaveBeenCalled();
+
+      // Sanity: one tick PAST the boundary DOES roll over and lets an entry through.
+      clock = T0 + 60_001;
+      logError({}, { message: 'past-boundary' });
+      const wrote = fs.appendFileSync.mock.calls.some(c => {
+        try { return JSON.parse(c[1]).message === 'past-boundary'; } catch { return false; }
+      });
+      expect(wrote).toBe(true);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

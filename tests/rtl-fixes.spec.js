@@ -21,6 +21,9 @@ async function injectMarkdown(page, content) {
       handle: null, content: md, dirty: false
     }];
     if (typeof window.renderFile === 'function') window.renderFile(0);
+    // T-F13: reveal the rendered preview (export render path) hidden behind `cm-single`.
+    const ea = document.getElementById('editorArea');
+    if (ea) ea.classList.remove('cm-single', 'welcome');
   }, content);
 }
 
@@ -231,7 +234,7 @@ test.describe('RTL and theme bug fixes', () => {
   // Visual screenshot tests
   // ----------------------------------------------------------------
 
-  test('[Visual] LTR + paper theme at 1440x900', async ({ page }) => {
+  test('[Visual] LTR + paper theme at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -243,7 +246,7 @@ test.describe('RTL and theme bug fixes', () => {
     });
   });
 
-  test('[Visual] LTR + ink theme at 1440x900', async ({ page }) => {
+  test('[Visual] LTR + ink theme at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -257,7 +260,7 @@ test.describe('RTL and theme bug fixes', () => {
     });
   });
 
-  test('[Visual] RTL + paper theme at 1440x900', async ({ page }) => {
+  test('[Visual] RTL + paper theme at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -271,7 +274,7 @@ test.describe('RTL and theme bug fixes', () => {
     });
   });
 
-  test('[Visual] RTL + ink theme at 1440x900', async ({ page }) => {
+  test('[Visual] RTL + ink theme at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -339,7 +342,7 @@ test.describe('RTL and theme bug fixes', () => {
   // AC3 — Visual RTL+Arabic baseline at 1440x900 (paper theme)
   // ----------------------------------------------------------------
 
-  test('[AC3] visual RTL+Arabic+paper baseline at 1440x900', async ({ page }) => {
+  test('[AC3] visual RTL+Arabic+paper baseline at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');

@@ -1,4 +1,5 @@
 const path = require('path');
+const { pathToFileURL } = require('url');
 const {
   parseFileArg,
   isAuthorizedPath,
@@ -10,6 +11,17 @@ const {
   stripBOM,
   filterAndSortMdFiles,
 } = require('./src/main-logic');
+const { classifyNavigation, isExternallyOpenable } = require('./src/main/navigation');
+const { buildContextMenuTemplate } = require('./src/main/context-menu');
+const { createDocumentStore } = require('./src/main/document-store');
+const { createSettingsStore, clampWindowBounds, migrate } = require('./src/main/settings');
+const { compareVersions } = require('./src/main/version');
+const { resolveAsset } = require('./src/main/protocol');
+const crypto = require('crypto');
+
+// T-Q6: the public releases manifest consulted ONLY when the user explicitly checks for
+// updates (opt-in, no auto-check, no auto-download, no identifiers sent).
+const UPDATE_MANIFEST_URL = 'https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest';
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
 // All Electron/fs side-effects live inside bootstrap() so the module can be
@@ -22,8 +34,59 @@ const {
 // @param {object} deps.electron - the 'electron' module (or a mock)
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
-function bootstrap({ electron, fs, proc = process }) {
-  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu } = electron;
+function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch }) {
+  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session, protocol } = electron;
+
+  // T-AI2: the bpmd:// asset scheme must be declared privileged BEFORE app `ready`
+  // (so it behaves as a standard, secure, fetch-able scheme that the CSP img-src
+  // allow-lists). The handler itself is attached after ready (registerBpmdProtocol).
+  if (protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
+    protocol.registerSchemesAsPrivileged([
+      { scheme: 'bpmd', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+    ]);
+  }
+
+  // Reject `promise` if it hasn't settled within `ms` — bounds a stuck PDF render so
+  // the export can't hang forever (T-B6). Clears the timer so no listener leaks.
+  function withTimeout(promise, ms) {
+    let timer;
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+  let pdfExportSeq = 0;
+
+  // ==== CONTEXT-MENU ACTION DISPATCH (T-B12) ====
+  // Executes the side-effecting click for an action descriptor from
+  // buildContextMenuTemplate. Kept tiny; all policy lives in the pure builder.
+  function runContextAction(d, params, win) {
+    try {
+      switch (d.id) {
+        case 'open-link':
+          if (isExternallyOpenable(d.url)) shell.openExternal(d.url);
+          break;
+        case 'copy-link':
+        case 'copy-image-address':
+          if (d.url) clipboard.writeText(d.url);
+          break;
+        case 'copy-image':
+          if (params.x != null && params.y != null) win.webContents.copyImageAt(params.x, params.y);
+          break;
+        case 'save-image':
+          if (d.url && isExternallyOpenable(d.url)) win.webContents.downloadURL(d.url);
+          break;
+        case 'replace-misspelling':
+          win.webContents.replaceMisspelling(d.replacement);
+          break;
+        case 'add-to-dictionary':
+          if (win.webContents.session?.addWordToSpellCheckerDictionary) {
+            win.webContents.session.addWordToSpellCheckerDictionary(d.word);
+          }
+          break;
+        default:
+          break;
+      }
+    } catch (_) { /* never let a menu click crash main */ }
+  }
 
   // ==== OBSERVABILITY ====
   // Local-only crash + error capture. NO data leaves the user's machine
@@ -83,6 +146,63 @@ function bootstrap({ electron, fs, proc = process }) {
   // ==== SECURITY: ALLOWLIST ====
   const allowedFolders = new Set();
 
+  // T-AI2: the vault root the renderer currently has open. bpmd://vault/<rel> URLs
+  // resolve against THIS root (the app shows one vault at a time). Set on each
+  // successful fs:readVault; used only by the bpmd protocol handler below.
+  let activeVaultRoot = null;
+
+  // Minimal content-type table for the assets a vault note can reference inline.
+  const BPMD_MIME = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.webp': 'image/webp', '.svg': 'image/svg+xml', '.avif': 'image/avif',
+    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+  };
+
+  // Serve a bpmd://vault/<rel> request: resolve it (path-traversal guarded) against
+  // the active vault root, re-check the root is still allow-listed, and stream the
+  // file's bytes. Any miss/escape → 404/403; never throws into Electron.
+  function registerBpmdProtocol() {
+    if (!protocol || typeof protocol.handle !== 'function') return;
+    protocol.handle('bpmd', async (request) => {
+      const res = resolveAsset(request.url, activeVaultRoot, path);
+      if (res.error) return new Response('Not found', { status: 404 });
+      if (!isAuthorizedPath(activeVaultRoot, allowedFolders)) return new Response('Forbidden', { status: 403 });
+      try {
+        const data = await fs.promises.readFile(res.path);
+        const type = BPMD_MIME[path.extname(res.path).toLowerCase()] || 'application/octet-stream';
+        return new Response(data, { headers: { 'content-type': type } });
+      } catch (_) {
+        return new Response('Not found', { status: 404 });
+      }
+    });
+  }
+
+  // ==== DOCUMENT STORE (T-AI1) ====
+  // Transactional repository: atomic, encoding-preserving, conflict-aware writes.
+  const docStore = createDocumentStore({ fs, path, crypto });
+  let vaultWatcher = null; // T-B9: fs.watch handle for the currently-open vault
+
+  // ==== PERSISTENT SETTINGS (T-B5 / T-F8) ====
+  // Versioned, fail-safe settings store under <userData>/settings.json. Loaded
+  // on app.whenReady (so app.getPath('userData') is valid); the renderer reads
+  // and writes it via settings:get / settings:set; window geometry is persisted
+  // on window close / app quit and restored (clamped to a visible display) on
+  // the next launch (EC-D1/EC-D2).
+  let settingsStore = null;
+  let currentSettings = null;
+
+  // Capture the live window geometry into settings and flush to disk. Never
+  // throws — a persistence failure must not block window close or app quit.
+  function persistWindowState(win) {
+    if (!win || win.isDestroyed()) return;
+    try {
+      const b = win.getNormalBounds();
+      const window = { x: b.x, y: b.y, w: b.width, h: b.height, maximized: win.isMaximized() };
+      currentSettings = migrate({ ...currentSettings, window });
+      settingsStore.save(currentSettings);
+    } catch (_) { /* never let persistence block teardown */ }
+  }
+
   // ==== FILE ASSOCIATION ====
   let pendingFileToOpen = null;
 
@@ -129,18 +249,40 @@ function bootstrap({ electron, fs, proc = process }) {
         return { error: 'unauthorized-path' };
       }
 
-      const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+      // T-AI2: this is now the vault that bpmd://vault/<rel> asset URLs resolve against.
+      activeVaultRoot = folderPath;
 
-      if (isTooManyFiles(entries.length)) {
+      const topEntries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+
+      if (isTooManyFiles(topEntries.length)) {
         return { error: 'too-many-files' };
       }
 
-      const mdFiles = filterAndSortMdFiles(entries);
+      // Gather markdown files recursively (T-B2). Top-level md files first, then
+      // descend into subdirectories (depth-bounded). The isDirectory check is
+      // defensive so flat callers / simple mocks issue exactly one readdir.
+      const relPaths = filterAndSortMdFiles(topEntries).slice();
+      const isDir = (e) => typeof e.isDirectory === 'function' && e.isDirectory();
+      async function collectSub(dir, baseRel, depth) {
+        if (depth > 12 || relPaths.length >= 5000) return;
+        let entries;
+        try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
+        catch (_) { return; }
+        for (const name of filterAndSortMdFiles(entries)) relPaths.push(`${baseRel}/${name}`);
+        for (const s of entries.filter(isDir)) {
+          await collectSub(path.join(dir, s.name), `${baseRel}/${s.name}`, depth + 1);
+        }
+      }
+      for (const s of topEntries.filter(isDir)) {
+        await collectSub(path.join(folderPath, s.name), s.name, 1);
+      }
+      relPaths.sort((a, b) => a.localeCompare(b));
+
       const results = [];
       let cumulativeBytes = 0;
 
-      for (const name of mdFiles) {
-        const fullPath = path.join(folderPath, name);
+      for (const relPath of relPaths) {
+        const fullPath = path.join(folderPath, relPath);
 
         const lstat = await fs.promises.lstat(fullPath);
         if (lstat.isSymbolicLink()) {
@@ -164,9 +306,120 @@ function bootstrap({ electron, fs, proc = process }) {
 
         let content = await fs.promises.readFile(fullPath, 'utf8');
         content = stripBOM(content);
-        results.push({ name, relPath: name, content });
+        results.push({ name: path.basename(relPath), relPath, content });
       }
+
+      // T-B9: watch the opened vault for EXTERNAL changes and notify this renderer
+      // (debounced). The renderer refreshes the tree and surfaces an EC-A2 conflict for
+      // the open file if it changed on disk while dirty. Replaces any prior watcher.
+      try { if (vaultWatcher) vaultWatcher.close(); } catch (_) { /* ignore */ }
+      const sender = event.sender;
+      vaultWatcher = docStore.watch(folderPath, ({ files }) => {
+        if (sender && !sender.isDestroyed()) sender.send('vault:changed', { folderPath, files });
+      });
+
       return results;
+    });
+
+    // ==== fs:writeFile (T-B1) ====
+    // Atomic, allow-listed, conflict-aware write backed by the DocumentStore.
+    ipcMain.handle('fs:writeFile', async (_event, payload) => {
+      if (!payload || typeof payload !== 'object') return { error: 'invalid' };
+      const { folderPath, relPath, content, baseHash, bom, eol, finalNewline } = payload;
+      if (typeof relPath !== 'string' || typeof content !== 'string') return { error: 'invalid' };
+      if (typeof folderPath !== 'string' || folderPath === '') return { error: 'invalid' };
+      if (isNetworkPath(folderPath)) return { error: 'network-path-not-allowed' };
+      if (!isAuthorizedPath(folderPath, allowedFolders)) return { error: 'unauthorized-path' };
+      const abs = path.join(folderPath, relPath);
+      return docStore.write(abs, content, { root: folderPath, baseHash, bom, eol, finalNewline });
+    });
+
+    // ==== settings:get / settings:set (T-B5 / T-F8) ====
+    // The renderer restores theme/zoom/mode/panels/recents from settings:get on
+    // launch and writes changes back via settings:set. settings:set accepts a
+    // partial patch, merges it into the current settings, migrates (coerces to a
+    // valid, versioned shape — EC-D1), and atomically persists it.
+    ipcMain.handle('settings:get', async () => {
+      if (!currentSettings) currentSettings = settingsStore ? settingsStore.load() : null;
+      return currentSettings;
+    });
+
+    ipcMain.handle('settings:set', async (_event, patch) => {
+      if (!patch || typeof patch !== 'object') return { error: 'invalid' };
+      const merged = migrate({ ...currentSettings, ...patch });
+      const res = settingsStore.save(merged);
+      if (res && res.ok) currentSettings = merged;
+      return res;
+    });
+
+    // ==== export:pdf (T-B6) ====
+    // The renderer (T-F6) builds the same standalone, bidi-aware note HTML it uses for
+    // HTML export and hands it here. We render it in a HIDDEN, sandboxed, JS-disabled
+    // window and printToPDF → a clean note document (no app chrome), independent of the
+    // live editor mode.
+    //
+    // SC2 (0 runtime network) is a HARD requirement, so the offscreen window renders on
+    // an ISOLATED session whose webRequest hard-blocks every non-local request: a note
+    // with a remote <img> must not phone home at export time (javascript:false blocks
+    // scripts but NOT passive subresource fetches — the session block is what enforces it).
+    // The HTML is written to a temp file and loadFile'd (no data:-URL size cliff, so even
+    // large Arabic notes export); the temp is always cleaned up.
+    ipcMain.handle('export:pdf', async (_event, payload) => {
+      if (!payload || typeof payload.html !== 'string') return { error: 'invalid' };
+      const parent = BrowserWindow.getFocusedWindow();
+      const defaultPath = (typeof payload.defaultName === 'string' && payload.defaultName) || 'document.pdf';
+      const result = await dialog.showSaveDialog(parent, {
+        title: 'Export PDF',
+        defaultPath,
+        filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+
+      // Isolated, offline session — cancel anything that isn't the local file/data we load.
+      const ses = session.fromPartition('pdf-export');
+      ses.webRequest.onBeforeRequest((details, cb) => cb({ cancel: !/^(file:|data:|about:)/i.test(details.url) }));
+
+      const tmpHtml = path.join(app.getPath('temp'), `bpmd-export-${Date.now()}-${pdfExportSeq++}.html`);
+      let pdfWin = null;
+      try {
+        await fs.promises.writeFile(tmpHtml, payload.html, 'utf8');
+        pdfWin = new BrowserWindow({
+          show: false,
+          webPreferences: { partition: 'pdf-export', sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+        });
+        pdfWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        await withTimeout(pdfWin.loadFile(tmpHtml), 30000);
+        const data = await withTimeout(pdfWin.webContents.printToPDF({ printBackground: true }), 30000);
+        await fs.promises.writeFile(result.filePath, data);
+        return { ok: true, path: result.filePath };
+      } catch (_) {
+        return { error: 'export-failed' };
+      } finally {
+        if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close();
+        fs.promises.unlink(tmpHtml).catch(() => { /* best-effort temp cleanup */ });
+      }
+    });
+
+    // ==== update:check (T-Q6) — OPT-IN only, privacy-preserving ====
+    // Invoked SOLELY by an explicit user action ("Check for Updates…"). There is no
+    // auto-check on launch, no auto-download, and no identifiers/telemetry are sent — just
+    // a GET of the public releases manifest + a version compare. (The only outbound request
+    // the app ever makes, and only when the user asks.) Returns whether a newer release exists.
+    ipcMain.handle('update:check', async () => {
+      const current = app.getVersion();
+      if (typeof fetchFn !== 'function') return { error: 'unsupported', current };
+      let res;
+      try {
+        res = await fetchFn(UPDATE_MANIFEST_URL, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'BP-MD-RTL-Reader' } });
+      } catch (_) {
+        return { error: 'network', current };
+      }
+      if (!res || !res.ok) return { error: 'http', current };
+      let data;
+      try { data = await res.json(); } catch (_) { return { error: 'parse', current }; }
+      const latest = String((data && (data.tag_name || data.version)) || '').replace(/^v/i, '');
+      if (!latest) return { error: 'no-version', current };
+      return { current, latest, updateAvailable: compareVersions(latest, current) > 0, url: (data && data.html_url) || '' };
     });
 
     ipcMain.on('edit:command', (event, cmd) => {
@@ -212,9 +465,17 @@ function bootstrap({ electron, fs, proc = process }) {
   }
 
   function createWindow() {
+    // Restore the saved window geometry, clamped to a currently-visible display
+    // (EC-D2). Falls back to the default 1280x820 when nothing is saved or no
+    // display info is available.
+    const displays = (screen && typeof screen.getAllDisplays === 'function') ? screen.getAllDisplays() : [];
+    const bounds = clampWindowBounds(currentSettings && currentSettings.window, displays);
+
     const win = new BrowserWindow({
-      width: 1280,
-      height: 820,
+      width: bounds.w,
+      height: bounds.h,
+      ...(bounds.x != null ? { x: bounds.x } : {}),
+      ...(bounds.y != null ? { y: bounds.y } : {}),
       minWidth: 800,
       minHeight: 600,
       title: 'BP MD RTL Reader',
@@ -225,11 +486,21 @@ function bootstrap({ electron, fs, proc = process }) {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: true,
         preload: path.join(__dirname, 'preload.js'),
       },
     });
 
+    if (bounds.maximized) win.maximize();
+    // Persist geometry when the user closes the window (covers app quit too,
+    // which closes the window first).
+    if (typeof win.on === 'function') win.on('close', () => {
+      persistWindowState(win);
+      try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9: close the vault watcher with the window
+    });
+
     win.loadFile('index.html');
+    const appUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
     win.webContents.on('did-finish-load', () => deliverPendingFile(win));
 
     ipcMain.on('window-close',    () => win.close());
@@ -237,32 +508,36 @@ function bootstrap({ electron, fs, proc = process }) {
     ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
 
     win.webContents.setWindowOpenHandler(({ url }) => {
-      if (url.startsWith('http')) shell.openExternal(url);
+      if (isExternallyOpenable(url)) shell.openExternal(url);
       return { action: 'deny' };
     });
 
-    // ==== RIGHT-CLICK CONTEXT MENU ====
-    // Native editing roles (undo/redo/cut/copy/paste/selectAll) run on the focused
-    // element with correct timing — far more reliable than routing through IPC.
-    // Items + enabled state come from Chromium via params.editFlags / isEditable,
-    // so this works in the source textarea AND for copy in the live-preview div.
+    // ==== NAVIGATION GUARD (T-B11) ====
+    // The app is a single local page. A click on a rendered http(s) link would
+    // otherwise navigate the renderer AWAY from the app (replacing the UI with the
+    // website, with no back button on this frameless window). Block ALL top-level
+    // navigation; route external http(s)/mailto/tel to the OS browser.
+    const guardNavigation = (event, url) => {
+      const { action } = classifyNavigation(url, appUrl);
+      if (action === 'allow') return;
+      event.preventDefault();
+      if (action === 'external' && isExternallyOpenable(url)) shell.openExternal(url);
+    };
+    win.webContents.on('will-navigate', guardNavigation);
+    win.webContents.on('will-redirect', guardNavigation);
+
+    // ==== RIGHT-CLICK CONTEXT MENU (T-B12) ====
+    // Template is built by a pure, unit-tested function; main attaches the
+    // side-effecting click handlers (shell/clipboard/webContents). A relevant
+    // menu appears for every right-click: links, images, selection, editable,
+    // and bare/empty areas.
     win.webContents.on('context-menu', (_event, params) => {
-      const f = params.editFlags || {};
-      const template = [];
-      if (params.isEditable) {
-        template.push({ role: 'undo', enabled: !!f.canUndo });
-        template.push({ role: 'redo', enabled: !!f.canRedo });
-        template.push({ type: 'separator' });
-        template.push({ role: 'cut', enabled: !!f.canCut });
-        template.push({ role: 'copy', enabled: !!f.canCopy });
-        template.push({ role: 'paste', enabled: !!f.canPaste });
-        template.push({ type: 'separator' });
-        template.push({ role: 'selectAll', enabled: !!f.canSelectAll });
-      } else if (params.selectionText && params.selectionText.trim() !== '') {
-        // Non-editable surface (e.g. live preview): offer Copy + Select All.
-        template.push({ role: 'copy', enabled: !!f.canCopy });
-        template.push({ role: 'selectAll', enabled: !!f.canSelectAll });
-      }
+      const descriptors = buildContextMenuTemplate(params, { isExternallyOpenable });
+      const template = descriptors.map((d) => {
+        if (d.kind === 'separator') return { type: 'separator' };
+        if (d.kind === 'role') return { role: d.role, enabled: d.enabled };
+        return { label: d.label, click: () => runContextAction(d, params, win) };
+      });
       if (template.length === 0) return;
       Menu.buildFromTemplate(template).popup({ window: win });
     });
@@ -289,8 +564,13 @@ function bootstrap({ electron, fs, proc = process }) {
     });
 
     app.whenReady().then(() => {
+      // Load persisted settings now that userData path is valid (EC-D1: corrupt
+      // file degrades to defaults rather than crashing).
+      settingsStore = createSettingsStore({ fs, path, userDataDir: app.getPath('userData') });
+      currentSettings = settingsStore.load();
       pendingFileToOpen = parseFileArg(proc.argv, fs);
       registerIpcHandlers();
+      registerBpmdProtocol(); // T-AI2: attach the bpmd:// asset handler (scheme privileged above)
       createWindow();
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -306,7 +586,16 @@ function bootstrap({ electron, fs, proc = process }) {
     });
   }
 
+  // Persist window geometry on quit (in addition to per-window close). Settings
+  // changed by the renderer are already flushed eagerly via settings:set.
+  app.on('before-quit', () => {
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length > 0) persistWindowState(wins[0]);
+    try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9: don't leak the fs.watch
+  });
+
   app.on('window-all-closed', () => {
+    try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9
     if (proc.platform !== 'darwin') app.quit();
   });
 

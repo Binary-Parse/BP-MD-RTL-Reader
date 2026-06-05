@@ -79,7 +79,10 @@ async function getTextGeometry(page, selector) {
       textRight,
       textLeft,
       gapRight: elRect.right - textRight,
-      gapLeft: textLeft - elRect.left
+      gapLeft: textLeft - elRect.left,
+      // The semantic alignment — platform-independent, unlike the glyph-extent gaps which
+      // vary with font rendering (a wide RTL heading can fill the line on some platforms).
+      textAlign: getComputedStyle(el).textAlign,
     };
   }, selector);
 }
@@ -257,8 +260,10 @@ test.describe('[AC4] Physical geometry: h1 flush-right in RTL mode', () => {
     // In RTL right-alignment: text right-edge should be close to element right-edge.
     // Allow 20px tolerance for padding/margin.
     expect(geo.gapRight).toBeLessThan(20);
-    // Text must NOT be flush against the left edge
-    expect(geo.gapLeft).toBeGreaterThan(20);
+    // …and the heading is genuinely RIGHT-aligned (not left). Asserted via the computed
+    // alignment, which is platform-independent — the old "gapLeft > 20" proxy broke on
+    // Linux where a wide RTL heading fills the line (gapLeft ≈ 5) yet is still flush-right.
+    expect(geo.textAlign).toBe('right');
   });
 
 });
@@ -443,11 +448,11 @@ test.describe('[AC7] Theme cross-product: RTL heading alignment across all theme
       await injectMarkdown(page, RTL_HEADINGS_MD);
       await page.waitForTimeout(300);
 
-      // AC4: physical geometry check
+      // AC4: physical flush-right + semantic right-alignment (cross-platform robust).
       const geo = await getTextGeometry(page, '#noteContent h1');
       expect(geo).not.toBeNull();
       expect(geo.gapRight).toBeLessThan(20);
-      expect(geo.gapLeft).toBeGreaterThan(20);
+      expect(geo.textAlign).toBe('right');
     });
 
   }

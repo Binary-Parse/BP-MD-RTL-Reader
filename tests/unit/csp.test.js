@@ -1,0 +1,67 @@
+/**
+ * csp.test.js — T-B4 strict Content-Security-Policy, static assertions on index.html.
+ * The XSS-relevant lock is script-src 'self' with NO 'unsafe-inline'/'unsafe-eval', which
+ * requires that index.html contain no inline script (theme-boot + app module externalized).
+ */
+import { describe, test, expect } from 'vitest';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const html = readFileSync(path.join(root, 'index.html'), 'utf8');
+
+function cspContent() {
+  const m = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/);
+  return m ? m[1] : null;
+}
+
+describe('strict CSP (T-B4)', () => {
+  test('a CSP meta is declared', () => {
+    expect(cspContent()).toBeTruthy();
+  });
+
+  test('script-src is self-only — no unsafe-inline / unsafe-eval (the XSS lock)', () => {
+    const csp = cspContent();
+    const scriptSrc = csp.match(/script-src ([^;]+)/)[1];
+    expect(scriptSrc).toContain("'self'");
+    expect(scriptSrc).not.toContain('unsafe-inline');
+    expect(scriptSrc).not.toContain('unsafe-eval');
+    expect(scriptSrc).not.toMatch(/https?:/); // no remote scripts
+  });
+
+  test('default-src and object-src are locked down', () => {
+    const csp = cspContent();
+    expect(csp).toMatch(/default-src 'self'/);
+    expect(csp).toMatch(/object-src 'none'/);
+    expect(csp).toMatch(/base-uri 'self'/);
+  });
+
+  test("style-src KEEPS 'unsafe-inline' (KaTeX math emits inline style= — load-bearing concession)", () => {
+    // Pin the deliberate concession: dropping it would silently break rendered math.
+    const styleSrc = cspContent().match(/style-src ([^;]+)/)[1];
+    expect(styleSrc).toContain("'unsafe-inline'");
+    expect(styleSrc).not.toMatch(/https?:/); // …but never a REMOTE stylesheet host
+  });
+
+  test('no network-fetching directive permits remote http(s) (local-first / SC2)', () => {
+    const csp = cspContent();
+    for (const dir of ['img-src', 'font-src', 'connect-src', 'default-src']) {
+      const m = csp.match(new RegExp(`${dir} ([^;]+)`));
+      if (m) expect(m[1], `${dir} must not allow remote`).not.toMatch(/https?:/);
+    }
+  });
+
+  test('index.html contains NO inline <script> (every script is externalized via src=)', () => {
+    // A <script> without a src= attribute that has a non-empty body would be inline → blocked.
+    const inline = html.match(/<script\b(?![^>]*\bsrc=)[^>]*>\s*\S[\s\S]*?<\/script>/);
+    expect(inline, `inline script found: ${inline && inline[0].slice(0, 80)}`).toBeNull();
+  });
+
+  test('the externalized scripts exist on disk (theme-boot + app module)', () => {
+    expect(html).toMatch(/<script src="src\/renderer\/theme-boot\.js"><\/script>/);
+    expect(html).toMatch(/<script type="module" src="src\/renderer\/app\.js"><\/script>/);
+    expect(existsSync(path.join(root, 'src/renderer/theme-boot.js'))).toBe(true);
+    expect(existsSync(path.join(root, 'src/renderer/app.js'))).toBe(true);
+  });
+});

@@ -149,15 +149,15 @@ test.describe('smoke tests', () => {
 
     await page.waitForTimeout(300);
 
-    // Welcome should be hidden, content visible
+    // T-F13: welcome hidden, the CM6 editor visible (the single on-screen surface).
     await expect(page.locator('#welcome')).toBeHidden();
-    await expect(page.locator('#noteContent')).toBeVisible();
+    await expect(page.locator('.cm-mount .cm-editor')).toBeVisible();
 
-    // Editor should contain the rendered heading
-    const noteContent = page.locator('#noteContent');
-    await expect(noteContent.locator('h1')).toContainText('Hello World');
-    await expect(noteContent.locator('h2')).toContainText('Section Two');
-    await expect(noteContent.locator('strong')).toContainText('test');
+    // The render pipeline (#noteContent, used for export) still produces the parsed HTML.
+    const html = await page.locator('#noteContent').innerHTML();
+    expect(html).toContain('Hello World');
+    expect(html).toContain('Section Two');
+    expect(html).toContain('<strong>');
 
     // No JS errors
     const jsErrors = errors.filter(e => !e.includes('net::ERR') && !e.includes('Failed to load') && !e.includes('cdn.jsdelivr') && !e.includes('fonts.'));
@@ -182,11 +182,10 @@ test.describe('smoke tests', () => {
     await expect(palOverlay).not.toHaveClass(/open/);
   });
 
-  test('split-view mode shows both source and preview panes', async ({ page }) => {
+  test('the single CM6 live-preview editor mounts when a file is open', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Load a file first
     await page.evaluate(() => {
       const state = window._appState;
       if (state) {
@@ -194,15 +193,9 @@ test.describe('smoke tests', () => {
         if (typeof window.renderFile === 'function') window.renderFile(0);
       }
     });
-    await page.waitForTimeout(200);
-
-    // Click split mode
-    await page.click('#modeSplit');
-    await page.waitForTimeout(100);
-
-    // Both panes should be visible
-    const editorArea = page.locator('#editorArea');
-    await expect(editorArea).toHaveClass(/split/);
+    // T-F13: one editor surface (CM6), no split/source modes.
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
+    await expect(page.locator('#editorArea')).toHaveClass(/cm-single/);
   });
 
   // ----------------------------------------------------------------
@@ -284,7 +277,7 @@ test.describe('smoke tests', () => {
     expect(exported).toBe(true);
   });
 
-  test('[T5-c] find-hit click updates State.findIdx to 1 when second mark clicked', async ({ page }) => {
+  test('[T5-c] find navigation moves to the second match in the CM6 editor', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
@@ -294,18 +287,17 @@ test.describe('smoke tests', () => {
       state.files = [{ name: 'f.md', path: 'f.md', handle: null, content: 'the quick the brown the fox', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
 
-    await page.evaluate(() => {
-      window.openFind();
-      window.runFind('the');
-    });
+    await page.evaluate(() => { window.openFind(); window.runFind('the'); });
     await page.waitForTimeout(100);
+    // T-F13: find runs over the CM6 surface — matches tracked in findSourceMatches, navigation
+    // via findStep (CM6 selection), not DOM <mark> hits in the (removed) preview.
+    expect(await page.evaluate(() => window._appState.findSourceMatches.length)).toBe(3);
 
-    await page.locator('mark.find-hit').nth(1).click();
+    await page.click('#findNextBtn');
     await page.waitForTimeout(50);
-
-    const findIdx = await page.evaluate(() => window._appState.findIdx);
-    expect(findIdx).toBe(1);
+    expect(await page.evaluate(() => window._appState.findIdx)).toBe(1);
+    expect(await page.$eval('#findInfo', el => el.textContent)).toMatch(/2\s*\/\s*3/);
   });
 });

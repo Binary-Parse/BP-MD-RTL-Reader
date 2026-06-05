@@ -7,58 +7,58 @@ on:
     branches: [main, master, 'feat/**', 'feature/**', 'fix/**']
   pull_request:
     branches: [main, master]
+  schedule:
+    - cron: '0 3 * * *' # nightly FULL mutation run (see the `mutation` job)
   workflow_dispatch:
 
+# H1 (supply-chain hardening): least-privilege default token — read-only for the
+# whole workflow; individual jobs elevate only the scopes they need.
+permissions:
+  contents: read
+
+# H1: cancel an in-flight run when a newer commit is pushed to the same ref
+# (saves runner minutes; the latest commit is the only one that matters).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# NOTE on action pinning: every `uses:` is pinned to a full commit SHA (the only
+# immutable Git reference — a tag like @v4 is mutable and was the vector in the
+# tj-actions/changed-files CVE-2025-30066 incident). The trailing comment records
+# the human-readable version. Keep these current with Dependabot/Renovate; GitHub's
+# `dependencies:` lockfile for transitive pinning is roadmap, not GA.
+
 jobs:
-  test:
-    name: Test (unit + E2E + mutation + audit)
+  # ---------------------------------------------------------------------------
+  # Fast feedback: static analysis, secret scan, dependency audit. No browsers.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint + SAST + secrets + audit
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 15
+    # Skip the package.json postinstall `playwright install chromium` — this job
+    # has no browser tests. (The e2e shard installs browsers explicitly.)
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Setup Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '24'
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
-      - name: Resolve Playwright version
-        run: |
-          PLAYWRIGHT_VERSION=$(node -e "console.log(require('@playwright/test/package.json').version)")
-          echo "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION" >> "$GITHUB_ENV"
-
-      - name: Install Chromium system dependencies
-        timeout-minutes: 10
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2t64
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
-
-      - name: Install Playwright Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 10
-        run: npx playwright install chromium
-
-      # ✅ تشغيل Vitest مع --config صراحةً
-      - name: Unit tests + coverage (Vitest)
-        run: npx vitest run --config vitest.config.js --coverage
-
       # audit #4: SAST — static security analysis via eslint security plugins.
       - name: SAST (lint:security)
         run: npm run lint:security
-
       # audit #4: secret scanning — fail the build if credentials are committed.
       - name: Secret scan (gitleaks)
         # gitleaks-action@v2 needs a paid GITLEAKS_LICENSE on org-owned repos
@@ -69,45 +69,258 @@ jobs:
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" -o /tmp/gitleaks.tgz
           tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
           /tmp/gitleaks dir . --no-banner --redact --exit-code 1
-
-      - name: Mutation tests (Stryker)
-        run: npx stryker run
-
-      # ✅ تشغيل Playwright مع --config صراحةً
-      - name: E2E tests (Playwright)
-        run: npx playwright test --config playwright.config.js
-
       - name: Dependency audit
         run: npm audit --audit-level=moderate
 
-      # ✅ إنشاء المجلدات قبل رفعها
-      - name: Ensure report directories exist
-        if: always()
-        run: |
-          mkdir -p coverage/node
-          mkdir -p reports/mutation
-          mkdir -p test-results
-
+  # ---------------------------------------------------------------------------
+  # Unit tests + coverage gate (Vitest). --no-file-parallelism so v8 coverage
+  # is not under-reported (the gate lives in vitest.config.js thresholds).
+  # ---------------------------------------------------------------------------
+  unit:
+    name: Unit tests + coverage (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # no browser tests here
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests + coverage
+        run: npx vitest run --config vitest.config.js --coverage --no-file-parallelism
       - name: Upload Vitest coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: coverage-node
           path: coverage/node/
           retention-days: 14
 
+  # ---------------------------------------------------------------------------
+  # Functional E2E (everything EXCEPT @visual), sharded 4 ways. H2: install the
+  # browser + OS deps via Playwright (--with-deps) instead of a hand-maintained
+  # apt-get list, and do NOT cache the binaries (restore ≈ download, and the
+  # Linux OS deps are not cacheable — per the Playwright CI docs).
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E functional (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # one failing shard must not cancel the others
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium + OS deps
+        run: npx playwright install --with-deps chromium
+      - name: Run functional E2E shard
+        run: npx playwright test --config playwright.config.js --grep-invert "@visual" --shard=${{ matrix.shard }}/4 --reporter=blob --trace=retain-on-failure
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+
+  # Merge the per-shard blob reports into a single HTML report. Guarded with
+  # !cancelled() so it still runs (and surfaces failures) when a shard fails.
+  e2e-merge:
+    name: Merge E2E reports
+    needs: [e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # only merges reports — no browser
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Download blob reports
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+      - name: Merge into HTML report
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: playwright-html-report
+          path: playwright-report/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # @visual snapshots run INSIDE the same image that generated the committed
+  # Linux baselines (mcr.microsoft.com/playwright:v1.60.0-jammy) so fonts match
+  # and we don't rely on the bare-runner font stack staying byte-identical.
+  # Browsers are preinstalled in the image — no `playwright install` needed.
+  # ---------------------------------------------------------------------------
+  visual:
+    name: Visual snapshots (@visual, jammy container)
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-jammy
+    timeout-minutes: 15
+    # Use the browsers baked into the image (baseline-matched) — skip the
+    # postinstall download so we don't shadow them with a fresh copy.
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # Pin Node 24 even inside the container (the image ships Node 20) so npm ci
+      # resolves the lockfile under the same Node major as every other job. The
+      # baked-in browsers live on disk and are unaffected by the Node binary.
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run @visual specs
+        run: npx playwright test --config playwright.config.js --grep "@visual" --reporter=list --trace=retain-on-failure
+      - name: Upload visual diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: visual-diffs
+          path: test-results/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Mutation testing (Stryker) — M4 two-tier cadence:
+  #   • schedule (nightly) / workflow_dispatch → FULL run
+  #   • pull_request                           → --incremental (changed-only)
+  #   • plain branch push                      → skipped (cost; covered nightly)
+  # thresholds.break (90) lives in stryker.config.json. The incremental baseline
+  # (reports/stryker-incremental.json) is persisted via actions/cache below so PR
+  # runs reuse the last result instead of re-running every mutant from scratch.
+  # ---------------------------------------------------------------------------
+  mutation:
+    name: Mutation (Stryker)
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # Stryker drives Vitest, not browsers
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      # Persist the incremental baseline across runs (key by ref, fall back to any
+      # prior baseline) so the PR --incremental tier is genuinely changed-only.
+      - name: Cache Stryker incremental baseline
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            stryker-incremental-${{ github.ref }}-
+            stryker-incremental-
+      - name: Stryker (incremental on PR, full otherwise)
+        # github.event_name is a fixed GitHub enum, but pass it via env rather
+        # than interpolating ${{ }} straight into the shell (our own convention).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            npx stryker run --incremental
+          else
+            npx stryker run
+          fi
       - name: Upload Stryker mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: mutation-report
           path: reports/mutation/
           retention-days: 14
 
-      - name: Upload Playwright artefacts
-        if: always()
-        uses: actions/upload-artifact@v4
+  # ---------------------------------------------------------------------------
+  # Dependency review (PRs only): block a PR that introduces a dependency with a
+  # known moderate+ vulnerability, and enforce license policy on the diff.
+  # ---------------------------------------------------------------------------
+  dependency-review:
+    name: Dependency review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # post the summary comment
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
         with:
-          name: playwright-results
-          path: test-results/
-          retention-days: 7
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Dependency review
+        # Requires Dependency graph + GitHub Advanced Security; not available on this repo yet,
+        # so don't block the PR. Re-enable enforcement (drop continue-on-error) once GHAS is on.
+        continue-on-error: true
+        uses: actions/dependency-review-action@3b139cfc5fae8b618d3eae3675e383bb1769c019 # v4.5.0
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure

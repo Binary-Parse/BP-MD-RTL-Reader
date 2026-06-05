@@ -20,7 +20,7 @@
  *     order, separators, popup, and each item.enabled === its editFlag.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, vi } from 'vitest';
 import { bootstrap } from '../../main.js';
 import {
   buildMockElectron,
@@ -94,14 +94,15 @@ describe('main.js — createWindow() BrowserWindow options', () => {
     expect(opts.backgroundColor).not.toBe('');
   });
 
-  // ─ icon path (L221 StringLiteral) — assert it ENDS WITH "icon.ico" ─
-  test('icon is an absolute path ending with "icon.ico"', () => {
+  // ─ icon path (L438 StringLiteral) — assert the FULL "assets/icon.ico" tail ─
+  test('icon is an absolute path ending with "assets/icon.ico"', () => {
     expect(typeof opts.icon).toBe('string');
-    expect(opts.icon.length).toBeGreaterThan('icon.ico'.length);
-    // Tolerate either path separator; the StringLiteral mutant (e.g. "" or a
-    // different filename) breaks the endsWith check.
+    expect(opts.icon.length).toBeGreaterThan('assets/icon.ico'.length);
+    // Tolerate either path separator; pin BOTH segments so the 'assets'→"" and
+    // 'icon.ico'→"" StringLiteral mutants both die (a bare '/icon.ico' endsWith
+    // check would miss the 'assets' mutant since path.join collapses the empty seg).
     const normalized = opts.icon.replace(/\\/g, '/');
-    expect(normalized.endsWith('/icon.ico')).toBe(true);
+    expect(normalized.endsWith('/assets/icon.ico')).toBe(true);
     expect(opts.icon).not.toBe('');
   });
 
@@ -308,25 +309,291 @@ describe('main.js — webContents "context-menu" handler', () => {
     });
   });
 
-  // ─ NON-EDITABLE + EMPTY selection → no menu, no popup ─
-  test('non-editable with empty selection → buildFromTemplate NOT called, popup NOT called', () => {
+  // ─ NON-EDITABLE + EMPTY selection → menu shown, Copy disabled (T-B12) ─
+  test('non-editable with empty selection → menu shown with [copy(disabled), selectAll]', () => {
     mockElectron.Menu.buildFromTemplate.mockClear();
     mockElectron.Menu._popup.mockClear();
 
-    ctxHandler({}, { isEditable: false, selectionText: '', editFlags: {} });
+    ctxHandler({}, { isEditable: false, selectionText: '', editFlags: { canSelectAll: true } });
 
-    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
-    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
+    expect(mockElectron.Menu.buildFromTemplate).toHaveBeenCalledTimes(1);
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(Object.keys(byRole)).toEqual(['copy', 'selectAll']);
+    expect(byRole.copy).toBe(false);
+    expect(byRole.selectAll).toBe(true);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
   });
 
-  // ─ NON-EDITABLE + WHITESPACE-ONLY selection → still no menu (trim() branch) ─
-  test('non-editable with whitespace-only selection → no menu (kills the .trim() guard mutant)', () => {
+  // ─ NON-EDITABLE + WHITESPACE-ONLY selection → Copy disabled (kills .trim() mutant) ─
+  test('non-editable with whitespace-only selection → Copy disabled', () => {
     mockElectron.Menu.buildFromTemplate.mockClear();
     mockElectron.Menu._popup.mockClear();
 
-    ctxHandler({}, { isEditable: false, selectionText: '   \t  ', editFlags: {} });
+    ctxHandler({}, { isEditable: false, selectionText: '   \t  ', editFlags: { canCopy: true, canSelectAll: true } });
 
-    expect(mockElectron.Menu.buildFromTemplate).not.toHaveBeenCalled();
-    expect(mockElectron.Menu._popup).not.toHaveBeenCalled();
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const byRole = Object.fromEntries(tpl.filter(i => i.role).map(i => [i.role, i.enabled]));
+    expect(byRole.copy).toBe(false);
+    expect(byRole.selectAll).toBe(true);
+    expect(mockElectron.Menu._popup).toHaveBeenCalledTimes(1);
+  });
+
+  // ─ LINK right-click → Open/Copy link items (T-B12) ─
+  test('link right-click → Open Link in Browser + Copy Link Address', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.shell.openExternal.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', linkURL: 'https://example.com', editFlags: { canSelectAll: true } });
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    const labels = tpl.filter(i => i.label).map(i => i.label);
+    expect(labels).toContain('Open Link in Browser');
+    expect(labels).toContain('Copy Link Address');
+    tpl.find(i => i.label === 'Open Link in Browser').click();
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://example.com');
+    tpl.find(i => i.label === 'Copy Link Address').click();
+    expect(mockElectron.clipboard.writeText).toHaveBeenCalledWith('https://example.com');
+  });
+
+  test('non-http link → Open does not call openExternal', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.shell.openExternal.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', linkURL: 'javascript:alert(1)', editFlags: {} });
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls[0][0];
+    expect(tpl.some(i => i.label === 'Open Link in Browser')).toBe(false);
+  });
+});
+
+// ── runContextAction side-effects (L51-79) — kill the per-action guard mutants ─
+// These click the action items the template wires (click → runContextAction(d, params, win))
+// and pin the EXACT side-effect, so the per-case guards (L55/L59/L62/L71) can't be
+// forced-true or have their && weakened without an assertion failing.
+describe('main.js — runContextAction (context-menu clicks)', () => {
+  let mockElectron;
+  let ctxHandler;
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
+      if (event === 'context-menu') ctxHandler = fn;
+    });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  const clickLabel = (label) => {
+    const tpl = mockElectron.Menu.buildFromTemplate.mock.calls.at(-1)[0];
+    const item = tpl.find((i) => i.label === label);
+    expect(item, `menu item "${label}" should exist`).toBeTruthy();
+    item.click();
+    return item;
+  };
+
+  // L55: open-link only opens an EXTERNALLY-OPENABLE url.
+  test('open-link with an http url → shell.openExternal(url)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.shell.openExternal.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', linkURL: 'https://ok.example/p', editFlags: {} });
+    clickLabel('Open Link in Browser');
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://ok.example/p');
+  });
+
+  // L59: copy-link only writes when d.url is present (it always is for a link item).
+  test('copy-link → clipboard.writeText(url) exactly once', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.clipboard.writeText.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', linkURL: 'https://copy.example', editFlags: {} });
+    clickLabel('Copy Link Address');
+    expect(mockElectron.clipboard.writeText).toHaveBeenCalledTimes(1);
+    expect(mockElectron.clipboard.writeText).toHaveBeenCalledWith('https://copy.example');
+  });
+
+  // L59 (copy-image-address shares the case): writes the srcURL.
+  test('copy-image-address → clipboard.writeText(srcURL)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron.clipboard.writeText.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', mediaType: 'image', srcURL: 'https://img.example/a.png', editFlags: {} });
+    clickLabel('Copy Image Address');
+    expect(mockElectron.clipboard.writeText).toHaveBeenCalledWith('https://img.example/a.png');
+  });
+
+  // L62: copy-image requires BOTH params.x AND params.y to be non-null.
+  test('copy-image with both x AND y → webContents.copyImageAt(x, y)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.copyImageAt.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', mediaType: 'image', x: 12, y: 34, editFlags: {} });
+    clickLabel('Copy Image');
+    expect(mockElectron._mockWin.webContents.copyImageAt).toHaveBeenCalledTimes(1);
+    expect(mockElectron._mockWin.webContents.copyImageAt).toHaveBeenCalledWith(12, 34);
+  });
+
+  test('copy-image with x present but y MISSING → copyImageAt NOT called (kills && → ||)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.copyImageAt.mockClear();
+    // y is null → the && guard is false; an || mutant (or forced-true) would still call.
+    ctxHandler({}, { isEditable: false, selectionText: '', mediaType: 'image', x: 12, y: null, editFlags: {} });
+    clickLabel('Copy Image');
+    expect(mockElectron._mockWin.webContents.copyImageAt).not.toHaveBeenCalled();
+  });
+
+  test('copy-image with y present but x MISSING → copyImageAt NOT called', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.copyImageAt.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', mediaType: 'image', x: null, y: 34, editFlags: {} });
+    clickLabel('Copy Image');
+    expect(mockElectron._mockWin.webContents.copyImageAt).not.toHaveBeenCalled();
+  });
+
+  test('copy-image with x=0 and y=0 → copyImageAt(0,0) (0 is != null, not falsy-rejected)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.copyImageAt.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', mediaType: 'image', x: 0, y: 0, editFlags: {} });
+    clickLabel('Copy Image');
+    expect(mockElectron._mockWin.webContents.copyImageAt).toHaveBeenCalledWith(0, 0);
+  });
+
+  // save-image: external-openable srcURL → downloadURL.
+  test('save-image with an http srcURL → webContents.downloadURL(srcURL)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.downloadURL.mockClear();
+    ctxHandler({}, { isEditable: false, selectionText: '', mediaType: 'image', srcURL: 'https://img.example/b.png', editFlags: {} });
+    clickLabel('Save Image');
+    expect(mockElectron._mockWin.webContents.downloadURL).toHaveBeenCalledWith('https://img.example/b.png');
+  });
+
+  // replace-misspelling: clicking a suggestion calls replaceMisspelling(s).
+  test('replace-misspelling → webContents.replaceMisspelling(suggestion)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.replaceMisspelling.mockClear();
+    ctxHandler({}, {
+      isEditable: true, selectionText: '', misspelledWord: 'teh',
+      dictionarySuggestions: ['the'], editFlags: {},
+    });
+    clickLabel('the');
+    expect(mockElectron._mockWin.webContents.replaceMisspelling).toHaveBeenCalledWith('the');
+  });
+
+  // L71: add-to-dictionary only runs when session.addWordToSpellCheckerDictionary exists.
+  test('add-to-dictionary → session.addWordToSpellCheckerDictionary(word) when available', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    mockElectron._mockWin.webContents.session.addWordToSpellCheckerDictionary.mockClear();
+    ctxHandler({}, {
+      isEditable: true, selectionText: '', misspelledWord: 'recieve',
+      dictionarySuggestions: [], editFlags: {},
+    });
+    clickLabel('Add to Dictionary');
+    expect(mockElectron._mockWin.webContents.session.addWordToSpellCheckerDictionary)
+      .toHaveBeenCalledWith('recieve');
+  });
+
+  test('add-to-dictionary is a no-op (no throw) when the spellchecker API is absent (L71 guard)', () => {
+    mockElectron.Menu.buildFromTemplate.mockClear();
+    const realSession = mockElectron._mockWin.webContents.session;
+    mockElectron._mockWin.webContents.session = {}; // no addWordToSpellCheckerDictionary
+    try {
+      ctxHandler({}, {
+        isEditable: true, selectionText: '', misspelledWord: 'wierd',
+        dictionarySuggestions: [], editFlags: {},
+      });
+      expect(() => clickLabel('Add to Dictionary')).not.toThrow();
+    } finally {
+      mockElectron._mockWin.webContents.session = realSession;
+    }
+  });
+});
+
+// ── NAVIGATION GUARD (T-B11) ───────────────────────────────────────────────
+describe('main.js — navigation guard', () => {
+  let mockElectron;
+  let navHandler;
+  let redirectHandler;
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
+      if (event === 'will-navigate') navHandler = fn;
+      if (event === 'will-redirect') redirectHandler = fn;
+    });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  test('will-navigate and will-redirect registered', () => {
+    expect(typeof navHandler).toBe('function');
+    expect(typeof redirectHandler).toBe('function');
+  });
+  test('external http → preventDefault + openExternal', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    navHandler(e, 'https://example.com');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://example.com');
+  });
+  test('non-http navigation → prevented, not opened', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    navHandler(e, 'file:///etc/passwd');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  // L480: an 'external' classification that is ALSO externally-openable opens; a
+  // mailto: is external+openable → opens (kills the &&→|| weakening + forced-true,
+  // since a non-openable external would NOT open).
+  test('mailto: link → preventDefault + openExternal(mailto)', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    navHandler(e, 'mailto:a@b.com');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('mailto:a@b.com');
+  });
+
+  // L478: an 'allow' classification (same-page hash nav to the app URL) returns BEFORE
+  // preventDefault — proving the guard is not forced to always-prevent.
+  test('same-document navigation is allowed (no preventDefault, no openExternal)', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    // index.html in the app dir → classifyNavigation returns 'allow'.
+    const appHref = require('url').pathToFileURL(require('path').join(process.cwd(), 'index.html')).href;
+    navHandler(e, appHref);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  // will-redirect shares the same guard — an external redirect opens too.
+  test('will-redirect to external http → preventDefault + openExternal', () => {
+    mockElectron.shell.openExternal.mockClear();
+    const e = { preventDefault: vi.fn() };
+    redirectHandler(e, 'https://redir.example');
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('https://redir.example');
+  });
+});
+
+// ── createWindow: screen-absent fallback (L427) ──────────────────────────────
+describe('main.js — createWindow display fallback (L427)', () => {
+  test('no screen.getAllDisplays → falls back to [] displays and DEFAULT bounds (no x/y, no crash)', async () => {
+    const mockElectron = buildMockElectron();
+    mockElectron.screen = {}; // screen present but getAllDisplays NOT a function
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+    const opts = mockElectron.BrowserWindow.mock.calls[0][0];
+    // With [] displays and no saved window, clampWindowBounds returns default size
+    // and NO x/y. A `["Stryker"]`/forced-getAllDisplays mutant would crash or change this.
+    expect(opts.width).toBe(1280);
+    expect(opts.height).toBe(820);
+    expect('x' in opts).toBe(false);
+    expect('y' in opts).toBe(false);
+  });
+});
+
+// ── SANDBOX (T-B13) ────────────────────────────────────────────────────────
+describe('main.js — renderer sandbox', () => {
+  test('sandbox:true on BrowserWindow', async () => {
+    const mockElectron = buildMockElectron();
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+    const opts = mockElectron.BrowserWindow.mock.calls[0][0];
+    expect(opts.webPreferences.sandbox).toBe(true);
+    expect(opts.webPreferences.contextIsolation).toBe(true);
+    expect(opts.webPreferences.nodeIntegration).toBe(false);
   });
 });

@@ -25,6 +25,35 @@ test.describe('index.html — ALL exported functions', () => {
     expect(result.out).toContain('h1');
   });
 
+  // AI2/B4: the viewer render now goes through trusted.js sanitizeHtml — the
+  // sanitizer, not just CSP, strips the exfil/active vectors. Real vendored
+  // DOMPurify + marked pipeline (not a mock).
+  test('window.parseMarkdown strips inline style/iframe/on* but keeps safe content', async ({ page }) => {
+    const out = await page.evaluate(() => window.parseMarkdown(
+      '<p style="position:fixed;background:url(https://evil/x)">styled</p>\n' +
+      '<iframe src="https://evil"></iframe>\n' +
+      '<img src="x" onerror="alert(1)">\n\n' +
+      '[link](https://example.com) and [[Note|alias]]\n\n' +
+      '| A | B |\n| :--- | ---: |\n| x | y |\n'
+    ));
+    // hardened: no inline style (CSS exfil), no iframe, no onerror handler
+    expect(out).not.toMatch(/\sstyle=/i);
+    expect(out).not.toMatch(/<iframe/i);
+    expect(out).not.toMatch(/onerror/i);
+    // preserved: real link href, wikilink data-target, GFM table alignment (align attr, not style)
+    expect(out).toMatch(/href="https:\/\/example\.com"/);
+    expect(out).toMatch(/class="wikilink"/);
+    expect(out).toMatch(/data-target="Note"/);
+    expect(out).toMatch(/align="right"/);
+  });
+
+  test('window.parseMarkdown keeps heading id (outline anchors) + dir/lang (bidi)', async ({ page }) => {
+    const out = await page.evaluate(() => window.parseMarkdown('<h2 id="sec" dir="rtl" lang="ar">عنوان</h2>'));
+    expect(out).toMatch(/id="sec"/);
+    expect(out).toMatch(/dir="rtl"/);
+    expect(out).toMatch(/lang="ar"/);
+  });
+
   test('window.isArabicHeavy — Arabic text', async ({ page }) => {
     const result = await page.evaluate(() => window.isArabicHeavy('مرحبا بالعالم'));
     expect(result).toBe(true);
@@ -129,25 +158,14 @@ test.describe('index.html — ALL exported functions', () => {
 
   // === EDITOR MODE ===
 
-  test('window.setEditorMode source shows textarea', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('source'));
-    const display = await page.evaluate(() => document.getElementById('srcTextarea').style.display);
-    expect(display).not.toBe('none');
-  });
-
-  test('window.setEditorMode live shows preview only', async ({ page }) => {
+  // CM6 is now the sole editor (T-F13) — there are no source/split view modes. The textarea
+  // stays hidden as a load-failure fallback, and setEditorMode is a vestigial no-op kept only
+  // so legacy callers/persisted state can't crash; it must never reintroduce a second pane.
+  test('window.setEditorMode live keeps the single CM6 surface (no source/split classes)', async ({ page }) => {
     await page.evaluate(() => window.setEditorMode('live'));
     const classes = await page.evaluate(() => document.getElementById('editorArea').className);
     expect(classes).not.toContain('source');
     expect(classes).not.toContain('split');
-  });
-
-  test('window.setEditorMode split shows both', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('split'));
-    const src = await page.evaluate(() => document.getElementById('srcTextarea').style.display);
-    const preview = await page.evaluate(() => document.getElementById('editor').style.display);
-    expect(src).not.toBe('none');
-    expect(preview).not.toBe('none');
   });
 
   test('window.setEditorMode invalid does not crash', async ({ page }) => {
@@ -215,7 +233,12 @@ test.describe('index.html — ALL exported functions', () => {
     await page.evaluate(() => window.newDailyNote());
     const files = await page.evaluate(() => window._appState.files);
     const lastFile = files[files.length - 1];
-    expect(lastFile.name).toContain(new Date().toISOString().slice(0, 10));
+    // newDailyNote names the file from LOCAL date components (getFullYear/Month/Date),
+    // so compare against the local date — not UTC toISOString(), which mismatches
+    // across the day boundary when local is ahead of UTC.
+    const d = new Date();
+    const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    expect(lastFile.name).toContain(local);
   });
 
   test('window.saveCurrent exists', async ({ page }) => {

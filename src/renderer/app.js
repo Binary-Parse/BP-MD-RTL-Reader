@@ -63,6 +63,10 @@ const { state: State, subscribe } = createState({
   theme: 'paper',
   direction: 'ltr',
   editorMode: 'live',
+  // In-memory defaults (used in browser/dev with no settings bridge). The PACKAGED app opens
+  // with both panels CLOSED — driven by the persisted-settings default (src/main/settings.js)
+  // + the static `no-sidebar no-inspector` classes on #appBody, so the first paint is the clean
+  // editor-only view with no flash. A user's toggle is persisted and restored.
   sidebarVisible: true,
   inspectorVisible: true,
   vaultName: null,
@@ -365,15 +369,24 @@ function updateDirUI() {
 // =====================================================================
 // SIDEBAR / INSPECTOR TOGGLE
 // =====================================================================
+// Reflect the current panel-visibility State onto the layout grid. Single source of truth so
+// the default (panels closed) shows correctly even with no settings bridge (browser/dev), and
+// so toggles + restore stay in sync.
+function applyPanelLayout() {
+  appBody.classList.toggle('no-sidebar', !State.sidebarVisible);
+  appBody.classList.toggle('no-inspector', !State.inspectorVisible);
+}
+window.applyPanelLayout = applyPanelLayout;
+
 function toggleSidebar() {
   State.sidebarVisible = !State.sidebarVisible;
-  appBody.classList.toggle('no-sidebar', !State.sidebarVisible);
+  applyPanelLayout();
   showToast(`Sidebar: ${State.sidebarVisible ? 'shown' : 'hidden'}`, 'info');
 }
 
 function toggleInspector() {
   State.inspectorVisible = !State.inspectorVisible;
-  appBody.classList.toggle('no-inspector', !State.inspectorVisible);
+  applyPanelLayout();
   closeMenu();
   showToast(`Inspector: ${State.inspectorVisible ? 'shown' : 'hidden'}`, 'info');
 }
@@ -2928,14 +2941,9 @@ async function restoreSettings() {
     // CM6 is the sole editor now — always 'live'. Ignore any persisted split/source so an
     // old setting can't re-show the second pane alongside the live-preview surface (T-F13).
     setEditorMode('live');
-    if (typeof s.sidebarVisible === 'boolean') {
-      State.sidebarVisible = s.sidebarVisible;
-      appBody.classList.toggle('no-sidebar', !s.sidebarVisible);
-    }
-    if (typeof s.inspectorVisible === 'boolean') {
-      State.inspectorVisible = s.inspectorVisible;
-      appBody.classList.toggle('no-inspector', !s.inspectorVisible);
-    }
+    if (typeof s.sidebarVisible === 'boolean') State.sidebarVisible = s.sidebarVisible;
+    if (typeof s.inspectorVisible === 'boolean') State.inspectorVisible = s.inspectorVisible;
+    applyPanelLayout(); // reflect the restored (or default) panel visibility onto the grid
     if (Array.isArray(s.recents)) {
       State.recents = s.recents
         .filter(r => r && typeof r.path === 'string')
@@ -2983,10 +2991,13 @@ async function restoreLastSession(ls) {
   // Detect Electron and apply native-window overrides
   if (window.electronAPI) document.documentElement.classList.add('electron');
 
-  // Restore persisted settings from the main process. When there is no bridge
-  // (browser/dev), fall back to the localStorage theme exactly as before.
+  // Panel visibility: the static markup starts with `no-sidebar no-inspector` (clean editor-only
+  // first paint, no flash). In the packaged app, restoreSettings() applies the persisted/default
+  // values (default closed). With NO settings bridge (browser/dev), reflect the in-memory State
+  // defaults (panels open) so the dev/test surface keeps both panels available.
   restoreSettings().then((restored) => {
     if (!restored) {
+      applyPanelLayout();
       const stored = localStorage.getItem('bpmdrtlreader-theme');
       if (stored && THEMES.includes(stored)) {
         State.theme = stored;

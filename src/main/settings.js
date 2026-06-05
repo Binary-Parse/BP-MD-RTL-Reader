@@ -12,8 +12,10 @@ const DEFAULTS = Object.freeze({
   theme: 'paper',
   zoomFactor: 1,
   editorMode: 'live',
-  sidebarVisible: true,
-  inspectorVisible: true,
+  // Side panels start CLOSED out-of-the-box (clean editor-first view); a saved choice is
+  // preserved by migrate() below, so opening a panel is remembered across launches.
+  sidebarVisible: false,
+  inspectorVisible: false,
   uiDirection: 'ltr',
   uiLocale: 'en',
   numerals: 'western',

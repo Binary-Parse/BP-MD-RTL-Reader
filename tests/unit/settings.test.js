@@ -40,6 +40,15 @@ describe('migrate (EC-D1)', () => {
     expect(migrate({}).cmEditor).toBe(false);
   });
 
+  test('side panels default to CLOSED (clean editor-first launch); a saved boolean is kept', () => {
+    expect(defaultSettings().sidebarVisible).toBe(false);
+    expect(defaultSettings().inspectorVisible).toBe(false);
+    // a user who opened a panel has it remembered
+    expect(migrate({ sidebarVisible: true }).sidebarVisible).toBe(true);
+    expect(migrate({ inspectorVisible: true }).inspectorVisible).toBe(true);
+    expect(migrate({}).sidebarVisible).toBe(false); // no saved value → closed
+  });
+
   test('lastSession (M6): round-trips a valid session, sanitizes a corrupt one, defaults null', () => {
     expect(defaultSettings().lastSession).toBe(null);
     const ls = { vaultPath: '/vault', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' };

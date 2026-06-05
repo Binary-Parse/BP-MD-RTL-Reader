@@ -1791,7 +1791,9 @@ html.electron .tab-add {
   <input type="file" id="fileInput" accept=".md,.markdown,text/markdown" style="display:none;" multiple>
 
   <!-- APP BODY -->
-  <div class="app-body" id="appBody">
+  <!-- Start with both side panels collapsed → clean editor-first view on first paint (no flash).
+       The renderer opens them per the persisted/default settings (browser/dev defaults to open). -->
+  <div class="app-body no-sidebar no-inspector" id="appBody">
 
     <!-- Floating reveal strips: only visible when the matching panel is hidden -->
     <button class="reveal-strip reveal-sidebar" id="showSidebarStrip" title="Show sidebar (Ctrl+\)">›</button>

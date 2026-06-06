@@ -15,7 +15,7 @@
  * with default-correct per-block direction.
  */
 
-import { resolveDirection, needsIsolation, isolate } from './bidi.js';
+import { resolveDirection, resolveBlockDirection, needsIsolation, isolate } from './bidi.js';
 
 const ARABIC = /\p{Script=Arabic}/u;
 const BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th';
@@ -28,18 +28,28 @@ const HAS_RUN = /#[\p{L}\p{N}_-]|\d/u;
 // Text-node parents whose contents must never be re-isolated.
 const SKIP_PARENT = new Set(['CODE', 'PRE', 'A', 'BDI', 'SCRIPT', 'STYLE']);
 
-/** Per-block direction + Arabic lang tagging (T-R1, EC-C6). */
-export function applyBlockDirection(root, baseDir = 'ltr') {
+/**
+ * Per-block direction + Arabic lang tagging (T-R1, EC-C6). When `forceDir` is set
+ * ('rtl'|'ltr'), EVERY block takes it verbatim — the user (toggle) or the note
+ * (front-matter `direction:`) has chosen a direction, which must win over per-block
+ * auto-detection. When null (default/AUTO), each block resolves its own dominant-script
+ * direction as before.
+ */
+export function applyBlockDirection(root, baseDir = 'ltr', forceDir = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
   root.querySelectorAll(BLOCK_SELECTOR).forEach((el) => {
     const text = el.textContent || '';
-    const dir = resolveDirection(text, baseDir);
+    // Forced direction wins for the dir attribute; otherwise dominant-script (T-R1 fix): an
+    // Arabic heading/para that opens with an English word/number must stay RTL.
+    const autoDir = resolveBlockDirection(text, baseDir);
+    const dir = forceDir || autoDir;
     el.setAttribute('dir', dir);
     el.setAttribute('data-dir', dir);
-    // Only an Arabic-dominant (RTL) block is tagged Arabic — an English block that
-    // merely cites one Arabic word stays unmarked (EC-C6: lang on Arabic runs,
-    // not on any block containing a glyph).
-    if (dir === 'rtl' && ARABIC.test(text)) el.setAttribute('lang', 'ar');
+    // lang follows the CONTENT direction (autoDir), NOT the forced dir, so an Arabic block keeps
+    // lang="ar" — and therefore its Arabic font — even when the user forces it LTR (font is
+    // content-driven; only alignment/bidi follow the forced dir). An English block that merely
+    // cites one Arabic word stays unmarked (EC-C6: lang on Arabic-dominant blocks only).
+    if (autoDir === 'rtl' && ARABIC.test(text)) el.setAttribute('lang', 'ar');
     else el.removeAttribute('lang');
   });
   return root;
@@ -52,10 +62,10 @@ export function applyBlockDirection(root, baseDir = 'ltr') {
  * Per-cell dir is left to applyBlockDirection (td/th stay explicit, not "auto", so the
  * Arabic-font CSS keyed on td[dir="rtl"]/th[dir="rtl"] keeps matching).
  */
-export function applyTableDirection(root, baseDir = 'ltr') {
+export function applyTableDirection(root, baseDir = 'ltr', forceDir = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
   root.querySelectorAll('table').forEach((t) => {
-    const dir = resolveDirection(t.textContent || '', baseDir);
+    const dir = forceDir || resolveBlockDirection(t.textContent || '', baseDir);
     t.setAttribute('dir', dir);
     t.setAttribute('data-dir', dir);
   });
@@ -125,10 +135,15 @@ export function isolateInlineRuns(root, baseDir = 'ltr', escape = (s) => s) {
   return root;
 }
 
-/** Apply both passes: per-block direction then inline isolation. */
-export function applyBidi(root, { baseDir = 'ltr', escape = (s) => s } = {}) {
-  applyBlockDirection(root, baseDir);
-  applyTableDirection(root, baseDir); // T-R9: mirror RTL table columns (after cells get their dir)
+/**
+ * Apply both passes: per-block direction then inline isolation. `forceDir` ('rtl'|'ltr'|null)
+ * forces every block/table to that direction (toggle / front-matter choice); null = AUTO.
+ * NOTE isolation is intentionally NOT forced — it still uses first-strong needsIsolation off
+ * each block's applied dir, so English/number runs inside a forced-RTL block stay isolated.
+ */
+export function applyBidi(root, { baseDir = 'ltr', escape = (s) => s, forceDir = null } = {}) {
+  applyBlockDirection(root, baseDir, forceDir);
+  applyTableDirection(root, baseDir, forceDir); // T-R9: mirror RTL table columns (after cells get their dir)
   isolateInlineRuns(root, baseDir, escape);
   return root;
 }

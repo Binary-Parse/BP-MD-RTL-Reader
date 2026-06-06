@@ -5,7 +5,7 @@
  * export (no CSP) and PDF export (CSP meta for the offscreen 0-network render).
  */
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
-import { resolveDirection, resolveDocDirection } from './bidi.js';
+import { resolveBlockDirection, resolveDocDirection } from './bidi.js';
 import { applyBidi } from './bidi-dom.js';
 import { escapeHtml } from './i18n.js';
 import { restoreMath } from './math.js';
@@ -16,7 +16,7 @@ export function buildExportDoc(file, { manualRtl = false, parseMarkdown, csp = f
   const exportDir = resolveDocDirection({
     manual: manualRtl ? 'rtl' : null,
     frontMatter: frontMatterDirection(data),
-    content: resolveDirection(body, 'ltr'),
+    content: resolveBlockDirection(body, 'ltr'), // dominant-script base (matches the live preview)
   });
   const exportEl = document.createElement('div');
   exportEl.innerHTML = parseMarkdown(body);

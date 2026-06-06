@@ -475,7 +475,7 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
   });
 
-  test('[D2] rapid toggle (10 clicks) leaves direction in consistent state', async ({ page }) => {
+  test('[D2] rapid toggle (10 clicks) leaves direction in a consistent state', async ({ page }) => {
     // Mutation test: rapid clicks could cause state to desync if there is a
     // race or if the toggle reads stale state.
     await page.goto(INDEX_URL);
@@ -486,14 +486,15 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     }
     await page.waitForTimeout(300);
 
-    // 10 clicks = 5 on/off cycles → final state should be LTR (same as initial)
+    // 3-state cycle AUTO→RTL→LTR: 10 clicks (10 mod 3 = 1) lands deterministically on forced RTL.
     const stateDir = await page.evaluate(() => window._appState.direction);
-    expect(stateDir).toBe('ltr');
+    expect(stateDir).toBe('rtl');
+    expect(await page.evaluate(() => window._appState.forcedDir)).toBe('rtl');
 
     const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('ltr');
+    expect(computedDir).toBe('rtl');
 
-    await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
   });
 
   test('[D3] Ctrl+Shift+L keyboard shortcut triggers RTL toggle', async ({ page }) => {

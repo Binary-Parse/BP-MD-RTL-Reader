@@ -2,7 +2,7 @@
  * bidi.test.js — T-R1/R2 + slug. Pure direction + isolation logic.
  */
 import { describe, test, expect } from 'vitest';
-import { resolveDirection, needsIsolation, isolate, directionAttrs, slugify, resolveDocDirection, nextCellIndex } from '../../src/renderer/bidi.js';
+import { resolveDirection, resolveBlockDirection, needsIsolation, isolate, directionAttrs, slugify, resolveDocDirection, nextCellIndex } from '../../src/renderer/bidi.js';
 
 describe('nextCellIndex (T-R9 / EC-C2 logical horizontal cell traversal)', () => {
   test('LTR: ArrowRight advances, ArrowLeft retreats', () => {
@@ -46,6 +46,49 @@ describe('resolveDirection (T-R1)', () => {
   test('empty/non-string → inherited', () => {
     expect(resolveDirection('', 'rtl')).toBe('rtl');
     expect(resolveDirection(null, 'ltr')).toBe('ltr');
+  });
+});
+
+describe('resolveBlockDirection (T-R1 dominant-script — fixes mixed Arabic/English headers)', () => {
+  test('Arabic-majority block that OPENS with English → rtl (first-strong got this wrong)', () => {
+    expect(resolveBlockDirection('API دليل المستخدم')).toBe('rtl');
+    expect(resolveBlockDirection('Hello مرحبا مرحبا مرحبا')).toBe('rtl');
+    expect(resolveBlockDirection('2024 إصدار جديد من البرنامج')).toBe('rtl');
+  });
+  test('English-majority block that opens with Arabic → ltr', () => {
+    expect(resolveBlockDirection('مرحبا this is mostly an english sentence')).toBe('ltr');
+  });
+  test('pure Arabic → rtl; pure English → ltr', () => {
+    expect(resolveBlockDirection('مرحبا بالعالم')).toBe('rtl');
+    expect(resolveBlockDirection('hello world')).toBe('ltr');
+  });
+  test('Hebrew counts as RTL script (majority Hebrew → rtl)', () => {
+    expect(resolveBlockDirection('שלום עולם יקר world')).toBe('rtl'); // 11 Hebrew letters > 5 Latin
+  });
+  test('neutral-only text inherits base (EC-C1) and falls back to ltr by default', () => {
+    expect(resolveBlockDirection('123 — !! :)', 'rtl')).toBe('rtl');
+    expect(resolveBlockDirection('123 — !! :)', 'ltr')).toBe('ltr');
+    expect(resolveBlockDirection('123 — !! :)')).toBe('ltr');
+  });
+  test('near-balanced block keeps first-strong (no flip below the clear-majority threshold)', () => {
+    expect(resolveBlockDirection('مرab')).toBe('rtl'); // 50/50, starts Arabic → first-strong rtl
+    expect(resolveBlockDirection('abمر')).toBe('ltr'); // 50/50, starts Latin → first-strong ltr
+    // English-first table content (7 Latin vs 8 Arabic = 53% RTL, below 60%) keeps ltr.
+    expect(resolveBlockDirection('Name قيمة one واحد')).toBe('ltr');
+  });
+  test('empty / non-string → inherited', () => {
+    expect(resolveBlockDirection('', 'rtl')).toBe('rtl');
+    expect(resolveBlockDirection(null, 'ltr')).toBe('ltr');
+    expect(resolveBlockDirection(undefined, 'rtl')).toBe('rtl');
+  });
+  test('the 0.6 clear-majority boundary is inclusive (pins >= vs >)', () => {
+    // English-first, RTL share EXACTLY 0.6 (3 Arabic / 5 strong) → flips to rtl.
+    expect(resolveBlockDirection('abمرح')).toBe('rtl');
+    // English-first, RTL share 0.5 (< 0.6) → keeps first-strong ltr.
+    expect(resolveBlockDirection('abcمرح')).toBe('ltr');
+    // Symmetric: Arabic-first, LTR share exactly 0.6 → flips to ltr; 0.5 stays rtl.
+    expect(resolveBlockDirection('مرabc')).toBe('ltr');
+    expect(resolveBlockDirection('مرحabc')).toBe('rtl');
   });
 });
 

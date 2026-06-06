@@ -27,13 +27,21 @@ function escapeReg(s) {
  * @param {object} opts  { CM6, doc, onChange, dir }
  * @returns an EditorPort (+ setDirection/focus/destroy/_view) backed by a CM6 EditorView
  */
-export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', livePreview = true, renderBlock = null, renderMath = null, onWikilink = null, onSelectionChange = null, onTab = null } = {}) {
+export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', forceDir = null, livePreview = true, renderBlock = null, renderMath = null, onWikilink = null, onSelectionChange = null, onTab = null } = {}) {
   const {
     EditorState, EditorSelection, EditorView, keymap, Prec, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
     syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags, markdown, markdownLanguage,
     search, setSearchQuery, SearchQuery, syntaxTree,
   } = CM6;
+
+  // Live, mutable direction so setDirection() can re-drive per-line dir AFTER mount — the
+  // createLineDirection getters below read THESE (not a stale closed-over value). liveForce
+  // ('rtl'|'ltr'|null) forces every line; liveDir is the base direction. setDirection() flips
+  // these and dispatches a benign transaction so the line-direction plugin re-reads them and
+  // repaints (the vendored CM6 bundle exports no StateEffect to wake it more directly).
+  let liveDir = dir === 'rtl' ? 'rtl' : 'ltr';
+  let liveForce = (forceDir === 'rtl' || forceDir === 'ltr') ? forceDir : null;
 
   // T-F13: the prose look. With the markdown markers hidden off the active line (live-preview.js),
   // the SURVIVING text must read as formatted prose — serif headings at real sizes, true bold /
@@ -126,7 +134,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       ...(livePreview && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
       ...(livePreview ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
       ...(livePreview ? [createInlineMarksPreview(CM6)] : []), // ==highlight==/<u>/~sub~/^sup^ rendered off the active line
-      ...createLineDirection(CM6, () => dir), // R1/R2 in CM6: per-line dir + logical caret (perLineTextDirection)
+      ...createLineDirection(CM6, () => liveDir, () => liveForce), // R1/R2 in CM6: per-line dir (forced or auto) + logical caret
       // F13 Find: the `search` extension draws .cm-searchMatch on EVERY hit of the active
       // SearchQuery (set via setSearchHighlight below) so all matches are visible, not just the
       // selected one. No panel/keymap is wired — Find is driven by the app's own find-bar.
@@ -142,7 +150,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     ],
   });
   const view = new EditorView({ state, parent });
-  view.dom.setAttribute('dir', dir);
+  view.dom.setAttribute('dir', liveForce || liveDir); // forced direction wins for the surface base
 
   const clamp = (n, len) => Math.max(0, Math.min(n == null ? 0 : n, len));
 
@@ -208,7 +216,14 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       return marks;
     },
     // T-F13 extras beyond the core contract:
-    setDirection(d) { view.dom.setAttribute('dir', d === 'rtl' ? 'rtl' : 'ltr'); },
+    setDirection(d, force) {
+      liveDir = d === 'rtl' ? 'rtl' : 'ltr';
+      liveForce = (force === 'rtl' || force === 'ltr') ? force : null;
+      view.dom.setAttribute('dir', liveForce || liveDir);
+      // Fire a no-op transaction so the per-line direction plugin's update() runs and re-reads
+      // the new direction (no doc/viewport change happened on its own).
+      view.dispatch({});
+    },
     focus() { view.focus(); },
     // Scroll a document position into view (outline navigation). `select:true` also places the
     // caret there. Used by the outline now that CM6 is the sole surface (the old preview pane is

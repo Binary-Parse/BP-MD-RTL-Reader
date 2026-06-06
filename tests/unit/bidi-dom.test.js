@@ -67,10 +67,21 @@ describe('applyBlockDirection (T-R1)', () => {
     expect(p.hasAttribute('lang')).toBe(false);
   });
 
-  test('first-strong wins over majority (English-first mixed → ltr)', () => {
+  test('dominant-script wins: Arabic-majority block that OPENS with English → rtl + lang=ar (T-R1 mixed-heading fix)', () => {
+    // Previously first-strong returned ltr here ("Hello" leads), which left Arabic headings/
+    // paragraphs that open with an English word or number wrongly laid out left-to-right.
     const root = frag('<p>Hello مرحبا مرحبا مرحبا</p>');
     applyBlockDirection(root);
-    expect(root.querySelector('p').getAttribute('dir')).toBe('ltr');
+    const p = root.querySelector('p');
+    expect(p.getAttribute('dir')).toBe('rtl');
+    expect(p.getAttribute('lang')).toBe('ar');
+  });
+
+  test('Arabic heading that opens with an English brand/number → rtl (the reported header bug)', () => {
+    const root = frag('<h1>API دليل المستخدم الكامل</h1><h2>2024 إصدار جديد من البرنامج</h2>');
+    applyBlockDirection(root);
+    expect(root.querySelector('h1').getAttribute('dir')).toBe('rtl');
+    expect(root.querySelector('h2').getAttribute('dir')).toBe('rtl');
   });
 
   test('English-first block with one Arabic word does NOT get lang=ar (EC-C6)', () => {
@@ -233,5 +244,56 @@ describe('applyBidi (combined)', () => {
     expect(ps[1].getAttribute('dir')).toBe('ltr');
     expect(ps[0].querySelectorAll('bdi').length).toBeGreaterThan(0);
     expect(ps[1].querySelectorAll('bdi').length).toBe(0);
+  });
+});
+
+describe('forced direction (toggle / front-matter overrides per-block auto)', () => {
+  test('forceDir="rtl" forces an English block to rtl, but adds NO spurious lang=ar', () => {
+    const root = frag('<p>An English paragraph</p>');
+    applyBlockDirection(root, 'ltr', 'rtl');
+    const p = root.querySelector('p');
+    expect(p.getAttribute('dir')).toBe('rtl');
+    expect(p.hasAttribute('lang')).toBe(false); // ARABIC.test guard: no Arabic → no lang
+  });
+
+  test('forceDir="ltr" forces an Arabic block to ltr', () => {
+    const root = frag('<p>مرحبا بالعالم</p>');
+    applyBlockDirection(root, 'ltr', 'ltr');
+    expect(root.querySelector('p').getAttribute('dir')).toBe('ltr');
+  });
+
+  test('forceDir="rtl" forces a ~50/50 English-led block to rtl (the reported bug at DOM layer)', () => {
+    const root = frag('<p>Name قيمة one واحد</p>'); // auto would keep this ltr (English-first, 53% RTL)
+    applyBlockDirection(root, 'ltr');
+    expect(root.querySelector('p').getAttribute('dir')).toBe('ltr'); // sanity: auto
+    applyBlockDirection(root, 'ltr', 'rtl');
+    expect(root.querySelector('p').getAttribute('dir')).toBe('rtl'); // forced
+  });
+
+  test('applyTableDirection honors forceDir over dominant-script', () => {
+    const root = frag('<table><tr><th>Name</th><th>قيمة</th></tr></table>');
+    applyTableDirection(root, 'ltr', 'rtl');
+    expect(root.querySelector('table').getAttribute('dir')).toBe('rtl');
+  });
+
+  test('applyBidi({forceDir:"rtl"}) forces every block rtl but STILL isolates English/number runs in <bdi>', () => {
+    const root = frag('<h1>Release Notes</h1><p>See version 2.0 in <code>app.js</code></p>');
+    applyBidi(root, { baseDir: 'ltr', escape: escapeHtml, forceDir: 'rtl' });
+    expect(root.querySelector('h1').getAttribute('dir')).toBe('rtl');
+    expect(root.querySelector('p').getAttribute('dir')).toBe('rtl');
+    // Inline isolation must still fire off the (now forced) rtl block: the LTR <code> and the
+    // number "2.0" are wrapped so they don't reorder under the forced RTL base.
+    expect(root.querySelector('code').parentNode.nodeName).toBe('BDI');
+    expect([...root.querySelectorAll('bdi')].map((b) => b.textContent)).toContain('2.0');
+  });
+
+  test('regression: omitting forceDir keeps the exact per-block auto result', () => {
+    const html = '<h1>مرحبا</h1><p>An English paragraph</p>';
+    const a = frag(html); applyBlockDirection(a, 'ltr');
+    const b = frag(html); applyBlockDirection(b, 'ltr', null);
+    expect(a.querySelector('h1').getAttribute('dir')).toBe('rtl');
+    expect(a.querySelector('p').getAttribute('dir')).toBe('ltr');
+    expect(b.querySelector('h1').getAttribute('dir')).toBe('rtl');
+    expect(b.querySelector('p').getAttribute('dir')).toBe('ltr');
   });
 });

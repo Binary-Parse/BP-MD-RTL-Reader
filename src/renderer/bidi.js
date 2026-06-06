@@ -25,6 +25,49 @@ export function resolveDirection(text, inherited = 'ltr') {
   return inherited;
 }
 
+/**
+ * Resolve a BLOCK's direction by DOMINANT strong-script, not strict first-strong.
+ *
+ * First-strong (resolveDirection / HTML dir="auto") is documented to mis-detect a block
+ * whose first strong character runs opposite to its dominant script — e.g. an Arabic
+ * heading that opens with an English word or number ("API دليل المستخدم") resolves to LTR
+ * and renders left-aligned, English-first. Headings/titles hit this constantly (W3C i18n,
+ * UAX #9 P2/P3 — first-strong's known failure mode). For a block, whose direction we want
+ * to MATCH its visible majority, we count strong characters per direction and pick the
+ * majority instead: neutral-only text inherits the base dir (EC-C1), and an exact tie
+ * breaks toward the inherited base. Inline isolation (needsIsolation) still uses the pure
+ * first-strong resolveDirection — an inline run's own direction IS its first strong char.
+ *
+ * @param {string} text
+ * @param {'ltr'|'rtl'} inherited  base direction for neutral-only text / ties
+ * @returns {'ltr'|'rtl'}
+ */
+// A block flips away from its first-strong direction only when the OTHER script is at
+// least this share of the strong letters — a CLEAR majority. Tuned so an Arabic-dominant
+// heading that merely opens with an English word/number flips to RTL, while a near-balanced
+// block (e.g. an English-first table with a couple of Arabic words) keeps first-strong.
+const BLOCK_DOMINANCE = 0.6;
+
+export function resolveBlockDirection(text, inherited = 'ltr') {
+  if (typeof text !== 'string' || text === '') return inherited;
+  let rtl = 0;
+  let ltr = 0;
+  for (const ch of text) {
+    // RTL scripts are also letters, so test RTL first and use else-if to avoid double count.
+    if (RTL_SCRIPT.test(ch)) rtl++;
+    else if (ANY_LETTER.test(ch)) ltr++;
+  }
+  const total = rtl + ltr;
+  if (total === 0) return inherited; // neutral-only → inherit (EC-C1)
+  // Standards default: first strong character (HTML dir="auto" / UAX #9 P2/P3).
+  const firstStrong = resolveDirection(text, inherited);
+  // …overridden only when the opposite script clearly dominates (the documented first-strong
+  // failure: an RTL paragraph/heading that begins with a strong LTR character).
+  if (firstStrong === 'ltr' && rtl / total >= BLOCK_DOMINANCE) return 'rtl';
+  if (firstStrong === 'rtl' && ltr / total >= BLOCK_DOMINANCE) return 'ltr';
+  return firstStrong;
+}
+
 /** True when a run's direction differs from its context (needs isolation). */
 export function needsIsolation(run, contextDir) {
   return resolveDirection(run, contextDir) !== contextDir;

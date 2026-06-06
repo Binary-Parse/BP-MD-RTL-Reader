@@ -70,6 +70,7 @@
 }
 :root {
   font-size: 16px; /* rem base for app-wide zoom (T-T4) */
+  color-scheme: light; /* paint native scrollbars/overscroll/controls light to match the theme */
   --paper: #FAF7F0;
   --paper-deep: #F2EDE0;
   --paper-edge: #E6DFCC;
@@ -79,6 +80,9 @@
   --rule: #D6CDB6;
   --accent: #C0492C;
   --accent-soft: #E8C4B6;
+  /* Highlight surface for marks / wikilink pills — a translucent accent so it stays visible
+     on ANY theme background (the old solid --accent-soft vanished on the dark theme). */
+  --hl-bg: rgba(192, 73, 44, 0.15);
   --gold: #B7943A;
   --teal: #2D5F4E;
   --plum: #6B3E5E;
@@ -95,6 +99,7 @@
 }
 
 [data-theme="ink"] {
+  color-scheme: dark; /* dark native scrollbars/overscroll — fixes the white scrollbar track on scroll */
   --paper: #16181C;
   --paper-deep: #1E2126;
   --paper-edge: #2A2F36;
@@ -104,6 +109,7 @@
   --rule: #2F343C;
   --accent: #D9885F;
   --accent-soft: #3A2A22;
+  --hl-bg: rgba(217, 136, 95, 0.28); /* visible warm highlight on the dark canvas */
   --gold: #D9B85C;
   --teal: #6FB594;
   --plum: #B582A0;
@@ -112,6 +118,7 @@
 }
 
 [data-theme="sepia"] {
+  color-scheme: light;
   --paper: #F4E8D0;
   --paper-deep: #ECDFC0;
   --paper-edge: #DCC9A0;
@@ -121,10 +128,14 @@
   --rule: #C9B284;
   --accent: #A8512B;
   --accent-soft: #E8C4A0;
+  --hl-bg: rgba(168, 81, 43, 0.18);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
+/* Paint the root canvas in the theme colour and kill the white overscroll/rubber-band
+   reveal, so scrolling never flashes white behind themed surfaces (research topic 3). */
+html { background: var(--paper); overscroll-behavior: none; }
 body {
   font-family: var(--sans);
   font-size: 0.9375rem;
@@ -524,8 +535,9 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
 .sb-tab:hover { color: var(--ink-soft); }
 .sb-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-.sb-content { flex: 1; overflow-y: auto; padding: 6px 0; }
+.sb-content { flex: 1; overflow-y: auto; padding: 6px 0; scrollbar-color: var(--rule) transparent; }
 .sb-content::-webkit-scrollbar { width: 6px; }
+.sb-content::-webkit-scrollbar-track { background: transparent; } /* else a light track renders on the dark ink surface */
 .sb-content::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
 
 .sb-pane { display: none; }
@@ -671,7 +683,7 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
   line-height: 1.5;
 }
 .sr-snip mark {
-  background: var(--accent-soft);
+  background: var(--paper-edge); /* accent text on a neutral surface → AA-compliant in dark */
   color: var(--accent);
   padding: 0 2px;
   border-radius: 2px;
@@ -739,10 +751,13 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .editor-wrap {
   background: var(--paper);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--rule) transparent; /* standard themed scrollbar (Firefox + Chromium) */
   display: flex;
   flex-direction: column;
 }
 .editor-wrap::-webkit-scrollbar { width: 8px; }
+.editor-wrap::-webkit-scrollbar-track { background: transparent; }
 .editor-wrap::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
 
 .toolbar-strip {
@@ -847,9 +862,12 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .source-pane, .preview-pane {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--rule) transparent;
   min-width: 0;
 }
 .source-pane::-webkit-scrollbar, .preview-pane::-webkit-scrollbar { width: 8px; }
+.source-pane::-webkit-scrollbar-track, .preview-pane::-webkit-scrollbar-track { background: transparent; }
 .source-pane::-webkit-scrollbar-thumb, .preview-pane::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
 .source-pane { display: none; }
 /* T-F13: CodeMirror 6 mount fills the source pane; inherit the app's mono type/colours. */
@@ -860,7 +878,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
    inline code get their type from the prose HighlightStyle in codemirror-adapter.js; only
    the few rules below set the BASE surface. */
 .cm-mount .cm-editor { height: 100%; background: var(--paper); }
-.cm-mount .cm-scroller { font-family: var(--sans); font-size: 1.0625rem; line-height: 1.7; padding: 56px 0 120px; }
+.cm-mount .cm-scroller { font-family: var(--sans); font-size: 1.0625rem; line-height: 1.7; padding: 56px 0 120px; overscroll-behavior: contain; scrollbar-color: var(--rule) transparent; }
+.cm-mount .cm-scroller::-webkit-scrollbar { width: 8px; }
+.cm-mount .cm-scroller::-webkit-scrollbar-track { background: transparent; }
+.cm-mount .cm-scroller::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
 .cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
 /* Arabic lines (per-line dir from line-direction.js) take the Arabic face + looser leading. */
 .cm-mount .cm-line[dir="rtl"] { font-family: var(--arabic); line-height: 1.95; }
@@ -1013,11 +1034,17 @@ mark.find-hit.current { background: var(--accent); color: white; }
 #editor[dir="rtl"] p em { font-style: normal; font-weight: 600; }
 .editor p strong { font-weight: 600; }
 .editor a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.editor a:hover { color: var(--ink); }
+/* Hover keeps the link colour and adds a visible highlight + thicker underline (don't drop to
+   body colour, which made hovered links indistinguishable in dark mode). Underline is always
+   present so links never rely on colour alone (WCAG 1.4.1). */
+.editor a:hover { color: var(--accent); background: var(--paper-edge); border-radius: 2px; text-decoration-thickness: 2px; }
+.editor a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
 .wikilink {
   color: var(--accent) !important;
-  background: var(--accent-soft);
+  /* Neutral surface (not the warm --hl-bg) so accent pill text clears WCAG AA 4.5:1 in the
+     dark theme: accent #D9885F on --paper-edge #2A2F36 = 4.9:1 (on --hl-bg it was only 4.0:1). */
+  background: var(--paper-edge);
   padding: 1px 6px;
   border-radius: 3px;
   font-weight: 500;
@@ -1025,6 +1052,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   text-decoration: none !important;
 }
 .wikilink:hover { background: var(--accent); color: white !important; }
+.wikilink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Footnotes (R11): superscript refs + the end-of-document notes list. */
 .fn-ref { font-size: 0.75em; line-height: 0; }
@@ -1039,7 +1067,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 /* Custom inline marks — the rendered preview (#noteContent) and the CM6 editor surface
    (.cm-* decoration classes from inline-marks-preview.js) share the same look. */
-#noteContent mark, .cm-mount .cm-hl { background: var(--accent-soft); color: inherit; padding: 0 2px; border-radius: 2px; }
+#noteContent mark, .cm-mount .cm-hl { background: var(--hl-bg); color: inherit; padding: 0 2px; border-radius: 2px; }
 #noteContent sub, .cm-mount .cm-sub { vertical-align: sub; font-size: 0.75em; line-height: 0; }
 #noteContent sup, .cm-mount .cm-sup { vertical-align: super; font-size: 0.75em; line-height: 0; }
 #noteContent u, .cm-mount .cm-u { text-decoration: underline; }
@@ -1078,6 +1106,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
 #editor h1[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 2.375rem; letter-spacing: 0; }
 #editor h2[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 1.625rem; }
 #editor h3[dir="rtl"] { font-family: var(--arabic); font-weight: 600; }
+/* The Arabic FACE follows CONTENT (lang="ar"), not the dir attribute, so Arabic glyphs keep the
+   Arabic font even when the user FORCES a block LTR (alignment flips; the font must not revert to
+   a Latin serif, which would mis-render Arabic). lang="ar" is set on Arabic-dominant blocks. */
+#editor [lang="ar"] { font-family: var(--arabic); }
 #editor blockquote[dir="rtl"] {
   padding-inline-start: 0;
   padding-inline-end: 24px;
@@ -1317,8 +1349,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--ink-mute);
   font-weight: 500;
 }
-.insp-content { flex: 1; overflow-y: auto; padding: 0 0 20px; min-height: 0; }
+.insp-content { flex: 1; overflow-y: auto; padding: 0 0 20px; min-height: 0; scrollbar-color: var(--rule) transparent; }
 .insp-content::-webkit-scrollbar { width: 6px; }
+.insp-content::-webkit-scrollbar-track { background: transparent; }
 .insp-content::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
 .insp-section { padding: 14px 16px; border-bottom: 1px solid var(--rule); }
 .insp-section:last-child { border-bottom: none; }
@@ -1388,7 +1421,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
 /* status-bar stats are read-only — no cursor:pointer/hover affordance (T-F10) */
 .sb-stat { display: flex; align-items: center; gap: 5px; cursor: default; opacity: 0.85; }
 .sb-stat.ok::before { content: '●'; color: var(--green); font-size: 0.6875rem; }
-.sb-stat.dir { color: var(--accent-soft); font-weight: 600; }
+/* Use --accent (not the translucent --accent-soft, which is ~1.2:1 and invisible on the dark
+   status bar) for the LTR/RTL indicator: accent #D9885F on the ink status bar = 5.87:1 (AA). */
+.sb-stat.dir { color: var(--accent); font-weight: 600; }
 
 /* palette */
 .palette-overlay {
@@ -1768,7 +1803,7 @@ html.electron .tab-add {
         <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </div>
-      <button class="tb-btn" id="rtlBtn" title="Flip direction (Ctrl+Shift+L)" aria-label="Flip text direction"><svg class="ic"><use href="#ic-flip"/></svg></button>
+      <button class="tb-btn" id="rtlBtn" title="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
       <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-theme"/></svg></button>
     </div>
 

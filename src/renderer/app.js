@@ -7,7 +7,7 @@ import { vaultSearch as _vaultSearch } from './search.js';
 import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader } from './markdown.js';
 import { execEditCmd as _execEditCmdImpl } from './edit-commands.js';
 import { applyBidi } from './bidi-dom.js';
-import { resolveDirection, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
+import { resolveDirection, resolveBlockDirection, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
 import { transformCallouts } from './callouts.js';
 import { activeHeading } from './outline.js';
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
@@ -62,6 +62,11 @@ const { state: State, subscribe } = createState({
   activeFile: 0,
   theme: 'paper',
   direction: 'ltr',
+  // forcedDir: the user's explicit content-direction choice from the top-bar toggle.
+  // null = AUTO (smart per-block detection, the default); 'rtl'/'ltr' = force every block.
+  // Ephemeral by design — not persisted; resets to AUTO on each launch (front-matter
+  // `direction:` is the durable per-note mechanism).
+  forcedDir: null,
   editorMode: 'live',
   // In-memory defaults (used in browser/dev with no settings bridge). The PACKAGED app opens
   // with both panels CLOSED — driven by the persisted-settings default (src/main/settings.js)
@@ -173,21 +178,32 @@ window.rewriteVaultImages = rewriteVaultImages;
 function applyBidiToNote(content) {
   const { data, body } = parseFrontMatter(content || '');
   const fmDir = frontMatterDirection(data); // T-R6: `direction:` declaration, or null
-  // Precedence: manual ⇄ override > front-matter direction > content first-strong.
+  // The EXPLICIT direction — the top-bar toggle first, then the note's front-matter — FORCES
+  // every block of the note to that direction; null = AUTO (smart per-block detection).
+  const forcedDir = State.forcedDir || fmDir || null;
+  // Precedence for the container/indicator: manual ⇄ override > front-matter > content dominance.
   const docDir = resolveDocDirection({
-    manual: appBody._manualRTL ? 'rtl' : null,
+    manual: State.forcedDir,
     frontMatter: fmDir,
-    content: resolveDirection(body, 'ltr'),
+    content: resolveBlockDirection(body, 'ltr'), // dominant-script: an Arabic-majority note reads RTL even if it opens with English
   });
-  applyBidi(noteContent, { baseDir: docDir, escape: escapeHtml });
+  applyBidi(noteContent, { baseDir: docDir, escape: escapeHtml, forceDir: forcedDir });
+  if (cmAdapter) cmAdapter.setDirection(docDir, forcedDir); // keep the CM6 editor in sync (also closes the front-matter gap)
   wireTableNav(noteContent); // T-R9: logical (EC-C2) arrow-key cell traversal in rendered tables
-  // Front matter (or a manual toggle) flips the whole note's container direction;
+  // An explicit choice (toggle or front matter) flips the whole note's container direction;
   // otherwise the container stays neutral and each block resolves its own (R1/R2).
   const editorEl = $('editor');
   if (editorEl) {
-    if (appBody._manualRTL) {
-      // Manual ⇄ owns State.direction + the indicator (set in toggleRTL).
-      editorEl.setAttribute('dir', docDir);
+    if (State.forcedDir === 'rtl') {
+      // Forced RTL: explicit container dir to override the ltr default (blocks already forced).
+      editorEl.setAttribute('dir', 'rtl');
+      if (State.direction !== 'rtl') State.direction = 'rtl';
+      updateDirUI();
+    } else if (State.forcedDir === 'ltr') {
+      // Forced LTR: container stays neutral (ltr is the default); blocks are forced via forceDir.
+      editorEl.removeAttribute('dir');
+      if (State.direction !== 'ltr') State.direction = 'ltr';
+      updateDirUI();
     } else if (fmDir) {
       // Front matter governs: keep the indicator/inspector in sync with it.
       editorEl.setAttribute('dir', docDir);
@@ -336,34 +352,41 @@ function setTheme(t) {
 // RTL
 // =====================================================================
 function toggleRTL() {
-  const isRTL = State.direction === 'rtl';
-  State.direction = isRTL ? 'ltr' : 'rtl';
+  // Cycle the EXPLICIT content-direction choice: AUTO → RTL → LTR → AUTO.
+  // AUTO = smart per-block detection (default). RTL/LTR force EVERY block of the note.
+  State.forcedDir = State.forcedDir === null ? 'rtl' : State.forcedDir === 'rtl' ? 'ltr' : null;
+  appBody._manualRTL = State.forcedDir === 'rtl'; // back-compat mirror for existing RTL tests/export
   const editorEl = $('editor');
-  if (State.direction === 'rtl') {
-    srcTextarea.setAttribute('dir', 'auto');
-    if (editorEl) editorEl.setAttribute('dir', 'rtl');
-    appBody._manualRTL = true;
-  } else {
-    srcTextarea.removeAttribute('dir');
-    if (editorEl) editorEl.removeAttribute('dir');
-    appBody._manualRTL = false;
-  }
-  if (cmAdapter) cmAdapter.setDirection(State.direction); // T-F13: flip the CM6 source editor too
-  updateDirUI();
-  // Re-resolve per-block direction + inline isolation under the new override so
-  // neutral-only blocks inherit the new base direction (EC-C1) and isolation is
-  // refreshed immediately, not only on the next render.
+  // #srcTextarea must be dir=auto for RTL and NEVER literal rtl (spec §Constraints); cleared otherwise.
+  if (State.forcedDir === 'rtl') srcTextarea.setAttribute('dir', 'auto');
+  else srcTextarea.removeAttribute('dir');
+  // #editor container: explicit 'rtl' ONLY for forced RTL (to override the ltr default). Forced
+  // LTR and AUTO leave the container neutral — ltr is the default and blocks are forced per-block
+  // (forceDir) regardless, so an explicit dir='ltr' here is unnecessary.
+  if (State.forcedDir === 'rtl') { if (editorEl) editorEl.setAttribute('dir', 'rtl'); }
+  else if (editorEl) editorEl.removeAttribute('dir');
+  State.direction = State.forcedDir || 'ltr'; // forced sets it; AUTO defaults to ltr (refined by applyBidiToNote for a file)
+  if (cmAdapter) cmAdapter.setDirection(State.forcedDir || State.direction, State.forcedDir); // T-F13: flip CM6 too
+  // Re-resolve per-block direction + inline isolation under the new choice (also recomputes
+  // State.direction + the indicator for AUTO/front-matter, where direction follows the content).
   const af = State.files[State.activeFile];
   if (af) applyBidiToNote(af.content || '');
-  showToast(`Direction: ${State.direction.toUpperCase()}`);
+  updateDirUI();
+  showToast(`Direction: ${State.forcedDir ? State.forcedDir.toUpperCase() : 'Auto'}`);
 }
 window.toggleRTL = toggleRTL;
 
 function updateDirUI() {
-  const isRTL = State.direction === 'rtl';
+  // The indicator + the lit state reflect the EFFECTIVE direction (forced choice, else the
+  // auto/front-matter-resolved one) so a front-matter `direction: rtl` also lights the button.
+  const isRTL = (State.forcedDir || State.direction) === 'rtl';
   $('dirIndicator').textContent = isRTL ? 'RTL' : 'LTR';
   $('propDir').textContent = isRTL ? 'RTL' : 'LTR';
-  $('rtlBtn').classList.toggle('active', isRTL);
+  const btn = $('rtlBtn');
+  if (btn) {
+    btn.classList.toggle('active', isRTL);
+    btn.setAttribute('aria-pressed', State.forcedDir !== null ? 'true' : 'false'); // pressed = the USER forced a direction
+  }
 }
 
 // =====================================================================
@@ -1261,7 +1284,7 @@ function renderFile(idx) {
 
   // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
   // the bidi pass so callout bodies still get per-block direction (R1/R2).
-  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
+  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection });
   // Code highlighting + math (T-F9): also before the bidi pass.
   decorateCodeAndMath();
   // Per-block direction + inline bidi isolation (T-R1/R2), replacing the old
@@ -1928,7 +1951,7 @@ function applyEditorInput(val, pos) {
       ${html}
     `;
     rewriteVaultImages(noteContent); // R10: note-relative images → bpmd://vault/<rel>
-    transformCallouts(noteContent, { parseCalloutHeader, resolveDirection });
+    transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection });
     decorateCodeAndMath();
     applyBidiToNote(f.content);
     $('propWords').textContent = wordCount;
@@ -1970,7 +1993,7 @@ function renderCmBlock(type, source) {
     const el = document.createElement('div');
     el.innerHTML = parseMarkdown(source);
     decorateBlockContent(el); // highlight code + render KaTeX inside cells (F9 parity)
-    applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
+    applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml, forceDir: State.forcedDir });
     wireTableNav(el);
     return el;
   }
@@ -1993,9 +2016,9 @@ function renderCmBlock(type, source) {
   if (type === 'callout') {
     const el = document.createElement('div');
     el.innerHTML = parseMarkdown(source);
-    transformCallouts(el, { parseCalloutHeader, resolveDirection }); // > [!NOTE] → styled callout (F14)
+    transformCallouts(el, { parseCalloutHeader, resolveDirection: resolveBlockDirection }); // > [!NOTE] → styled callout (F14)
     decorateBlockContent(el); // highlight code + render KaTeX inside the callout body (F9 parity)
-    applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml });
+    applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml, forceDir: State.forcedDir });
     return el;
   }
   if (type === 'image') {
@@ -2032,6 +2055,7 @@ async function initCM6Editor() {
     CM6,
     doc: active ? active.content : '',
     dir: State.direction === 'rtl' ? 'rtl' : 'ltr',
+    forceDir: State.forcedDir, // honor a forced direction chosen before the editor mounts
     onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
     renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
     renderMath: renderCmMath,   // T-F13 × F9: inline KaTeX rendering in the single CM6 surface

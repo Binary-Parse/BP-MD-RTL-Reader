@@ -13,10 +13,14 @@ on:
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      github.actor != 'claude[bot]' &&
+      github.actor != 'github-actions[bot]' &&
+      (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -34,4 +38,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Respond to the @claude request in this issue or PR.
+            Investigate the codebase, implement the requested fix, and open a pull request with the change.
+            You MUST post your analysis and a summary of what you did back to the thread yourself,
+            using the gh CLI (do NOT rely on automatic comment posting):
+              - On an issue:  gh issue comment ${{ github.event.issue.number }} --body "<your update>"
+              - On a PR:      gh pr comment ${{ github.event.pull_request.number }} --body "<your update>"
+            Post a first comment acknowledging the request before you start, and a final comment with the result (including the PR link) when done.
           claude_args: "--model claude-opus-4-8"

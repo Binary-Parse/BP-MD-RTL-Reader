@@ -1,12 +1,12 @@
 <#
-  Run-Tests.ps1 — one-shot driver for the installer test suite.
+  run-tests.ps1 — one-shot driver for the installer test suite.
     1. ensures Pester 5+ is available (installs to CurrentUser if missing)
     2. runs the Pester unit tests
     3. runs the mutation engine (mutation-runner.ps1)
   Exit code is non-zero if either stage fails.
 
-  Usage:  pwsh -File tests/installer/Run-Tests.ps1
-          pwsh -File tests/installer/Run-Tests.ps1 -SkipMutation
+  Usage:  pwsh -File tests/installer/run-tests.ps1
+          pwsh -File tests/installer/run-tests.ps1 -SkipMutation
 #>
 [CmdletBinding()]
 param(

@@ -76,9 +76,10 @@ First public release. 🎉
 - Vault reads are allow-listed, size-bounded, and reject UNC/symlink escapes.
 
 ### Packaging
-- Windows installers: NSIS (`BP MD RTL Reader Setup 1.0.0.exe`), a portable
-  build (`BP MD RTL Reader 1.0.0.exe`), and a standalone Inno Setup installer
-  (`BP MD RTL Reader Setup.exe`).
+- Windows installers: NSIS (`BP MD RTL Reader Setup 1.0.0.exe`) and a portable
+  build (`BP MD RTL Reader 1.0.0.exe`) are produced by the automated build. A
+  standalone Inno Setup installer (`BP MD RTL Reader Setup.exe`) can also be built
+  locally (see `docs/BUILD.md`); it is not part of the automated release.
 - Optional **.md / .markdown** file association and an "Open with BP MD RTL
   Reader" context-menu verb.
 

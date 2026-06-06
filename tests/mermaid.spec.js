@@ -62,7 +62,7 @@ test.describe('[T-F16] Mermaid diagrams', () => {
     expect(await page.locator('#noteContent .mermaid text').textContent()).toBe('safe label'); // benign content kept
   });
 
-  test('[Visual] diagram renders at 1440x900', async ({ page }) => {
+  test('[Visual] diagram renders at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');

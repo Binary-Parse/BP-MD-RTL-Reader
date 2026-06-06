@@ -6,7 +6,7 @@
 ;  InitializeSetup, then cancels (installs nothing). Results go to the setup log
 ;  and (when not silent) a summary message box.
 ;
-;  Build + run is automated by Run-PascalSelfTest.ps1, or manually:
+;  Build + run is automated by run-pascal-self-test.ps1, or manually:
 ;     ISCC.exe selftest.iss
 ;     BP-MD-RTL-Reader-SelfTest.exe /VERYSILENT /LOG="selftest.log"
 ;     (then grep the log for "RESULT: N passed, 0 failed")

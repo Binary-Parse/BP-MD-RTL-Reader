@@ -160,7 +160,7 @@ BP MD RTL Reader is bilingual at its core.
 
 Toggle the right-hand inspector with `Ctrl+Shift+I`. It has two parts:
 
-- **Outline** — every `H1`/`H2`/`H3` heading in the current document; click to jump.
+- **Outline** — every heading (`H1`–`H6`) in the current document; click to jump.
 - **Properties** — file name, word count, estimated read time, text direction, and the
   current view mode.
 
@@ -173,6 +173,8 @@ Toggle the right-hand inspector with `Ctrl+Shift+I`. It has two parts:
 - **Save / Save As** — `Ctrl+S` and `Ctrl+Shift+S` write your changes back to disk.
 - **Export HTML** — **File → Export HTML** produces a single self-contained `.html`
   file (embedded styles, correct `lang`/`dir`) you can share or archive.
+- **Export PDF** — **File → Export PDF** renders the current note to a PDF offline, in an
+  isolated renderer (no network).
 
 Tabs with unsaved edits show a `●`; closing one — or the window — prompts you first.
 
@@ -180,11 +182,15 @@ Tabs with unsaved edits show a `●`; closing one — or the window — prompts 
 
 ## What gets remembered
 
-BP MD RTL Reader keeps things deliberately simple and local:
+BP MD RTL Reader remembers how you left it — all locally, nothing leaves your machine:
 
-- **Saved:** your theme choice, restored on launch.
-- **Per session:** open tabs, recent files, and unsaved edits live until you close the
-  app — your files only change on disk when you **Save**.
+- **Saved across launches:** your theme, editor zoom, view mode, and which panels
+  (sidebar/inspector) are open; UI language/direction, digit style, and calendar; recent
+  files (up to 10, paths only); and the window's size, position, and maximised state.
+- **Session restore:** the vault and the files you had open (and which one was active) are
+  remembered, so the app reopens where you left off.
+- **Per session only:** unsaved edits live until you close the app — your files change on
+  disk only when you **Save**.
 
 Everything is stored under `%APPDATA%\BP MD RTL Reader`. Nothing leaves your machine —
 see [Privacy & Security](PRIVACY.md).

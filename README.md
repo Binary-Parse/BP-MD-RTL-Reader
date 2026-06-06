@@ -65,7 +65,7 @@ plain files that stay on your machine.
 Grab the latest build from the [**Releases**](https://github.com/Binary-Parse/md-reader-rtl/releases) page and run it.
 The installer is available for **x64, 32-bit, and ARM64**; the portable build likewise.
 
-<sub>A standalone [Inno Setup](https://jrsoftware.org/isinfo.php) installer (`BP MD RTL Reader Setup.exe`, x64) is also produced — see [docs/BUILD.md](docs/BUILD.md).</sub>
+<sub>A standalone [Inno Setup](https://jrsoftware.org/isinfo.php) installer (`BP MD RTL Reader Setup.exe`, x64) can also be built locally — see [docs/BUILD.md](docs/BUILD.md); it is not part of the automated release.</sub>
 
 ---
 
@@ -108,9 +108,9 @@ upload, and no auto-update phone-home** — verifiable in the source.
   optionally keep them.
 - The renderer runs with `contextIsolation` on and `nodeIntegration` off, behind a
   minimal preload bridge; rendered HTML is sanitised by DOMPurify.
-- On first run (when online) the renderer fetches the Markdown engine, the sanitiser,
-  and fonts from public CDNs — **content only, integrity-checked, with no identifiers
-  attached.**
+- The renderer makes **no outbound network requests** at any time — the Markdown engine,
+  sanitiser, math/highlight/diagram libraries, and fonts are all bundled locally and
+  loaded under a strict CSP (`connect-src 'self'`).
 
 Full details: **[docs/PRIVACY.md](docs/PRIVACY.md)**.
 
@@ -137,7 +137,7 @@ This is a small app with a deliberately large safety net:
 
 - **468** unit tests (Vitest) with a 95% coverage gate
 - **526** end-to-end tests (Playwright), including visual-regression and accessibility
-- **Mutation testing** (Stryker) with a 90% break threshold
+- **Mutation testing** (Stryker) with an 85% break threshold
 - **Installer logic** verified by Pester + a compiled Inno Setup self-test
 - **CI** on every push/PR: coverage, mutation, e2e, security lint, secret scan, `npm audit`
 

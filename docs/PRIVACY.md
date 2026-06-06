@@ -37,6 +37,9 @@ holds:
   contents of your notes.
 - **Window geometry** — the window's last size, position, and maximised state, restored
   on the next launch (clamped to a currently-visible display).
+- **Last session** — the open vault and the file paths you had open (and which was
+  active), so the app can reopen where you left off. Like Recents, this records *paths
+  only* — never the contents of your notes.
 
 The file also reserves a few fields for upcoming bilingual/RTL options (UI language and
 direction, digit style, calendar). These are kept at their defaults today and are not yet
@@ -60,15 +63,18 @@ Crash minidumps, if any, are written locally too — `crashReporter` is started 
 
 ## What the app fetches (and what it doesn't)
 
-The Markdown engine ([marked](https://marked.js.org/)) and the HTML sanitiser
-([DOMPurify](https://github.com/cure53/DOMPurify)) are **bundled with the app**. They
-load from local files, never the network, so rendering works fully offline.
+**Nothing.** The app makes **zero network requests at runtime**, enforced by a strict
+Content-Security-Policy (`connect-src 'self'`). Every asset ships inside the app and loads
+from local files:
 
-The one remaining outbound request is for **web fonts** (Inter, Fraunces, JetBrains
-Mono, IBM Plex Sans Arabic) from Google Fonts, on first run when you're online. They
-carry **no identifiers**, are cached after the first load, and are not used to track
-you; offline, the app falls back to system fonts. Self-hosting these fonts to remove the
-last request is a tracked follow-up.
+- the Markdown engine ([marked](https://marked.js.org/)) and the HTML sanitiser
+  ([DOMPurify](https://github.com/cure53/DOMPurify)),
+- math, syntax highlighting, and diagrams (KaTeX, highlight.js, Mermaid), and
+- all four font families (Inter, Fraunces, JetBrains Mono, IBM Plex Sans Arabic), vendored
+  as local `woff2` files under `assets/vendor/fonts/`.
+
+Rendering — and the whole app — therefore works fully offline. No fonts or content are
+fetched from any CDN or remote server, ever.
 
 ## Security model
 

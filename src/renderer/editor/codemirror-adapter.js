@@ -1,8 +1,7 @@
 /**
- * codemirror-adapter.js — a CodeMirror 6 EditorPort implementation (T-F13).
+ * codemirror-adapter.js — the CodeMirror 6 editor (T-F13); the sole editor surface.
  *
- * Conforms to the same EditorPort contract as createTextareaAdapter (editor-port.js), so
- * it is a drop-in source engine behind a flag (the textarea stays the default/fallback).
+ * Exposes a small EditorPort-style interface (load / getValue / find / …) over CM6.
  * The CM6 namespace is INJECTED (the vendored window.CM6 bundle), so this module has no
  * hard dependency on the heavy engine and the wiring stays lazy + testable.
  */

@@ -1,7 +1,7 @@
 <#
   version_compare.test.ps1 — Pester unit tests for the version-comparison logic
   mirrored in logic-sim.ps1 (and in installer/scripts/version_check.pas).
-  Run via tests/installer/Run-Tests.ps1 (or: Invoke-Pester -Path <thisfile>).
+  Run via tests/installer/run-tests.ps1 (or: Invoke-Pester -Path <thisfile>).
 #>
 
 BeforeAll {

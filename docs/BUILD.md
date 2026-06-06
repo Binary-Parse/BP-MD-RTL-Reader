@@ -33,10 +33,12 @@ npm start        # launch the app (electron .)
 | Markdown / sanitise | **marked 18** + **DOMPurify 3** |
 | Linting / SAST | **ESLint 10** + `eslint-plugin-security`, `eslint-plugin-no-unsanitized` |
 
-The renderer is a single **`index.html`** (inline styles + an ES-module script) that
-imports pure helpers from **`src/renderer/`**. The main process is **`main.js`** +
-**`preload.js`**, with security/file logic isolated in **`src/main-logic.js`** so it can
-be unit-tested without Electron.
+The renderer is **`index.html`** (UI markup + inline styles) whose JavaScript is
+externalized into **`src/renderer/app.js`** and **`src/renderer/theme-boot.js`**, loaded via
+external `<script>` tags to satisfy the strict CSP (`script-src 'self'`). Those modules
+import pure helpers from the rest of **`src/renderer/`**. The main process is **`main.js`** +
+**`preload.js`**, with Electron-free file/security logic isolated in **`src/main-logic.js`**
+and the **`src/main/`** modules so they can be unit-tested without Electron.
 
 ## npm scripts
 
@@ -74,6 +76,11 @@ pwsh -File installer/build-installer.ps1
 It locates `ISCC.exe`, compiles `installer/setup.iss`, and writes
 `dist/BP MD RTL Reader Setup.exe` with a printed SHA-256.
 
+> The electron-builder config in `package.json` also defines **macOS** (dmg/zip) and
+> **Linux** (AppImage/deb) targets, but only the Windows artifacts are regularly built and
+> released; the Inno Setup installer above is a manual/local build, not part of the
+> automated release.
+
 ## Regenerating assets
 
 ```powershell
@@ -82,6 +89,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.p
 
 # Documentation screenshots in docs/assets/
 node scripts/capture-screenshots.mjs
+
+# CodeMirror 6 editor bundle (assets/vendor/codemirror/codemirror.min.js) from
+# scripts/codemirror-entry.mjs — requires the @codemirror/* + @lezer/highlight + esbuild
+# devDependencies (run `npm install` first).
+npm run build:cm
 ```
 
 ## Testing
@@ -90,8 +102,8 @@ node scripts/capture-screenshots.mjs
 | ----- | ------- | ----- |
 | **Unit** | `npm run test:unit` | 468 tests (Vitest); 95% statement / 95% line / 95% function / 88% branch coverage gate |
 | **End-to-end** | `npm run test:e2e` | 526 tests (Playwright) incl. visual regression + accessibility |
-| **Mutation** | `npm run test:mutation` | Stryker; build breaks below a 90% mutation score |
-| **Installer logic** | `pwsh -File tests/installer/Run-Tests.ps1` | Pester unit tests + a compiled Pascal self-test |
+| **Mutation** | `npm run test:mutation` | Stryker; build breaks below an 85% mutation score |
+| **Installer logic** | `pwsh -File tests/installer/run-tests.ps1` | Pester unit tests + a compiled Pascal self-test (manual / local — not run in CI) |
 
 ## Continuous integration
 
@@ -110,12 +122,13 @@ Coverage, mutation, and Playwright artifacts are uploaded on each run.
 ## Project structure
 
 ```
-index.html              Renderer — UI markup + inline ES-module script
+index.html              Renderer — UI markup + styles; JS externalized to src/renderer/app.js + theme-boot.js (CSP)
 main.js                 Electron main process — window, IPC, file handling, logging
 preload.js              contextBridge — the renderer's only door to the main process
 src/
   main-logic.js         Pure file/security helpers (allow-list, size caps, BOM, symlinks)
-  renderer/             Pure renderer modules — i18n, markdown, search, state, theme, edit-commands
+  main/                 Electron-free main-process modules — context-menu, document-store, navigation, protocol, settings, version
+  renderer/             Renderer modules — app.js, theme-boot.js, i18n, markdown, search, state, theme, edit-commands, editor/
 tests/
   unit/                 Vitest unit tests
   *.spec.js             Playwright e2e (smoke, rtl, visual, a11y, performance, fuzz, …)
@@ -129,7 +142,10 @@ installer/
 scripts/
   generate-icons.ps1    Regenerate icon.png / icon.ico from icon-source.png
   capture-screenshots.mjs  Regenerate docs/assets screenshots
-icon.ico · icon.png · icon-source.png   App icon + its source master
+  codemirror-entry.mjs  CodeMirror 6 bundle entry (built by `npm run build:cm`)
+assets/
+  icon.ico · icon.png · icon-source.png   App icon + its source master
+  vendor/               Bundled libs & fonts (CodeMirror, marked, DOMPurify, KaTeX, highlight.js, Mermaid, woff2)
 ```
 
 ## Contributing

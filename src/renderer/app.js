@@ -24,6 +24,7 @@ import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
 import { isDroppableFile } from './file-predicates.js';
 import { buildSession, pickActiveIndex } from './session.js';
 import { buildFileTree, flattenTree } from './tree.js';
+import { extractTagsFromFiles } from './tags.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -1615,15 +1616,7 @@ async function openFromTree(idx) {
 // =====================================================================
 function renderTags() {
   const tagsPane = $('tagsPane');
-  const tagMap = {};
-  State.files.forEach((f, i) => {
-    const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
-    let m;
-    while ((m = re.exec(f.content || '')) !== null) {
-      if (!tagMap[m[1]]) tagMap[m[1]] = [];
-      if (!tagMap[m[1]].includes(i)) tagMap[m[1]].push(i);
-    }
-  });
+  const tagMap = extractTagsFromFiles(State.files);
   const tags = Object.entries(tagMap).sort((a, b) => b[1].length - a[1].length);
   if (!tags.length) {
     tagsPane.innerHTML = '<div class="search-empty">No tags found.</div>';

@@ -48,7 +48,6 @@
     "src/renderer/editor/block-preview.js",
     "src/renderer/editor/math-preview.js",
     "src/renderer/editor/line-direction.js",
-    "src/renderer/editor/editor-port.js",
     "src/renderer/editor/list-continuation.js"
   ],
   "_comment_thresholds": "break lowered 90→85 when the scope widened from 11 cherry-picked files to the full first-party set incl. the T1 security perimeter + T2/T3 logic (audit F-3/F-6). 85 = the audit's T1 tier target; a slightly lower bar over a vastly larger, security-inclusive scope is a STRONGER, more honest gate than 90-on-easy-files. Residual sub-85 files are T2/T3 that meet their own tier targets (T2≥75, T3≥60) plus a few proven-equivalent mutants in defensive guards.",

@@ -6,7 +6,6 @@ import { sanitizeHtml, sanitizeSvg, renderTrusted } from '../../src/renderer/tru
 import { parseFrontMatter } from '../../src/renderer/frontmatter.js';
 import { t } from '../../src/renderer/locale.js';
 import { extractHeadings, activeHeading } from '../../src/renderer/outline.js';
-import { createTextareaAdapter } from '../../src/renderer/editor/editor-port.js';
 import { resolveDirection, stepCaret } from '../../src/renderer/bidi.js';
 import { migrate, createSettingsStore, defaultSettings } from '../../src/main/settings.js';
 import path from 'node:path';
@@ -38,16 +37,6 @@ describe('outline guards', () => {
     expect(extractHeadings('# x', {})).toEqual([]);
   });
   test('activeHeading empty offsets', () => expect(activeHeading(0, [])).toBe(-1));
-});
-
-describe('editor-port edge', () => {
-  test('load(null) → empty string; zero-width find guard', () => {
-    const el = { value: 'x', selectionStart: 0, selectionEnd: 0 };
-    const ed = createTextareaAdapter(el);
-    ed.load(null);
-    expect(ed.getValue()).toBe('');
-    expect(ed.find('')).toEqual([]);
-  });
 });
 
 describe('bidi edge', () => {

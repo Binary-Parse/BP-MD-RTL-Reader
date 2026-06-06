@@ -3,7 +3,7 @@
  *
  * Loads the renderer (index.html) headlessly via Playwright/Chromium, injects sample
  * English + Arabic notes through the same State proxy the e2e tests use, and captures
- * the three themes, RTL/Arabic rendering, split view, and the command palette.
+ * the three themes, RTL/Arabic rendering, the editor view, and the command palette.
  *
  *   node scripts/capture-screenshots.mjs
  *
@@ -111,12 +111,10 @@ await page.evaluate(() => window.renderFile(1));
 await page.waitForTimeout(700);
 await shot(page, 'rtl-arabic.png');
 
-// Split view (source + preview) on the English note (auto-detects LTR).
+// Editor view on the English note (auto-detects LTR).
 await page.evaluate(() => window.renderFile(0));
 await page.waitForTimeout(500);
-await page.click('#modeSplit'); await page.waitForTimeout(450);
-await shot(page, 'split-view.png');
-await page.click('#modeLive'); await page.waitForTimeout(200);
+await shot(page, 'editor.png');
 
 // Command palette.
 await page.keyboard.press('Control+k'); await page.waitForTimeout(400);
@@ -124,4 +122,4 @@ await shot(page, 'command-palette.png');
 await page.keyboard.press('Escape');
 
 await browser.close();
-console.log('Screenshots written to docs/assets/: theme-paper, theme-ink, theme-sepia, rtl-arabic, split-view, command-palette');
+console.log('Screenshots written to docs/assets/: theme-paper, theme-ink, theme-sepia, rtl-arabic, editor, command-palette');

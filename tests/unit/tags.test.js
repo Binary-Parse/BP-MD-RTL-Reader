@@ -1,32 +1,10 @@
 /**
- * Unit tests for tag extraction logic (renderTags)
+ * Unit tests for tag extraction — the real logic in src/renderer/tags.js
+ * (used by renderTags() in app.js).
  */
 
 import { describe, test, expect } from 'vitest';
-
-function extractTags(content) {
-  const tagMap = {};
-  const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
-  let m;
-  while ((m = re.exec(content)) !== null) {
-    if (!tagMap[m[1]]) tagMap[m[1]] = 0;
-    tagMap[m[1]]++;
-  }
-  return tagMap;
-}
-
-function extractTagsFromFiles(files) {
-  const tagMap = {};
-  files.forEach((f, i) => {
-    const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
-    let m;
-    while ((m = re.exec(f.content || '')) !== null) {
-      if (!tagMap[m[1]]) tagMap[m[1]] = [];
-      if (!tagMap[m[1]].includes(i)) tagMap[m[1]].push(i);
-    }
-  });
-  return tagMap;
-}
+import { extractTags, extractTagsFromFiles } from '../../src/renderer/tags.js';
 
 describe('Tag extraction', () => {
   test('extracts single tag from text', () => {

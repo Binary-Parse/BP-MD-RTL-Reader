@@ -6,9 +6,13 @@
   "license": "MIT",
   "main": "main.js",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
+    "build:cm": "esbuild scripts/codemirror-entry.mjs --bundle --format=iife --global-name=CM6 --minify --outfile=assets/vendor/codemirror/codemirror.min.js",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run --config vitest.config.js",
     "test:unit:coverage": "vitest run --config vitest.config.js --coverage --no-file-parallelism",
@@ -35,7 +39,6 @@
       "assets/icon.ico",
       "assets/icon.png",
       "assets/vendor/**",
-      "node_modules/**/*",
       "package.json"
     ],
     "win": {
@@ -151,6 +154,13 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-markdown": "^6.3.2",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.4",
+    "@lezer/highlight": "^1.2.1",
     "@playwright/test": "^1.60.0",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
@@ -158,6 +168,7 @@
     "axe-core": "^4.11.4",
     "electron": "^42.3.0",
     "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.4.0",
     "eslint-plugin-html": "^8.1.4",
     "eslint-plugin-no-unsanitized": "^4.1.5",

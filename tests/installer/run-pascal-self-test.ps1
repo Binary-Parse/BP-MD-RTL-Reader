@@ -1,9 +1,9 @@
 <#
-  Run-PascalSelfTest.ps1 — compile selftest.iss and run the compiled harness,
+  run-pascal-self-test.ps1 — compile selftest.iss and run the compiled harness,
   which executes the REAL Pascal units (version_check.pas + dir_validate.pas)
   via their *.test.pas assertions. Parses the log for the pass/fail summary.
 
-  Usage:  pwsh -File tests/installer/Run-PascalSelfTest.ps1
+  Usage:  pwsh -File tests/installer/run-pascal-self-test.ps1
 #>
 [CmdletBinding()]
 param()

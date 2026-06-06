@@ -469,7 +469,7 @@ test.describe('[AC7] Theme cross-product: RTL heading alignment across all theme
 
 test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
 
-  test('[AC8-paper] h1 RTL visual baseline -- theme=paper', async ({ page }) => {
+  test('[AC8-paper] h1 RTL visual baseline -- theme=paper @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -485,7 +485,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await expect(h1).toHaveScreenshot('h1-rtl-paper.png');
   });
 
-  test('[AC8-ink] h1 RTL visual baseline -- theme=ink', async ({ page }) => {
+  test('[AC8-ink] h1 RTL visual baseline -- theme=ink @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -501,7 +501,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await expect(h1).toHaveScreenshot('h1-rtl-ink.png');
   });
 
-  test('[AC8-sepia] h1 RTL visual baseline -- theme=sepia', async ({ page }) => {
+  test('[AC8-sepia] h1 RTL visual baseline -- theme=sepia @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -517,7 +517,7 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     await expect(h1).toHaveScreenshot('h1-rtl-sepia.png');
   });
 
-  test('[AC8-doc-meta] .doc-meta RTL visual baseline -- theme=paper', async ({ page }) => {
+  test('[AC8-doc-meta] .doc-meta RTL visual baseline -- theme=paper @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');

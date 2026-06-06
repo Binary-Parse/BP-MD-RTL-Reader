@@ -17,7 +17,7 @@ async function open(page, content) {
   await page.goto(INDEX_URL);
   await page.waitForSelector('#app');
   await page.waitForFunction(() => !!window._appState && !!window.getActiveCmAdapter, null, { timeout: 8000 });
-  await page.evaluate((c) => { window._appState.files = [{ name: 't.md', path: 't.md', content: c, dirty: false }]; window.renderFile(0); }, content);
+  await page.evaluate((c) => { window._appState.files = [{ name: 't.md', path: 't.md', content: c, dirty: false }]; window.renderFile(0); window.setViewMode('edit'); }, content); // T-F17: these test the editor → edit mode
   await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
 }
 const val = (page) => page.evaluate(() => window.getActiveCmAdapter().getValue());

@@ -135,6 +135,14 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
     expect(migrate({ editorMode: 'source' }).editorMode).toBe('source');
     expect(migrate({ editorMode: 'zoomy' }).editorMode).toBe('live');
   });
+  test('viewMode (T-F17): reading-first default; valid kept; invalid/missing → reading', () => {
+    expect(defaultSettings().viewMode).toBe('reading');
+    expect(migrate({ viewMode: 'edit' }).viewMode).toBe('edit');
+    expect(migrate({ viewMode: 'reading' }).viewMode).toBe('reading');
+    expect(migrate({ viewMode: 'bogus' }).viewMode).toBe('reading'); // invalid → default
+    expect(migrate({ viewMode: 42 }).viewMode).toBe('reading');      // non-string → default
+    expect(migrate({}).viewMode).toBe('reading');                    // missing → default
+  });
   test('uiDirection rtl/ltr only', () => {
     expect(migrate({ uiDirection: 'rtl' }).uiDirection).toBe('rtl');
     expect(migrate({ uiDirection: 'ltr' }).uiDirection).toBe('ltr');

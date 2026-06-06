@@ -911,6 +911,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
    open, show the preview pane (welcome) and hide the empty CM6 surface instead. */
 .editor-area.cm-single.welcome .preview-pane { display: block; flex: 1; }
 .editor-area.cm-single.welcome .source-pane { display: none; }
+/* Reading (display) mode: show the clean rendered prose (#noteContent in the preview pane)
+   and hide the CM6 editor surface. Read-only, copy-clean, no markdown-on-click. */
+.editor-area.cm-single.reading .preview-pane { display: block; flex: 1; }
+.editor-area.cm-single.reading .source-pane { display: none; }
 
 .source-textarea {
   width: 100%;
@@ -978,6 +982,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   color: var(--ink-mute);
   text-transform: uppercase;
   letter-spacing: 0.15em;
+  user-select: none; -webkit-user-select: none; /* T-F17: keep the note-meta chrome out of clean copies in Reading mode */
   margin-bottom: 36px;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--rule);
@@ -1803,6 +1808,7 @@ html.electron .tab-add {
         <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </div>
+      <button class="tb-btn" id="viewModeBtn" title="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="true"><svg class="ic"><use href="#ic-book-open"/></svg></button>
       <button class="tb-btn" id="rtlBtn" title="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
       <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-theme"/></svg></button>
     </div>
@@ -1981,7 +1987,7 @@ html.electron .tab-add {
                 </div>
               </div>
             </div>
-            <div id="noteContent" style="display: none;"></div>
+            <div id="noteContent" tabindex="0" aria-label="Reading view" style="display: none;"></div>
           </article>
         </div>
       </div>

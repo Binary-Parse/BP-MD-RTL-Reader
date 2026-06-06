@@ -12,6 +12,8 @@ const DEFAULTS = Object.freeze({
   theme: 'paper',
   zoomFactor: 1,
   editorMode: 'live',
+  viewMode: 'reading', // T-F17: Reading (clean read-only render) vs 'edit' (CM6); reading-first default
+
   // Side panels start CLOSED out-of-the-box (clean editor-first view); a saved choice is
   // preserved by migrate() below, so opening a panel is remembered across launches.
   sidebarVisible: false,
@@ -47,6 +49,7 @@ function migrate(raw) {
   if (!raw || typeof raw !== 'object') return out;
   if (THEMES.includes(raw.theme)) out.theme = raw.theme;
   if (MODES.includes(raw.editorMode)) out.editorMode = raw.editorMode;
+  if (raw.viewMode === 'reading' || raw.viewMode === 'edit') out.viewMode = raw.viewMode; // T-F17
   out.zoomFactor = clampZoom(raw.zoomFactor);
   if (typeof raw.sidebarVisible === 'boolean') out.sidebarVisible = raw.sidebarVisible;
   if (typeof raw.inspectorVisible === 'boolean') out.inspectorVisible = raw.inspectorVisible;

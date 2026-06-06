@@ -68,6 +68,12 @@ const { state: State, subscribe } = createState({
   // `direction:` is the durable per-note mechanism).
   forcedDir: null,
   editorMode: 'live',
+  // viewMode (T-F17): 'reading' = clean read-only rendered view (#noteContent shown, CM6 hidden,
+  // copy yields clean prose, no markdown-on-click); 'edit' = the CM6 live-preview editor.
+  // In-memory dev/test default is 'edit' (browser/dev with no settings bridge); the PACKAGED app
+  // opens READING-first, driven by the persisted-settings default (src/main/settings.js viewMode:
+  // 'reading') — same split as sidebarVisible above. Persisted globally once the user toggles.
+  viewMode: 'edit',
   // In-memory defaults (used in browser/dev with no settings bridge). The PACKAGED app opens
   // with both panels CLOSED — driven by the persisted-settings default (src/main/settings.js)
   // + the static `no-sidebar no-inspector` classes on #appBody, so the first paint is the clean
@@ -743,7 +749,7 @@ function runFind(q) {
   // `|| cmAdapter`: in single CM6 mode the editor stays 'live' but the searchable surface
   // is the CM6 source (the markdown preview pane is hidden). cmAdapter is null without ?cm=1,
   // so the default textarea path is unchanged.
-  if (State.editorMode === 'source' || cmAdapter) {
+  if (State.viewMode !== 'reading' && (State.editorMode === 'source' || cmAdapter)) {
     // F13: highlight EVERY match in the CM6 editor (.cm-searchMatch), not just the selected
     // one. Cleared when the query is empty / on closeFind. No-op for the textarea fallback.
     if (cmAdapter) cmAdapter.setSearchHighlight(q);
@@ -829,7 +835,7 @@ function scrollMarkIntoPane(mark) {
 
 function findStep(d) {
   // Source mode (or single CM6 mode): navigate source/EditorPort match positions.
-  if (State.editorMode === 'source' || cmAdapter) {
+  if (State.viewMode !== 'reading' && (State.editorMode === 'source' || cmAdapter)) {
     const matches = State.findSourceMatches || [];
     if (!matches.length) return;
     State.findIdx = (State.findIdx + d + matches.length) % matches.length;
@@ -1214,6 +1220,7 @@ function showWelcome() {
   noteContent.style.display = 'none';
   toolbarStrip.style.display = 'none';
   editorArea.classList.add('welcome'); // T-F13: reveal the welcome (preview pane) over the CM6 surface
+  editorArea.classList.remove('reading'); // the welcome screen never carries a stale reading class (T-F17)
   $('conflictBar') && ($('conflictBar').innerHTML = ''); // no open file → no conflict banner
   renderTabs();
   $('propFile').textContent = '—';
@@ -1228,6 +1235,59 @@ function showWelcome() {
 }
 
 // =====================================================================
+// VIEW MODE — Reading (clean read-only render) vs Edit (CM6) — T-F17
+// =====================================================================
+// Rebuild the rendered #noteContent from the active file's CURRENT content, so entering
+// reading mode reflects unsaved edits even within the live-edit debounce window. Mirrors the
+// renderFile/applyEditorInput preview pipeline but does NOT touch the CM6 editor.
+function renderReadingContent() {
+  const f = State.files[State.activeFile];
+  if (!f) return;
+  const { body } = parseFrontMatter(f.content || '');
+  const html = parseMarkdown(body);
+  const wordCount = (body.match(/\S+/g) || []).length;
+  noteContent.innerHTML = `
+    <div class="doc-meta" aria-hidden="true">
+      <span>note</span><span>·</span>
+      <span>${wordCount} words</span><span>·</span>
+      <span>${escapeHtml(f.path)}</span>${f.dirty ? '<span>·</span><span style="color: var(--accent);">● unsaved</span>' : ''}
+    </div>
+    ${html}
+  `;
+  rewriteVaultImages(noteContent);                                            // R10
+  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection }); // F14
+  decorateCodeAndMath();                                                      // F9
+  applyBidiToNote(f.content || '');                                           // R1/R2
+  buildTOC();
+  noteContent.querySelectorAll('a.wikilink').forEach(a => {
+    a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
+  });
+}
+
+// Apply a view mode: 'reading' shows the clean rendered note (#noteContent) and hides the CM6
+// editor + writing toolbar; 'edit' shows the CM6 surface. Persisted via the PERSISTED_KEYS hook.
+function setViewMode(mode) {
+  if (mode !== 'reading' && mode !== 'edit') return;
+  State.viewMode = mode;
+  editorArea.classList.toggle('reading', mode === 'reading');
+  const open = State.activeFile !== null && State.files[State.activeFile];
+  toolbarStrip.style.display = (mode === 'reading') ? 'none' : (open ? 'flex' : 'none');
+  const btn = $('viewModeBtn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(mode === 'reading'));
+    btn.classList.toggle('active', mode === 'reading');
+  }
+  if (mode === 'reading') {
+    if (open) { renderReadingContent(); noteContent.focus(); } // focusable scroll region (a11y)
+  } else if (cmAdapter && typeof cmAdapter.focus === 'function') {
+    cmAdapter.focus();
+  }
+}
+window.setViewMode = setViewMode;
+function toggleViewMode() { setViewMode(State.viewMode === 'reading' ? 'edit' : 'reading'); }
+window.toggleViewMode = toggleViewMode;
+
+// =====================================================================
 // RENDER FILE
 // =====================================================================
 function renderFile(idx) {
@@ -1237,8 +1297,11 @@ function renderFile(idx) {
 
   welcomeEl.style.display = 'none';
   noteContent.style.display = 'block';
-  toolbarStrip.style.display = 'flex';
   editorArea.classList.remove('welcome'); // T-F13: a file is open → show the CM6 live-preview surface
+  // T-F17: honor the persisted view mode. Reading shows #noteContent (preview pane) + hides the
+  // writing toolbar; Edit shows the CM6 surface. The `reading` class drives the pane CSS.
+  editorArea.classList.toggle('reading', State.viewMode === 'reading');
+  toolbarStrip.style.display = (State.viewMode === 'reading') ? 'none' : 'flex';
 
   loadIntoEditor(file.content || ''); // textarea (default) or CodeMirror (flag) — T-F13
 
@@ -2578,6 +2641,7 @@ const PALETTE_COMMANDS = [
   { sec: 'Files', key: 'palette.exportHtml', icon: 'file-code', name: 'Export HTML', meta: 'command', act: () => exportHTML() },
   { sec: 'Files', key: 'palette.exportPdf', icon: 'printer', name: 'Export PDF', meta: 'command', act: () => exportPDF() },
   { sec: 'Files', key: 'palette.loadDemo', icon: 'sparkles', name: 'Load demo notes', meta: 'command', act: loadDemo },
+  { sec: 'View', key: 'palette.toggleReading', icon: 'book-open', name: 'Toggle Reading Mode', meta: 'view', sk: 'Ctrl+E', act: toggleViewMode },
   { sec: 'View', key: 'palette.flip', icon: 'flip', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
   { sec: 'View', key: 'palette.themePaper', icon: 'sun', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
   { sec: 'View', key: 'palette.themeInk', icon: 'moon', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
@@ -2704,6 +2768,7 @@ document.addEventListener('keydown', e => {
   if (cmd && e.key.toLowerCase() === 'k' && !e.shiftKey) { e.preventDefault(); openPalette(); }
   else if (cmd && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); openPalette(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleRTL(); }
+  else if (cmd && !e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); toggleViewMode(); } // T-F17 Reading/Edit
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); cycleTheme(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); toggleInspector(); }
   else if (cmd && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openVault(); }
@@ -2779,6 +2844,7 @@ $('showSidebarStrip').addEventListener('click', toggleSidebar);
 $('showInspectorStrip').addEventListener('click', toggleInspector);
 $('themeBtn').addEventListener('click', cycleTheme);
 $('rtlBtn').addEventListener('click', toggleRTL);
+$('viewModeBtn')?.addEventListener('click', toggleViewMode); // T-F17: Reading ⇄ Edit
 $('tabAddBtn').addEventListener('click', newNote);
 $('searchBtn').addEventListener('click', openPalette);
 $('winMinBtn').addEventListener('click', winMinimize);
@@ -2987,7 +3053,7 @@ const SettingsBridge =
   (window.electronAPI && typeof window.electronAPI.getSettings === 'function')
     ? window.electronAPI : null;
 const PERSISTED_KEYS = new Set([
-  'theme', 'zoomFactor', 'editorMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection',
+  'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection',
 ]);
 let _persistTimer = null;
 function persistSettings() {
@@ -2999,6 +3065,7 @@ function persistSettings() {
         theme: State.theme,
         zoomFactor: State.zoomFactor,
         editorMode: State.editorMode,
+        viewMode: State.viewMode,
         sidebarVisible: State.sidebarVisible,
         inspectorVisible: State.inspectorVisible,
         recents: State.recents.map(r => ({ name: r.name, path: r.path, vaultRoot: r.vaultRoot || null, abs: r.abs || null })),
@@ -3034,6 +3101,9 @@ async function restoreSettings() {
     // CM6 is the sole editor now — always 'live'. Ignore any persisted split/source so an
     // old setting can't re-show the second pane alongside the live-preview surface (T-F13).
     setEditorMode('live');
+    // T-F17: restore the persisted Reading/Edit view mode (orthogonal to editorMode). No active
+    // note yet, so this only reconciles the class + button; renderFile re-applies it per note.
+    if (s.viewMode === 'reading' || s.viewMode === 'edit') setViewMode(s.viewMode);
     if (typeof s.sidebarVisible === 'boolean') State.sidebarVisible = s.sidebarVisible;
     if (typeof s.inspectorVisible === 'boolean') State.inspectorVisible = s.inspectorVisible;
     applyPanelLayout(); // reflect the restored (or default) panel visibility onto the grid

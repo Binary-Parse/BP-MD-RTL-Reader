@@ -14,6 +14,8 @@ import {
   parseFileArg,
   isAuthorizedPath,
   isNetworkPath,
+  collectAuthorizedFolders,
+  collectAuthorizedFiles,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,
@@ -219,6 +221,83 @@ describe('isNetworkPath() [JB2]', () => {
 
   test('empty string is not a network path', () => {
     expect(isNetworkPath('')).toBe(false);
+  });
+});
+
+describe('collectAuthorizedFolders() — re-authorize previously-opened vaults on launch', () => {
+  test('returns [] for missing / non-object settings', () => {
+    expect(collectAuthorizedFolders(null)).toEqual([]);
+    expect(collectAuthorizedFolders(undefined)).toEqual([]);
+    expect(collectAuthorizedFolders('nope')).toEqual([]);
+    expect(collectAuthorizedFolders(42)).toEqual([]);
+  });
+
+  test('includes lastSession.vaultPath', () => {
+    expect(collectAuthorizedFolders({ lastSession: { vaultPath: 'C:\\vault' } })).toEqual(['C:\\vault']);
+  });
+
+  test('includes each recents[].vaultRoot', () => {
+    const got = collectAuthorizedFolders({ recents: [{ vaultRoot: '/a' }, { vaultRoot: '/b' }] });
+    expect(got).toEqual(['/a', '/b']);
+  });
+
+  test('de-duplicates across lastSession + recents', () => {
+    const got = collectAuthorizedFolders({
+      lastSession: { vaultPath: '/v' },
+      recents: [{ vaultRoot: '/v' }, { vaultRoot: '/w' }, { vaultRoot: '/v' }],
+    });
+    expect(got).toEqual(['/v', '/w']);
+  });
+
+  test('excludes network paths (JB2)', () => {
+    const got = collectAuthorizedFolders({
+      lastSession: { vaultPath: '\\\\server\\share' },
+      recents: [{ vaultRoot: '//nas/x' }, { vaultRoot: 'C:\\ok' }],
+    });
+    expect(got).toEqual(['C:\\ok']);
+  });
+
+  test('ignores null / non-string / missing vaultRoot entries', () => {
+    const got = collectAuthorizedFolders({
+      lastSession: { vaultPath: null },
+      recents: [null, { name: 'a.md', path: 'a.md' }, { vaultRoot: '' }, { vaultRoot: 5 }, { vaultRoot: '/good' }],
+    });
+    expect(got).toEqual(['/good']);
+  });
+
+  test('tolerates non-array recents and non-object lastSession', () => {
+    expect(collectAuthorizedFolders({ recents: 'nope', lastSession: 'nope' })).toEqual([]);
+    expect(collectAuthorizedFolders({})).toEqual([]);
+  });
+});
+
+describe('collectAuthorizedFiles() — re-authorize previously-opened single files on launch', () => {
+  test('returns [] for missing / non-object settings', () => {
+    expect(collectAuthorizedFiles(null)).toEqual([]);
+    expect(collectAuthorizedFiles(undefined)).toEqual([]);
+    expect(collectAuthorizedFiles('nope')).toEqual([]);
+  });
+
+  test('collects recents[].abs absolute file paths', () => {
+    const got = collectAuthorizedFiles({ recents: [{ abs: 'C:\\docs\\a.md' }, { abs: '/home/b.md' }] });
+    expect(got).toEqual(['C:\\docs\\a.md', '/home/b.md']);
+  });
+
+  test('de-duplicates and ignores null / non-string / empty abs', () => {
+    const got = collectAuthorizedFiles({
+      recents: [{ abs: '/a.md' }, { vaultRoot: '/v' }, { abs: '' }, { abs: 7 }, null, { abs: '/a.md' }],
+    });
+    expect(got).toEqual(['/a.md']);
+  });
+
+  test('excludes network paths (JB2)', () => {
+    const got = collectAuthorizedFiles({ recents: [{ abs: '\\\\nas\\a.md' }, { abs: '//srv/b.md' }, { abs: 'D:\\ok.md' }] });
+    expect(got).toEqual(['D:\\ok.md']);
+  });
+
+  test('non-array recents → []', () => {
+    expect(collectAuthorizedFiles({ recents: 'nope' })).toEqual([]);
+    expect(collectAuthorizedFiles({})).toEqual([]);
   });
 });
 

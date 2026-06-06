@@ -16,6 +16,10 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // Open Folder IPC bridge (Bug 1 / AC1)
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
+    // Open a single .md file via the native dialog (returns its absolute path so it can
+    // be reopened from Recent later), and reopen a recent single file by absolute path.
+    openFile:   () => ipcRenderer.invoke('dialog:openFile'),
+    readFile:   (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
     // Write a note back to disk (T-B1): atomic, allow-listed, conflict-aware.
     writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
     // Persistent app settings (T-B5/T-F8): the renderer restores theme/zoom/

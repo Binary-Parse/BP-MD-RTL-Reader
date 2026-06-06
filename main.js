@@ -4,6 +4,8 @@ const {
   parseFileArg,
   isAuthorizedPath,
   isNetworkPath,
+  collectAuthorizedFolders,
+  collectAuthorizedFiles,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,
@@ -145,11 +147,29 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
 
   // ==== SECURITY: ALLOWLIST ====
   const allowedFolders = new Set();
+  // Single .md files the user opened via the native open-file dialog (or restored from
+  // recents). fs:readFile is gated on this set so a recent single file can be reopened
+  // in a later session without a fresh prompt, while arbitrary renderer-supplied paths
+  // stay rejected.
+  const allowedFiles = new Set();
 
   // T-AI2: the vault root the renderer currently has open. bpmd://vault/<rel> URLs
   // resolve against THIS root (the app shows one vault at a time). Set on each
   // successful fs:readVault; used only by the bpmd protocol handler below.
   let activeVaultRoot = null;
+
+  // Re-grant folders the user already opened in a prior session. fs:readVault is
+  // allow-list gated (allowedFolders is only filled by the dialog:openFolder picker),
+  // so on a fresh launch the set is EMPTY and every restore is rejected as
+  // 'unauthorized-path': restoreLastSession() can't reload the last vault and clicking
+  // a recent file does nothing. collectAuthorizedFolders() returns the lastSession +
+  // recents vault paths the user explicitly chose before (network paths excluded);
+  // persisting that consent across restarts is the standard "reopen recent" behaviour.
+  // readVault still enforces network-path, symlink-escape, file-count and size guards.
+  function seedAllowedFoldersFromSettings(s) {
+    for (const p of collectAuthorizedFolders(s)) allowedFolders.add(p);
+    for (const p of collectAuthorizedFiles(s)) allowedFiles.add(p);
+  }
 
   // Minimal content-type table for the assets a vault note can reference inline.
   const BPMD_MIME = {
@@ -213,6 +233,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
     try {
       let content = fs.readFileSync(filePath, 'utf8');
       content = stripBOM(content);
+      allowedFiles.add(filePath); // so fs:readFile can reopen it from Recent this session
       win.webContents.send('open-external-file', {
         name: path.basename(filePath),
         path: filePath,
@@ -234,6 +255,56 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       }
       allowedFolders.add(result.filePaths[0]);
       return { canceled: false, folderPath: result.filePaths[0] };
+    });
+
+    // ==== dialog:openFile ====
+    // Native open-file picker for a single .md file. Returns the ABSOLUTE path (the
+    // browser File System Access picker only yields a basename + a non-persistable
+    // handle, which is why single-file recents couldn't be reopened). The chosen path
+    // is allow-listed so fs:readFile can reopen it later from Recent.
+    ipcMain.handle('dialog:openFile', async () => {
+      const win = BrowserWindow.getFocusedWindow();
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        title: 'Open File',
+        filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+      });
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return { canceled: true };
+      }
+      const filePath = result.filePaths[0];
+      if (isNetworkPath(filePath)) return { error: 'network-path-not-allowed' };
+      try {
+        const stat = await fs.promises.stat(filePath);
+        if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
+        let content = await fs.promises.readFile(filePath, 'utf8');
+        content = stripBOM(content);
+        allowedFiles.add(filePath);
+        return { canceled: false, filePath, name: path.basename(filePath), content };
+      } catch (_) {
+        return { error: 'read-failed' };
+      }
+    });
+
+    // ==== fs:readFile ====
+    // Reopen a single recent file by its absolute path. Allow-list gated (the path must
+    // have been opened via dialog:openFile this session OR restored from recents on
+    // launch — see seedAllowedFoldersFromSettings). Symlinks, network paths and oversized
+    // files are rejected, mirroring the readVault guards.
+    ipcMain.handle('fs:readFile', async (_event, filePath) => {
+      if (!filePath || typeof filePath !== 'string') return { error: 'invalid' };
+      if (isNetworkPath(filePath)) return { error: 'network-path-not-allowed' };
+      if (!allowedFiles.has(filePath)) return { error: 'unauthorized-path' };
+      try {
+        const lstat = await fs.promises.lstat(filePath);
+        if (lstat.isSymbolicLink()) return { error: 'unauthorized-path' };
+        if (isOversizedFile(lstat.size)) return { error: 'file-too-large' };
+        let content = await fs.promises.readFile(filePath, 'utf8');
+        content = stripBOM(content);
+        return { name: path.basename(filePath), path: filePath, content };
+      } catch (_) {
+        return { error: 'read-failed' };
+      }
     });
 
     ipcMain.handle('fs:readVault', async (event, folderPath) => {
@@ -568,6 +639,10 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       // file degrades to defaults rather than crashing).
       settingsStore = createSettingsStore({ fs, path, userDataDir: app.getPath('userData') });
       currentSettings = settingsStore.load();
+      seedAllowedFoldersFromSettings(currentSettings); // re-authorize previously-opened vaults so restore + recents work
+      if (currentSettings && currentSettings.lastSession && typeof currentSettings.lastSession.vaultPath === 'string') {
+        activeVaultRoot = currentSettings.lastSession.vaultPath; // bpmd:// assets resolve before the first readVault
+      }
       pendingFileToOpen = parseFileArg(proc.argv, fs);
       registerIpcHandlers();
       registerBpmdProtocol(); // T-AI2: attach the bpmd:// asset handler (scheme privileged above)

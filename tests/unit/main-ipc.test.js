@@ -109,6 +109,131 @@ describe('dialog:openFolder', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
+// dialog:openFile + fs:readFile — single-file open & reopen-from-Recent
+// ────────────────────────────────────────────────────────────────────────────
+describe('dialog:openFile', () => {
+  let mockElectron;
+  let mockFs;
+  let openFile;
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    mockFs = buildMockFs();
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    await new Promise(r => setTimeout(r, 50));
+    openFile = getHandle(mockElectron, 'dialog:openFile');
+  });
+
+  test('passes exact showOpenDialog options (openFile + Markdown filter + title)', async () => {
+    mockElectron.dialog.showOpenDialog.mockClear();
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    await openFile();
+    const [winArg, opts] = mockElectron.dialog.showOpenDialog.mock.calls[0];
+    expect(winArg).toBe(mockElectron._mockWin);
+    expect(opts.properties).toEqual(['openFile']);
+    expect(opts.title).toBe('Open File');
+    expect(opts.filters).toEqual([{ name: 'Markdown', extensions: ['md', 'markdown'] }]);
+  });
+
+  test('canceled → exactly {canceled:true}', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: ['/ignored'] });
+    expect(await openFile()).toEqual({ canceled: true });
+  });
+
+  test('empty filePaths → {canceled:true}', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [] });
+    expect(await openFile()).toEqual({ canceled: true });
+  });
+
+  test('network path → {error:"network-path-not-allowed"}', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['\\\\nas\\a.md'] });
+    expect(await openFile()).toEqual({ error: 'network-path-not-allowed' });
+  });
+
+  test('oversized file → {error:"file-too-large"}', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/big.md'] });
+    mockFs.promises.stat.mockResolvedValueOnce({ size: 11 * 1024 * 1024 });
+    expect(await openFile()).toEqual({ error: 'file-too-large' });
+  });
+
+  test('success → {canceled:false, filePath, name, content} with BOM stripped', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/docs/note.md'] });
+    mockFs.promises.stat.mockResolvedValueOnce({ size: 50 });
+    mockFs.promises.readFile.mockResolvedValueOnce(BOM + '# Note');
+    expect(await openFile()).toEqual({ canceled: false, filePath: '/docs/note.md', name: 'note.md', content: '# Note' });
+  });
+
+  test('read failure → {error:"read-failed"}', async () => {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/x.md'] });
+    mockFs.promises.stat.mockRejectedValueOnce(new Error('EACCES'));
+    expect(await openFile()).toEqual({ error: 'read-failed' });
+  });
+});
+
+describe('fs:readFile (reopen a recent single file)', () => {
+  let mockElectron;
+  let mockFs;
+  let openFile;
+  let readFile;
+
+  // Authorize a single file by driving the real openFile handler (mirrors the app).
+  async function authorizeFile(filePath, { size = 10 } = {}) {
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [filePath] });
+    mockFs.promises.stat.mockResolvedValueOnce({ size });
+    mockFs.promises.readFile.mockResolvedValueOnce('seed');
+    await openFile();
+  }
+
+  beforeAll(async () => {
+    mockElectron = buildMockElectron();
+    mockFs = buildMockFs();
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    await new Promise(r => setTimeout(r, 50));
+    openFile = getHandle(mockElectron, 'dialog:openFile');
+    readFile = getHandle(mockElectron, 'fs:readFile');
+  });
+
+  test('invalid input → {error:"invalid"}', async () => {
+    expect(await readFile({}, '')).toEqual({ error: 'invalid' });
+    expect(await readFile({}, null)).toEqual({ error: 'invalid' });
+    expect(await readFile({}, 123)).toEqual({ error: 'invalid' });
+  });
+
+  test('network path → {error:"network-path-not-allowed"}', async () => {
+    expect(await readFile({}, '\\\\nas\\a.md')).toEqual({ error: 'network-path-not-allowed' });
+  });
+
+  test('unauthorized path → {error:"unauthorized-path"}', async () => {
+    expect(await readFile({}, '/never-opened.md')).toEqual({ error: 'unauthorized-path' });
+  });
+
+  test('authorization gate runs before fs: an authorized file reads back (BOM stripped)', async () => {
+    await authorizeFile('/docs/a.md');
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 20 });
+    mockFs.promises.readFile.mockResolvedValueOnce(BOM + '# A');
+    expect(await readFile({}, '/docs/a.md')).toEqual({ name: 'a.md', path: '/docs/a.md', content: '# A' });
+  });
+
+  test('symlink → {error:"unauthorized-path"}', async () => {
+    await authorizeFile('/docs/link.md');
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, size: 20 });
+    expect(await readFile({}, '/docs/link.md')).toEqual({ error: 'unauthorized-path' });
+  });
+
+  test('oversized → {error:"file-too-large"}', async () => {
+    await authorizeFile('/docs/big.md');
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 11 * 1024 * 1024 });
+    expect(await readFile({}, '/docs/big.md')).toEqual({ error: 'file-too-large' });
+  });
+
+  test('read failure → {error:"read-failed"}', async () => {
+    await authorizeFile('/docs/err.md');
+    mockFs.promises.lstat.mockRejectedValueOnce(new Error('EIO'));
+    expect(await readFile({}, '/docs/err.md')).toEqual({ error: 'read-failed' });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
 // fs:readVault — L119-170
 // ────────────────────────────────────────────────────────────────────────────
 describe('fs:readVault', () => {

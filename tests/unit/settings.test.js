@@ -162,8 +162,8 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
   });
   test('recents: non-array → []; entries without string path dropped; capped at 10; name coerced', () => {
     expect(migrate({ recents: 'nope' }).recents).toEqual([]);
-    expect(migrate({ recents: [{ path: 'a' }, { name: 'B', path: 'b' }, { nopath: 1 }, null] }).recents)
-      .toEqual([{ name: '', path: 'a' }, { name: 'B', path: 'b' }]);
+    expect(migrate({ recents: [{ path: 'a' }, { name: 'B', path: 'b', vaultRoot: '/v' }, { name: 'C', path: 'c', abs: '/x/c.md' }, { nopath: 1 }, null] }).recents)
+      .toEqual([{ name: '', path: 'a', vaultRoot: null, abs: null }, { name: 'B', path: 'b', vaultRoot: '/v', abs: null }, { name: 'C', path: 'c', vaultRoot: null, abs: '/x/c.md' }]);
     const many = Array.from({ length: 15 }, (_, i) => ({ path: 'p' + i }));
     expect(migrate({ recents: many }).recents.length).toBe(10);
   });

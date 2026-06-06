@@ -61,7 +61,7 @@ function migrate(raw) {
     out.recents = raw.recents
       .filter(r => r && typeof r.path === 'string')
       .slice(0, 10)
-      .map(r => ({ name: String(r.name || ''), path: r.path }));
+      .map(r => ({ name: String(r.name || ''), path: r.path, vaultRoot: typeof r.vaultRoot === 'string' ? r.vaultRoot : null, abs: typeof r.abs === 'string' ? r.abs : null }));
   }
   if (raw.window && typeof raw.window === 'object') {
     const w = raw.window;

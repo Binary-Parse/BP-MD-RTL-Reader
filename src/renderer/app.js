@@ -1658,6 +1658,21 @@ window.openVault = openVault;
 
 async function openSingleFile() {
   closeMenu();
+  // Branch 1: Electron native dialog — returns the ABSOLUTE path, which we keep as
+  // `abs` so the file can be reopened from Recent in a later session. The FSA picker
+  // (Branch 2) only yields a basename + a non-persistable handle, so files opened that
+  // way could never be reopened from Recent — the root of the "recents don't work" bug.
+  if (window.electronAPI && typeof window.electronAPI.openFile === 'function') {
+    try {
+      const res = await window.electronAPI.openFile();
+      if (!res || res.canceled) return;
+      if (res.error || typeof res.content !== 'string') { showToast('Could not open file', 'error'); return; }
+      addFile({ name: res.name, path: res.filePath, handle: null, content: res.content, dirty: false, abs: res.filePath });
+      showToast(`Opened ${res.name}`);
+    } catch(e) { showToast('Could not open file', 'error'); }
+    return;
+  }
+  // Branch 2: File System Access API (browser / no Electron bridge)
   if ('showOpenFilePicker' in window) {
     try {
       const [handle] = await window.showOpenFilePicker({
@@ -1762,7 +1777,17 @@ async function saveAs() {
 // RECENTS
 // =====================================================================
 function pushRecent(f) {
-  State.recents = [{ name: f.name, path: f.path }, ...State.recents.filter(r => r.path !== f.path)].slice(0, 5);
+  // Capture the vault the note came from so a click can re-open it from disk in a
+  // later session even when that vault isn't the one currently loaded. f.vaultRoot is
+  // set for vault files opened via the Electron picker; restoreLastSession() leaves it
+  // unset, so fall back to _vaultPath (the active vault root) for restored sessions.
+  const vaultRoot = f.vaultRoot || _vaultPath || null;
+  // abs = absolute path for a single-file open (no vault). Lets openRecent reopen it via
+  // fs:readFile in a later session. Vault files reopen via vaultRoot+readVault instead, so
+  // abs stays null for them.
+  const abs = f.abs || (!vaultRoot && typeof f.path === 'string' && /[\\/]/.test(f.path) ? f.path : null);
+  const entry = { name: f.name, path: f.path, vaultRoot, abs };
+  State.recents = [entry, ...State.recents.filter(r => r.path !== f.path)].slice(0, 5);
   renderRecents();
 }
 function renderRecents() {
@@ -1770,16 +1795,58 @@ function renderRecents() {
   if (!list) return;
   if (State.recents.length === 0) { empty.style.display = 'block'; list.innerHTML = ''; return; }
   empty.style.display = 'none';
-  list.innerHTML = State.recents.map(r =>
-    `<div class="recent-item" data-path="${escapeHtml(r.path)}"><span class="r-ic">¶</span><span>${escapeHtml(r.name)}</span><span class="r-path">${escapeHtml(r.path)}</span></div>`
+  list.innerHTML = State.recents.map((r, i) =>
+    `<div class="recent-item" data-idx="${i}"><span class="r-ic">¶</span><span>${escapeHtml(r.name)}</span><span class="r-path">${escapeHtml(r.path)}</span></div>`
   ).join('');
   list.querySelectorAll('.recent-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const idx = State.files.findIndex(f => f.path === el.dataset.path);
-      if (idx >= 0) renderFile(idx);
-    });
+    el.addEventListener('click', () => openRecent(State.recents[Number(el.dataset.idx)]));
   });
 }
+// Open a recent note. Fast path: it's already loaded (same vault session) → just
+// navigate. Otherwise re-open its vault from disk and select the note. Previously the
+// click silently no-op'd whenever the file wasn't in State.files (e.g. a fresh launch,
+// or a recent from a different vault than the restored one).
+async function openRecent(r) {
+  if (!r) return;
+  let idx = State.files.findIndex(f =>
+    f.path === r.path && (!r.vaultRoot || !f.vaultRoot || f.vaultRoot === r.vaultRoot));
+  if (idx >= 0) { renderFile(idx); return; }
+  if (r.vaultRoot && window.electronAPI && typeof window.electronAPI.readVault === 'function') {
+    try {
+      const entries = await window.electronAPI.readVault(r.vaultRoot);
+      if (Array.isArray(entries) && entries.length) {
+        const folderName = r.vaultRoot.split(/[\\/]/).filter(Boolean).pop() || 'folder';
+        State.vaultName = folderName;
+        _vaultPath = r.vaultRoot;
+        State.files = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: r.vaultRoot }));
+        const vn = $('vaultName'); if (vn) { vn.textContent = folderName; vn.classList.remove('empty'); }
+        const sv = $('sbVault'); if (sv) sv.textContent = `folder: ${folderName}`;
+        renderTree(State.files);
+        const fi = State.files.findIndex(f => f.path === r.path);
+        renderFile(fi >= 0 ? fi : 0);
+        return;
+      }
+    } catch (_) { /* fall through */ }
+  }
+  // Single-file recent → re-read just that file by its absolute path.
+  if (r.abs && window.electronAPI && typeof window.electronAPI.readFile === 'function') {
+    try {
+      const res = await window.electronAPI.readFile(r.abs);
+      if (res && !res.error && typeof res.content === 'string') {
+        addFile({ name: res.name || r.name, path: res.path || r.abs, handle: null, content: res.content, dirty: false, abs: res.path || r.abs });
+        return;
+      }
+    } catch (_) { /* fall through to the error toast below */ }
+  }
+  // Legacy recents (saved before vaultRoot/abs were tracked) carry only a basename, so
+  // there's nothing to reopen from. Tell the user how to restore it instead of failing mute.
+  if (!r.vaultRoot && !r.abs) {
+    showToast(`"${r.name || r.path}" was saved by an older version — open it once to restore it`, 'info');
+    return;
+  }
+  showToast(`Could not open "${r.name || r.path}"`, 'error');
+}
+window.openRecent = openRecent;
 
 // =====================================================================
 // WIKILINKS
@@ -2780,7 +2847,9 @@ $('findCloseBtn').addEventListener('click', closeFind);
 // render it immediately.
 function openExternalFile({ name, path: filePath, content }) {
   if (!name || typeof content !== 'string') return;
-  addFile({ name, path: filePath || name, handle: null, content, dirty: false });
+  // filePath is the absolute path from main — keep it as `abs` so this file is reopenable
+  // from Recent (its parent isn't a known vault). Falls back to name if somehow absent.
+  addFile({ name, path: filePath || name, handle: null, content, dirty: false, abs: filePath || null });
 }
 window.openExternalFile = openExternalFile;
 if (window.electronAPI && typeof window.electronAPI.onOpenFile === 'function') {
@@ -2908,7 +2977,7 @@ function persistSettings() {
         editorMode: State.editorMode,
         sidebarVisible: State.sidebarVisible,
         inspectorVisible: State.inspectorVisible,
-        recents: State.recents.map(r => ({ name: r.name, path: r.path })),
+        recents: State.recents.map(r => ({ name: r.name, path: r.path, vaultRoot: r.vaultRoot || null, abs: r.abs || null })),
         calendar: State.calendar,
         arabicKashida: State.arabicKashida,
         italicRecolor: State.italicRecolor,
@@ -2947,7 +3016,7 @@ async function restoreSettings() {
     if (Array.isArray(s.recents)) {
       State.recents = s.recents
         .filter(r => r && typeof r.path === 'string')
-        .map(r => ({ name: String(r.name || ''), path: r.path }));
+        .map(r => ({ name: String(r.name || ''), path: r.path, vaultRoot: typeof r.vaultRoot === 'string' ? r.vaultRoot : null, abs: typeof r.abs === 'string' ? r.abs : null }));
       renderRecents();
     }
     if (s.calendar === 'hijri' || s.calendar === 'gregorian') State.calendar = s.calendar;
@@ -2977,7 +3046,7 @@ async function restoreLastSession(ls) {
   const folderName = ls.vaultPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
   State.vaultName = folderName;
   _vaultPath = ls.vaultPath;
-  State.files = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false }));
+  State.files = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: ls.vaultPath }));
   const vn = $('vaultName'); if (vn) { vn.textContent = folderName; vn.classList.remove('empty'); }
   const sv = $('sbVault'); if (sv) sv.textContent = `folder: ${folderName}`;
   renderTree(State.files);

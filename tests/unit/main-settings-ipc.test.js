@@ -115,12 +115,12 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     await set({}, {
       sidebarVisible: false,
       inspectorVisible: false,
-      recents: [{ name: 'a.md', path: '/v/a.md' }, { name: 'b.md', path: '/v/b.md' }],
+      recents: [{ name: 'a.md', path: '/v/a.md', vaultRoot: '/v' }, { name: 'b.md', path: '/b.md', abs: '/b.md' }],
     });
     const got = await get();
     expect(got.sidebarVisible).toBe(false);
     expect(got.inspectorVisible).toBe(false);
-    expect(got.recents).toEqual([{ name: 'a.md', path: '/v/a.md' }, { name: 'b.md', path: '/v/b.md' }]);
+    expect(got.recents).toEqual([{ name: 'a.md', path: '/v/a.md', vaultRoot: '/v', abs: null }, { name: 'b.md', path: '/b.md', vaultRoot: null, abs: '/b.md' }]);
   });
 });
 

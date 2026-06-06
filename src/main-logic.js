@@ -54,6 +54,52 @@ function isNetworkPath(folderPath) {
 }
 
 /**
+ * Collect the vault folders to re-authorize on launch from persisted settings.
+ * These are paths the user explicitly opened in a prior session (lastSession.vaultPath
+ * and recents[].vaultRoot). Without re-seeding the allow-list at startup, fs:readVault
+ * rejects every restore as 'unauthorized-path', so the last vault never reloads and
+ * clicking a recent file does nothing. Network paths are excluded (JB2). Returns a
+ * de-duplicated array of non-empty string paths.
+ * @param {object} settings
+ * @returns {string[]}
+ */
+function collectAuthorizedFolders(settings) {
+  if (!settings || typeof settings !== 'object') return [];
+  const out = [];
+  const add = (p) => {
+    if (typeof p === 'string' && p && !isNetworkPath(p) && !out.includes(p)) out.push(p);
+  };
+  if (settings.lastSession && typeof settings.lastSession === 'object') add(settings.lastSession.vaultPath);
+  if (Array.isArray(settings.recents)) {
+    for (const r of settings.recents) {
+      if (r && typeof r === 'object') add(r.vaultRoot);
+    }
+  }
+  return out;
+}
+
+/**
+ * Collect the single-file absolute paths to re-authorize on launch from persisted
+ * settings (recents[].abs — set when a file is opened via the native open-file dialog).
+ * Lets fs:readFile reopen a recent single file in a later session without re-prompting.
+ * Network paths are excluded (JB2). Returns a de-duplicated array of non-empty paths.
+ * @param {object} settings
+ * @returns {string[]}
+ */
+function collectAuthorizedFiles(settings) {
+  if (!settings || typeof settings !== 'object') return [];
+  const out = [];
+  if (Array.isArray(settings.recents)) {
+    for (const r of settings.recents) {
+      if (r && typeof r === 'object' && typeof r.abs === 'string' && r.abs && !isNetworkPath(r.abs) && !out.includes(r.abs)) {
+        out.push(r.abs);
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * JB3: Check if directory has too many files.
  * @param {number} count
  * @returns {boolean}
@@ -137,6 +183,8 @@ module.exports = {
   isDroppableFile,
   isAuthorizedPath,
   isNetworkPath,
+  collectAuthorizedFolders,
+  collectAuthorizedFiles,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,

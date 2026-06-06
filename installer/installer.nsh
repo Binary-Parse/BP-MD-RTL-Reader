@@ -1,7 +1,7 @@
 ; Custom NSIS include for BP MD RTL Reader installer.
 ; Hooks into electron-builder's macro system:
-;   customInit   — runs before install begins (here: remove any prior install so we upgrade
-;                  in place instead of leaving a duplicate)
+;   customInit   — runs before install begins (here: detect any prior install and prompt the
+;                  user to uninstall it first, so we upgrade in place instead of duplicating)
 ;   customUnInit — runs before uninstall begins (here: ask about user data)
 ;
 ; IMPORTANT: electron-builder defines ${UNINSTALL_REGISTRY_KEY} and ${UNINSTALL_REGISTRY_KEY_2}
@@ -10,7 +10,7 @@
 ; bogus double path that never matched — which is exactly why the installer "did not detect the
 ; existing app" and installed a second copy. Use the variables DIRECTLY.
 
-; Silently uninstall a previously-installed copy found at <rootKey>\<regSubkey>, if any.
+; Uninstall a previously-installed copy found at <rootKey>\<regSubkey>, if any.
 ; /S = silent (so customUnInit's "delete user data?" prompt auto-answers its IDNO default,
 ; preserving the user's notes/preferences). _?=<dir> runs the uninstaller in place so we wait.
 !macro RemovePreviousInstall rootKey regSubkey
@@ -28,16 +28,49 @@
   ${EndIf}
 !macroend
 
+; Set the "previous install found" flag ($R5) if an uninstall entry exists at
+; <rootKey>\<regSubkey>. Detection is separate from removal so we can prompt ONCE for any
+; number of registered copies instead of per key/hive.
+!macro DetectPreviousInstall rootKey regSubkey
+  ClearErrors
+  ReadRegStr $R0 ${rootKey} "${regSubkey}" "UninstallString"
+  ${IfNot} ${Errors}
+  ${AndIf} $R0 != ""
+    StrCpy $R5 "1"
+  ${EndIf}
+!macroend
+
 !macro customInit
   ; The per-machine template only inspects HKLM for an upgrade, so a leftover PER-USER (HKCU)
   ; install — or an install registered under the legacy key — is missed and ends up duplicated.
-  ; Remove ANY prior install (both hives, both the current and legacy uninstall keys) first.
-  !insertmacro RemovePreviousInstall HKCU "${UNINSTALL_REGISTRY_KEY}"
-  !insertmacro RemovePreviousInstall HKLM "${UNINSTALL_REGISTRY_KEY}"
+  ; Detect ANY prior install across both hives and both the current + legacy uninstall keys.
+  StrCpy $R5 "0"
+  !insertmacro DetectPreviousInstall HKCU "${UNINSTALL_REGISTRY_KEY}"
+  !insertmacro DetectPreviousInstall HKLM "${UNINSTALL_REGISTRY_KEY}"
   !ifdef UNINSTALL_REGISTRY_KEY_2
-    !insertmacro RemovePreviousInstall HKCU "${UNINSTALL_REGISTRY_KEY_2}"
-    !insertmacro RemovePreviousInstall HKLM "${UNINSTALL_REGISTRY_KEY_2}"
+    !insertmacro DetectPreviousInstall HKCU "${UNINSTALL_REGISTRY_KEY_2}"
+    !insertmacro DetectPreviousInstall HKLM "${UNINSTALL_REGISTRY_KEY_2}"
   !endif
+
+  ${If} $R5 == "1"
+    ; An existing install was detected — give the user the choice to remove it first.
+    ; /SD IDYES makes a SILENT upgrade (/S) auto-remove the old copy, so unattended
+    ; upgrades never leave a duplicate; an interactive install shows this prompt.
+    MessageBox MB_YESNO|MB_ICONQUESTION \
+      "An existing installation of BP MD RTL Reader was detected.$\n$\nUninstall the previous version before continuing?$\n$\nYour notes and preferences are kept either way.$\n$\nChoose 'No' to install over the existing copy." \
+      /SD IDYES IDYES bp_remove_prev IDNO bp_keep_prev
+    bp_remove_prev:
+      !insertmacro RemovePreviousInstall HKCU "${UNINSTALL_REGISTRY_KEY}"
+      !insertmacro RemovePreviousInstall HKLM "${UNINSTALL_REGISTRY_KEY}"
+      !ifdef UNINSTALL_REGISTRY_KEY_2
+        !insertmacro RemovePreviousInstall HKCU "${UNINSTALL_REGISTRY_KEY_2}"
+        !insertmacro RemovePreviousInstall HKLM "${UNINSTALL_REGISTRY_KEY_2}"
+      !endif
+      Goto bp_prev_done
+    bp_keep_prev:
+      DetailPrint "Keeping the existing BP MD RTL Reader install (user declined uninstall)"
+    bp_prev_done:
+  ${EndIf}
 !macroend
 
 !macro customUnInit

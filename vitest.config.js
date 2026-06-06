@@ -37,7 +37,7 @@ export default defineConfig({
       // enforces a regression floor without false-failing on normal runs.
       thresholds: {
         statements: 95,
-        branches: 88,
+        branches: 90,
         functions: 95,
         lines: 95,
       },

@@ -100,7 +100,7 @@ npm run build:cm
 
 | Layer | Command | Notes |
 | ----- | ------- | ----- |
-| **Unit** | `npm run test:unit` | 468 tests (Vitest); 95% statement / 95% line / 95% function / 88% branch coverage gate |
+| **Unit** | `npm run test:unit` | 468 tests (Vitest); 95% statement / 95% line / 95% function / 90% branch coverage gate |
 | **End-to-end** | `npm run test:e2e` | 526 tests (Playwright) incl. visual regression + accessibility |
 | **Mutation** | `npm run test:mutation` | Stryker; build breaks below an 85% mutation score |
 | **Installer logic** | `pwsh -File tests/installer/run-tests.ps1` | Pester unit tests + a compiled Pascal self-test (manual / local — not run in CI) |

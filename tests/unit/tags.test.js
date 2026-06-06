@@ -62,4 +62,19 @@ describe('Tag extraction', () => {
     const tags = extractTags('#tag #tag #tag');
     expect(tags['tag']).toBe(3);
   });
+
+  test('extractTagsFromFiles returns {} for null/undefined input', () => {
+    expect(extractTagsFromFiles(null)).toEqual({});
+    expect(extractTagsFromFiles(undefined)).toEqual({});
+  });
+
+  test('extractTagsFromFiles tolerates files with missing/empty content', () => {
+    const tagMap = extractTagsFromFiles([{ name: 'a.md' }, { content: '' }, { content: '#reading' }]);
+    expect(tagMap['reading']).toEqual([2]);
+  });
+
+  test('extractTagsFromFiles records a file index once even when a tag repeats in that file', () => {
+    const tagMap = extractTagsFromFiles([{ content: '#reading and again #reading here' }]);
+    expect(tagMap['reading']).toEqual([0]);
+  });
 });

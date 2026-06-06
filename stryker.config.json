@@ -25,6 +25,7 @@
     "src/renderer/footnotes.js",
     "src/renderer/table-edit.js",
     "src/renderer/search.js",
+    "src/renderer/tags.js",
     "src/renderer/state.js",
     "src/renderer/theme.js",
     "src/renderer/edit-commands.js",

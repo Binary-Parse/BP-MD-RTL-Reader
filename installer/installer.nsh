@@ -11,19 +11,39 @@
 ; existing app" and installed a second copy. Use the variables DIRECTLY.
 
 ; Uninstall a previously-installed copy found at <rootKey>\<regSubkey>, if any.
-; /S = silent (so customUnInit's "delete user data?" prompt auto-answers its IDNO default,
-; preserving the user's notes/preferences). _?=<dir> runs the uninstaller in place so we wait.
+;
+; Registry values electron-builder actually writes (verified on a real install):
+;   UninstallString      = "<dir>\Uninstall BP MD RTL Reader.exe" /allusers
+;   QuietUninstallString = "<dir>\Uninstall BP MD RTL Reader.exe" /allusers /S
+;   InstallLocation      = (empty!)
+; So we must NOT re-quote the string (it is already quoted and carries /allusers), and we cannot
+; rely on InstallLocation. We prefer QuietUninstallString (adds /S → silent, so customUnInit's
+; "delete user data?" prompt auto-answers its IDNO default and notes are kept), and pass _?=<dir>
+; so the uninstaller runs IN PLACE and ExecWait actually blocks until it finishes.
 !macro RemovePreviousInstall rootKey regSubkey
   ClearErrors
-  ReadRegStr $R0 ${rootKey} "${regSubkey}" "UninstallString"
-  ${IfNot} ${Errors}
-  ${AndIf} $R0 != ""
+  ReadRegStr $R0 ${rootKey} "${regSubkey}" "QuietUninstallString"
+  ${If} $R0 == ""
+    ; Older installs may lack QuietUninstallString — fall back to UninstallString + /S.
+    ClearErrors
+    ReadRegStr $R0 ${rootKey} "${regSubkey}" "UninstallString"
+    ${IfNot} ${Errors}
+    ${AndIf} $R0 != ""
+      StrCpy $R0 '$R0 /S'
+    ${EndIf}
+  ${EndIf}
+  ${If} $R0 != ""
     ReadRegStr $R1 ${rootKey} "${regSubkey}" "InstallLocation"
-    DetailPrint "Removing a previous BP MD RTL Reader install ($R0)"
+    ${If} $R1 == ""
+      StrCpy $R1 "$INSTDIR" ; InstallLocation is empty → the install dir is the (default) target
+    ${EndIf}
+    DetailPrint "Removing the previous BP MD RTL Reader install…"
+    ; $R0 is used DIRECTLY (already quoted). _?=<dir> runs the uninstaller in place so ExecWait
+    ; blocks until it finishes; omit it only if we truly have no directory to point at.
     ${If} $R1 != ""
-      ExecWait '"$R0" /S _?=$R1'
+      ExecWait '$R0 _?=$R1'
     ${Else}
-      ExecWait '"$R0" /S'
+      ExecWait '$R0'
     ${EndIf}
   ${EndIf}
 !macroend

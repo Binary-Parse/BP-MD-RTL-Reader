@@ -9,6 +9,16 @@ const T = '| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |';
 const posIn = (text, needle) => text.indexOf(needle);
 
 describe('tableAt', () => {
+  test('retains escaped content pipes and maps caret columns without edge pipes', () => {
+    const escaped = '| A \\| B | C |\n| --- | --- |\n| 1 | 2 |';
+    const parsedEscaped = tableAt(escaped, escaped.indexOf('C'));
+    expect(parsedEscaped.header).toEqual(['A \\| B', 'C']);
+    expect(serializeTable(parsedEscaped)).toBe(escaped);
+
+    const noEdges = 'A | B\n--- | ---\n1 | 2';
+    expect(tableAt(noEdges, noEdges.indexOf('B')).caret.col).toBe(1);
+    expect(serializeTable(tableAt(noEdges, noEdges.indexOf('B')))).toBe(noEdges);
+  });
   test('parses header / aligns / body around a caret in the body', () => {
     const t = tableAt(T, posIn(T, '3'));
     expect(t).toBeTruthy();
@@ -99,6 +109,13 @@ describe('tableEdit ops', () => {
     const r2 = tableEdit(T, posIn(T, 'B'), 'nextCell');
     const f2 = T.slice(0, r2.from) + r2.md + T.slice(r2.to);
     expect(f2[r2.caret]).toBe('1');
+  });
+  test('navigation never rewrites escaped pipes or adds missing edge pipes', () => {
+    const input = 'A \\| B | C\n--- | ---\n1 | 2';
+    const result = tableEdit(input, input.indexOf('C'), 'nextCell');
+    expect(result.md).toBe(input);
+    expect(result.md).toContain('A \\| B');
+    expect(result.md.startsWith('|')).toBe(false);
   });
   test('colDelete on the last column moves the caret to the new last column', () => {
     const wide = '| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |';

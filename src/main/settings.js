@@ -5,7 +5,8 @@
  * window bounds are clamped to a visible display (EC-D2).
  */
 
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 2;
+const CAPABILITY_ID = /^cap-[A-Za-z0-9_-]{1,128}$/;
 
 const DEFAULTS = Object.freeze({
   version: SETTINGS_VERSION,
@@ -62,9 +63,15 @@ function migrate(raw) {
   if (typeof raw.cmEditor === 'boolean') out.cmEditor = raw.cmEditor;
   if (Array.isArray(raw.recents)) {
     out.recents = raw.recents
-      .filter(r => r && typeof r.path === 'string')
+      .filter(r => r && typeof r.path === 'string'
+        && (CAPABILITY_ID.test(r.vaultId || '') || CAPABILITY_ID.test(r.documentId || '')))
       .slice(0, 10)
-      .map(r => ({ name: String(r.name || ''), path: r.path, vaultRoot: typeof r.vaultRoot === 'string' ? r.vaultRoot : null, abs: typeof r.abs === 'string' ? r.abs : null }));
+      .map(r => ({
+        name: String(r.name || ''),
+        path: r.path,
+        vaultId: CAPABILITY_ID.test(r.vaultId || '') ? r.vaultId : null,
+        documentId: CAPABILITY_ID.test(r.documentId || '') ? r.documentId : null,
+      }));
   }
   if (raw.window && typeof raw.window === 'object') {
     const w = raw.window;
@@ -76,10 +83,10 @@ function migrate(raw) {
       maximized: !!w.maximized,
     };
   }
-  if (raw.lastSession && typeof raw.lastSession === 'object') {
+  if (raw.lastSession && typeof raw.lastSession === 'object' && CAPABILITY_ID.test(raw.lastSession.vaultId || '')) {
     const s = raw.lastSession;
     out.lastSession = {
-      vaultPath: typeof s.vaultPath === 'string' ? s.vaultPath : undefined,
+      vaultId: s.vaultId,
       openPaths: Array.isArray(s.openPaths) ? s.openPaths.filter(p => typeof p === 'string') : [],
       activePath: typeof s.activePath === 'string' ? s.activePath : undefined,
     };

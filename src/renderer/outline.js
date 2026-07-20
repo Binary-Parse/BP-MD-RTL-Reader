@@ -4,6 +4,32 @@
  */
 import { slugify } from './bidi.js';
 
+/** Exact source records for ATX and Setext headings, excluding fenced code. */
+export function sourceHeadingPositions(md) {
+  const lines = String(md || '').split('\n');
+  const starts = [];
+  let off = 0;
+  for (const line of lines) { starts.push(off); off += line.length + 1; }
+  const out = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^[ \t]{0,3}(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const atx = /^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
+    if (atx) {
+      out.push({ pos: starts[i], level: atx[1].length, text: atx[2].trim() });
+      continue;
+    }
+    const setext = i + 1 < lines.length && /^[ \t]{0,3}(=+|-+)[ \t]*$/.exec(lines[i + 1]);
+    if (line.trim() && setext) {
+      out.push({ pos: starts[i], level: setext[1][0] === '=' ? 1 : 2, text: line.trim() });
+      i++;
+    }
+  }
+  return out;
+}
+
 /**
  * Extract headings (levels 1–6) with Arabic-aware slugs.
  * @param {string} md

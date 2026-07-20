@@ -10,17 +10,17 @@
 /**
  * Build the persisted lastSession from the open vault + tabs. Returns null when there
  * is no disk-backed vault to restore (nothing meaningful to persist).
- * @param {string} vaultPath absolute folder path of the open vault
+ * @param {string} vaultId main-issued opaque vault capability ID
  * @param {Array<{path?:string}>} files the open files (vault listing)
  * @param {number|null} activeIndex index of the active tab
  */
-export function buildSession(vaultPath, files, activeIndex) {
-  if (!vaultPath || typeof vaultPath !== 'string' || !Array.isArray(files) || !files.length) return null;
+export function buildSession(vaultId, files, activeIndex) {
+  if (!vaultId || typeof vaultId !== 'string' || !Array.isArray(files) || !files.length) return null;
   const openPaths = files.map((f) => f && f.path).filter((p) => typeof p === 'string');
   if (!openPaths.length) return null;
   const active = activeIndex != null ? files[activeIndex] : null;
   const activePath = active && typeof active.path === 'string' ? active.path : undefined;
-  return { vaultPath, openPaths, activePath };
+  return { vaultId, openPaths, activePath };
 }
 
 /**

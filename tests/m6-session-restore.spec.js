@@ -3,7 +3,7 @@
  * m6-session-restore.spec.js — T-B5/M6 session-restore WIRING (not just the pure helpers).
  * Boots the renderer with a mocked electronAPI bridge so restoreLastSession + the
  * persistSettings(lastSession) round-trip are actually exercised, and guards the
- * _vaultPath-staleness regression: loadDemo must NOT persist a vault path paired with
+ * vault-capability staleness regression: loadDemo must NOT persist a vault ID paired with
  * demo files.
  */
 const { test, expect } = require('@playwright/test');
@@ -28,7 +28,7 @@ async function bootWithBridge(page, { settings = DEFAULTS, vaults = {} } = {}) {
     window.electronAPI = {
       closeWindow: noop, minimizeWindow: noop, maximizeWindow: noop,
       openFolder: async () => window.__nextFolder,
-      readVault: async (p) => window.__vaults[p] || [],
+      readVault: async (id) => window.__vaults[id] || { error: 'unauthorized-capability' },
       writeFile: async () => ({ ok: true }),
       getSettings: async () => settings,
       setSettings: async (patch) => { window.__writes.push(patch); return { ok: true }; },
@@ -44,11 +44,11 @@ async function bootWithBridge(page, { settings = DEFAULTS, vaults = {} } = {}) {
 test.describe('[M6] session restore wiring', () => {
   test('restoreLastSession re-reads the saved vault and re-opens the active note on launch', async ({ page }) => {
     await bootWithBridge(page, {
-      settings: { ...DEFAULTS, lastSession: { vaultPath: '/V', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' } },
-      vaults: { '/V': [
-        { name: 'a.md', relPath: 'a.md', content: '# A' },
-        { name: 'b.md', relPath: 'sub/b.md', content: '# B heading' },
-      ] },
+      settings: { ...DEFAULTS, lastSession: { vaultId: 'cap-v', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' } },
+      vaults: { 'cap-v': { vault: { id: 'cap-v', name: 'V', generation: 1 }, entries: [
+        { name: 'a.md', relPath: 'a.md', documentId: 'cap-a', content: '# A' },
+        { name: 'b.md', relPath: 'sub/b.md', documentId: 'cap-b', content: '# B heading' },
+      ] } },
     });
     // restore is async (readVault) — wait for State.files to populate
     await page.waitForFunction(() => window._appState?.files?.length === 2);
@@ -71,13 +71,13 @@ test.describe('[M6] session restore wiring', () => {
 
   test('loadDemo clears the vault session — no conflated {realVault + demoPaths} is persisted (regression)', async ({ page }) => {
     await bootWithBridge(page, {
-      vaults: { '/RealVault': [
-        { name: 'note.md', relPath: 'note.md', content: '# real note' },
-      ] },
+      vaults: { 'cap-real': { vault: { id: 'cap-real', name: 'RealVault', generation: 1 }, entries: [
+        { name: 'note.md', relPath: 'note.md', documentId: 'cap-note', content: '# real note' },
+      ] } },
     });
     const r = await page.evaluate(async () => {
       // 1) open a real Electron vault → its session should persist
-      window.__nextFolder = { folderPath: '/RealVault' };
+      window.__nextFolder = { canceled: false, vault: { id: 'cap-real', name: 'RealVault', generation: 1 } };
       await window.openVault();
       await new Promise((res) => setTimeout(res, 260)); // flush the debounced persist
       const w1 = window.__writes.length;
@@ -90,7 +90,7 @@ test.describe('[M6] session restore wiring', () => {
       return { w1, w2, afterVault, afterDemo };
     });
     expect(r.w1).toBeGreaterThan(0);                      // the vault open did persist
-    expect(r.afterVault?.vaultPath).toBe('/RealVault');   // …with the real vault session
+    expect(r.afterVault?.vaultId).toBe('cap-real');       // …with the opaque vault session
     expect(r.w2).toBeGreaterThan(r.w1);                   // loadDemo triggered a fresh persist
     expect(r.afterDemo).toBe(null);                       // …that CLEARED the session (no '/RealVault' + demo paths)
   });

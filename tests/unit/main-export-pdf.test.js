@@ -78,9 +78,10 @@ describe('export:pdf (T-B6)', () => {
 
     // The exact PDF bytes are written to the chosen path; temp + window cleaned up.
     expect(electron._mockWin.webContents.printToPDF).toHaveBeenCalledTimes(1);
-    const [outPath, data] = fs.promises.writeFile.mock.calls.at(-1);
-    expect(outPath).toBe('/out/note.pdf');
+    const [tmpPdfPath, data] = fs.writeFileSync.mock.calls.at(-1);
+    expect(tmpPdfPath).toMatch(/^\/out\/note\.pdf\.tmp-/);
     expect(data).toBe(pdf);
+    expect(fs.renameSync).toHaveBeenCalledWith(tmpPdfPath, '/out/note.pdf');
     expect(res).toEqual({ ok: true, path: '/out/note.pdf' });
     expect(electron._mockWin.close).toHaveBeenCalled();
     expect(fs.promises.unlink).toHaveBeenCalledWith(tmpPath);
@@ -111,9 +112,7 @@ describe('export:pdf (T-B6)', () => {
 
   test('writeFile(PDF) failure (e.g. ENOSPC) → { error: "export-failed" }; window STILL closed', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
-    fs.promises.writeFile
-      .mockResolvedValueOnce(undefined)                 // temp html write succeeds
-      .mockRejectedValueOnce(new Error('ENOSPC'));      // PDF write fails
+    fs.writeFileSync.mockImplementationOnce(() => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); });
     const res = await handler({}, { html: HTML, defaultName: 'note.pdf' });
     expect(res).toEqual({ error: 'export-failed' });
     expect(electron._mockWin.close).toHaveBeenCalled(); // finally cleans up even on write failure

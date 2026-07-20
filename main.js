@@ -2,23 +2,20 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const {
   parseFileArg,
-  isAuthorizedPath,
   isNetworkPath,
-  collectAuthorizedFolders,
-  collectAuthorizedFiles,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,
   isSymlinkEscape,
-  stripBOM,
   filterAndSortMdFiles,
 } = require('./src/main-logic');
 const { classifyNavigation, isExternallyOpenable } = require('./src/main/navigation');
 const { buildContextMenuTemplate } = require('./src/main/context-menu');
-const { createDocumentStore } = require('./src/main/document-store');
+const { createDocumentStore, atomicWriteFile } = require('./src/main/document-store');
+const { createCapabilityRegistry } = require('./src/main/capabilities');
 const { createSettingsStore, clampWindowBounds, migrate } = require('./src/main/settings');
 const { compareVersions } = require('./src/main/version');
-const { resolveAsset } = require('./src/main/protocol');
+const { resolveAsset, validateAsset } = require('./src/main/protocol');
 const crypto = require('crypto');
 
 // T-Q6: the public releases manifest consulted ONLY when the user explicitly checks for
@@ -145,38 +142,11 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
     writeLog('error', 'main:unhandledRejection', msg, stk);
   });
 
-  // ==== SECURITY: ALLOWLIST ====
-  const allowedFolders = new Set();
-  // Single .md files the user opened via the native open-file dialog (or restored from
-  // recents). fs:readFile is gated on this set so a recent single file can be reopened
-  // in a later session without a fresh prompt, while arbitrary renderer-supplied paths
-  // stay rejected.
-  const allowedFiles = new Set();
-
-  // T-AI2: the vault root the renderer currently has open. bpmd://vault/<rel> URLs
-  // resolve against THIS root (the app shows one vault at a time). Set on each
-  // successful fs:readVault; used only by the bpmd protocol handler below.
-  let activeVaultRoot = null;
-
-  // Re-grant folders the user already opened in a prior session. fs:readVault is
-  // allow-list gated (allowedFolders is only filled by the dialog:openFolder picker),
-  // so on a fresh launch the set is EMPTY and every restore is rejected as
-  // 'unauthorized-path': restoreLastSession() can't reload the last vault and clicking
-  // a recent file does nothing. collectAuthorizedFolders() returns the lastSession +
-  // recents vault paths the user explicitly chose before (network paths excluded);
-  // persisting that consent across restarts is the standard "reopen recent" behaviour.
-  // readVault still enforces network-path, symlink-escape, file-count and size guards.
-  function seedAllowedFoldersFromSettings(s) {
-    for (const p of collectAuthorizedFolders(s)) allowedFolders.add(p);
-    for (const p of collectAuthorizedFiles(s)) allowedFiles.add(p);
-  }
-
-  // Minimal content-type table for the assets a vault note can reference inline.
-  const BPMD_MIME = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-    '.webp': 'image/webp', '.svg': 'image/svg+xml', '.avif': 'image/avif',
-    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
-  };
+  // ==== SECURITY: MAIN-OWNED CAPABILITIES ====
+  // Native-picker paths are stored only in a main-owned registry. The renderer sees
+  // opaque IDs and therefore cannot mint authority through settings or IPC payloads.
+  let capabilityRegistry = null;
+  let activeVault = null;
 
   // Serve a bpmd://vault/<rel> request: resolve it (path-traversal guarded) against
   // the active vault root, re-check the root is still allow-listed, and stream the
@@ -184,13 +154,14 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
   function registerBpmdProtocol() {
     if (!protocol || typeof protocol.handle !== 'function') return;
     protocol.handle('bpmd', async (request) => {
-      const res = resolveAsset(request.url, activeVaultRoot, path);
+      const root = activeVault && activeVault.path;
+      const res = resolveAsset(request.url, root, path);
       if (res.error) return new Response('Not found', { status: 404 });
-      if (!isAuthorizedPath(activeVaultRoot, allowedFolders)) return new Response('Forbidden', { status: 403 });
       try {
-        const data = await fs.promises.readFile(res.path);
-        const type = BPMD_MIME[path.extname(res.path).toLowerCase()] || 'application/octet-stream';
-        return new Response(data, { headers: { 'content-type': type } });
+        const checked = await validateAsset(res.path, root, fs, path);
+        if (checked.error) return new Response('Not found', { status: 404 });
+        const data = await fs.promises.readFile(checked.path);
+        return new Response(data, { headers: { 'content-type': checked.type, 'content-length': String(checked.size) } });
       } catch (_) {
         return new Response('Not found', { status: 404 });
       }
@@ -210,6 +181,15 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
   // the next launch (EC-D1/EC-D2).
   let settingsStore = null;
   let currentSettings = null;
+  const approvedCloseWindows = new WeakSet();
+
+  function windowForEvent(event) {
+    if (BrowserWindow && typeof BrowserWindow.fromWebContents === 'function' && event && event.sender) {
+      const owned = BrowserWindow.fromWebContents(event.sender);
+      if (owned) return owned;
+    }
+    return BrowserWindow.getFocusedWindow();
+  }
 
   // Capture the live window geometry into settings and flush to disk. Never
   // throws — a persistence failure must not block window close or app quit.
@@ -225,25 +205,50 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
 
   // ==== FILE ASSOCIATION ====
   let pendingFileToOpen = null;
+  let vaultReadGeneration = 0;
+
+  function readDocumentCapability(documentId) {
+    const record = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
+    if (!record) return { error: 'unauthorized-capability' };
+    try {
+      const stat = fs.statSync(record.path);
+      if (!stat.isFile()) return { error: 'not-regular-file' };
+      if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
+      const { content, meta } = docStore.read(record.path);
+      return { documentId: record.id, vaultId: record.vaultId, name: path.basename(record.path), content, meta };
+    } catch (_) {
+      return { error: 'read-failed' };
+    }
+  }
 
   function deliverPendingFile(win) {
     if (!pendingFileToOpen || !win || win.isDestroyed()) return;
     const filePath = pendingFileToOpen;
     pendingFileToOpen = null;
     try {
-      let content = fs.readFileSync(filePath, 'utf8');
-      content = stripBOM(content);
-      allowedFiles.add(filePath); // so fs:readFile can reopen it from Recent this session
-      win.webContents.send('open-external-file', {
-        name: path.basename(filePath),
-        path: filePath,
-        content
-      });
+      const capability = capabilityRegistry.grantDocument(filePath);
+      const snapshot = readDocumentCapability(capability.id);
+      if (!snapshot.error) win.webContents.send('open-external-file', snapshot);
     } catch (_) { /* silent */ }
   }
 
   // ==== IPC HANDLERS ====
   function registerIpcHandlers() {
+    ipcMain.on('window-close-confirmed', (event) => {
+      const win = windowForEvent(event);
+      if (!win || win.isDestroyed()) return;
+      approvedCloseWindows.add(win);
+      win.close();
+    });
+    ipcMain.on('window-minimize', (event) => {
+      const win = windowForEvent(event);
+      if (win && !win.isDestroyed()) win.minimize();
+    });
+    ipcMain.on('window-maximize', (event) => {
+      const win = windowForEvent(event);
+      if (win && !win.isDestroyed()) win.isMaximized() ? win.unmaximize() : win.maximize();
+    });
+
     ipcMain.handle('dialog:openFolder', async () => {
       const win = BrowserWindow.getFocusedWindow();
       const result = await dialog.showOpenDialog(win, {
@@ -251,10 +256,15 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
         title: 'Open Folder'
       });
       if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-        return { canceled: true, folderPath: null };
+        return { canceled: true };
       }
-      allowedFolders.add(result.filePaths[0]);
-      return { canceled: false, folderPath: result.filePaths[0] };
+      const selected = result.filePaths[0];
+      if (isNetworkPath(selected)) return { error: 'network-path-not-allowed' };
+      try {
+        return { canceled: false, vault: capabilityRegistry.grantVault(selected) };
+      } catch (_) {
+        return { error: 'invalid-vault' };
+      }
     });
 
     // ==== dialog:openFile ====
@@ -272,15 +282,15 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
         return { canceled: true };
       }
-      const filePath = result.filePaths[0];
-      if (isNetworkPath(filePath)) return { error: 'network-path-not-allowed' };
+      const selected = result.filePaths[0];
+      if (isNetworkPath(selected)) return { error: 'network-path-not-allowed' };
       try {
-        const stat = await fs.promises.stat(filePath);
+        const filePath = fs.realpathSync(selected);
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile() || !/\.(md|markdown)$/i.test(filePath)) return { error: 'invalid-file' };
         if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
-        let content = await fs.promises.readFile(filePath, 'utf8');
-        content = stripBOM(content);
-        allowedFiles.add(filePath);
-        return { canceled: false, filePath, name: path.basename(filePath), content };
+        const capability = capabilityRegistry.grantDocument(filePath);
+        return { canceled: false, ...readDocumentCapability(capability.id) };
       } catch (_) {
         return { error: 'read-failed' };
       }
@@ -291,56 +301,39 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
     // have been opened via dialog:openFile this session OR restored from recents on
     // launch — see seedAllowedFoldersFromSettings). Symlinks, network paths and oversized
     // files are rejected, mirroring the readVault guards.
-    ipcMain.handle('fs:readFile', async (_event, filePath) => {
-      if (!filePath || typeof filePath !== 'string') return { error: 'invalid' };
-      if (isNetworkPath(filePath)) return { error: 'network-path-not-allowed' };
-      if (!allowedFiles.has(filePath)) return { error: 'unauthorized-path' };
-      try {
-        const lstat = await fs.promises.lstat(filePath);
-        if (lstat.isSymbolicLink()) return { error: 'unauthorized-path' };
-        if (isOversizedFile(lstat.size)) return { error: 'file-too-large' };
-        let content = await fs.promises.readFile(filePath, 'utf8');
-        content = stripBOM(content);
-        return { name: path.basename(filePath), path: filePath, content };
-      } catch (_) {
-        return { error: 'read-failed' };
-      }
-    });
+    ipcMain.handle('fs:readFile', async (_event, documentId) => readDocumentCapability(documentId));
 
-    ipcMain.handle('fs:readVault', async (event, folderPath) => {
-      if (!folderPath || typeof folderPath !== 'string') {
-        throw new Error('Invalid folder path');
-      }
-
-      if (isNetworkPath(folderPath)) {
-        return { error: 'network-path-not-allowed' };
-      }
-
-      if (!isAuthorizedPath(folderPath, allowedFolders)) {
-        return { error: 'unauthorized-path' };
-      }
-
-      // T-AI2: this is now the vault that bpmd://vault/<rel> asset URLs resolve against.
-      activeVaultRoot = folderPath;
-
-      const topEntries = await fs.promises.readdir(folderPath, { withFileTypes: true });
-
-      if (isTooManyFiles(topEntries.length)) {
-        return { error: 'too-many-files' };
-      }
+    ipcMain.handle('fs:readVault', async (event, vaultId) => {
+      const vault = capabilityRegistry && capabilityRegistry.resolveVault(vaultId);
+      if (!vault) return { error: 'unauthorized-capability' };
+      const folderPath = vault.path;
+      const requestGeneration = ++vaultReadGeneration;
+      let topEntries;
+      try { topEntries = await fs.promises.readdir(folderPath, { withFileTypes: true }); }
+      catch (_) { return { error: 'read-failed' }; }
 
       // Gather markdown files recursively (T-B2). Top-level md files first, then
       // descend into subdirectories (depth-bounded). The isDirectory check is
       // defensive so flat callers / simple mocks issue exactly one readdir.
-      const relPaths = filterAndSortMdFiles(topEntries).slice();
+      const relPaths = [];
+      let truncated = false;
+      const appendMarkdown = (entries, baseRel = '') => {
+        for (const name of filterAndSortMdFiles(entries)) {
+          if (relPaths.length >= 5000) { truncated = true; return false; }
+          relPaths.push(baseRel ? `${baseRel}/${name}` : name);
+        }
+        return true;
+      };
+      appendMarkdown(topEntries);
       const isDir = (e) => typeof e.isDirectory === 'function' && e.isDirectory();
       async function collectSub(dir, baseRel, depth) {
-        if (depth > 12 || relPaths.length >= 5000) return;
+        if (depth > 12 || truncated) return;
         let entries;
         try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); }
         catch (_) { return; }
-        for (const name of filterAndSortMdFiles(entries)) relPaths.push(`${baseRel}/${name}`);
+        if (!appendMarkdown(entries, baseRel)) return;
         for (const s of entries.filter(isDir)) {
+          if (truncated) return;
           await collectSub(path.join(dir, s.name), `${baseRel}/${s.name}`, depth + 1);
         }
       }
@@ -351,58 +344,88 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
 
       const results = [];
       let cumulativeBytes = 0;
+      const skipped = { unreadable: 0, oversized: 0, escaped: 0, special: 0 };
 
       for (const relPath of relPaths) {
         const fullPath = path.join(folderPath, relPath);
-
-        const lstat = await fs.promises.lstat(fullPath);
-        if (lstat.isSymbolicLink()) {
-          const real = await fs.promises.realpath(fullPath);
-          if (isSymlinkEscape(real, folderPath, path)) {
-            continue;
+        try {
+          const lstat = await fs.promises.lstat(fullPath);
+          let canonical = fullPath;
+          let stat = lstat;
+          if (lstat.isSymbolicLink()) {
+            canonical = await fs.promises.realpath(fullPath);
+            if (isSymlinkEscape(canonical, folderPath, path)) { skipped.escaped++; continue; }
+            stat = await fs.promises.stat(canonical);
           }
-        }
-
-        const stat = lstat.isSymbolicLink()
-          ? await fs.promises.stat(fullPath)
-          : lstat;
-        if (isOversizedFile(stat.size)) {
-          continue;
-        }
-
-        cumulativeBytes += stat.size;
-        if (wouldExceedCumulative(cumulativeBytes, 0)) {
-          return { error: 'cumulative-size-exceeded', partial: results };
-        }
-
-        let content = await fs.promises.readFile(fullPath, 'utf8');
-        content = stripBOM(content);
-        results.push({ name: path.basename(relPath), relPath, content });
+          if (typeof stat.isFile === 'function' && !stat.isFile()) { skipped.special++; continue; }
+          if (isOversizedFile(stat.size)) { skipped.oversized++; continue; }
+          if (wouldExceedCumulative(cumulativeBytes, stat.size)) { truncated = true; break; }
+          cumulativeBytes += stat.size;
+          const capability = capabilityRegistry.grantDocument(canonical, { vaultId, persistGrant: false });
+          const snapshot = readDocumentCapability(capability.id);
+          if (snapshot.error) { skipped.unreadable++; continue; }
+          results.push({ ...snapshot, relPath });
+        } catch (_) { skipped.unreadable++; }
       }
+
+      try { capabilityRegistry.flush(); } catch (_) { return { error: 'capability-persist-failed' }; }
+
+      if (requestGeneration !== vaultReadGeneration) return { error: 'stale-read' };
 
       // T-B9: watch the opened vault for EXTERNAL changes and notify this renderer
       // (debounced). The renderer refreshes the tree and surfaces an EC-A2 conflict for
       // the open file if it changed on disk while dirty. Replaces any prior watcher.
       try { if (vaultWatcher) vaultWatcher.close(); } catch (_) { /* ignore */ }
       const sender = event.sender;
+      activeVault = { ...vault, generation: requestGeneration };
       vaultWatcher = docStore.watch(folderPath, ({ files }) => {
-        if (sender && !sender.isDestroyed()) sender.send('vault:changed', { folderPath, files });
+        if (sender && !sender.isDestroyed()) sender.send('vault:changed', { vaultId, generation: requestGeneration, files });
       });
 
-      return results;
+      return {
+        vault: { id: vaultId, name: path.basename(folderPath), generation: requestGeneration },
+        entries: results,
+        skipped,
+        truncated,
+      };
     });
 
     // ==== fs:writeFile (T-B1) ====
     // Atomic, allow-listed, conflict-aware write backed by the DocumentStore.
     ipcMain.handle('fs:writeFile', async (_event, payload) => {
       if (!payload || typeof payload !== 'object') return { error: 'invalid' };
-      const { folderPath, relPath, content, baseHash, bom, eol, finalNewline } = payload;
-      if (typeof relPath !== 'string' || typeof content !== 'string') return { error: 'invalid' };
-      if (typeof folderPath !== 'string' || folderPath === '') return { error: 'invalid' };
-      if (isNetworkPath(folderPath)) return { error: 'network-path-not-allowed' };
-      if (!isAuthorizedPath(folderPath, allowedFolders)) return { error: 'unauthorized-path' };
-      const abs = path.join(folderPath, relPath);
-      return docStore.write(abs, content, { root: folderPath, baseHash, bom, eol, finalNewline });
+      const { documentId, content, baseHash, bom, eol, finalNewline, revision } = payload;
+      if (typeof content !== 'string') return { error: 'invalid' };
+      if (Buffer.byteLength(content, 'utf8') > 10 * 1024 * 1024) return { error: 'file-too-large' };
+      const document = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
+      if (!document) return { error: 'unauthorized-capability' };
+      const vault = document.vaultId ? capabilityRegistry.resolveVault(document.vaultId) : null;
+      const result = docStore.write(document.path, content, {
+        root: vault && vault.path, baseHash, bom, eol, finalNewline,
+      });
+      return result.ok ? { ...result, revision } : result;
+    });
+
+    ipcMain.handle('dialog:saveFile', async (_event, payload) => {
+      if (!payload || typeof payload.content !== 'string') return { error: 'invalid' };
+      if (Buffer.byteLength(payload.content, 'utf8') > 10 * 1024 * 1024) return { error: 'file-too-large' };
+      const result = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow(), {
+        title: 'Save Markdown File',
+        defaultPath: typeof payload.suggestedName === 'string' ? payload.suggestedName : 'Untitled.md',
+        filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      if (isNetworkPath(result.filePath)) return { error: 'network-path-not-allowed' };
+      const written = docStore.write(result.filePath, payload.content, {
+        bom: !!payload.bom,
+        eol: payload.eol === '\r\n' ? '\r\n' : '\n',
+        finalNewline: payload.finalNewline !== false,
+      });
+      if (!written.ok) return written;
+      try {
+        const capability = capabilityRegistry.grantDocument(result.filePath);
+        return { ok: true, documentId: capability.id, name: capability.name, meta: written.meta, revision: payload.revision };
+      } catch (_) { return { error: 'write-failed' }; }
     });
 
     // ==== settings:get / settings:set (T-B5 / T-F8) ====
@@ -461,7 +484,8 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
         pdfWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
         await withTimeout(pdfWin.loadFile(tmpHtml), 30000);
         const data = await withTimeout(pdfWin.webContents.printToPDF({ printBackground: true }), 30000);
-        await fs.promises.writeFile(result.filePath, data);
+        const written = atomicWriteFile(fs, result.filePath, data);
+        if (!written.ok) throw new Error(written.error);
         return { ok: true, path: result.filePath };
       } catch (_) {
         return { error: 'export-failed' };
@@ -490,7 +514,9 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       try { data = await res.json(); } catch (_) { return { error: 'parse', current }; }
       const latest = String((data && (data.tag_name || data.version)) || '').replace(/^v/i, '');
       if (!latest) return { error: 'no-version', current };
-      return { current, latest, updateAvailable: compareVersions(latest, current) > 0, url: (data && data.html_url) || '' };
+      const comparison = compareVersions(latest, current);
+      if (comparison === null) return { error: 'invalid-version', current };
+      return { current, latest, updateAvailable: comparison > 0, url: (data && data.html_url) || '' };
     });
 
     ipcMain.on('edit:command', (event, cmd) => {
@@ -565,7 +591,13 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
     if (bounds.maximized) win.maximize();
     // Persist geometry when the user closes the window (covers app quit too,
     // which closes the window first).
-    if (typeof win.on === 'function') win.on('close', () => {
+    if (typeof win.on === 'function') win.on('close', (event) => {
+      if (!approvedCloseWindows.has(win)) {
+        if (event && typeof event.preventDefault === 'function') event.preventDefault();
+        if (!win.webContents.isDestroyed()) win.webContents.send('app:request-close');
+        return;
+      }
+      approvedCloseWindows.delete(win);
       persistWindowState(win);
       try { if (vaultWatcher) { vaultWatcher.close(); vaultWatcher = null; } } catch (_) { /* ignore */ } // T-B9: close the vault watcher with the window
     });
@@ -573,10 +605,6 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
     win.loadFile('index.html');
     const appUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
     win.webContents.on('did-finish-load', () => deliverPendingFile(win));
-
-    ipcMain.on('window-close',    () => win.close());
-    ipcMain.on('window-minimize', () => win.minimize());
-    ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
 
     win.webContents.setWindowOpenHandler(({ url }) => {
       if (isExternallyOpenable(url)) shell.openExternal(url);
@@ -638,11 +666,8 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
       // Load persisted settings now that userData path is valid (EC-D1: corrupt
       // file degrades to defaults rather than crashing).
       settingsStore = createSettingsStore({ fs, path, userDataDir: app.getPath('userData') });
+      capabilityRegistry = createCapabilityRegistry({ fs, path, userDataDir: app.getPath('userData') });
       currentSettings = settingsStore.load();
-      seedAllowedFoldersFromSettings(currentSettings); // re-authorize previously-opened vaults so restore + recents work
-      if (currentSettings && currentSettings.lastSession && typeof currentSettings.lastSession.vaultPath === 'string') {
-        activeVaultRoot = currentSettings.lastSession.vaultPath; // bpmd:// assets resolve before the first readVault
-      }
       pendingFileToOpen = parseFileArg(proc.argv, fs);
       registerIpcHandlers();
       registerBpmdProtocol(); // T-AI2: attach the bpmd:// asset handler (scheme privileged above)
@@ -655,7 +680,9 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
     app.on('open-file', (event, filePath) => {
       event.preventDefault();
       if (!filePath) return;
-      pendingFileToOpen = filePath;
+      const validated = parseFileArg(['electron', filePath], fs);
+      if (!validated) return;
+      pendingFileToOpen = validated;
       const wins = BrowserWindow.getAllWindows();
       if (wins.length > 0) deliverPendingFile(wins[0]);
     });

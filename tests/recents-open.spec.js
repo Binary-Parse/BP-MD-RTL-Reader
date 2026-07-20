@@ -23,15 +23,15 @@ const DEFAULTS = {
 
 async function bootWithBridge(page, { settings = DEFAULTS, vaults = {}, files = {} } = {}) {
   await page.addInitScript(({ settings, vaults, files }) => {
-    window.__vaults = vaults;        // vaultRoot -> readVault entries
-    window.__files = files;          // abs path  -> readFile result
+    window.__vaults = vaults;        // vault capability ID -> readVault result
+    window.__files = files;          // document capability ID -> readFile result
     window.__readVaultCalls = 0;
     window.__readFileCalls = 0;
     const noop = () => {};
     window.electronAPI = {
       closeWindow: noop, minimizeWindow: noop, maximizeWindow: noop,
       openFolder: async () => ({ canceled: true }),
-      readVault: async (p) => { window.__readVaultCalls++; return window.__vaults[p] || []; },
+      readVault: async (id) => { window.__readVaultCalls++; return window.__vaults[id] || { error: 'unauthorized-capability' }; },
       openFile: async () => ({ canceled: true }),
       readFile: async (p) => { window.__readFileCalls++; return window.__files[p] || { error: 'unauthorized-path' }; },
       writeFile: async () => ({ ok: true }),
@@ -50,13 +50,12 @@ async function bootWithBridge(page, { settings = DEFAULTS, vaults = {}, files = 
 }
 
 test.describe('clicking a recent file opens it', () => {
-  test('single-file recent (abs) → reads the file by absolute path and opens it', async ({ page }) => {
-    // The exact shape of the reported bug: a recent opened as a single file (no vault).
+  test('single-file recent capability → reads and opens the file without exposing its path', async ({ page }) => {
     await bootWithBridge(page, {
       settings: { ...DEFAULTS, recents: [
-        { name: 'note.md', path: 'C:/docs/note.md', vaultRoot: null, abs: 'C:/docs/note.md' },
+        { name: 'note.md', path: 'note.md', vaultId: null, documentId: 'cap-note' },
       ] },
-      files: { 'C:/docs/note.md': { name: 'note.md', path: 'C:/docs/note.md', content: '# Note body\n\nhi' } },
+      files: { 'cap-note': { name: 'note.md', documentId: 'cap-note', content: '# Note body\n\nhi' } },
     });
     expect(await page.evaluate(() => window._appState.files.length)).toBe(0); // nothing loaded yet
     await page.click('.recent-item');
@@ -69,21 +68,21 @@ test.describe('clicking a recent file opens it', () => {
       editorAreaWelcome: document.querySelector('.editor-area').classList.contains('welcome'),
     }));
     expect(r.readFileCalls).toBe(1);          // reopened via fs:readFile
-    expect(r.activePath).toBe('C:/docs/note.md');
+    expect(r.activePath).toBe('note.md');
     expect(r.active).toBe(0);
     expect(r.welcomeHidden).toBe(true);       // welcome screen dismissed → file is visible
     expect(r.editorAreaWelcome).toBe(false);
   });
 
-  test('vault recent (vaultRoot) → re-opens the vault from disk and selects the note', async ({ page }) => {
+  test('vault recent capability → re-opens the vault from disk and selects the note', async ({ page }) => {
     await bootWithBridge(page, {
       settings: { ...DEFAULTS, recents: [
-        { name: 'b.md', path: 'b.md', vaultRoot: '/V', abs: null },
+        { name: 'b.md', path: 'b.md', vaultId: 'cap-v', documentId: 'cap-b' },
       ] },
-      vaults: { '/V': [
-        { name: 'a.md', relPath: 'a.md', content: '# A' },
-        { name: 'b.md', relPath: 'b.md', content: '# B' },
-      ] },
+      vaults: { 'cap-v': { vault: { id: 'cap-v', name: 'V', generation: 1 }, entries: [
+        { name: 'a.md', relPath: 'a.md', documentId: 'cap-a', content: '# A' },
+        { name: 'b.md', relPath: 'b.md', documentId: 'cap-b', content: '# B' },
+      ] } },
     });
     await page.click('.recent-item');
     await page.waitForFunction(() => window._appState.files.length === 2);
@@ -103,13 +102,13 @@ test.describe('clicking a recent file opens it', () => {
     // than a click. It guards that an in-memory recent navigates without touching disk.
     await bootWithBridge(page, {
       settings: { ...DEFAULTS,
-        lastSession: { vaultPath: '/V', openPaths: ['a.md', 'b.md'], activePath: 'a.md' },
-        recents: [{ name: 'b.md', path: 'b.md', vaultRoot: '/V', abs: null }],
+        lastSession: { vaultId: 'cap-v', openPaths: ['a.md', 'b.md'], activePath: 'a.md' },
+        recents: [{ name: 'b.md', path: 'b.md', vaultId: 'cap-v', documentId: 'cap-b' }],
       },
-      vaults: { '/V': [
-        { name: 'a.md', relPath: 'a.md', content: '# A' },
-        { name: 'b.md', relPath: 'b.md', content: '# B' },
-      ] },
+      vaults: { 'cap-v': { vault: { id: 'cap-v', name: 'V', generation: 1 }, entries: [
+        { name: 'a.md', relPath: 'a.md', documentId: 'cap-a', content: '# A' },
+        { name: 'b.md', relPath: 'b.md', documentId: 'cap-b', content: '# B' },
+      ] } },
     });
     await page.waitForFunction(() => window._appState.files.length === 2); // restored
     const before = await page.evaluate(() => window.__readVaultCalls);
@@ -120,19 +119,18 @@ test.describe('clicking a recent file opens it', () => {
     expect(after).toBe(before);               // no extra readVault — navigated in place
   });
 
-  test('legacy recent (no abs/vaultRoot) → cannot reopen, shows an instructive toast', async ({ page }) => {
-    await bootWithBridge(page, {
-      settings: { ...DEFAULTS, recents: [{ name: 'old.md', path: 'old.md' }] },
-    });
-    await page.click('.recent-item');
-    await page.waitForFunction(() => document.getElementById('toast').classList.contains('show'));
-    const r = await page.evaluate(() => ({
-      filesLen: window._appState.files.length,
-      toast: document.getElementById('toast').textContent,
-      isInfo: document.getElementById('toast').classList.contains('info'),
-    }));
-    expect(r.filesLen).toBe(0);               // nothing opened (no data to reopen from)
-    expect(r.isInfo).toBe(true);
-    expect(r.toast).toContain('older version');
+  test('legacy raw-path recent is rejected during settings restoration', async ({ page }) => {
+    await page.addInitScript((settings) => {
+      const noop = () => {};
+      window.electronAPI = {
+        getSettings: async () => settings, setSettings: async () => ({ ok: true }),
+        closeWindow: noop, minimizeWindow: noop, maximizeWindow: noop,
+        onOpenFile: noop, onVaultChanged: noop, checkForUpdate: async () => ({}), logError: noop,
+      };
+    }, { ...DEFAULTS, recents: [{ name: 'old.md', path: 'old.md', abs: 'C:/old.md' }] });
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+    await expect(page.locator('.recent-item')).toHaveCount(0);
+    expect(await page.evaluate(() => window._appState.recents)).toEqual([]);
   });
 });

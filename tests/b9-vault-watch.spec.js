@@ -14,13 +14,20 @@ const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 // Seed an open vault with two files and stub readVault to return `entries` next time.
 async function seed(page, files, freshEntries) {
   await page.evaluate(({ files, fresh }) => {
-    window.electronAPI = { readVault: () => Promise.resolve(fresh) };
-    const S = window._appState;
-    S.vaultName = 'myvault';
-    S.files = files.map(f => ({ name: f.name, path: f.path, handle: null, content: f.content, dirty: !!f.dirty }));
-    S.activeFile = 0;
-    window.renderFile(0);
+    let reads = 0;
+    const vault = { id: 'cap-vault', name: 'myvault', generation: 1 };
+    const snapshot = (list) => ({ vault, entries: list.map((f, i) => ({ name: f.name, relPath: f.path || f.relPath, documentId: `cap-doc-${i}`, content: f.content })) });
+    window.electronAPI = {
+      openFolder: () => Promise.resolve({ canceled: false, vault }),
+      readVault: () => Promise.resolve(reads++ === 0 ? snapshot(files) : snapshot(fresh)),
+    };
+    window.__seedDirty = files.map(f => !!f.dirty);
   }, { files, fresh: freshEntries });
+  await page.evaluate(() => window.openVault());
+  await page.evaluate(() => {
+    window.__seedDirty.forEach((dirty, i) => { window._appState.files[i].dirty = dirty; });
+    window.renderFile(0);
+  });
 }
 
 test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
@@ -33,7 +40,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: '# Old A' }],
       [{ name: 'a.md', relPath: 'a.md', content: '# New A from disk' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(f.content).toBe('# New A from disk');
     expect(!!f.conflict).toBe(false);
@@ -44,7 +51,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: '# My unsaved edits', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: '# Different on disk' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(f.conflict).toBe(true);
     expect(f.content).toBe('# My unsaved edits');     // edits NOT overwritten
@@ -60,7 +67,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: '# My edits', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: '# Disk version' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
     await page.locator('#conflictBar .cf-reload').click();
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(f.content).toBe('# Disk version');
@@ -73,7 +80,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: '# My edits', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: '# Disk version' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
     await page.locator('#conflictBar .cf-keep').click();
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(f.content).toBe('# My edits'); // edits retained
@@ -86,7 +93,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: 'line one\nline two', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: 'line one\r\nline two' }]); // same text, CRLF on disk
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['a.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
     const f = await page.evaluate(() => window._appState.files[0]);
     expect(!!f.conflict).toBe(false);
     await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(0);
@@ -96,7 +103,9 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: 'A' }, { name: 'b.md', path: 'b.md', content: 'B edits', dirty: true }],
       [{ name: 'a.md', relPath: 'a.md', content: 'A' }, { name: 'b.md', relPath: 'b.md', content: 'B changed on disk' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['b.md'] }));
+    // Open b as a tab, then return to a so b is genuinely a background tab.
+    await page.evaluate(() => { window.renderFile(1); window.renderFile(0); });
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['b.md'] }));
     expect(await page.evaluate(() => window._appState.files[1].conflict)).toBe(true);
     await expect(page.locator('.tab.conflict')).toHaveCount(1);
     await expect(page.locator('.tab.conflict .tab-conflict')).toBeVisible();
@@ -106,7 +115,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: 'A' }],
       [{ name: 'a.md', relPath: 'a.md', content: 'A' }, { name: 'b.md', relPath: 'b.md', content: '# B is new' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/myvault', files: ['b.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['b.md'] }));
     expect(await page.locator('.tree-node').count()).toBe(2); // both files now listed
     const tree = await page.locator('.tree-node').allInnerTexts();
     expect(tree.join(' ')).toContain('b.md');
@@ -117,7 +126,7 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: 'A' }],
       [{ name: 'a.md', relPath: 'a.md', content: 'CHANGED' }]);
-    await page.evaluate(() => window.handleVaultChanged({ folderPath: 'C:/x/OTHER', files: ['a.md'] }));
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-other', generation: 1, files: ['a.md'] }));
     expect(await page.evaluate(() => window._appState.files[0].content)).toBe('A'); // untouched
   });
 });

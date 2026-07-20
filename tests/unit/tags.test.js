@@ -77,4 +77,13 @@ describe('Tag extraction', () => {
     const tagMap = extractTagsFromFiles([{ content: '#reading and again #reading here' }]);
     expect(tagMap['reading']).toEqual([0]);
   });
+  test('reserved Object prototype names are ordinary safe tags', () => {
+    const tags = extractTags('#constructor #toString #hasOwnProperty #__proto__');
+    expect(Object.entries(tags)).toEqual([
+      ['constructor', 1], ['toString', 1], ['hasOwnProperty', 1], ['__proto__', 1],
+    ]);
+    const byFile = extractTagsFromFiles([{ content: '#constructor #__proto__' }, { content: '#constructor' }]);
+    expect(byFile.constructor).toEqual([0, 1]);
+    expect(byFile.__proto__).toEqual([0]);
+  });
 });

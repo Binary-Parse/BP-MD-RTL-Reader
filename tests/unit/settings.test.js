@@ -6,6 +6,22 @@ import path from 'node:path';
 import { defaultSettings, migrate, clampZoom, clampWindowBounds, createSettingsStore } from '../../src/main/settings.js';
 
 describe('migrate (EC-D1)', () => {
+  test('v2 persists opaque capability IDs but never filesystem paths', () => {
+    const migrated = migrate({
+      recents: [
+        { name: 'a.md', path: 'sub/a.md', vaultId: 'cap-vault', documentId: 'cap-doc', vaultRoot: '/forged', abs: '/forged/a.md' },
+        { name: 'legacy.md', path: 'legacy.md', vaultRoot: '/legacy' },
+      ],
+      lastSession: { vaultId: 'cap-vault', vaultPath: '/forged', openPaths: ['sub/a.md'], activePath: 'sub/a.md' },
+    });
+    expect(migrated.version).toBe(2);
+    expect(migrated.recents).toEqual([
+      { name: 'a.md', path: 'sub/a.md', vaultId: 'cap-vault', documentId: 'cap-doc' },
+    ]);
+    expect(migrated.lastSession).toEqual({ vaultId: 'cap-vault', openPaths: ['sub/a.md'], activePath: 'sub/a.md' });
+    expect(JSON.stringify(migrated)).not.toContain('/forged');
+    expect(JSON.stringify(migrated)).not.toContain('/legacy');
+  });
   test('garbage → defaults', () => {
     expect(migrate(null)).toEqual(defaultSettings());
     expect(migrate('nope')).toEqual(defaultSettings());
@@ -17,7 +33,7 @@ describe('migrate (EC-D1)', () => {
     expect(m.editorMode).toBe('live');   // invalid → default
     expect(m.zoomFactor).toBe(2.0);      // clamped
     expect('evil' in m).toBe(false);
-    expect(m.version).toBe(1);
+    expect(m.version).toBe(2);
   });
   test('arabicKashida (T-R10): defaults false; accepts boolean; coerces non-boolean to default', () => {
     expect(defaultSettings().arabicKashida).toBe(false);   // ragged by default
@@ -49,21 +65,21 @@ describe('migrate (EC-D1)', () => {
     expect(migrate({}).sidebarVisible).toBe(false); // no saved value → closed
   });
 
-  test('lastSession (M6): round-trips a valid session, sanitizes a corrupt one, defaults null', () => {
+  test('lastSession (M6): round-trips an opaque-capability session and drops legacy/corrupt authority', () => {
     expect(defaultSettings().lastSession).toBe(null);
-    const ls = { vaultPath: '/vault', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' };
+    const ls = { vaultId: 'cap-vault', openPaths: ['a.md', 'sub/b.md'], activePath: 'sub/b.md' };
     expect(migrate({ lastSession: ls }).lastSession).toEqual(ls);
-    // corrupt members are coerced: non-string vaultPath/activePath → undefined, non-array openPaths → []
-    const dirty = migrate({ lastSession: { vaultPath: 42, openPaths: 'nope', activePath: { x: 1 } } }).lastSession;
-    expect(dirty).toEqual({ vaultPath: undefined, openPaths: [], activePath: undefined });
+    expect(migrate({ lastSession: { vaultPath: '/legacy', openPaths: [], activePath: 'a.md' } }).lastSession).toBeNull();
+    const dirty = migrate({ lastSession: { vaultId: 'cap-vault', openPaths: 'nope', activePath: { x: 1 } } }).lastSession;
+    expect(dirty).toEqual({ vaultId: 'cap-vault', openPaths: [], activePath: undefined });
     // non-string entries are filtered out of openPaths
-    expect(migrate({ lastSession: { openPaths: ['a.md', 7, null, 'b.md'] } }).lastSession.openPaths).toEqual(['a.md', 'b.md']);
+    expect(migrate({ lastSession: { vaultId: 'cap-vault', openPaths: ['a.md', 7, null, 'b.md'] } }).lastSession.openPaths).toEqual(['a.md', 'b.md']);
     // a non-object lastSession → null (default)
     expect(migrate({ lastSession: 'nope' }).lastSession).toBe(null);
   });
 
   test('recents sanitized + capped at 10', () => {
-    const recents = Array.from({ length: 15 }, (_, i) => ({ name: 'n' + i, path: '/p' + i }));
+    const recents = Array.from({ length: 15 }, (_, i) => ({ name: 'n' + i, path: 'p' + i, vaultId: `cap-v${i}` }));
     recents.push({ name: 'bad' }); // no path → dropped
     const m = migrate({ recents });
     expect(m.recents).toHaveLength(10);
@@ -168,11 +184,11 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
     expect(migrate({ zoomFactor: 0.1 }).zoomFactor).toBe(0.6);
     expect(migrate({ zoomFactor: 'x' }).zoomFactor).toBe(1);
   });
-  test('recents: non-array → []; entries without string path dropped; capped at 10; name coerced', () => {
+  test('recents: non-array/legacy paths dropped; capability entries sanitized and capped', () => {
     expect(migrate({ recents: 'nope' }).recents).toEqual([]);
-    expect(migrate({ recents: [{ path: 'a' }, { name: 'B', path: 'b', vaultRoot: '/v' }, { name: 'C', path: 'c', abs: '/x/c.md' }, { nopath: 1 }, null] }).recents)
-      .toEqual([{ name: '', path: 'a', vaultRoot: null, abs: null }, { name: 'B', path: 'b', vaultRoot: '/v', abs: null }, { name: 'C', path: 'c', vaultRoot: null, abs: '/x/c.md' }]);
-    const many = Array.from({ length: 15 }, (_, i) => ({ path: 'p' + i }));
+    expect(migrate({ recents: [{ path: 'legacy', vaultRoot: '/v' }, { name: 'B', path: 'b', vaultId: 'cap-v' }, { name: 'C', path: 'c', documentId: 'cap-d' }, { nopath: 1 }, null] }).recents)
+      .toEqual([{ name: 'B', path: 'b', vaultId: 'cap-v', documentId: null }, { name: 'C', path: 'c', vaultId: null, documentId: 'cap-d' }]);
+    const many = Array.from({ length: 15 }, (_, i) => ({ path: 'p' + i, vaultId: `cap-v${i}` }));
     expect(migrate({ recents: many }).recents.length).toBe(10);
   });
   test('window: finite x/y kept, non-finite dropped; w/h default; maximized coerced', () => {
@@ -182,13 +198,12 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
       .toEqual({ x: undefined, y: undefined, w: 1280, h: 820, maximized: false });
   });
   test('lastSession mapping filters non-string openPaths', () => {
-    expect(migrate({ lastSession: { vaultPath: '/v', openPaths: ['a', 2, 'b', null], activePath: '/v/a' } }).lastSession)
-      .toEqual({ vaultPath: '/v', openPaths: ['a', 'b'], activePath: '/v/a' });
-    expect(migrate({ lastSession: { openPaths: 'x' } }).lastSession)
-      .toEqual({ vaultPath: undefined, openPaths: [], activePath: undefined });
+    expect(migrate({ lastSession: { vaultId: 'cap-v', openPaths: ['a', 2, 'b', null], activePath: 'a' } }).lastSession)
+      .toEqual({ vaultId: 'cap-v', openPaths: ['a', 'b'], activePath: 'a' });
+    expect(migrate({ lastSession: { openPaths: 'x' } }).lastSession).toBeNull();
   });
   test('version is always stamped', () => {
-    expect(migrate({ version: 999 }).version).toBe(1);
+    expect(migrate({ version: 999 }).version).toBe(2);
   });
 });
 

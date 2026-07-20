@@ -11,14 +11,14 @@ function getHandle(mockElectron, name) {
 }
 
 describe('fs:writeFile (T-B1)', () => {
-  let el, fsMock, writeFile, openFolder;
+  let el, fsMock, writeFile, openFolder, readVault, files;
 
   beforeEach(async () => {
     el = buildMockElectron();
     // capture ipc handlers
     const handlers = {};
     el.ipcMain.handle.mockImplementation((n, fn) => { handlers[n] = fn; });
-    const files = {};
+    files = {};
     fsMock = buildMockFs({
       existsSync: (p) => p in files,
       readFileSync: (p) => files[p],
@@ -31,56 +31,69 @@ describe('fs:writeFile (T-B1)', () => {
     await new Promise((r) => setTimeout(r, 30));
     writeFile = getHandle(el, 'fs:writeFile');
     openFolder = getHandle(el, 'dialog:openFolder');
+    readVault = getHandle(el, 'fs:readVault');
   });
 
-  test('rejects unauthorized folder', async () => {
-    expect(await writeFile({}, { folderPath: '/nope', relPath: 'a.md', content: 'x' }))
-      .toEqual({ error: 'unauthorized-path' });
+  async function grantDocument(relPath = 'note.md', content = 'old\n') {
+    const abs = path.join('/vault', relPath);
+    files[abs] = content;
+    const picked = await openFolder();
+    fsMock.promises.readdir.mockResolvedValueOnce([{ name: relPath, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false }]);
+    fsMock.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: Buffer.byteLength(content) });
+    const read = await readVault({}, picked.vault.id);
+    return read.entries[0];
+  }
+
+  test('rejects an unknown or renderer-forged document capability', async () => {
+    expect(await writeFile({}, { documentId: '/nope/a.md', content: 'x' }))
+      .toEqual({ error: 'unauthorized-capability' });
   });
 
   test('rejects invalid payloads', async () => {
     expect(await writeFile({}, null)).toEqual({ error: 'invalid' });
-    expect(await writeFile({}, { folderPath: '/v', relPath: 1, content: 'x' })).toEqual({ error: 'invalid' });
+    expect(await writeFile({}, { documentId: 'cap-missing', content: 1 })).toEqual({ error: 'invalid' });
   });
 
-  test('rejects network path', async () => {
-    expect(await writeFile({}, { folderPath: '\\\\srv\\s', relPath: 'a.md', content: 'x' }))
-      .toEqual({ error: 'network-path-not-allowed' });
+  test('a raw network path cannot be used as a capability', async () => {
+    expect(await writeFile({}, { documentId: '\\\\srv\\s\\a.md', content: 'x' }))
+      .toEqual({ error: 'unauthorized-capability' });
   });
 
   test('writes to disk once folder authorized (atomic via store)', async () => {
-    await openFolder();                       // authorizes /vault
-    const r = await writeFile({}, { folderPath: '/vault', relPath: 'note.md', content: 'hello', eol: '\n' });
+    const document = await grantDocument();
+    const r = await writeFile({}, { documentId: document.documentId, content: 'hello', baseHash: document.meta.hash, eol: '\n' });
     expect(r.ok).toBe(true);
     // OS-independent: the store writes to the path.join'd key (backslashes on Windows).
     expect(fsMock._files[path.join('/vault', 'note.md')]).toBe('hello\n');
   });
 
-  test('rejects traversal outside the authorized root (EC-A4)', async () => {
-    await openFolder();
-    const r = await writeFile({}, { folderPath: '/vault', relPath: '../escape.md', content: 'x' });
-    expect(r).toEqual({ error: 'unauthorized-path' });
+  test('ignores renderer path fields and binds the write to the granted exact document', async () => {
+    const document = await grantDocument();
+    const r = await writeFile({}, { documentId: document.documentId, folderPath: '/etc', relPath: '../escape.md', content: 'safe' });
+    expect(r.ok).toBe(true);
+    expect(files[path.join('/vault', 'note.md')]).toBe('safe\n');
+    expect(files[path.join('/etc', '../escape.md')]).toBeUndefined();
   });
 
   // L285: `typeof content !== 'string'` — an authorized folder + valid relPath but a
   // NON-string content must STILL be {error:'invalid'} (kills the content-guard mutant).
   test('rejects non-string content even for an authorized folder', async () => {
-    await openFolder();
-    expect(await writeFile({}, { folderPath: '/vault', relPath: 'a.md', content: 123 })).toEqual({ error: 'invalid' });
-    expect(await writeFile({}, { folderPath: '/vault', relPath: 'a.md', content: null })).toEqual({ error: 'invalid' });
-    // and nothing was written
-    expect(path.join('/vault', 'a.md') in fsMock._files).toBe(false);
+    const document = await grantDocument('a.md');
+    expect(await writeFile({}, { documentId: document.documentId, content: 123 })).toEqual({ error: 'invalid' });
+    expect(await writeFile({}, { documentId: document.documentId, content: null })).toEqual({ error: 'invalid' });
+    // and the authorized file remains unchanged
+    expect(fsMock._files[path.join('/vault', 'a.md')]).toBe('old\n');
   });
 
   // L286: `folderPath === ''` — empty folderPath is invalid BEFORE any auth/network
   // check (so the result is 'invalid', never 'unauthorized-path' / 'network-...').
-  test('empty folderPath is rejected as invalid (not unauthorized)', async () => {
-    expect(await writeFile({}, { folderPath: '', relPath: 'a.md', content: 'x' })).toEqual({ error: 'invalid' });
+  test('empty documentId is rejected as unauthorized', async () => {
+    expect(await writeFile({}, { documentId: '', content: 'x' })).toEqual({ error: 'unauthorized-capability' });
   });
 
   // L286: a non-string folderPath is invalid too.
-  test('non-string folderPath is rejected as invalid', async () => {
-    expect(await writeFile({}, { folderPath: 123, relPath: 'a.md', content: 'x' })).toEqual({ error: 'invalid' });
+  test('non-string documentId is rejected as unauthorized', async () => {
+    expect(await writeFile({}, { documentId: 123, content: 'x' })).toEqual({ error: 'unauthorized-capability' });
   });
 });
 
@@ -101,19 +114,19 @@ describe('fs:readVault recursion (T-B2) + writeFile invalid folder', () => {
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
     bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'main.js']) });
     await new Promise((r) => setTimeout(r, 30));
-    await handlers['dialog:openFolder']();
-    const res = await handlers['fs:readVault']({}, '/vault');
-    expect(res.map(r => r.relPath).sort()).toEqual(['sub/inner.md', 'top.md']);
+    const picked = await handlers['dialog:openFolder']();
+    const res = await handlers['fs:readVault']({}, picked.vault.id);
+    expect(res.entries.map(r => r.relPath).sort()).toEqual(['sub/inner.md', 'top.md']);
   });
 
-  test('writeFile rejects empty folderPath', async () => {
+  test('writeFile rejects empty document capability', async () => {
     const el = buildMockElectron();
     const handlers = {};
     el.ipcMain.handle.mockImplementation((n, fn) => { handlers[n] = fn; });
     bootstrap({ electron: el, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
     await new Promise((r) => setTimeout(r, 30));
-    expect(await handlers['fs:writeFile']({}, { folderPath: '', relPath: 'a.md', content: 'x' }))
-      .toEqual({ error: 'invalid' });
+    expect(await handlers['fs:writeFile']({}, { documentId: '', content: 'x' }))
+      .toEqual({ error: 'unauthorized-capability' });
   });
 });
 
@@ -140,8 +153,10 @@ describe('fs:readVault recursion guard branches (mutation kills)', () => {
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
     bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'main.js']) });
     await new Promise((r) => setTimeout(r, 30));
-    await handlers['dialog:openFolder']();
-    return { el, handlers, readdirCalls, readVault: handlers['fs:readVault'] };
+    const picked = await handlers['dialog:openFolder']();
+    const invokeReadVault = handlers['fs:readVault'];
+    const readVault = async (event) => (await invokeReadVault(event, picked.vault.id)).entries;
+    return { el, handlers, readdirCalls, readVault };
   }
 
   // 221 isDir guard + 232 topEntries.filter(isDir): a top-level FILE is never descended.

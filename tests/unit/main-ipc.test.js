@@ -69,42 +69,44 @@ describe('dialog:openFolder', () => {
     expect(opts.title).toBe('Open Folder');
   });
 
-  test('canceled:true → returns exactly {canceled:true, folderPath:null} and authorizes nothing', async () => {
+  test('canceled:true returns no capability and authorizes nothing', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: ['/should-be-ignored'] });
     const r = await openFolder();
-    expect(r).toEqual({ canceled: true, folderPath: null });
+    expect(r).toEqual({ canceled: true });
     // Even though filePaths had an entry, canceled short-circuits the add (L112).
-    expect(await readVault({}, '/should-be-ignored')).toEqual({ error: 'unauthorized-path' });
+    expect(await readVault({}, '/should-be-ignored')).toEqual({ error: 'unauthorized-capability' });
   });
 
-  test('canceled:false but empty filePaths → still {canceled:true, folderPath:null}', async () => {
+  test('canceled:false but empty filePaths still returns canceled', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [] });
     const r = await openFolder();
-    expect(r).toEqual({ canceled: true, folderPath: null });
+    expect(r).toEqual({ canceled: true });
   });
 
-  test('canceled:false but filePaths undefined → {canceled:true, folderPath:null}', async () => {
+  test('canceled:false but filePaths undefined returns canceled', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false });
     const r = await openFolder();
-    expect(r).toEqual({ canceled: true, folderPath: null });
+    expect(r).toEqual({ canceled: true });
   });
 
-  test('non-canceled with a path → {canceled:false, folderPath:<p>} and that exact path becomes authorized', async () => {
+  test('non-canceled picker result returns an opaque vault capability', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
       filePaths: ['/authz-vault', '/second-ignored'],
     });
     const r = await openFolder();
     // L116: returns filePaths[0] (the FIRST), not [1], not the array.
-    expect(r).toEqual({ canceled: false, folderPath: '/authz-vault' });
+    expect(r.canceled).toBe(false);
+    expect(r.vault).toMatchObject({ name: 'authz-vault', generation: 1 });
+    expect(JSON.stringify(r)).not.toContain('/authz-vault');
 
     // L115: filePaths[0] was added to the allowlist → readVault no longer
     // rejects it as unauthorized. (readdir returns [] → result is []).
     mockFs.promises.readdir.mockResolvedValueOnce([]);
-    expect(await readVault({}, '/authz-vault')).toEqual([]);
+    expect((await readVault({}, r.vault.id)).entries).toEqual([]);
 
     // The non-selected entry was NOT authorized.
-    expect(await readVault({}, '/second-ignored')).toEqual({ error: 'unauthorized-path' });
+    expect(await readVault({}, '/second-ignored')).toEqual({ error: 'unauthorized-capability' });
   });
 });
 
@@ -152,20 +154,23 @@ describe('dialog:openFile', () => {
 
   test('oversized file → {error:"file-too-large"}', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/big.md'] });
-    mockFs.promises.stat.mockResolvedValueOnce({ size: 11 * 1024 * 1024 });
+    mockFs.statSync.mockReturnValueOnce({ isFile: () => true, isDirectory: () => false, size: 11 * 1024 * 1024 });
     expect(await openFile()).toEqual({ error: 'file-too-large' });
   });
 
-  test('success → {canceled:false, filePath, name, content} with BOM stripped', async () => {
+  test('success returns an opaque document capability, metadata, and BOM-stripped content', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/docs/note.md'] });
-    mockFs.promises.stat.mockResolvedValueOnce({ size: 50 });
-    mockFs.promises.readFile.mockResolvedValueOnce(BOM + '# Note');
-    expect(await openFile()).toEqual({ canceled: false, filePath: '/docs/note.md', name: 'note.md', content: '# Note' });
+    mockFs.statSync.mockReturnValue({ isFile: () => true, isDirectory: () => false, size: 50, mtimeMs: 1 });
+    mockFs.readFileSync.mockReturnValueOnce(BOM + '# Note');
+    const result = await openFile();
+    expect(result).toMatchObject({ canceled: false, name: 'note.md', content: '# Note', meta: { bom: true } });
+    expect(result.documentId).toMatch(/^cap-/);
+    expect(JSON.stringify(result)).not.toContain('/docs/note.md');
   });
 
   test('read failure → {error:"read-failed"}', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/x.md'] });
-    mockFs.promises.stat.mockRejectedValueOnce(new Error('EACCES'));
+    mockFs.statSync.mockImplementationOnce(() => { throw new Error('EACCES'); });
     expect(await openFile()).toEqual({ error: 'read-failed' });
   });
 });
@@ -179,9 +184,9 @@ describe('fs:readFile (reopen a recent single file)', () => {
   // Authorize a single file by driving the real openFile handler (mirrors the app).
   async function authorizeFile(filePath, { size = 10 } = {}) {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [filePath] });
-    mockFs.promises.stat.mockResolvedValueOnce({ size });
-    mockFs.promises.readFile.mockResolvedValueOnce('seed');
-    await openFile();
+    mockFs.statSync.mockReturnValue({ isFile: () => true, isDirectory: () => false, size, mtimeMs: 1 });
+    mockFs.readFileSync.mockReturnValue('seed');
+    return openFile();
   }
 
   beforeAll(async () => {
@@ -193,43 +198,44 @@ describe('fs:readFile (reopen a recent single file)', () => {
     readFile = getHandle(mockElectron, 'fs:readFile');
   });
 
-  test('invalid input → {error:"invalid"}', async () => {
-    expect(await readFile({}, '')).toEqual({ error: 'invalid' });
-    expect(await readFile({}, null)).toEqual({ error: 'invalid' });
-    expect(await readFile({}, 123)).toEqual({ error: 'invalid' });
+  test('invalid/unknown capability → unauthorized-capability', async () => {
+    expect(await readFile({}, '')).toEqual({ error: 'unauthorized-capability' });
+    expect(await readFile({}, null)).toEqual({ error: 'unauthorized-capability' });
+    expect(await readFile({}, 123)).toEqual({ error: 'unauthorized-capability' });
   });
 
-  test('network path → {error:"network-path-not-allowed"}', async () => {
-    expect(await readFile({}, '\\\\nas\\a.md')).toEqual({ error: 'network-path-not-allowed' });
+  test('a raw network path is not a capability', async () => {
+    expect(await readFile({}, '\\\\nas\\a.md')).toEqual({ error: 'unauthorized-capability' });
   });
 
   test('unauthorized path → {error:"unauthorized-path"}', async () => {
-    expect(await readFile({}, '/never-opened.md')).toEqual({ error: 'unauthorized-path' });
+    expect(await readFile({}, '/never-opened.md')).toEqual({ error: 'unauthorized-capability' });
   });
 
   test('authorization gate runs before fs: an authorized file reads back (BOM stripped)', async () => {
-    await authorizeFile('/docs/a.md');
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 20 });
-    mockFs.promises.readFile.mockResolvedValueOnce(BOM + '# A');
-    expect(await readFile({}, '/docs/a.md')).toEqual({ name: 'a.md', path: '/docs/a.md', content: '# A' });
+    const opened = await authorizeFile('/docs/a.md');
+    mockFs.readFileSync.mockReturnValueOnce(BOM + '# A');
+    expect(await readFile({}, opened.documentId)).toMatchObject({ name: 'a.md', documentId: opened.documentId, content: '# A', meta: { bom: true } });
   });
 
-  test('symlink → {error:"unauthorized-path"}', async () => {
-    await authorizeFile('/docs/link.md');
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, size: 20 });
-    expect(await readFile({}, '/docs/link.md')).toEqual({ error: 'unauthorized-path' });
+  test('a picker-selected symlink is canonicalized before its document capability is issued', async () => {
+    mockFs.realpathSync.mockImplementation((p) => p === '/docs/link.md' ? '/docs/target.md' : p);
+    const opened = await authorizeFile('/docs/link.md');
+    expect(opened.name).toBe('target.md');
+    expect(opened.documentId).toMatch(/^cap-/);
+    expect(await readFile({}, opened.documentId)).toMatchObject({ name: 'target.md', content: 'seed' });
   });
 
   test('oversized → {error:"file-too-large"}', async () => {
-    await authorizeFile('/docs/big.md');
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 11 * 1024 * 1024 });
-    expect(await readFile({}, '/docs/big.md')).toEqual({ error: 'file-too-large' });
+    const opened = await authorizeFile('/docs/big.md');
+    mockFs.statSync.mockReturnValueOnce({ isFile: () => true, size: 11 * 1024 * 1024 });
+    expect(await readFile({}, opened.documentId)).toEqual({ error: 'file-too-large' });
   });
 
   test('read failure → {error:"read-failed"}', async () => {
-    await authorizeFile('/docs/err.md');
-    mockFs.promises.lstat.mockRejectedValueOnce(new Error('EIO'));
-    expect(await readFile({}, '/docs/err.md')).toEqual({ error: 'read-failed' });
+    const opened = await authorizeFile('/docs/err.md');
+    mockFs.statSync.mockImplementationOnce(() => { throw new Error('EIO'); });
+    expect(await readFile({}, opened.documentId)).toEqual({ error: 'read-failed' });
   });
 });
 
@@ -241,12 +247,15 @@ describe('fs:readVault', () => {
   let mockFs;
   let openFolder;
   let readVault;
+  const vaultIds = new Map();
 
   // Authorize a folder by driving the real openFolder handler, so allowedFolders
   // is populated the same way the app does it.
   async function authorize(folderPath) {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [folderPath] });
-    await openFolder();
+    const picked = await openFolder();
+    vaultIds.set(folderPath, picked.vault.id);
+    return picked.vault.id;
   }
 
   beforeAll(async () => {
@@ -255,38 +264,40 @@ describe('fs:readVault', () => {
     bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
     await new Promise(r => setTimeout(r, 50));
     openFolder = getHandle(mockElectron, 'dialog:openFolder');
-    readVault = getHandle(mockElectron, 'fs:readVault');
+    const invokeReadVault = getHandle(mockElectron, 'fs:readVault');
+    readVault = async (event, idOrPath) => {
+      const result = await invokeReadVault(event, vaultIds.get(idOrPath) || idOrPath);
+      return result && Array.isArray(result.entries) && !result.truncated ? result.entries : result;
+    };
   });
 
   // ── L120-122: invalid input guard (non-string / empty) ──
-  test('throws "Invalid folder path" for empty string, null, undefined, and non-string', async () => {
-    await expect(readVault({}, '')).rejects.toThrow('Invalid folder path');
-    await expect(readVault({}, null)).rejects.toThrow('Invalid folder path');
-    await expect(readVault({}, undefined)).rejects.toThrow('Invalid folder path');
-    await expect(readVault({}, 123)).rejects.toThrow('Invalid folder path');
-    await expect(readVault({}, {})).rejects.toThrow('Invalid folder path');
+  test('invalid or forged capability IDs are rejected without filesystem access', async () => {
+    for (const value of ['', null, undefined, 123, {}]) {
+      expect(await readVault({}, value)).toEqual({ error: 'unauthorized-capability' });
+    }
   });
 
   // ── L124-126: network paths ──
-  test('UNC path (\\\\) → exactly {error:"network-path-not-allowed"}', async () => {
-    expect(await readVault({}, '\\\\server\\share')).toEqual({ error: 'network-path-not-allowed' });
+  test('a raw UNC path cannot act as a capability', async () => {
+    expect(await readVault({}, '\\\\server\\share')).toEqual({ error: 'unauthorized-capability' });
   });
 
-  test('POSIX network path (//) → exactly {error:"network-path-not-allowed"}', async () => {
-    expect(await readVault({}, '//server/share')).toEqual({ error: 'network-path-not-allowed' });
+  test('a raw POSIX network path cannot act as a capability', async () => {
+    expect(await readVault({}, '//server/share')).toEqual({ error: 'unauthorized-capability' });
   });
 
   test('network check runs BEFORE authorization: a network path is never reached for auth even if authorized', async () => {
     // Authorize the literal UNC string; network rejection must STILL win,
     // proving isNetworkPath is checked first (L124 before L128) and returns
     // the network error, not unauthorized-path and not a file listing.
-    await authorize('\\\\server\\auth');
-    expect(await readVault({}, '\\\\server\\auth')).toEqual({ error: 'network-path-not-allowed' });
+    mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['\\\\server\\auth'] });
+    expect(await openFolder()).toEqual({ error: 'network-path-not-allowed' });
   });
 
   // ── L128-130: authorization ──
   test('a non-network, non-authorized local path → exactly {error:"unauthorized-path"}', async () => {
-    expect(await readVault({}, '/never-authorized')).toEqual({ error: 'unauthorized-path' });
+    expect(await readVault({}, '/never-authorized')).toEqual({ error: 'unauthorized-capability' });
   });
 
   // ── T-B9: a successful read starts an fs.watch and pushes vault:changed ──
@@ -309,7 +320,8 @@ describe('fs:readVault', () => {
     const sent = sender.send.mock.calls.find((c) => c[0] === 'vault:changed');
     expect(sent, 'should emit vault:changed').toBeTruthy();
     expect(sent[1].files).toContain('note.md');
-    expect(sent[1].folderPath).toBe('/watch-vault');
+    expect(sent[1].vaultId).toBe(vaultIds.get('/watch-vault'));
+    expect(typeof sent[1].generation).toBe('number');
   });
 
   // ── L274: vault:changed only fires for a LIVE sender (sender && !isDestroyed) ──
@@ -354,7 +366,11 @@ describe('fs:readVault', () => {
     // The win 'close' listener registered in createWindow().
     const onClose = mockElectron._mockWin.on.mock.calls.find((c) => c[0] === 'close')?.[1];
     expect(typeof onClose).toBe('function');
-    onClose();
+    const event = { preventDefault: vi.fn() };
+    onClose(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    getOn(mockElectron, 'window-close-confirmed')({ sender: mockElectron._mockWin.webContents });
+    onClose(event);
     expect(closeFn).toHaveBeenCalledTimes(1);
   });
 
@@ -392,7 +408,7 @@ describe('fs:readVault', () => {
     expect(mockFs.promises.readdir).toHaveBeenCalledWith('/readdir-vault', { withFileTypes: true });
   });
 
-  test('exactly 5000 entries is NOT too-many (boundary); 5001 IS too-many', async () => {
+  test('non-Markdown directory entries do not consume the Markdown-file cap', async () => {
     // 5000 entries (none .md) → passes the cap, yields [].
     await authorize('/cap-ok');
     mockFs.promises.readdir.mockResolvedValueOnce(
@@ -400,12 +416,12 @@ describe('fs:readVault', () => {
     );
     expect(await readVault({}, '/cap-ok')).toEqual([]);
 
-    // 5001 entries → too-many-files (the cap is strict >).
+    // The cap applies to candidate Markdown documents, not unrelated assets.
     await authorize('/cap-over');
     mockFs.promises.readdir.mockResolvedValueOnce(
       Array.from({ length: 5001 }, (_, i) => dirent(`f${i}.bin`))
     );
-    expect(await readVault({}, '/cap-over')).toEqual({ error: 'too-many-files' });
+    expect(await readVault({}, '/cap-over')).toEqual([]);
   });
 
   // ── L146-151: symlink escape detection ──
@@ -423,10 +439,12 @@ describe('fs:readVault', () => {
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('link.md', { file: false, symlink: true })]);
     mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, size: 100 });
     mockFs.promises.realpath.mockResolvedValueOnce('/sym-ok/sub/link.md'); // inside
-    mockFs.promises.stat.mockResolvedValueOnce({ size: 100 });             // L154 stat-via-symlink
-    mockFs.promises.readFile.mockResolvedValueOnce('inside-content');
+    mockFs.promises.stat.mockResolvedValueOnce({ isFile: () => true, size: 100 });
+    mockFs.readFileSync.mockReturnValueOnce('inside-content');
     const r = await readVault({}, '/sym-ok');
-    expect(r).toEqual([{ name: 'link.md', relPath: 'link.md', content: 'inside-content' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ name: 'link.md', relPath: 'link.md', content: 'inside-content' });
+    expect(r[0].documentId).toMatch(/^cap-/);
   });
 
   test('a NON-symlink .md never calls realpath (L146 guard) and uses lstat size directly', async () => {
@@ -435,9 +453,10 @@ describe('fs:readVault', () => {
     mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 42 });
     mockFs.promises.realpath.mockClear();
     mockFs.promises.stat.mockClear();
-    mockFs.promises.readFile.mockResolvedValueOnce('plain-content');
+    mockFs.readFileSync.mockReturnValueOnce('plain-content');
     const r = await readVault({}, '/plain');
-    expect(r).toEqual([{ name: 'plain.md', relPath: 'plain.md', content: 'plain-content' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ name: 'plain.md', relPath: 'plain.md', content: 'plain-content' });
     // L146 isSymbolicLink() false → neither realpath nor the symlink-stat branch runs.
     expect(mockFs.promises.realpath).not.toHaveBeenCalled();
     expect(mockFs.promises.stat).not.toHaveBeenCalled();
@@ -454,22 +473,24 @@ describe('fs:readVault', () => {
     mockFs.promises.lstat
       .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 * 1024 * 1024 + 1 }) // 1 byte over
       .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 100 });
-    mockFs.promises.readFile.mockResolvedValueOnce('kept');
+    mockFs.readFileSync.mockReturnValueOnce('kept');
     const r = await readVault({}, '/oversize');
-    expect(r).toEqual([{ name: 'b-tiny.md', relPath: 'b-tiny.md', content: 'kept' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ name: 'b-tiny.md', relPath: 'b-tiny.md', content: 'kept' });
   });
 
   test('a file at EXACTLY 10 MiB is NOT oversized (boundary kept)', async () => {
     await authorize('/exact');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('exact.md')]);
     mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 * 1024 * 1024 });
-    mockFs.promises.readFile.mockResolvedValueOnce('exactly-10mib');
+    mockFs.readFileSync.mockReturnValueOnce('exactly-10mib');
     const r = await readVault({}, '/exact');
-    expect(r).toEqual([{ name: 'exact.md', relPath: 'exact.md', content: 'exactly-10mib' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ name: 'exact.md', relPath: 'exact.md', content: 'exactly-10mib' });
   });
 
   // ── L160-163: cumulative cap + partial ──
-  test('cumulative >100 MiB → {error:"cumulative-size-exceeded", partial:[<already-collected>]}', async () => {
+  test('cumulative >100 MiB returns an explicit truncated partial scan', async () => {
     await authorize('/cumul');
     // Three 60 MiB files (each under the 10 MiB? NO — use 60 MiB which is > 10 MiB).
     // To exceed cumulative WITHOUT tripping the per-file cap, use files <= 10 MiB.
@@ -483,17 +504,17 @@ describe('fs:readVault', () => {
     // First 10 files read fine (cumulative goes 10,20,...,100 MiB — none EXCEED 100 yet
     // because at file #10 cumulative == 100 MiB and 100 > 100 is false).
     for (let i = 0; i < 10; i++) {
-      mockFs.promises.readFile.mockResolvedValueOnce(`content-${i}`);
+      mockFs.readFileSync.mockReturnValueOnce(`content-${i}`);
     }
     const r = await readVault({}, '/cumul');
-    expect(r.error).toBe('cumulative-size-exceeded');
-    expect(Array.isArray(r.partial)).toBe(true);
+    expect(r.truncated).toBe(true);
+    expect(Array.isArray(r.entries)).toBe(true);
     // partial holds the files collected BEFORE the cap tripped: the first 10.
-    expect(r.partial).toHaveLength(10);
-    expect(r.partial.map(x => x.name)).toEqual(
+    expect(r.entries).toHaveLength(10);
+    expect(r.entries.map(x => x.name)).toEqual(
       Array.from({ length: 10 }, (_, i) => `f${String(i).padStart(2, '0')}.md`)
     );
-    expect(r.partial[0]).toEqual({ name: 'f00.md', relPath: 'f00.md', content: 'content-0' });
+    expect(r.entries[0]).toMatchObject({ name: 'f00.md', relPath: 'f00.md', content: 'content-0' });
   });
 
   // ── L165-167: readFile + BOM strip + result shape ──
@@ -501,16 +522,17 @@ describe('fs:readVault', () => {
     await authorize('/bom-vault');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('doc.md')]);
     mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 50 });
-    mockFs.promises.readFile.mockClear();
-    mockFs.promises.readFile.mockResolvedValueOnce(BOM + '# Heading\nbody');
+    mockFs.readFileSync.mockClear();
+    mockFs.readFileSync.mockReturnValueOnce(BOM + '# Heading\nbody');
     const r = await readVault({}, '/bom-vault');
     // L165: readFile called with the joined fullPath and 'utf8' encoding.
-    expect(mockFs.promises.readFile).toHaveBeenCalledTimes(1);
-    const [readArg, encArg] = mockFs.promises.readFile.mock.calls[0];
+    expect(mockFs.readFileSync).toHaveBeenCalledTimes(1);
+    const [readArg, encArg] = mockFs.readFileSync.mock.calls[0];
     expect(readArg).toContain('doc.md');
     expect(encArg).toBe('utf8');
     // L166-167: BOM stripped, exact result shape.
-    expect(r).toEqual([{ name: 'doc.md', relPath: 'doc.md', content: '# Heading\nbody' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ name: 'doc.md', relPath: 'doc.md', content: '# Heading\nbody', meta: { bom: true } });
     // Defensive: leading char must NOT be the BOM.
     expect(r[0].content.charCodeAt(0)).not.toBe(0xFEFF);
     expect(r[0].content.charCodeAt(0)).toBe('#'.charCodeAt(0));
@@ -520,7 +542,7 @@ describe('fs:readVault', () => {
     await authorize('/no-bom');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('nobom.md')]);
     mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 });
-    mockFs.promises.readFile.mockResolvedValueOnce('# NoBOM');
+    mockFs.readFileSync.mockReturnValueOnce('# NoBOM');
     const r = await readVault({}, '/no-bom');
     expect(r[0].content).toBe('# NoBOM'); // first char NOT dropped
   });
@@ -532,11 +554,11 @@ describe('fs:readVault', () => {
       .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 })
       .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 });
     // sorted order is alpha, beta → readFile is consumed in that order.
-    mockFs.promises.readFile
-      .mockResolvedValueOnce('A')
-      .mockResolvedValueOnce('B');
+    mockFs.readFileSync
+      .mockReturnValueOnce('A')
+      .mockReturnValueOnce('B');
     const r = await readVault({}, '/multi');
-    expect(r).toEqual([
+    expect(r.map(({ name, relPath, content }) => ({ name, relPath, content }))).toEqual([
       { name: 'alpha.md', relPath: 'alpha.md', content: 'A' },
       { name: 'beta.md', relPath: 'beta.md', content: 'B' },
     ]);
@@ -639,7 +661,7 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     openFile = appListeners['open-file'];
   });
 
-  test('open-file delivers send("open-external-file",{name:basename, path, content}) BOM-stripped', () => {
+  test('open-file delivers an opaque document snapshot with BOM metadata', () => {
     mockFs.readFileSync.mockReturnValueOnce(BOM + '# Pending body');
     mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([mockElectron._mockWin]);
     mockElectron._mockWin.webContents.send.mockClear();
@@ -654,11 +676,9 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledTimes(1);
     const [channel, payload] = mockElectron._mockWin.webContents.send.mock.calls[0];
     expect(channel).toBe('open-external-file');
-    expect(payload).toEqual({
-      name: 'My Note.md',         // path.basename of the full path
-      path: '/abs/dir/My Note.md',
-      content: '# Pending body',  // BOM stripped
-    });
+    expect(payload).toMatchObject({ name: 'My Note.md', content: '# Pending body', meta: { bom: true } });
+    expect(payload.documentId).toMatch(/^cap-/);
+    expect(JSON.stringify(payload)).not.toContain('/abs/dir/My Note.md');
     expect(payload.content.charCodeAt(0)).not.toBe(0xFEFF);
   });
 

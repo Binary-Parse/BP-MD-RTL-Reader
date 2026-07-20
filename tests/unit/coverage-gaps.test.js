@@ -48,8 +48,8 @@ describe('bidi edge', () => {
 
 describe('settings save/lastSession', () => {
   test('migrate keeps a valid lastSession', () => {
-    const m = migrate({ lastSession: { vaultPath: '/v', openPaths: ['a', 1], activePath: 'a' } });
-    expect(m.lastSession.vaultPath).toBe('/v');
+    const m = migrate({ lastSession: { vaultId: 'cap-v', openPaths: ['a', 1], activePath: 'a' } });
+    expect(m.lastSession.vaultId).toBe('cap-v');
     expect(m.lastSession.openPaths).toEqual(['a']); // non-strings dropped
   });
   test('save returns error when fs throws', () => {

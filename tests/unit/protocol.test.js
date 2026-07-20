@@ -3,7 +3,7 @@
  */
 import { describe, test, expect } from 'vitest';
 import path from 'node:path';
-import { parseBpmdUrl, resolveAsset } from '../../src/main/protocol.js';
+import { parseBpmdUrl, resolveAsset, validateAsset } from '../../src/main/protocol.js';
 
 const ROOT = '/vault';
 
@@ -37,6 +37,29 @@ describe('resolveAsset', () => {
   test('bad url / missing root', () => {
     expect(resolveAsset('https://x', ROOT, path.posix)).toEqual({ error: 'bad-url' });
     expect(resolveAsset('bpmd://vault/a.png', '', path.posix)).toEqual({ error: 'unauthorized-path' });
+  });
+});
+
+describe('validateAsset', () => {
+  test('requires a canonical in-vault regular allowlisted image below the size cap', async () => {
+    const fs = { promises: {
+      realpath: async p => p,
+      stat: async () => ({ isFile: () => true, size: 42 }),
+    } };
+    await expect(validateAsset('/vault/pic.png', '/vault', fs, path.posix))
+      .resolves.toEqual({ path: '/vault/pic.png', type: 'image/png', size: 42 });
+  });
+
+  test('rejects symlink escapes, special files, unknown types, and oversized images', async () => {
+    const makeFs = (real, stat) => ({ promises: { realpath: async p => p === '/vault' ? '/vault' : real, stat: async () => stat } });
+    await expect(validateAsset('/vault/link.png', '/vault', makeFs('/outside/secret.png', { isFile: () => true, size: 1 }), path.posix))
+      .resolves.toEqual({ error: 'unauthorized-path' });
+    await expect(validateAsset('/vault/device.png', '/vault', makeFs('/vault/device.png', { isFile: () => false, size: 1 }), path.posix))
+      .resolves.toEqual({ error: 'not-regular-file' });
+    await expect(validateAsset('/vault/a.svg', '/vault', makeFs('/vault/a.svg', { isFile: () => true, size: 1 }), path.posix))
+      .resolves.toEqual({ error: 'unsupported-type' });
+    await expect(validateAsset('/vault/a.png', '/vault', makeFs('/vault/a.png', { isFile: () => true, size: 6 * 1024 * 1024 }), path.posix))
+      .resolves.toEqual({ error: 'file-too-large' });
   });
 });
 

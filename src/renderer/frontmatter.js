@@ -9,8 +9,10 @@ export function parseFrontMatter(md) {
   if (!m) return { data: {}, body: src };
   const data = {};
   for (const raw of m[1].split(/\r?\n/)) {
-    const line = raw.trim();
-    const mm = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+    // Deliberately flat metadata grammar: indented YAML belongs to a nested
+    // structure and must never be promoted to a top-level document directive.
+    if (/^\s/.test(raw)) continue;
+    const mm = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(raw);
     if (mm) data[mm[1]] = mm[2].replace(/^["']|["']$/g, '').trim();
   }
   return { data, body: src.slice(m[0].length) };

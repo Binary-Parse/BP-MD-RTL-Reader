@@ -145,7 +145,7 @@ describe('main.js lifecycle — second-instance', () => {
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
     expect(win.webContents.send).toHaveBeenCalledWith(
       'open-external-file',
-      { name: 'second.md', path: 'second.md', content: '# delivered body' }
+      expect.objectContaining({ name: 'second.md', content: '# delivered body', documentId: expect.stringMatching(/^cap-/) })
     );
   });
 
@@ -242,7 +242,7 @@ describe('main.js lifecycle — open-file', () => {
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
     expect(win.webContents.send).toHaveBeenCalledWith(
       'open-external-file',
-      { name: 'opened.md', path: '/docs/opened.md', content: '# from open-file' }
+      expect.objectContaining({ name: 'opened.md', content: '# from open-file', documentId: expect.stringMatching(/^cap-/) })
     );
   });
 

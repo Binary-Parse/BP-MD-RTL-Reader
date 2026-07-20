@@ -17,6 +17,7 @@ import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js
 const SETTINGS_FILE = path.join('/mock/userData/userData', 'settings.json');
 
 const getHandle = (el, name) => el.ipcMain.handle.mock.calls.find((c) => c[0] === name)?.[1];
+const getIpcOn  = (el, name) => el.ipcMain.on.mock.calls.find((c) => c[0] === name)?.[1];
 const getWinOn  = (el, name) => el._mockWin.on.mock.calls.find((c) => c[0] === name)?.[1];
 const getAppOn  = (el, name) => el.app.on.mock.calls.find((c) => c[0] === name)?.[1];
 
@@ -100,7 +101,7 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     expect(got.editorMode).toBe('live'); // invalid → default
     expect(got.zoomFactor).toBe(2.0);    // clamped to max
     expect('evil' in got).toBe(false);   // unknown key dropped
-    expect(got.version).toBe(1);
+    expect(got.version).toBe(2);
   });
 
   test('settings:set merges successive partial patches', async () => {
@@ -115,12 +116,12 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     await set({}, {
       sidebarVisible: false,
       inspectorVisible: false,
-      recents: [{ name: 'a.md', path: '/v/a.md', vaultRoot: '/v' }, { name: 'b.md', path: '/b.md', abs: '/b.md' }],
+      recents: [{ name: 'a.md', path: 'a.md', vaultId: 'cap-v' }, { name: 'b.md', path: 'b.md', documentId: 'cap-b' }],
     });
     const got = await get();
     expect(got.sidebarVisible).toBe(false);
     expect(got.inspectorVisible).toBe(false);
-    expect(got.recents).toEqual([{ name: 'a.md', path: '/v/a.md', vaultRoot: '/v', abs: null }, { name: 'b.md', path: '/b.md', vaultRoot: null, abs: '/b.md' }]);
+    expect(got.recents).toEqual([{ name: 'a.md', path: 'a.md', vaultId: 'cap-v', documentId: null }, { name: 'b.md', path: 'b.md', vaultId: null, documentId: 'cap-b' }]);
   });
 });
 
@@ -184,7 +185,11 @@ describe('persist window state on close / quit', () => {
     el._mockWin.isMaximized.mockReturnValue(false);
     const onClose = getWinOn(el, 'close');
     expect(typeof onClose).toBe('function');
-    onClose();
+    const event = { preventDefault: vi.fn() };
+    onClose(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    getIpcOn(el, 'window-close-confirmed')({ sender: el._mockWin.webContents });
+    onClose(event);
     const saved = JSON.parse(fs._files[SETTINGS_FILE]).window;
     expect(saved).toEqual({ x: 50, y: 60, w: 1100, h: 750, maximized: false });
   });
@@ -246,8 +251,15 @@ describe('preload exposes getSettings / setSettings', () => {
 
   test('writeFile invokes fs:writeFile with the payload', () => {
     const { api: a, ipc } = api();
-    const payload = { folderPath: '/v', relPath: 'n.md', content: 'x' };
+    const payload = { documentId: 'cap-doc', content: 'x' };
     a.writeFile(payload);
     expect(ipc.invoke).toHaveBeenCalledWith('fs:writeFile', payload);
+  });
+
+  test('saveFileAs invokes the native Save-As channel with no path authority', () => {
+    const { api: a, ipc } = api();
+    const payload = { suggestedName: 'n.md', content: 'x' };
+    a.saveFileAs(payload);
+    expect(ipc.invoke).toHaveBeenCalledWith('dialog:saveFile', payload);
   });
 });

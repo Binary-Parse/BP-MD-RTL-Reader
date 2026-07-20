@@ -45,12 +45,13 @@ describe('bpmd:// protocol wiring (T-AI2)', () => {
     expect(typeof handler).toBe('function');
   });
 
-  // Authorize + read a vault so allowedFolders has it AND activeVaultRoot is set.
+  // Pick + read a vault so the main-owned capability becomes the active protocol root.
   async function openVault(root) {
     electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [root] });
-    await openFolder();
-    fs.promises.readdir.mockResolvedValueOnce([]); // empty vault → readVault returns []
-    expect(await readVault({}, root)).toEqual([]);
+    const picked = await openFolder();
+    fs.promises.readdir.mockResolvedValueOnce([]);
+    const read = await readVault({}, picked.vault.id);
+    expect(read.entries).toEqual([]);
   }
 
   test('serves bytes for an in-vault asset with the right content-type', async () => {

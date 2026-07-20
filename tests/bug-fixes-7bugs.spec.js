@@ -63,7 +63,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     // Inject mock electronAPI before openVault() is called
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Users\\test\\Notes' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-notes', name: 'Notes', generation: 1 } }),
         readVault: (fp) => Promise.resolve([
           { name: 'alpha.md', relPath: 'alpha.md', content: '# Alpha\n\nContent of alpha.' },
           { name: 'beta.md',  relPath: 'beta.md',  content: '# Beta\n\nContent of beta.' }
@@ -96,7 +96,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: true, folderPath: null }),
+        openFolder: () => Promise.resolve({ canceled: true }),
         readVault: () => Promise.reject(new Error('should not be called'))
       };
     });
@@ -116,7 +116,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Empty' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-empty', name: 'Empty', generation: 1 } }),
         readVault: () => Promise.resolve([])
       };
     });
@@ -141,7 +141,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Bad' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-bad', name: 'Bad', generation: 1 } }),
         readVault: () => Promise.reject(new Error('EACCES: permission denied'))
       };
     });
@@ -170,7 +170,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
       window.electronAPI = {
         openFolder: () => {
           window.__ipcCalled = true;
-          return Promise.resolve({ canceled: true, folderPath: null });
+          return Promise.resolve({ canceled: true });
         },
         readVault: () => Promise.resolve([])
       };
@@ -191,13 +191,13 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     expect(fsaUsed).toBe(false);
   });
 
-  // White-box: folderPath split gives correct folder name (no path separator in displayed name)
+  // White-box: main-owned capability metadata provides the display name without a path.
   test('[AC1-wb-foldername] folder name extracted correctly from deep path', async ({ page }) => {
     await goto(page);
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Users\\ghazwaaa\\Documents\\My Notes' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-notes', name: 'My Notes', generation: 1 } }),
         readVault: () => Promise.resolve([
           { name: 'note.md', relPath: 'note.md', content: '# Note' }
         ])
@@ -354,7 +354,7 @@ test.describe('[AC2] No "vault" in user-facing strings', () => {
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: '/home/user/Documents' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-documents', name: 'Documents', generation: 1 } }),
         readVault: () => Promise.resolve([
           { name: 'a.md', relPath: 'a.md', content: '# A' }
         ])
@@ -1066,7 +1066,7 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
     // Mock both electronAPI and FSA to prevent actual picker UI
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: true, folderPath: null }),
+        openFolder: () => Promise.resolve({ canceled: true }),
         readVault: () => Promise.resolve([])
       };
     });
@@ -1094,7 +1094,7 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Folder' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-folder', name: 'Folder', generation: 1 } }),
         readVault: () => Promise.resolve(null)  // null instead of array
       };
     });
@@ -1106,13 +1106,13 @@ test.describe('[ADV] Adversarial tests', () => {
     expect(jsErrors).toHaveLength(0);
   });
 
-  // AC1 adversarial: folderPath containing path traversal characters — should not affect renderer
-  test('[ADV-path-traversal] folderPath with ../ does not crash or XSS renderer', async ({ page }) => {
+  // AC1 adversarial: a hostile relative entry name should not crash the renderer.
+  test('[ADV-path-traversal] hostile relative entry does not crash or XSS renderer', async ({ page }) => {
     await goto(page);
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Valid\\Path' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-path', name: 'Path', generation: 1 } }),
         readVault: () => Promise.resolve([
           { name: '../../../etc/passwd', relPath: '../../../etc/passwd', content: '# Traversal Attempt' }
         ])
@@ -1139,7 +1139,7 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await page.evaluate(() => {
       window.electronAPI = {
-        openFolder: () => Promise.resolve({ canceled: false, folderPath: 'C:\\Folder' }),
+        openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-folder', name: 'Folder', generation: 1 } }),
         readVault: () => Promise.resolve([
           { name: '<img src=x onerror="window.__toastXss=true">.md', relPath: 'evil.md', content: '# Evil' }
         ])

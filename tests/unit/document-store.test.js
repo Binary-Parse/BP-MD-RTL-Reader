@@ -4,7 +4,7 @@
 import { describe, test, expect, vi } from 'vitest';
 import path from 'node:path';
 import {
-  createDocumentStore, hasBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot,
+  createDocumentStore, hasBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot, atomicWriteFile,
 } from '../../src/main/document-store.js';
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -43,12 +43,26 @@ function mockFs(initial = {}) {
 }
 
 describe('write (EC-A1/A2/A3)', () => {
+  test('uses canonical containment and rejects a symlink-resolved escape', () => {
+    const fs = mockFs({ '/v/link.md': 'outside' });
+    fs.realpathSync = (p) => p === '/v' ? '/v' : '/outside/secret.md';
+    const store = createDocumentStore({ fs, path: path.posix });
+    expect(store.write('/v/link.md', 'mine', { root: '/v' })).toEqual({ error: 'unauthorized-path' });
+  });
+
+  test('restricts document writes to Markdown files', () => {
+    const fs = mockFs({ '/v/image.png': 'png' });
+    fs.realpathSync = (p) => p;
+    const store = createDocumentStore({ fs, path: path.posix });
+    expect(store.write('/v/image.png', 'mine', { root: '/v' })).toEqual({ error: 'invalid-file-type' });
+  });
   test('preserves BOM + CRLF + final newline', () => {
     const fs = mockFs();
     const store = createDocumentStore({ fs, path: path.posix });
     const r = store.write('/v/a.md', 'x\ny', { root: '/v', bom: true, eol: '\r\n', finalNewline: true });
     expect(r.ok).toBe(true);
     expect(fs._files['/v/a.md']).toBe('﻿x\r\ny\r\n');
+    expect(r.meta).toMatchObject({ bom: true, eol: '\r\n', finalNewline: true });
   });
 
   test('rejects conflict when on-disk hash differs from baseHash (EC-A2)', () => {
@@ -81,6 +95,16 @@ describe('write (EC-A1/A2/A3)', () => {
     const r = store.write('/v/a.md', 'x', { root: '/v', eol: '\n' });
     expect(r).toEqual({ error: 'write-failed' });
     expect('/v/a.md' in fs._files).toBe(false);
+  });
+});
+
+describe('atomicWriteFile', () => {
+  test('writes binary output through a sibling temp file and rename', () => {
+    const fs = mockFs();
+    const data = Buffer.from('PDF');
+    expect(atomicWriteFile(fs, '/out/note.pdf', data)).toEqual({ ok: true });
+    expect(fs._files['/out/note.pdf']).toBe(data);
+    expect(Object.keys(fs._files)).toEqual(['/out/note.pdf']);
   });
 });
 

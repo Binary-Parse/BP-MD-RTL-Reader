@@ -6,9 +6,17 @@
 
 import { describe, test, expect } from 'vitest';
 import { marked } from 'marked';
-import { extractHeadings } from '../../src/renderer/outline.js';
+import { extractHeadings, sourceHeadingPositions } from '../../src/renderer/outline.js';
 
 describe('extractHeadings() heading extraction', () => {
+  test('source positions include Setext headings and keep duplicate text identities', () => {
+    const md = 'Same\n====\n\n# Same\n\nSub\n---\n';
+    expect(sourceHeadingPositions(md)).toEqual([
+      { pos: 0, level: 1, text: 'Same' },
+      { pos: 11, level: 1, text: 'Same' },
+      { pos: 19, level: 2, text: 'Sub' },
+    ]);
+  });
   test('extracts H1 heading', () => {
     const headings = extractHeadings('# My Title\n\nSome content.', { marked });
     expect(headings).toHaveLength(1);

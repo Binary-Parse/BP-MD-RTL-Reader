@@ -10,18 +10,17 @@
 // @param {object} deps.ipcRenderer   - electron.ipcRenderer (or a mock)
 function setupBridge({ contextBridge, ipcRenderer }) {
   contextBridge.exposeInMainWorld('electronAPI', {
-    closeWindow:    () => ipcRenderer.send('window-close'),
+    closeWindow:    () => ipcRenderer.send('window-close-confirmed'),
     minimizeWindow: () => ipcRenderer.send('window-minimize'),
     maximizeWindow: () => ipcRenderer.send('window-maximize'),
     // Open Folder IPC bridge (Bug 1 / AC1)
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
-    readVault:  (folderPath) => ipcRenderer.invoke('fs:readVault', folderPath),
-    // Open a single .md file via the native dialog (returns its absolute path so it can
-    // be reopened from Recent later), and reopen a recent single file by absolute path.
+    readVault:  (vaultId) => ipcRenderer.invoke('fs:readVault', vaultId),
+    // Main-issued opaque IDs are the only filesystem authority exposed here.
     openFile:   () => ipcRenderer.invoke('dialog:openFile'),
-    readFile:   (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
-    // Write a note back to disk (T-B1): atomic, allow-listed, conflict-aware.
+    readFile:   (documentId) => ipcRenderer.invoke('fs:readFile', documentId),
     writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
+    saveFileAs: (payload) => ipcRenderer.invoke('dialog:saveFile', payload),
     // Persistent app settings (T-B5/T-F8): the renderer restores theme/zoom/
     // mode/panels/recents on launch and writes changes back. Main owns the
     // on-disk truth in <userData>/settings.json.
@@ -41,6 +40,7 @@ function setupBridge({ contextBridge, ipcRenderer }) {
     // T-B9: the main process watches the open vault; this fires (debounced) when files
     // change on disk externally so the renderer can refresh + surface conflicts (EC-A2).
     onVaultChanged: (cb) => ipcRenderer.on('vault:changed', (_e, data) => cb(data)),
+    onCloseRequested: (cb) => ipcRenderer.on('app:request-close', () => cb()),
     // T-Q6: opt-in update check — only ever called from an explicit "Check for Updates…"
     // user action. No auto-check, no auto-download, no identifiers.
     checkForUpdate: () => ipcRenderer.invoke('update:check'),

@@ -47,6 +47,43 @@ function isInsideRoot(absPath, root, path) {
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
+function canonicalPath(fs, path, candidate) {
+  return typeof fs.realpathSync === 'function' ? fs.realpathSync(candidate) : path.resolve(candidate);
+}
+
+function validateWriteTarget(fs, path, absPath, root) {
+  if (root) try {
+    const canonicalRoot = canonicalPath(fs, path, root);
+    const canonicalTarget = fs.existsSync(absPath)
+      ? canonicalPath(fs, path, absPath)
+      : path.join(canonicalPath(fs, path, path.dirname(absPath)), path.basename(absPath));
+    if (!isInsideRoot(canonicalTarget, canonicalRoot, path)) return { error: 'unauthorized-path' };
+  } catch (_) {
+    return { error: 'unauthorized-path' };
+  }
+  if (!/\.(md|markdown)$/i.test(absPath)) return { error: 'invalid-file-type' };
+  return { path: absPath };
+}
+
+/** Atomically replace a destination with text or binary data. */
+function atomicWriteFile(fs, absPath, data, encoding) {
+  const tmp = absPath + '.tmp-' + Math.random().toString(36).slice(2);
+  try {
+    if (encoding === undefined) fs.writeFileSync(tmp, data);
+    else fs.writeFileSync(tmp, data, encoding);
+    if (fs.fsyncSync) {
+      try { const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd); } catch (_) { /* best effort */ }
+    }
+    fs.renameSync(tmp, absPath);
+    return { ok: true };
+  } catch (e) {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) { /* ignore */ }
+    if (e && e.code === 'ENOSPC') return { error: 'enospc' };
+    if (e && e.code === 'ENOENT') return { error: 'gone' };
+    return { error: 'write-failed' };
+  }
+}
+
 function createDocumentStore({ fs, path, crypto } = {}) {
   /** Read a file; return normalized body + meta needed for a faithful write. */
   function read(absPath) {
@@ -68,7 +105,8 @@ function createDocumentStore({ fs, path, crypto } = {}) {
    */
   function write(absPath, content, opts = {}) {
     const { root, baseHash, bom = false, eol = '\n', finalNewline = true } = opts;
-    if (root && !isInsideRoot(absPath, root, path)) return { error: 'unauthorized-path' };
+    const validated = validateWriteTarget(fs, path, absPath, root);
+    if (validated.error) return validated;
 
     // Conflict detection (EC-A2): the file changed since we last read it.
     if (baseHash != null && fs.existsSync(absPath)) {
@@ -82,20 +120,11 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     if (bom) out = '﻿' + out;
 
     // Atomic write (EC-A3): temp in same dir, fsync, rename.
-    const tmp = absPath + '.tmp-' + Math.random().toString(36).slice(2);
-    try {
-      fs.writeFileSync(tmp, out, 'utf8');
-      if (fs.fsyncSync) {
-        try { const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd); } catch (_) { /* best effort */ }
-      }
-      fs.renameSync(tmp, absPath);
-    } catch (e) {
-      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) { /* ignore */ }
-      if (e && e.code === 'ENOSPC') return { error: 'enospc' };
-      if (e && e.code === 'ENOENT') return { error: 'gone' };
-      return { error: 'write-failed' };
-    }
-    return { ok: true, meta: { hash: hashContent(out, crypto), bom, eol } };
+    const written = atomicWriteFile(fs, absPath, out, 'utf8');
+    if (written.error) return written;
+    let mtimeMs;
+    try { mtimeMs = fs.statSync(absPath).mtimeMs; } catch (_) { /* optional metadata */ }
+    return { ok: true, meta: { hash: hashContent(out, crypto), bom, eol, finalNewline, mtimeMs } };
   }
 
   /**
@@ -163,5 +192,6 @@ module.exports = {
   createDocumentStore,
   // pure helpers exported for unit/mutation testing
   hasBOM, stripBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot,
+  validateWriteTarget, atomicWriteFile,
   MAX_FILES, MAX_DEPTH,
 };

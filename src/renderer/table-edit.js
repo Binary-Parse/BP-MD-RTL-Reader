@@ -6,20 +6,43 @@
  * it's fully unit-testable; the renderer (app.js) wires it to the toolbar + Tab key.
  */
 
-function splitCells(line) {
-  let s = line.trim();
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|')) s = s.slice(0, -1);
-  // split on non-escaped pipes
-  const out = []; let cur = '';
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\' && s[i + 1] === '|') { cur += '|'; i++; continue; }
-    if (s[i] === '|') { out.push(cur.trim()); cur = ''; continue; }
-    cur += s[i];
-  }
-  out.push(cur.trim());
-  return out;
+function pipeIsEscaped(line, index) {
+  let slashes = 0;
+  for (let i = index - 1; i >= 0 && line[i] === '\\'; i--) slashes++;
+  return slashes % 2 === 1;
 }
+
+function tokenizeCells(line) {
+  const raw = String(line);
+  let start = 0; while (start < raw.length && /\s/.test(raw[start])) start++;
+  let end = raw.length; while (end > start && /\s/.test(raw[end - 1])) end--;
+  const leading = raw[start] === '|';
+  const trailing = end > start && raw[end - 1] === '|' && !pipeIsEscaped(raw, end - 1);
+  if (leading) start++;
+  if (trailing) end--;
+
+  const cells = [];
+  const spans = [];
+  let cellStart = start;
+  const push = (cellEnd) => {
+    const value = raw.slice(cellStart, cellEnd).trim();
+    let contentStart = cellStart;
+    let contentEnd = cellEnd;
+    while (contentStart < contentEnd && /\s/.test(raw[contentStart])) contentStart++;
+    while (contentEnd > contentStart && /\s/.test(raw[contentEnd - 1])) contentEnd--;
+    cells.push(value);
+    spans.push({ start: contentStart, end: contentEnd });
+  };
+  for (let i = start; i < end; i++) {
+    if (raw[i] === '|' && !pipeIsEscaped(raw, i)) {
+      push(i);
+      cellStart = i + 1;
+    }
+  }
+  push(end);
+  return { cells, spans, leading, trailing };
+}
+function splitCells(line) { return tokenizeCells(line).cells; }
 function isRow(line) { return typeof line === 'string' && line.includes('|') && line.trim() !== ''; }
 function isDelim(line) { return /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line || ''); }
 function alignOf(cell) { const l = cell.startsWith(':'), r = cell.endsWith(':'); return l && r ? 'center' : r ? 'right' : l ? 'left' : 'none'; }
@@ -38,23 +61,27 @@ export function tableAt(text, pos) {
   while (bot < lines.length - 1 && isRow(lines[bot + 1])) bot++;
   if (bot - top < 1 || !isDelim(lines[top + 1])) return null; // need header + delimiter
   const header = splitCells(lines[top]);
+  const headerTokens = tokenizeCells(lines[top]);
   const aligns = splitCells(lines[top + 1]).map(alignOf);
   const body = lines.slice(top + 2, bot + 1).map(splitCells);
   const cols = Math.max(header.length, aligns.length, ...body.map((r) => r.length), 1);
   // normalize widths
   const fit = (r) => { const c = r.slice(); while (c.length < cols) c.push(''); return c.slice(0, cols); };
-  const t = { from: starts[top], to: starts[bot] + lines[bot].length, header: fit(header), aligns: fit(aligns).map((a) => a || 'none'), body: body.map(fit), cols };
+  const t = { from: starts[top], to: starts[bot] + lines[bot].length, header: fit(header), aligns: fit(aligns).map((a) => a || 'none'), body: body.map(fit), cols, edgeStyle: { leading: headerTokens.leading, trailing: headerTokens.trailing } };
   // caret cell
   const rowIdx = li - top; // 0=header,1=delim,2+=body
   const lineText = lines[li];
   const within = pos - starts[li];
-  let col = 0; { const cells = splitCells(lineText); let acc = lineText.indexOf('|') >= 0 ? lineText.indexOf('|') + 1 : 0; for (let i = 0; i < cells.length; i++) { const next = lineText.indexOf('|', acc); const cellEnd = next === -1 ? lineText.length : next; if (within <= cellEnd) { col = i; break; } col = i; acc = cellEnd + 1; } }
+  const rowTokens = tokenizeCells(lineText);
+  let col = rowTokens.spans.findIndex((span, index) => within <= span.end || index === rowTokens.spans.length - 1);
+  if (col < 0) col = 0;
   t.caret = { rowKind: rowIdx <= 1 ? 'header' : 'body', row: rowIdx <= 1 ? -1 : rowIdx - 2, col: Math.min(col, cols - 1) };
   return t;
 }
 
 export function serializeTable(t) {
-  const row = (cells) => '| ' + cells.join(' | ') + ' |';
+  const edge = t.edgeStyle || { leading: true, trailing: true };
+  const row = (cells) => `${edge.leading ? '| ' : ''}${cells.join(' | ')}${edge.trailing ? ' |' : ''}`;
   return [row(t.header), row(t.aligns.map(delimCell)), ...t.body.map(row)].join('\n');
 }
 
@@ -107,8 +134,7 @@ export function tableEdit(text, pos, op) {
   let lineOff = 0; for (let i = 0; i < targetLineIdx; i++) lineOff += outLines[i].length + 1;
   const lineText = outLines[targetLineIdx] || outLines[0];
   // position caret at the start of the target cell content
-  let cellStart = lineText.indexOf('|') + 1; let idx = 0;
-  while (idx < caretCell.col) { const nx = lineText.indexOf('|', cellStart); cellStart = (nx === -1 ? lineText.length : nx) + 1; idx++; }
-  while (cellStart < lineText.length && lineText[cellStart] === ' ') cellStart++;
+  const targetTokens = tokenizeCells(lineText);
+  const cellStart = targetTokens.spans[Math.min(caretCell.col, targetTokens.spans.length - 1)]?.start || 0;
   return { from: t.from, to: t.to, md, caret: t.from + lineOff + cellStart };
 }

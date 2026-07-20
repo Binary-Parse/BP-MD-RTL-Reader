@@ -31,4 +31,35 @@ function resolveAsset(url, root, pathmod) {
   return { path: full };
 }
 
-module.exports = { parseBpmdUrl, resolveAsset };
+const ASSET_MAX_BYTES = 5 * 1024 * 1024;
+const ASSET_MIME = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+});
+
+async function validateAsset(candidate, root, fs, pathmod, maxBytes = ASSET_MAX_BYTES) {
+  const type = ASSET_MIME[pathmod.extname(candidate).toLowerCase()];
+  if (!type) return { error: 'unsupported-type' };
+  try {
+    const [canonicalRoot, canonicalFile] = await Promise.all([
+      fs.promises.realpath(root),
+      fs.promises.realpath(candidate),
+    ]);
+    const rel = pathmod.relative(canonicalRoot, canonicalFile);
+    if (rel === '' || rel.startsWith('..') || pathmod.isAbsolute(rel)) return { error: 'unauthorized-path' };
+    const stat = await fs.promises.stat(canonicalFile);
+    if (!stat.isFile()) return { error: 'not-regular-file' };
+    if (stat.size > maxBytes) return { error: 'file-too-large' };
+    return { path: canonicalFile, type, size: stat.size };
+  } catch (_) {
+    return { error: 'not-found' };
+  }
+}
+
+module.exports = { parseBpmdUrl, resolveAsset, validateAsset, ASSET_MAX_BYTES, ASSET_MIME };

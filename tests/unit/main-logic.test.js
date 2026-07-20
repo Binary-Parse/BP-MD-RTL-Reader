@@ -56,6 +56,12 @@ describe('isVaultFile / isDroppableFile (T-B10)', () => {
 });
 
 describe('parseFileArg()', () => {
+  test('rejects UNC and POSIX network paths before filesystem access', () => {
+    const fs = { realpathSync: vi.fn(), statSync: vi.fn() };
+    expect(parseFileArg(['node', '\\\\server\\note.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', '//server/note.md'], fs)).toBeNull();
+    expect(fs.realpathSync).not.toHaveBeenCalled();
+  });
   test('returns null for empty argv', () => {
     expect(parseFileArg(['node', 'main.js'], {})).toBeNull();
   });

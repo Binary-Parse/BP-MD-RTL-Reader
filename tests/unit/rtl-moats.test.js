@@ -21,6 +21,12 @@ describe('front matter (T-R6)', () => {
     expect(frontMatterDirection({ direction: 'sideways' })).toBeNull();
     expect(frontMatterDirection({})).toBeNull();
   });
+  test('an indented nested direction key is never promoted to document direction', () => {
+    const parsed = parseFrontMatter('---\nplugin:\n  direction: rtl\ntitle: Note\n---\nBody');
+    expect(frontMatterDirection(parsed.data)).toBeNull();
+    expect(parsed.data.title).toBe('Note');
+    expect(parsed.data.direction).toBeUndefined();
+  });
 });
 
 describe('dates (T-R8)', () => {

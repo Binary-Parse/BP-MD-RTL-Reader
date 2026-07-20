@@ -9,7 +9,7 @@ import { execEditCmd as _execEditCmdImpl } from './edit-commands.js';
 import { applyBidi } from './bidi-dom.js';
 import { resolveDirection, resolveBlockDirection, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
 import { transformCallouts } from './callouts.js';
-import { activeHeading } from './outline.js';
+import { activeHeading, sourceHeadingPositions } from './outline.js';
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
 import { dailyNoteName } from './dates.js';
 import { highlightCode } from './highlight.js';
@@ -161,11 +161,11 @@ function vaultRelImage(src, noteDir) {
   return rel || null;
 }
 // Rewrite every note-relative <img> in `container` to a bpmd:// URL. Uses the
-// active file's vaultRoot/path; a no-op when the note isn't an on-disk vault file.
+// active file's vault capability/path; a no-op when the note isn't an on-disk vault file.
 function rewriteVaultImages(container) {
   if (!container) return;
   const file = State.activeFile != null ? State.files[State.activeFile] : null;
-  if (!file || !file.vaultRoot) return;
+  if (!file || !file.vaultId) return;
   const noteDir = normalizeRel(String(file.path || '').replace(/[^\\/]*$/, ''));
   // Decode each segment first (so an already-percent-encoded author path isn't
   // double-encoded), then encode once — the protocol handler decodes once to the
@@ -1191,6 +1191,7 @@ function renderTabs() {
   tabsEl.querySelectorAll('.tab').forEach(t => t.remove());
   const addBtn = $('tabAddBtn');
   State.files.forEach((f, i) => {
+    if (f.open === false) return;
     const tab = document.createElement('div');
     tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '') + (f.conflict ? ' conflict' : '');
     tab.title = f.conflict ? `${f.name} — changed on disk (unresolved)` : f.name;
@@ -1209,6 +1210,13 @@ function closeTab(idx) {
   const f = State.files[idx];
   if (f.dirty) {
     if (!confirm(`"${f.name}" has unsaved changes. Close anyway?`)) return;
+  }
+  if (f.inventory) {
+    f.open = false;
+    const next = State.files.findIndex((file, i) => i !== idx && file.open !== false);
+    if (next < 0) { State.activeFile = null; showWelcome(); return; }
+    renderFile(next);
+    return;
   }
   State.files.splice(idx, 1);
   if (State.files.length === 0) { State.activeFile = null; showWelcome(); return; }
@@ -1294,6 +1302,7 @@ window.toggleViewMode = toggleViewMode;
 function renderFile(idx) {
   const file = State.files[idx];
   if (!file) return;
+  file.open = true;
   State.activeFile = idx;
 
   welcomeEl.style.display = 'none';
@@ -1402,18 +1411,7 @@ let _tocHeadings = []; // [{ el, item, pos }] in document order, for scroll-sync
 // map each rendered-DOM outline entry back to a position in the editor (CM6 is the sole surface
 // now, so the outline must scroll the editor, not the hidden preview pane).
 function cmHeadingPositions(src) {
-  const out = [];
-  let off = 0, inFence = false;
-  for (const line of String(src || '').split('\n')) {
-    const isFence = /^[ \t]{0,3}(```|~~~)/.test(line);
-    if (isFence) inFence = !inFence;
-    else if (!inFence) {
-      const m = /^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
-      if (m) out.push({ pos: off, level: m[1].length, text: m[2].trim() });
-    }
-    off += line.length + 1;
-  }
-  return out;
+  return sourceHeadingPositions(src);
 }
 const _normHeading = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -1639,28 +1637,64 @@ function filterByTag(tag) {
 // =====================================================================
 // FILE I/O
 // =====================================================================
-// Absolute path of the open vault (M6 session restore); the per-file relPaths live on State.files.
-let _vaultPath = null;
+// Main-issued opaque vault identity. Absolute paths never enter the renderer.
+let _vaultId = null;
+let _vaultGeneration = 0;
+let _workspaceEpoch = 0;
+
+function fileFromSnapshot(entry, vaultId = null) {
+  return {
+    name: entry.name,
+    path: entry.relPath || entry.name,
+    handle: null,
+    content: entry.content,
+    dirty: false,
+    documentId: entry.documentId || null,
+    vaultId: entry.vaultId || vaultId,
+    meta: entry.meta || { bom: false, eol: '\n', finalNewline: false, hash: null },
+    revision: 0,
+    inventory: !!vaultId,
+    open: false,
+  };
+}
+
+function normalizeVaultRead(result, fallbackVault) {
+  if (Array.isArray(result)) return { vault: fallbackVault, entries: result, skipped: {}, truncated: false };
+  if (!result || result.error || !Array.isArray(result.entries)) return null;
+  return result;
+}
+
+function mayAbandonWorkspace() {
+  const dirty = State.files.filter(file => file.dirty).length;
+  return dirty === 0 || confirm(`${dirty} unsaved file${dirty === 1 ? '' : 's'}. Discard changes and continue?`);
+}
+
+function markUserIntent() { _workspaceEpoch++; }
 async function openVault() {
   closeMenu();
+  markUserIntent();
   // Branch 1: Electron IPC path — preferred in packaged builds (Bug 1 / AC1)
   if (window.electronAPI && typeof window.electronAPI.openFolder === 'function') {
     try {
       const result = await window.electronAPI.openFolder();
-      if (result.canceled || !result.folderPath) return;
-      const folderPath = result.folderPath;
-      const entries = await window.electronAPI.readVault(folderPath);
-      const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
+      if (!result || result.canceled || result.error || !result.vault?.id) return;
+      const read = normalizeVaultRead(await window.electronAPI.readVault(result.vault.id), result.vault);
+      if (!read) { showToast('Could not open folder', 'error'); return; }
+      if (!mayAbandonWorkspace()) return;
+      const entries = read.entries;
+      const folderName = read.vault?.name || result.vault.name || 'folder';
       State.vaultName = folderName;
-      _vaultPath = folderPath; // remember the absolute root for last-session restore (M6)
-      // vaultRoot = the authorized absolute folder; lets saveCurrent() write the note
-      // back in place via the fs:writeFile IPC bridge instead of a Blob download (M08).
-      const md = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: folderPath }));
+      _vaultId = read.vault?.id || result.vault.id;
+      _vaultGeneration = read.vault?.generation || 0;
+      const md = entries.map(e => fileFromSnapshot(e, _vaultId));
       State.files = md;
       $('vaultName').textContent = folderName;
       $('vaultName').classList.remove('empty');
       $('sbVault').textContent = `folder: ${folderName}`;
       if (md.length === 0) {
+        renderTree([]);
+        State.activeFile = null;
+        showWelcome();
         showToast('Folder opened — no .md files found', 'info');
       } else {
         renderTree(md);
@@ -1676,8 +1710,6 @@ async function openVault() {
   if ('showDirectoryPicker' in window) {
     try {
       const handle = await window.showDirectoryPicker();
-      State.vaultName = handle.name;
-      State.files = [];
       const md = [];
       for await (const entry of handle.values()) {
         if (entry.kind === 'file' && /\.(md|markdown)$/i.test(entry.name)) {
@@ -1685,8 +1717,10 @@ async function openVault() {
         }
       }
       md.sort((a, b) => a.name.localeCompare(b.name));
+      if (!mayAbandonWorkspace()) return;
+      State.vaultName = handle.name;
       State.files = md;
-      _vaultPath = null; // FSA vault has no absolute path for the readVault restore bridge (M6)
+      _vaultId = null;
       $('vaultName').textContent = handle.name;
       $('vaultName').classList.remove('empty');
       $('sbVault').textContent = `folder: ${handle.name}`;
@@ -1719,10 +1753,11 @@ async function openVault() {
         md.push({ name: file.name, path: file.name, handle: null, content, dirty: false });
       }
       md.sort((a, b) => a.name.localeCompare(b.name));
+      if (!mayAbandonWorkspace()) return;
       const folderName = files[0].webkitRelativePath.split('/')[0] || 'folder';
       State.vaultName = folderName;
       State.files = md;
-      _vaultPath = null; // webkitdirectory vault is not restorable via the readVault bridge (M6)
+      _vaultId = null;
       $('vaultName').textContent = folderName;
       $('vaultName').classList.remove('empty');
       $('sbVault').textContent = `folder: ${folderName}`;
@@ -1737,6 +1772,7 @@ window.openVault = openVault;
 
 async function openSingleFile() {
   closeMenu();
+  markUserIntent();
   // Branch 1: Electron native dialog — returns the ABSOLUTE path, which we keep as
   // `abs` so the file can be reopened from Recent in a later session. The FSA picker
   // (Branch 2) only yields a basename + a non-persistable handle, so files opened that
@@ -1746,7 +1782,7 @@ async function openSingleFile() {
       const res = await window.electronAPI.openFile();
       if (!res || res.canceled) return;
       if (res.error || typeof res.content !== 'string') { showToast('Could not open file', 'error'); return; }
-      addFile({ name: res.name, path: res.filePath, handle: null, content: res.content, dirty: false, abs: res.filePath });
+      addFile(fileFromSnapshot(res));
       showToast(`Opened ${res.name}`);
     } catch(e) { showToast('Could not open file', 'error'); }
     return;
@@ -1780,6 +1816,7 @@ fileInput.addEventListener('change', async () => {
 });
 
 function addFile(f) {
+  if (!Number.isInteger(f.revision)) f.revision = 0;
   const existing = State.files.findIndex(x => x.name === f.name && x.path === f.path);
   if (existing >= 0) { State.files[existing] = f; renderFile(existing); }
   else { State.files.push(f); renderFile(State.files.length - 1); }
@@ -1787,9 +1824,10 @@ function addFile(f) {
 
 function newNote() {
   closeMenu();
+  markUserIntent();
   const n = State.files.filter(f => f.name.startsWith('Untitled')).length;
   const name = `Untitled${n > 0 ? '-' + n : ''}.md`;
-  addFile({ name, path: name, handle: null, content: `# Untitled\n\nStart writing…\n`, dirty: true });
+  addFile({ name, path: name, handle: null, content: `# Untitled\n\nStart writing…\n`, dirty: true, revision: 1 });
 }
 window.newNote = newNote;
 
@@ -1797,13 +1835,16 @@ async function saveCurrent() {
   closeMenu();
   if (State.activeFile === null || !State.files[State.activeFile]) { showToast('No file to save', 'error'); return; }
   const f = State.files[State.activeFile];
+  const submittedContent = f.content;
+  const submittedRevision = Number.isInteger(f.revision) ? f.revision : 0;
   // Branch 1: an FSA handle (file opened via showOpenFilePicker / showDirectoryPicker,
   // browser or dev) — write in place through the File System Access API.
   if (f.handle && f.handle.createWritable) {
     try {
       const w = await f.handle.createWritable();
-      await w.write(f.content); await w.close();
-      f.dirty = false; renderTabs();
+      await w.write(submittedContent); await w.close();
+      if (f.revision === submittedRevision && f.content === submittedContent) f.dirty = false;
+      renderTabs();
       showToast(`Saved ${f.name}`);
     } catch(e) { showToast('Could not save', 'error'); }
     return;
@@ -1811,17 +1852,32 @@ async function saveCurrent() {
   // Branch 2: a vault file in the packaged Electron app — handle is null, so write it
   // back in place through the atomic, allow-listed fs:writeFile IPC bridge (M08). This
   // is the path the prior code missed: it fell straight to a Blob download of a copy.
-  if (f.vaultRoot && window.electronAPI && typeof window.electronAPI.writeFile === 'function') {
+  if (f.documentId && window.electronAPI && typeof window.electronAPI.writeFile === 'function') {
     try {
-      const res = await window.electronAPI.writeFile({ folderPath: f.vaultRoot, relPath: f.path, content: f.content });
+      const meta = f.meta || {};
+      const res = await window.electronAPI.writeFile({
+        documentId: f.documentId,
+        content: submittedContent,
+        revision: submittedRevision,
+        baseHash: meta.hash,
+        bom: !!meta.bom,
+        eol: meta.eol === '\r\n' ? '\r\n' : '\n',
+        finalNewline: meta.finalNewline !== false,
+      });
       if (res && res.ok) {
-        f.dirty = false; renderTabs();
+        f.meta = res.meta || f.meta;
+        if (f.revision === submittedRevision && f.content === submittedContent) f.dirty = false;
+        renderTabs();
         showToast(`Saved ${f.name}`);
       } else {
         const why = res && res.error ? res.error : 'unknown';
         showToast(`Could not save ${f.name} (${why})`, 'error');
       }
     } catch(e) { showToast('Could not save', 'error'); }
+    return;
+  }
+  if (window.electronAPI && typeof window.electronAPI.saveFileAs === 'function') {
+    await saveAs();
     return;
   }
   // Branch 3: browser fallback (no handle, no IPC) — offer the content as a download.
@@ -1837,15 +1893,40 @@ async function saveAs() {
   closeMenu();
   if (State.activeFile === null || !State.files[State.activeFile]) { showToast('No file to save', 'error'); return; }
   const f = State.files[State.activeFile];
-  if ('showSaveFilePicker' in window) {
+  const submittedContent = f.content;
+  const submittedRevision = Number.isInteger(f.revision) ? f.revision : 0;
+  if (window.electronAPI && typeof window.electronAPI.saveFileAs === 'function') {
+    try {
+      const meta = f.meta || {};
+      const res = await window.electronAPI.saveFileAs({
+        suggestedName: f.name,
+        content: submittedContent,
+        revision: submittedRevision,
+        bom: !!meta.bom,
+        eol: meta.eol === '\r\n' ? '\r\n' : '\n',
+        finalNewline: meta.finalNewline !== false,
+      });
+      if (!res || res.canceled) return;
+      if (!res.ok) { showToast(`Could not save (${res.error || 'unknown'})`, 'error'); return; }
+      f.documentId = res.documentId;
+      f.vaultId = null;
+      f.name = res.name;
+      f.path = res.name;
+      f.meta = res.meta || f.meta;
+      if (f.revision === submittedRevision && f.content === submittedContent) f.dirty = false;
+      renderTabs(); renderFile(State.activeFile);
+      showToast(`Saved as ${res.name}`);
+    } catch (_) { showToast('Could not save', 'error'); }
+  } else if ('showSaveFilePicker' in window) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: f.name,
         types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
       });
       const w = await handle.createWritable();
-      await w.write(f.content); await w.close();
-      f.handle = handle; f.name = handle.name; f.path = handle.name; f.dirty = false;
+      await w.write(submittedContent); await w.close();
+      f.handle = handle; f.name = handle.name; f.path = handle.name;
+      if (f.revision === submittedRevision && f.content === submittedContent) f.dirty = false;
       renderTabs(); renderFile(State.activeFile);
       showToast(`Saved as ${handle.name}`);
     } catch(e) { if (e.name !== 'AbortError') showToast('Could not save', 'error'); }
@@ -1856,16 +1937,7 @@ async function saveAs() {
 // RECENTS
 // =====================================================================
 function pushRecent(f) {
-  // Capture the vault the note came from so a click can re-open it from disk in a
-  // later session even when that vault isn't the one currently loaded. f.vaultRoot is
-  // set for vault files opened via the Electron picker; restoreLastSession() leaves it
-  // unset, so fall back to _vaultPath (the active vault root) for restored sessions.
-  const vaultRoot = f.vaultRoot || _vaultPath || null;
-  // abs = absolute path for a single-file open (no vault). Lets openRecent reopen it via
-  // fs:readFile in a later session. Vault files reopen via vaultRoot+readVault instead, so
-  // abs stays null for them.
-  const abs = f.abs || (!vaultRoot && typeof f.path === 'string' && /[\\/]/.test(f.path) ? f.path : null);
-  const entry = { name: f.name, path: f.path, vaultRoot, abs };
+  const entry = { name: f.name, path: f.path, vaultId: f.vaultId || _vaultId || null, documentId: f.documentId || null };
   State.recents = [entry, ...State.recents.filter(r => r.path !== f.path)].slice(0, 5);
   renderRecents();
 }
@@ -1887,17 +1959,20 @@ function renderRecents() {
 // or a recent from a different vault than the restored one).
 async function openRecent(r) {
   if (!r) return;
+  markUserIntent();
   let idx = State.files.findIndex(f =>
-    f.path === r.path && (!r.vaultRoot || !f.vaultRoot || f.vaultRoot === r.vaultRoot));
+    f.path === r.path && (!r.vaultId || !f.vaultId || f.vaultId === r.vaultId));
   if (idx >= 0) { renderFile(idx); return; }
-  if (r.vaultRoot && window.electronAPI && typeof window.electronAPI.readVault === 'function') {
+  if (r.vaultId && window.electronAPI && typeof window.electronAPI.readVault === 'function') {
     try {
-      const entries = await window.electronAPI.readVault(r.vaultRoot);
-      if (Array.isArray(entries) && entries.length) {
-        const folderName = r.vaultRoot.split(/[\\/]/).filter(Boolean).pop() || 'folder';
+      const read = normalizeVaultRead(await window.electronAPI.readVault(r.vaultId), { id: r.vaultId, name: 'folder' });
+      if (read && read.entries.length) {
+        if (!mayAbandonWorkspace()) return;
+        const folderName = read.vault?.name || 'folder';
         State.vaultName = folderName;
-        _vaultPath = r.vaultRoot;
-        State.files = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: r.vaultRoot }));
+        _vaultId = r.vaultId;
+        _vaultGeneration = read.vault?.generation || 0;
+        State.files = read.entries.map(e => fileFromSnapshot(e, r.vaultId));
         const vn = $('vaultName'); if (vn) { vn.textContent = folderName; vn.classList.remove('empty'); }
         const sv = $('sbVault'); if (sv) sv.textContent = `folder: ${folderName}`;
         renderTree(State.files);
@@ -1908,18 +1983,18 @@ async function openRecent(r) {
     } catch (_) { /* fall through */ }
   }
   // Single-file recent → re-read just that file by its absolute path.
-  if (r.abs && window.electronAPI && typeof window.electronAPI.readFile === 'function') {
+  if (r.documentId && window.electronAPI && typeof window.electronAPI.readFile === 'function') {
     try {
-      const res = await window.electronAPI.readFile(r.abs);
+      const res = await window.electronAPI.readFile(r.documentId);
       if (res && !res.error && typeof res.content === 'string') {
-        addFile({ name: res.name || r.name, path: res.path || r.abs, handle: null, content: res.content, dirty: false, abs: res.path || r.abs });
+        addFile(fileFromSnapshot({ ...res, name: res.name || r.name, relPath: r.path || res.name }));
         return;
       }
     } catch (_) { /* fall through to the error toast below */ }
   }
   // Legacy recents (saved before vaultRoot/abs were tracked) carry only a basename, so
   // there's nothing to reopen from. Tell the user how to restore it instead of failing mute.
-  if (!r.vaultRoot && !r.abs) {
+  if (!r.vaultId && !r.documentId) {
     showToast(`"${r.name || r.path}" was saved by an older version — open it once to restore it`, 'info');
     return;
   }
@@ -1945,6 +2020,8 @@ function navWikilink(target) {
 // =====================================================================
 function loadDemo() {
   closeMenu();
+  markUserIntent();
+  if (!mayAbandonWorkspace()) return;
   const demos = [
     { name: 'on-reading.md', path: 'essays/on-reading.md', dirty: false, handle: null,
       content: `# On the act of reading\n\nThe page is not a screen. A reader does not scroll — they *turn*.\n\n**Slowness** is not the enemy of attention. It is its precondition.\n\n#reading #prose\n\n## A short list\n\n- Slow tools beget slow thought.\n- See [[the-quiet-page]] for further argument.\n\n> "A book is a thing among things." — Borges\n\n## Code\n\n\`\`\`js\nconst reader = (words) => words.slow();\n\`\`\`\n\n---\n\nTo be continued. See also [[slow-tools]].`
@@ -1956,7 +2033,8 @@ function loadDemo() {
       content: `# في فعلِ القراءة\n\nالصفحةُ ليست شاشةً، والقارئُ لا يُمرِّر النصَّ بل يقلِبُه.\n\n#قراءة #أدب\n\n## قائمةٌ موجزة\n\n- الأدواتُ البطيئة تولّدُ فكراً بطيئاً.\n\n> "الكتابُ شيءٌ بين الأشياء." — بورخيس`
     }
   ];
-  _vaultPath = null; // demos are ephemeral — NOT a restorable Electron vault, so don't persist a conflated session (M6)
+  _vaultId = null;
+  _vaultGeneration = 0;
   State.files = demos;
   State.vaultName = 'demo';
   $('vaultName').textContent = 'demo';
@@ -1978,6 +2056,7 @@ function applyEditorInput(val, pos) {
   if (State.activeFile === null || !State.files[State.activeFile]) return;
   const f = State.files[State.activeFile];
   f.content = val;
+  f.revision = (Number.isInteger(f.revision) ? f.revision : 0) + 1;
   f.dirty = true;
   renderTabs();
   // Fast: cursor position update on every keystroke
@@ -2745,10 +2824,14 @@ function winMinimize() {
 function winMaximize() {
   if (window.electronAPI) window.electronAPI.maximizeWindow();
 }
-function winClose() {
+async function winClose() {
   const dirty = State.files.filter(f => f.dirty).length;
   if (dirty > 0) { if (!confirm(`${dirty} unsaved file${dirty === 1 ? '' : 's'}. Close anyway?`)) return; }
+  await flushSettings();
   if (window.electronAPI) window.electronAPI.closeWindow();
+}
+if (window.electronAPI && typeof window.electronAPI.onCloseRequested === 'function') {
+  window.electronAPI.onCloseRequested(() => { winClose(); });
 }
 
 // =====================================================================
@@ -2928,11 +3011,11 @@ $('findCloseBtn').addEventListener('click', closeFind);
 // Main process sends this when the user launches BP MD RTL Reader by double-clicking a
 // .md file with BP MD RTL Reader set as the default handler. We add it as a tab and
 // render it immediately.
-function openExternalFile({ name, path: filePath, content }) {
+function openExternalFile(snapshot) {
+  const { name, content } = snapshot || {};
   if (!name || typeof content !== 'string') return;
-  // filePath is the absolute path from main — keep it as `abs` so this file is reopenable
-  // from Recent (its parent isn't a known vault). Falls back to name if somehow absent.
-  addFile({ name, path: filePath || name, handle: null, content, dirty: false, abs: filePath || null });
+  markUserIntent();
+  addFile(fileFromSnapshot({ ...snapshot, relPath: name }));
 }
 window.openExternalFile = openExternalFile;
 if (window.electronAPI && typeof window.electronAPI.onOpenFile === 'function') {
@@ -2944,12 +3027,14 @@ if (window.electronAPI && typeof window.electronAPI.onOpenFile === 'function') {
 // whose disk copy diverged is flagged `conflict` (its edits are kept — never silently
 // overwritten — and the disk version is stashed on `diskContent`). The active file is
 // preserved by path across the re-list so tabs/selection survive added/removed files.
-async function handleVaultChanged({ folderPath, files } = {}) {
-  if (!folderPath || !window.electronAPI || typeof window.electronAPI.readVault !== 'function') return;
-  if (State.vaultName !== (String(folderPath).split(/[\\/]/).filter(Boolean).pop() || '')) return; // not the open vault
-  let entries;
-  try { entries = await window.electronAPI.readVault(folderPath); } catch (_) { return; }
-  if (!Array.isArray(entries)) return; // an error object → leave state untouched
+async function handleVaultChanged({ vaultId, generation, files } = {}) {
+  if (!vaultId || vaultId !== _vaultId || generation !== _vaultGeneration
+    || !window.electronAPI || typeof window.electronAPI.readVault !== 'function') return;
+  let read;
+  try { read = normalizeVaultRead(await window.electronAPI.readVault(vaultId), { id: vaultId, name: State.vaultName }); } catch (_) { return; }
+  if (!read || vaultId !== _vaultId || generation !== _vaultGeneration) return;
+  const entries = read.entries;
+  _vaultGeneration = read.vault?.generation || _vaultGeneration;
 
   const activePath = State.activeFile != null ? State.files[State.activeFile]?.path : null;
   const prevByPath = new Map(State.files.map(f => [f.path, f]));
@@ -2961,14 +3046,14 @@ async function handleVaultChanged({ folderPath, files } = {}) {
 
   const merged = entries.map(e => {
     const prev = prevByPath.get(e.relPath);
-    if (!prev) return { name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: folderPath };
+    if (!prev) return fileFromSnapshot(e, vaultId);
     if (norm(prev.content) === norm(e.content)) return prev; // unchanged → keep (no churn)
     if (prev.dirty) {
       if (e.relPath === activePath) conflictName = prev.name;
       return { ...prev, conflict: true, diskContent: e.content }; // EC-A2: keep edits, stash disk copy
     }
     if (e.relPath === activePath) changedActive.reloaded = true;
-    return { ...prev, content: e.content, conflict: false, diskContent: null }; // adopt disk (no local edits)
+    return { ...prev, content: e.content, meta: e.meta || prev.meta, documentId: e.documentId || prev.documentId, conflict: false, diskContent: null };
   });
   // Preserve open-but-now-deleted files as tabs so unsaved work is never lost.
   for (const f of State.files) {
@@ -3049,31 +3134,46 @@ const PERSISTED_KEYS = new Set([
   'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible', 'inspectorVisible', 'recents', 'calendar', 'arabicKashida', 'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection',
 ]);
 let _persistTimer = null;
+function settingsPayload() {
+  return {
+    theme: State.theme,
+    zoomFactor: State.zoomFactor,
+    editorMode: State.editorMode,
+    viewMode: State.viewMode,
+    sidebarVisible: State.sidebarVisible,
+    inspectorVisible: State.inspectorVisible,
+    recents: State.recents.map(r => ({ name: r.name, path: r.path, vaultId: r.vaultId || null, documentId: r.documentId || null })),
+    calendar: State.calendar,
+    arabicKashida: State.arabicKashida,
+    italicRecolor: State.italicRecolor,
+    cmEditor: State.cmEditor,
+    uiLocale: State.uiLocale,
+    uiDirection: State.uiDirection,
+    lastSession: buildSession(_vaultId, State.files, State.activeFile),
+  };
+}
+
+async function flushSettings() {
+  clearTimeout(_persistTimer);
+  _persistTimer = null;
+  if (!SettingsBridge || _restoring) return true;
+  try {
+    const result = await Promise.resolve(SettingsBridge.setSettings(settingsPayload()));
+    return !!(result && result.ok);
+  } catch (_) { return false; }
+}
+
 function persistSettings() {
   if (!SettingsBridge || _restoring) return;
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
     try {
-      SettingsBridge.setSettings({
-        theme: State.theme,
-        zoomFactor: State.zoomFactor,
-        editorMode: State.editorMode,
-        viewMode: State.viewMode,
-        sidebarVisible: State.sidebarVisible,
-        inspectorVisible: State.inspectorVisible,
-        recents: State.recents.map(r => ({ name: r.name, path: r.path, vaultRoot: r.vaultRoot || null, abs: r.abs || null })),
-        calendar: State.calendar,
-        arabicKashida: State.arabicKashida,
-        italicRecolor: State.italicRecolor,
-        cmEditor: State.cmEditor,
-        uiLocale: State.uiLocale,
-        uiDirection: State.uiDirection,
-        lastSession: buildSession(_vaultPath, State.files, State.activeFile), // M6
-      });
+      Promise.resolve(SettingsBridge.setSettings(settingsPayload())).catch(() => { /* best effort */ });
     } catch (_) { /* persistence is best-effort; never break the UI */ }
   }, 200);
 }
 window.persistSettings = persistSettings;
+window.flushSettings = flushSettings;
 // Persist whenever a persisted key changes (debounced inside persistSettings).
 subscribe((key) => { if (PERSISTED_KEYS.has(key)) persistSettings(); });
 
@@ -3102,8 +3202,8 @@ async function restoreSettings() {
     applyPanelLayout(); // reflect the restored (or default) panel visibility onto the grid
     if (Array.isArray(s.recents)) {
       State.recents = s.recents
-        .filter(r => r && typeof r.path === 'string')
-        .map(r => ({ name: String(r.name || ''), path: r.path, vaultRoot: typeof r.vaultRoot === 'string' ? r.vaultRoot : null, abs: typeof r.abs === 'string' ? r.abs : null }));
+        .filter(r => r && typeof r.path === 'string' && (typeof r.vaultId === 'string' || typeof r.documentId === 'string'))
+        .map(r => ({ name: String(r.name || ''), path: r.path, vaultId: typeof r.vaultId === 'string' ? r.vaultId : null, documentId: typeof r.documentId === 'string' ? r.documentId : null }));
       renderRecents();
     }
     if (s.calendar === 'hijri' || s.calendar === 'gregorian') State.calendar = s.calendar;
@@ -3124,16 +3224,18 @@ window.restoreSettings = restoreSettings;
 // deleted, or unauthorized vault degrades to the welcome screen without a toast. Runs
 // while _restoring is true, so the renderFile→persistSettings hook is a no-op (no clobber).
 async function restoreLastSession(ls) {
-  if (!ls || typeof ls.vaultPath !== 'string' || !ls.vaultPath) return;
+  if (!ls || typeof ls.vaultId !== 'string' || !ls.vaultId) return;
   if (!window.electronAPI || typeof window.electronAPI.readVault !== 'function') return;
-  let entries;
-  try { entries = await window.electronAPI.readVault(ls.vaultPath); }
+  const restoreEpoch = _workspaceEpoch;
+  let read;
+  try { read = normalizeVaultRead(await window.electronAPI.readVault(ls.vaultId), { id: ls.vaultId, name: 'folder' }); }
   catch (_) { return; }
-  if (!Array.isArray(entries) || !entries.length) return;
-  const folderName = ls.vaultPath.split(/[\\/]/).filter(Boolean).pop() || 'folder';
+  if (!read || !read.entries.length || restoreEpoch !== _workspaceEpoch || State.files.some(file => file.dirty)) return;
+  const folderName = read.vault?.name || 'folder';
   State.vaultName = folderName;
-  _vaultPath = ls.vaultPath;
-  State.files = entries.map(e => ({ name: e.name, path: e.relPath, handle: null, content: e.content, dirty: false, vaultRoot: ls.vaultPath }));
+  _vaultId = ls.vaultId;
+  _vaultGeneration = read.vault?.generation || 0;
+  State.files = read.entries.map(e => fileFromSnapshot(e, ls.vaultId));
   const vn = $('vaultName'); if (vn) { vn.textContent = folderName; vn.classList.remove('empty'); }
   const sv = $('sbVault'); if (sv) sv.textContent = `folder: ${folderName}`;
   renderTree(State.files);
@@ -3170,4 +3272,3 @@ async function restoreLastSession(ls) {
   showWelcome();
   initDragDrop();
 })();
-

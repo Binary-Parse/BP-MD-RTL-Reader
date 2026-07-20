@@ -20,18 +20,18 @@ async function goto(page) {
 
 // ── M08: Save → fs:writeFile ────────────────────────────────────────────────
 test.describe('[M08] Save writes vault files in place via IPC', () => {
-  test('saveCurrent calls electronAPI.writeFile with folderPath/relPath/content', async ({ page }) => {
+  test('saveCurrent calls electronAPI.writeFile with document capability and conflict token', async ({ page }) => {
     await goto(page);
     const result = await page.evaluate(async () => {
       const calls = [];
       window.electronAPI = { writeFile: (p) => { calls.push(p); return Promise.resolve({ ok: true, meta: { hash: 'h' } }); } };
-      window._appState.files = [{ name: 'note.md', path: 'sub/note.md', handle: null, content: '# edited', dirty: true, vaultRoot: '/vault' }];
+      window._appState.files = [{ name: 'note.md', path: 'sub/note.md', handle: null, content: '# edited', dirty: true, revision: 2, documentId: 'cap-note', vaultId: 'cap-vault', meta: { hash: 'base', bom: false, eol: '\n', finalNewline: false } }];
       window.renderFile(0);
       await window.saveCurrent();
       return { calls, dirty: window._appState.files[0].dirty };
     });
     expect(result.calls).toHaveLength(1);
-    expect(result.calls[0]).toMatchObject({ folderPath: '/vault', relPath: 'sub/note.md', content: '# edited' });
+    expect(result.calls[0]).toMatchObject({ documentId: 'cap-note', content: '# edited', revision: 2, baseHash: 'base' });
     expect(result.dirty).toBe(false); // a successful write clears the dirty flag
   });
 
@@ -42,7 +42,7 @@ test.describe('[M08] Save writes vault files in place via IPC', () => {
       const origCreate = document.createElement.bind(document);
       document.createElement = (tag) => { const el = origCreate(tag); if (tag === 'a') { const oc = el.click.bind(el); el.click = () => { if (el.download) downloads++; else oc(); }; } return el; };
       window.electronAPI = { writeFile: () => Promise.resolve({ error: 'conflict' }) };
-      window._appState.files = [{ name: 'n.md', path: 'n.md', handle: null, content: 'x', dirty: true, vaultRoot: '/v' }];
+      window._appState.files = [{ name: 'n.md', path: 'n.md', handle: null, content: 'x', dirty: true, documentId: 'cap-note', vaultId: 'cap-vault', meta: { hash: 'base' } }];
       window.renderFile(0);
       await window.saveCurrent();
       return { dirty: window._appState.files[0].dirty, downloads };
@@ -51,7 +51,7 @@ test.describe('[M08] Save writes vault files in place via IPC', () => {
     expect(result.downloads).toBe(0);
   });
 
-  test('a non-vault file (no vaultRoot, no handle, no IPC) still uses the Blob download fallback', async ({ page }) => {
+  test('a non-vault file (no document capability, no handle, no IPC) still uses the Blob download fallback', async ({ page }) => {
     await goto(page);
     const download = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
     await page.evaluate(async () => {
@@ -94,7 +94,7 @@ test.describe('[R10] note-relative images rewrite to bpmd://vault/<rel>', () => 
   test('a root-level note rewrites ![](pic.png) to bpmd://vault/pic.png', async ({ page }) => {
     await goto(page);
     const src = await page.evaluate(() => {
-      window._appState.files = [{ name: 'n.md', path: 'n.md', content: '![alt](pic.png)', dirty: false, vaultRoot: '/vault' }];
+      window._appState.files = [{ name: 'n.md', path: 'n.md', content: '![alt](pic.png)', dirty: false, vaultId: 'cap-vault' }];
       window.renderFile(0);
       return document.querySelector('#noteContent img')?.getAttribute('src');
     });
@@ -104,7 +104,7 @@ test.describe('[R10] note-relative images rewrite to bpmd://vault/<rel>', () => 
   test('a note in a subfolder resolves the image against the note directory', async ({ page }) => {
     await goto(page);
     const src = await page.evaluate(() => {
-      window._appState.files = [{ name: 'note.md', path: 'sub/dir/note.md', content: '![](../pic%20a.png)', dirty: false, vaultRoot: '/vault' }];
+      window._appState.files = [{ name: 'note.md', path: 'sub/dir/note.md', content: '![](../pic%20a.png)', dirty: false, vaultId: 'cap-vault' }];
       window.renderFile(0);
       return document.querySelector('#noteContent img')?.getAttribute('src');
     });
@@ -115,10 +115,10 @@ test.describe('[R10] note-relative images rewrite to bpmd://vault/<rel>', () => 
   test('absolute / http / data srcs and non-vault notes are left untouched', async ({ page }) => {
     await goto(page);
     const srcs = await page.evaluate(() => {
-      window._appState.files = [{ name: 'n.md', path: 'n.md', content: '![](https://x/y.png)\n\n![](data:image/png;base64,AAA)', dirty: false, vaultRoot: '/vault' }];
+      window._appState.files = [{ name: 'n.md', path: 'n.md', content: '![](https://x/y.png)\n\n![](data:image/png;base64,AAA)', dirty: false, vaultId: 'cap-vault' }];
       window.renderFile(0);
       const imgs = [...document.querySelectorAll('#noteContent img')].map(i => i.getAttribute('src'));
-      // a non-vault note (no vaultRoot) leaves a relative src alone
+      // a non-vault note (no vaultId) leaves a relative src alone
       window._appState.files = [{ name: 'm.md', path: 'm.md', content: '![](pic.png)', dirty: false }];
       window.renderFile(0);
       imgs.push(document.querySelector('#noteContent img')?.getAttribute('src'));

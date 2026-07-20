@@ -1,32 +1,46 @@
-/**
- * version.js — pure semver-ish comparison for the opt-in update check (T-Q6). Compares
- * dotted numeric versions (a leading 'v' and any pre-release suffix are ignored), so it
- * can decide whether a fetched release is newer than the running app.
- */
+/** Strict SemVer 2.0 parsing/comparison for the opt-in update check. */
 
-/** Parse "v1.2.3-beta" → [1,2,3]. Non-numeric/garbage segments become 0. */
-function parse(v) {
-  return String(v == null ? '' : v)
-    .trim()
-    .replace(/^v/i, '')
-    .split('-')[0]            // drop pre-release suffix
-    .split('.')
-    .map((n) => {
-      const x = parseInt(n, 10);
-      return Number.isFinite(x) ? x : 0;
-    });
+const SEMVER = /^[vV]?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+function parse(value) {
+  if (typeof value !== 'string') return null;
+  const match = SEMVER.exec(value.trim());
+  if (!match) return null;
+  const prerelease = match[4] ? match[4].split('.').map(identifier => {
+    if (/^\d+$/.test(identifier)) {
+      if (identifier.length > 1 && identifier[0] === '0') return null;
+      return Number(identifier);
+    }
+    return identifier;
+  }) : [];
+  if (prerelease.includes(null)) return null;
+  return {
+    major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]),
+    prerelease, build: match[5] ? match[5].split('.') : [],
+  };
 }
 
-/** -1 if a<b, 0 if equal, 1 if a>b (by dotted numeric precedence). */
 function compareVersions(a, b) {
-  const pa = parse(a);
-  const pb = parse(b);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const x = pa[i] || 0;
-    const y = pb[i] || 0;
-    if (x > y) return 1;
-    if (x < y) return -1;
+  const left = parse(a);
+  const right = parse(b);
+  if (!left || !right) return null;
+  for (const key of ['major', 'minor', 'patch']) {
+    if (left[key] > right[key]) return 1;
+    if (left[key] < right[key]) return -1;
+  }
+  if (!left.prerelease.length && !right.prerelease.length) return 0;
+  if (!left.prerelease.length) return 1;
+  if (!right.prerelease.length) return -1;
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let i = 0; i < length; i++) {
+    if (left.prerelease[i] === undefined) return -1;
+    if (right.prerelease[i] === undefined) return 1;
+    const x = left.prerelease[i];
+    const y = right.prerelease[i];
+    if (x === y) continue;
+    if (typeof x === 'number' && typeof y !== 'number') return -1;
+    if (typeof x !== 'number' && typeof y === 'number') return 1;
+    return x > y ? 1 : -1;
   }
   return 0;
 }

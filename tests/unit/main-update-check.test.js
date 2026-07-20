@@ -65,6 +65,11 @@ describe('update:check (T-Q6)', () => {
     expect((await handler()).error).toBe('no-version');
   });
 
+  test('malformed release version → typed invalid-version error', async () => {
+    await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: 'release-latest' }))));
+    expect(await handler()).toEqual({ error: 'invalid-version', current: '1.0.0' });
+  });
+
   test('no fetch available → { error: "unsupported" } (no crash)', async () => {
     await setup(null); // null is NOT replaced by the destructuring default (only undefined is)
     expect(await handler()).toEqual({ error: 'unsupported', current: '1.0.0' });

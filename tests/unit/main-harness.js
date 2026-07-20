@@ -73,13 +73,16 @@ export function buildMockElectron() {
 export function buildMockFs(overrides = {}) {
   const fs = {
     readFileSync: vi.fn(() => '# Hello'),
-    realpathSync: vi.fn((p) => p),
-    statSync: vi.fn(() => ({ isFile: () => true, size: 100 })),
+    realpathSync: vi.fn((p) => (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(String(p)) ? p : `C:\\mock\\${p}`)),
+    statSync: vi.fn((p) => {
+      const file = /\.(md|markdown|txt)$/i.test(String(p));
+      return { isFile: () => file, isDirectory: () => !file, size: 100, mtimeMs: 123 };
+    }),
     promises: {
       readdir: vi.fn(() => Promise.resolve([])),
-      lstat: vi.fn(() => Promise.resolve({ isSymbolicLink: () => false, size: 100 })),
+      lstat: vi.fn(() => Promise.resolve({ isSymbolicLink: () => false, isFile: () => true, size: 100 })),
       realpath: vi.fn((p) => Promise.resolve(p)),
-      stat: vi.fn(() => Promise.resolve({ size: 100 })),
+      stat: vi.fn(() => Promise.resolve({ isFile: () => true, size: 100 })),
       readFile: vi.fn(() => Promise.resolve('content')),
       mkdir: vi.fn(() => Promise.resolve()),
       writeFile: vi.fn(() => Promise.resolve()), // T-B6 temp html + PDF bytes → disk

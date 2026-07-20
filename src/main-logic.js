@@ -20,6 +20,7 @@ function parseFileArg(argv, fs) {
   const candidates = Array.from(argv).slice(1).filter(a =>
     typeof a === 'string' &&
     !a.startsWith('-') &&
+    !isNetworkPath(a) &&
     /\.(md|markdown|txt)$/i.test(a)
   );
   for (const a of candidates) {

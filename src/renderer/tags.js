@@ -12,14 +12,13 @@
  * @returns {Object<string, number>} tag → occurrence count
  */
 export function extractTags(content) {
-  const tagMap = {};
+  const tagMap = new Map();
   const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
   let m;
   while ((m = re.exec(content || '')) !== null) {
-    if (!tagMap[m[1]]) tagMap[m[1]] = 0;
-    tagMap[m[1]]++;
+    tagMap.set(m[1], (tagMap.get(m[1]) || 0) + 1);
   }
-  return tagMap;
+  return Object.fromEntries(tagMap);
 }
 
 /**
@@ -28,14 +27,14 @@ export function extractTags(content) {
  * @returns {Object<string, number[]>} tag → unique file indices (in encounter order)
  */
 export function extractTagsFromFiles(files) {
-  const tagMap = {};
+  const tagMap = new Map();
   (files || []).forEach((f, i) => {
     const re = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
     let m;
     while ((m = re.exec(f.content || '')) !== null) {
-      if (!tagMap[m[1]]) tagMap[m[1]] = [];
-      if (!tagMap[m[1]].includes(i)) tagMap[m[1]].push(i);
+      if (!tagMap.has(m[1])) tagMap.set(m[1], []);
+      if (!tagMap.get(m[1]).includes(i)) tagMap.get(m[1]).push(i);
     }
   });
-  return tagMap;
+  return Object.fromEntries(tagMap);
 }

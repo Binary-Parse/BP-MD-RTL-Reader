@@ -7,9 +7,9 @@ import { buildSession, pickActiveIndex } from '../../src/renderer/session.js';
 describe('buildSession', () => {
   const files = [{ path: 'a.md' }, { path: 'sub/b.md' }, { path: 'c.md' }];
 
-  test('snapshots vaultPath + openPaths + the active tab path', () => {
-    expect(buildSession('/vault', files, 1)).toEqual({
-      vaultPath: '/vault',
+  test('snapshots vaultId + openPaths + the active tab path', () => {
+    expect(buildSession('cap-vault', files, 1)).toEqual({
+      vaultId: 'cap-vault',
       openPaths: ['a.md', 'sub/b.md', 'c.md'],
       activePath: 'sub/b.md',
     });

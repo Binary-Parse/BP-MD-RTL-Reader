@@ -59,3 +59,8 @@ describe('localeDirection — T-R7', () => {
     expect(localeDirection('fr')).toBe('ltr');
   });
 });
+
+test('unknown locale falls back to the English catalog before returning the key', () => {
+  expect(t('menu.file', 'xx')).toBe('File');
+  expect(t('missing.translation.key', 'xx')).toBe('missing.translation.key');
+});

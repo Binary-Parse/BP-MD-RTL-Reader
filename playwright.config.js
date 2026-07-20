@@ -85,7 +85,7 @@ module.exports = defineConfig({
   // Only Vitest unit tests are excluded — Playwright integration tests
   // (tests/integration/*.test.js) target index.html via file:// like the
   // rest of the E2E sweep, so they belong in test:e2e.
-  testIgnore: ['**/unit/**'],
+  testIgnore: ['**/unit/**', '**/electron/**'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

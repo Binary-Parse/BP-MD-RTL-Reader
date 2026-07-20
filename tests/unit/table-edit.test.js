@@ -35,6 +35,31 @@ describe('tableAt', () => {
     const t = tableAt(T, posIn(T, 'A'));
     expect(serializeTable(t)).toBe(T);
   });
+  test('finds an embedded table with exact replacement bounds and uneven row widths', () => {
+    const text = 'before\n\n| A | B |\n| :--- | ---: |\n| 1 |\n| 2 | 3 | 4 |\n\nafter';
+    const t = tableAt(text, text.indexOf('3'));
+    expect(t.from).toBe(text.indexOf('| A'));
+    expect(t.to).toBe(text.indexOf('\n\nafter'));
+    expect(t.cols).toBe(3);
+    expect(t.header).toEqual(['A', 'B', '']);
+    expect(t.aligns).toEqual(['left', 'right', 'none']);
+    expect(t.body).toEqual([['1', '', ''], ['2', '3', '4']]);
+  });
+  test('delimiter syntax and line boundaries are strict', () => {
+    expect(tableAt('| A |\n| - |\n| 1 |', 0)).toBeTruthy();
+    for (const text of [
+      '| A |\n| x- |\n| 1 |',
+      '| A |\n| --- x |\n| 1 |',
+      '| A |\n| |\n| 1 |',
+    ]) expect(tableAt(text, 0)).toBeNull();
+    expect(tableAt(T, T.indexOf('\n'))?.caret.rowKind).toBe('header');
+  });
+  test('an even backslash run does not escape a pipe; an odd run does', () => {
+    const even = '| A \\\\| B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |';
+    expect(tableAt(even, even.indexOf('C')).header).toEqual(['A \\\\', 'B', 'C']);
+    const odd = '| A \\\\\\| B | C |\n| --- | --- |\n| 1 | 2 |';
+    expect(tableAt(odd, odd.indexOf('C')).header).toEqual(['A \\\\\\| B', 'C']);
+  });
 });
 
 describe('tableEdit ops', () => {
@@ -123,5 +148,24 @@ describe('tableEdit ops', () => {
     expect(r.md).toBe('| A | B |\n| --- | --- |\n| 1 | 2 |');
     const full = wide.slice(0, r.from) + r.md + wide.slice(r.to);
     expect(full[r.caret]).toBe('B'); // caret clamped to the new last header cell
+  });
+  test('deleting the only body row leaves one blank row', () => {
+    const one = '| A | B |\n| --- | --- |\n| 1 | 2 |';
+    expect(apply(one, '1', 'rowDelete')).toBe('| A | B |\n| --- | --- |\n|  |  |');
+  });
+  test('previous-cell navigation crosses into the header and clamps before its first cell', () => {
+    const fromBody = tableEdit(T, T.indexOf('1'), 'prevCell');
+    expect(fromBody.md[fromBody.caret]).toBe('B');
+    const fromHeader = tableEdit(T, T.indexOf('A'), 'prevCell');
+    expect(fromHeader.md[fromHeader.caret]).toBe('A');
+  });
+  test('rowBefore from the header inserts at the first body position', () => {
+    expect(apply(T, 'A', 'rowBefore')).toBe('| A | B |\n| --- | --- |\n|  |  |\n| 1 | 2 |\n| 3 | 4 |');
+  });
+  test('colBefore at the first column inserts at index zero and moves the caret there', () => {
+    const result = tableEdit(T, T.indexOf('A'), 'colBefore');
+    expect(result.md).toBe('|  | A | B |\n| --- | --- | --- |\n|  | 1 | 2 |\n|  | 3 | 4 |');
+    expect(result.caret).toBe(3);
+    expect(result.md[result.caret]).toBe('|');
   });
 });

@@ -707,15 +707,12 @@ function bootstrap({ electron, fs, proc = process, fetchFn = globalThis.fetch })
 module.exports = { bootstrap };
 
 // ==== REAL APP ENTRY ====
-// Only run the live bootstrap when this file is the Electron main entry point.
-// Under Vitest/Stryker the file is imported as a dependency (require.main is the
-// test runner, not this module), so the guard is false and nothing auto-runs —
-// the tests drive bootstrap() with mock electron/fs instead.
-// Stryker disable all — this entry guard fires ONLY in the real Electron main
-// process (require.main === module is false under Vitest/Stryker), so the lines
-// are unreachable by unit tests and their mutants are unkillable by definition.
-// bootstrap() itself is fully mutation-tested via the injected-seam tests.
-if (require.main === module) {
+// Run only inside the Electron main process. Playwright's Electron harness
+// preloads an instrumentation module, so require.main is not reliably this
+// file there; process.versions.electron remains the authoritative runtime
+// discriminator. Plain Node/Vitest/Stryker imports do not expose that value.
+// Stryker disable all — this guard is unreachable in the Node unit runner.
+if (process.versions && process.versions.electron) {
   bootstrap({ electron: require('electron'), fs: require('fs') });
 }
 // Stryker restore all

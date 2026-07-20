@@ -20,10 +20,11 @@ const v8toIstanbul = require('v8-to-istanbul');
 const libCoverage = require('istanbul-lib-coverage');
 const libReport = require('istanbul-lib-report');
 const reports = require('istanbul-reports');
+const { writeCoverageMetadata } = require('./coverage-metadata');
 
 const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 const REPORT_DIR = path.join(process.cwd(), 'coverage', 'renderer-report');
-const INDEX_HTML = path.join(process.cwd(), 'index.html');
+const EXPECTED_MANIFEST = path.join(process.cwd(), 'config', 'renderer-coverage-files.json');
 
 // Regression guard (audit #11): if this report ever drops back to the narrow
 // "collector-only" footprint, fail loudly instead of silently shipping a
@@ -35,6 +36,11 @@ const INDEX_HTML = path.join(process.cwd(), 'index.html');
 const ENFORCE_FLOOR = process.env.ENFORCE_RENDERER_COVERAGE_FLOOR !== '0';
 const MIN_FUNC_PCT = Number(process.env.MIN_RENDERER_FUNC_PCT || 40);
 const MIN_STMT_PCT = Number(process.env.MIN_RENDERER_STMT_PCT || 70);
+const CRITICAL_FILE_FLOORS = {
+  'src/renderer/app.js': Number(process.env.MIN_RENDERER_APP_STMT_PCT || 45),
+  'src/renderer/theme-boot.js': Number(process.env.MIN_RENDERER_THEME_BOOT_STMT_PCT || 80),
+  'src/renderer/editor/codemirror-adapter.js': Number(process.env.MIN_RENDERER_CM_STMT_PCT || 35),
+};
 
 /**
  * Run the full Playwright e2e suite with renderer-coverage collection enabled,
@@ -61,7 +67,7 @@ function runFullSuite() {
     [
       playwrightCli, 'test',
       '--config', 'playwright.config.js',
-      '--grep-invert', 'Renderer coverage collector',
+      '--grep-invert', '@visual|Renderer coverage collector',
     ],
     {
       stdio: 'inherit',
@@ -90,6 +96,39 @@ function collectJsonFiles(dir) {
   return out;
 }
 
+function collectSourceFiles(dir) {
+  const out = [];
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) out.push(...collectSourceFiles(full));
+    else if (name.endsWith('.js')) out.push(path.relative(process.cwd(), full).replaceAll('\\', '/'));
+  }
+  return out.sort();
+}
+
+function loadExpectedFiles() {
+  const expected = JSON.parse(fs.readFileSync(EXPECTED_MANIFEST, 'utf8')).slice().sort();
+  const actual = collectSourceFiles(path.join(process.cwd(), 'src', 'renderer'));
+  if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+    throw new Error('Renderer coverage manifest does not match src/renderer/**/*.js');
+  }
+  return expected;
+}
+
+function standardCoverage(data, localPath) {
+  const { all, ...rest } = data;
+  return {
+    path: (rest.path && rest.path !== '') ? rest.path : localPath,
+    statementMap: rest.statementMap || {},
+    s: rest.s || {},
+    fnMap: rest.fnMap || {},
+    f: rest.f || {},
+    branchMap: rest.branchMap || {},
+    b: rest.b || {},
+  };
+}
+
 async function main() {
   if (process.argv.includes('--run')) {
     runFullSuite();
@@ -102,6 +141,8 @@ async function main() {
 
   const coverageMap = libCoverage.createCoverageMap();
   const files = collectJsonFiles(COVERAGE_DIR);
+  const expectedFiles = loadExpectedFiles();
+  const observedFiles = new Set();
 
   let mergedEntries = 0;
   for (const file of files) {
@@ -126,6 +167,7 @@ async function main() {
       try { localPath = fileURLToPath(entry.url.split('?')[0].split('#')[0]); }
       catch (_) { continue; }
       if (!fs.existsSync(localPath)) continue;
+      observedFiles.add(path.relative(process.cwd(), localPath).replaceAll('\\', '/'));
 
       const converter = v8toIstanbul(localPath, 0, { source: entry.source });
       await converter.load();
@@ -133,25 +175,24 @@ async function main() {
       const istanbulCoverage = converter.toIstanbul();
 
       for (const [, data] of Object.entries(istanbulCoverage)) {
-        // Remove v8-to-istanbul-specific keys that istanbul-lib-coverage rejects
-        const { all, ...rest } = data;
-
-        // Ensure all required keys exist and are truthy
-        const standard = {
-          path: (rest.path && rest.path !== '') ? rest.path : localPath,
-          statementMap: rest.statementMap || {},
-          s: rest.s || {},
-          fnMap: rest.fnMap || {},
-          f: rest.f || {},
-          branchMap: rest.branchMap || {},
-          b: rest.b || {},
-        };
-
         // addFileCoverage MERGES (unions hit counts) when the path repeats,
         // so coverage from every test accumulates per renderer source file.
-        coverageMap.addFileCoverage(standard);
+        coverageMap.addFileCoverage(standardCoverage(data, localPath));
         mergedEntries++;
       }
+    }
+  }
+
+  // Missing first-party sources are materialized as zero-coverage files so
+  // they cannot disappear from the denominator. They also fail the load gate.
+  const missingFiles = expectedFiles.filter((file) => !observedFiles.has(file));
+  for (const relative of missingFiles) {
+    const localPath = path.join(process.cwd(), relative);
+    const converter = v8toIstanbul(localPath, 0, { source: fs.readFileSync(localPath, 'utf8') });
+    await converter.load();
+    converter.applyCoverage([]);
+    for (const [, data] of Object.entries(converter.toIstanbul())) {
+      coverageMap.addFileCoverage(standardCoverage(data, localPath));
     }
   }
 
@@ -163,6 +204,11 @@ async function main() {
   reports.create('html').execute(context);
   reports.create('text').execute(context);
   reports.create('json').execute(context);
+  writeCoverageMetadata(REPORT_DIR, 'renderer', {
+    expectedFiles: expectedFiles.length,
+    observedFiles: observedFiles.size,
+    mergedEntries,
+  });
 
   console.log(`Renderer coverage report generated at: ${REPORT_DIR}`);
   console.log(`Merged ${mergedEntries} renderer coverage entr${mergedEntries === 1 ? 'y' : 'ies'} from ${files.length} JSON file(s).`);
@@ -179,11 +225,24 @@ async function main() {
 
   if (ENFORCE_FLOOR) {
     const failures = [];
+    if (missingFiles.length) {
+      failures.push('required renderer sources were not observed: ' + missingFiles.join(', '));
+    }
     if (funcPct < MIN_FUNC_PCT) {
       failures.push(`function coverage ${funcPct.toFixed(2)}% < required ${MIN_FUNC_PCT}%`);
     }
     if (stmtPct < MIN_STMT_PCT) {
       failures.push(`statement coverage ${stmtPct.toFixed(2)}% < required ${MIN_STMT_PCT}%`);
+    }
+    for (const [relative, minimum] of Object.entries(CRITICAL_FILE_FLOORS)) {
+      const absolute = path.resolve(relative);
+      const matched = coverageMap.files().find(file => path.resolve(file) === absolute);
+      const fileCoverage = matched ? coverageMap.fileCoverageFor(matched) : null;
+      const pct = fileCoverage
+        ? num(fileCoverage.toSummary().statements.pct)
+        : 0;
+      console.log(relative + ': ' + pct.toFixed(2) + '% statements (min ' + minimum + '%).');
+      if (pct < minimum) failures.push(relative + ' statement coverage ' + pct.toFixed(2) + '% < ' + minimum + '%');
     }
     if (failures.length) {
       console.error(
@@ -197,7 +256,11 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { collectJsonFiles, collectSourceFiles, loadExpectedFiles, standardCoverage };

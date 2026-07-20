@@ -1,0 +1,61 @@
+{
+  "T1": {
+    "minimum": 85,
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/main-logic.js",
+      "src/main/capabilities.js",
+      "src/main/context-menu.js",
+      "src/main/document-store.js",
+      "src/main/navigation.js",
+      "src/main/protocol.js",
+      "src/main/settings.js",
+      "src/renderer/trusted.js"
+    ]
+  },
+  "T2": {
+    "minimum": 75,
+    "files": [
+      "src/main/version.js",
+      "src/renderer/bidi.js",
+      "src/renderer/bidi-dom.js",
+      "src/renderer/callouts.js",
+      "src/renderer/export.js",
+      "src/renderer/frontmatter.js",
+      "src/renderer/highlight.js",
+      "src/renderer/i18n.js",
+      "src/renderer/locale-logic.js",
+      "src/renderer/limits.js",
+      "src/renderer/markdown.js",
+      "src/renderer/math.js",
+      "src/renderer/mermaid.js",
+      "src/renderer/search.js",
+      "src/renderer/session.js",
+      "src/renderer/table-edit.js",
+      "src/renderer/tree.js"
+    ]
+  },
+  "T3": {
+    "minimum": 60,
+    "files": [
+      "src/renderer/dates.js",
+      "src/renderer/edit-commands.js",
+      "src/renderer/file-predicates.js",
+      "src/renderer/focus.js",
+      "src/renderer/footnotes.js",
+      "src/renderer/outline.js",
+      "src/renderer/state.js",
+      "src/renderer/tags.js",
+      "src/renderer/theme.js",
+      "src/renderer/editor/block-preview.js",
+      "src/renderer/editor/inline-marks-preview.js",
+      "src/renderer/editor/line-direction.js",
+      "src/renderer/editor/list-continuation.js",
+      "src/renderer/editor/live-preview.js",
+      "src/renderer/editor/math-preview.js",
+      "src/renderer/editor/syntax-guards.js",
+      "src/renderer/editor/wikilink-preview.js"
+    ]
+  }
+}

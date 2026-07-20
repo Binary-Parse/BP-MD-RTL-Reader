@@ -1,181 +1,67 @@
 const { test, expect } = require('@playwright/test');
+const fc = require('fast-check');
 
-/**
- * Property-based tests using fast-check (installed as devDependency).
- * These run inside the browser via page.evaluate() so they can access
- * the actual production functions on window.
- */
-
-test.describe('Property-based tests', () => {
+test.describe('Property-based renderer contracts', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
-    // Wait for init
-    await page.waitForSelector('#app', { state: 'visible' });
+    await page.locator('#app').waitFor({ state: 'visible' });
+    await expect.poll(() => page.evaluate(() => ({
+      arabic: typeof window.isArabicHeavy,
+      escape: typeof window.escapeHtml,
+      zoom: typeof window.setZoom,
+    }))).toEqual({ arabic: 'function', escape: 'function', zoom: 'function' });
   });
 
-  test.describe('isArabicHeavy properties', () => {
-    test('no-throw-for-valid: any string input does not crash', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        const samples = [
-          '', 'a', 'مرحبا', 'hello world', 'hello مرحبا',
-          '<script>alert(1)</script>', '\n\t\r', '123456',
-          'a'.repeat(10000), '\uFEFF', '\u200E\u200F',
-        ];
-        for (const s of samples) {
-          try { window.isArabicHeavy(s); } catch (e) { return { crash: true, input: s, err: e.message }; }
-          try { window.isArabicHeavy(s, 0); } catch (e) { return { crash: true, input: s, err: e.message }; }
-          try { window.isArabicHeavy(s, 1); } catch (e) { return { crash: true, input: s, err: e.message }; }
-        }
-        return { crash: false };
-      });
-      expect(result.crash).toBe(false);
-    });
-
-    test('threshold 0 always returns true for any text with letters', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        return window.isArabicHeavy('hello', 0) === true &&
-               window.isArabicHeavy('مرحبا', 0) === true &&
-               window.isArabicHeavy('123', 0) === false; // no letters
-      });
-      expect(result).toBe(true);
-    });
-
-    test('threshold 1 requires 100% Arabic letters', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        return window.isArabicHeavy('مرحبا', 1) === true &&
-               window.isArabicHeavy('hello مرحبا', 1) === false &&
-               window.isArabicHeavy('abc مرحبا', 1) === false;
-      });
-      expect(result).toBe(true);
-    });
-
-    test('empty string returns false for any threshold', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        return window.isArabicHeavy('', 0) === false &&
-               window.isArabicHeavy('', 0.5) === false &&
-               window.isArabicHeavy('', 1) === false;
-      });
-      expect(result).toBe(true);
-    });
-
-    test('pure function: same input produces same output', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        const text = 'hello world مرحبا';
-        const a = window.isArabicHeavy(text, 0.3);
-        const b = window.isArabicHeavy(text, 0.3);
-        const c = window.isArabicHeavy(text, 0.3);
-        return a === b && b === c;
-      });
-      expect(result).toBe(true);
-    });
+  test('isArabicHeavy never throws and always returns a boolean for generated strings and thresholds', async ({ page }) => {
+    await fc.assert(fc.asyncProperty(
+      fc.array(fc.string({ maxLength: 200 }), { minLength: 1, maxLength: 30 }),
+      fc.array(fc.double({ noNaN: true }), { minLength: 1, maxLength: 10 }),
+      async (samples, thresholds) => {
+        const result = await page.evaluate(({ samples: values, thresholds: limits }) => {
+          for (const value of values) {
+            for (const threshold of limits) {
+              const output = window.isArabicHeavy(value, threshold);
+              if (typeof output !== 'boolean') return { value, threshold, output };
+            }
+          }
+          return null;
+        }, { samples, thresholds });
+        if (result) throw new Error('Non-boolean isArabicHeavy result: ' + JSON.stringify(result));
+      },
+    ), { numRuns: 30 });
   });
 
-  test.describe('vaultSearch properties', () => {
-    test('inverse: empty query or empty files always returns []', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        window._appState.files = [];
-        const r1 = window.vaultSearch('test');
-        window._appState.files = [{ name: 'a.md', content: 'hello' }];
-        const r2 = window.vaultSearch('');
-        const r3 = window.vaultSearch('x'); // < 2 chars
-        return r1.length === 0 && r2.length === 0 && r3.length === 0;
-      });
-      expect(result).toBe(true);
-    });
-
-    test('no-throw-for-valid: any string query with valid files does not crash', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        window._appState.files = [
-          { name: 'a.md', content: 'hello world' },
-          { name: 'b.md', content: 'foo bar baz' },
-        ];
-        const queries = ['', 'a', 'hello', '<script>', '\n\t', 'foo bar baz hello world'];
-        for (const q of queries) {
-          try { window.vaultSearch(q); } catch (e) { return { crash: true, query: q }; }
-        }
-        return { crash: false };
-      });
-      expect(result.crash).toBe(false);
-    });
-
-    test('hit cap invariant: no file has more than 5 hits', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        window._appState.files = [
-          { name: 'a.md', content: 'test test test test test test test test test test' },
-        ];
-        const r = window.vaultSearch('test');
-        return r.every(file => file.hits.length <= 5);
-      });
-      expect(result).toBe(true);
-    });
-
-    test('monotonic: adding files never decreases result count', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        window._appState.files = [{ name: 'a.md', content: 'hello world' }];
-        const r1 = window.vaultSearch('hello').length;
-        window._appState.files.push({ name: 'b.md', content: 'hello again' });
-        const r2 = window.vaultSearch('hello').length;
-        return r2 >= r1;
-      });
-      expect(result).toBe(true);
-    });
-
-    test('idempotency: repeated identical queries yield identical results', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        window._appState.files = [
-          { name: 'a.md', content: 'hello world' },
-          { name: 'b.md', content: 'foo bar' },
-        ];
-        const r1 = JSON.stringify(window.vaultSearch('hello'));
-        const r2 = JSON.stringify(window.vaultSearch('hello'));
-        const r3 = JSON.stringify(window.vaultSearch('hello'));
-        return r1 === r2 && r2 === r3;
-      });
-      expect(result).toBe(true);
-    });
+  test('production escapeHtml removes every literal HTML delimiter from generated input', async ({ page }) => {
+    await fc.assert(fc.asyncProperty(
+      fc.array(fc.string({ maxLength: 300 }), { minLength: 1, maxLength: 40 }),
+      async (samples) => {
+        const failure = await page.evaluate((values) => {
+          for (const value of values) {
+            const output = window.escapeHtml(value);
+            if (/[<>"]/.test(output)) return { value, output };
+          }
+          return null;
+        }, samples);
+        if (failure) throw new Error('Unescaped production output: ' + JSON.stringify(failure));
+      },
+    ), { numRuns: 30 });
   });
 
-  test.describe('setZoom properties', () => {
-    test('clamp invariant: result always in [0.6, 2.0] for any finite number', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        const inputs = [0, 0.1, 0.5, 0.6, 1, 1.5, 2.0, 2.5, 100, -1, -100];
-        for (const v of inputs) {
-          window.setZoom(v);
-          const z = window._appState.zoomFactor;
-          if (z < 0.6 || z > 2.0) return { ok: false, input: v, output: z };
-        }
-        return { ok: true };
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    test('NaN and Infinity do not corrupt state', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        window.setZoom(1);
-        const before = window._appState.zoomFactor;
-        window.setZoom(NaN);
-        const afterNaN = window._appState.zoomFactor;
-        window.setZoom(Infinity);
-        const afterInf = window._appState.zoomFactor;
-        window.setZoom(-Infinity);
-        const afterNegInf = window._appState.zoomFactor;
-        return afterNaN === before && afterInf === 2.0 && afterNegInf === 0.6;
-      });
-      expect(result).toBe(true);
-    });
-  });
-
-  test.describe('escapeHtml properties', () => {
-    test('round-trip invariant: escaped HTML contains no literal < or >', async ({ page }) => {
-      const result = await page.evaluate(() => {
-        const inputs = ['<script>', '<div>text</div>', '&amp;', '"quote"', '<>'];
-        for (const s of inputs) {
-          const out = window.escapeHtml ? window.escapeHtml(s) : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-          if (out.includes('<') || out.includes('>')) return { ok: false, input: s, output: out };
-        }
-        return { ok: true };
-      });
-      expect(result.ok).toBe(true);
-    });
+  test('setZoom clamps every generated numeric input to the documented interval', async ({ page }) => {
+    await fc.assert(fc.asyncProperty(
+      fc.array(fc.double({ noNaN: true }), { minLength: 1, maxLength: 40 }),
+      async (values) => {
+        const failure = await page.evaluate((inputs) => {
+          for (const input of inputs) {
+            window.setZoom(input);
+            const actual = window._appState.zoomFactor;
+            const expected = Math.max(0.6, Math.min(2, input));
+            if (actual !== expected) return { input, actual, expected };
+          }
+          return null;
+        }, values);
+        if (failure) throw new Error('Zoom clamp mismatch: ' + JSON.stringify(failure));
+      },
+    ), { numRuns: 30 });
   });
 });

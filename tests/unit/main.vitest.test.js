@@ -77,7 +77,10 @@ function buildMockElectron() {
     ipcRenderer,
     contextBridge,
     shell: { openExternal: vi.fn() },
-    dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
+    dialog: {
+      showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
+      showSaveDialog: vi.fn(() => Promise.resolve({ canceled: true })),
+    },
     clipboard: { writeText: vi.fn() },
     crashReporter,
     Menu,
@@ -185,6 +188,70 @@ describe('main.js', () => {
   });
 });
 
+describe('main.js — standalone Save As boundary', () => {
+  test('validates input, preserves text metadata, and grants the saved Markdown file', async () => {
+    const electron = buildMockElectron();
+    const fs = buildMockFs();
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'main.js']) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const save = electron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
+
+    await expect(save({}, null)).resolves.toEqual({ error: 'invalid' });
+    await expect(save({}, { content: 7 })).resolves.toEqual({ error: 'invalid' });
+    await expect(save({}, { content: 'x'.repeat(10 * 1024 * 1024 + 1) }))
+      .resolves.toEqual({ error: 'file-too-large' });
+    expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled();
+
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+    await expect(save({}, { content: 'x' })).resolves.toEqual({ canceled: true });
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '' });
+    await expect(save({}, { content: 'x' })).resolves.toEqual({ canceled: true });
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '//server/note.md' });
+    await expect(save({}, { content: 'x' })).resolves.toEqual({ error: 'network-path-not-allowed' });
+
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/notes/note.txt' });
+    await expect(save({}, { content: 'x' })).resolves.toEqual({ error: 'invalid-file-type' });
+
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/notes/saved.md' });
+    const result = await save({}, {
+      content: 'line1\nline2', suggestedName: 'Draft.markdown', bom: true,
+      eol: '\r\n', finalNewline: false, revision: 17,
+    });
+    expect(electron.dialog.showSaveDialog).toHaveBeenLastCalledWith(electron._mockWin, {
+      title: 'Save Markdown File',
+      defaultPath: 'Draft.markdown',
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    });
+    expect(result).toMatchObject({ ok: true, name: 'saved.md', revision: 17 });
+    expect(result.documentId).toMatch(/^cap-/);
+    const documentWrite = fs.writeFileSync.mock.calls.find(call => String(call[0]).startsWith('/notes/saved.md.tmp-'));
+    expect(documentWrite[1]).toBe('\uFEFFline1\r\nline2');
+    expect(result.meta).toMatchObject({ bom: true, eol: '\r\n', finalNewline: false });
+  });
+
+  test('uses a safe default name and reports atomic-write or grant failures', async () => {
+    const writeFailureElectron = buildMockElectron();
+    const writeFailureFs = buildMockFs({ writeFileSync: vi.fn(() => { throw new Error('disk'); }) });
+    writeFailureElectron.dialog.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/notes/fail.md' });
+    bootstrap({ electron: writeFailureElectron, fs: writeFailureFs, proc: buildMockProc(['node', 'main.js']) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const saveWriteFailure = writeFailureElectron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
+    await expect(saveWriteFailure({}, { content: 'x', suggestedName: 42, eol: '\n', finalNewline: true }))
+      .resolves.toEqual({ error: 'write-failed' });
+    expect(writeFailureElectron.dialog.showSaveDialog.mock.calls[0][1].defaultPath).toBe('Untitled.md');
+
+    const grantFailureElectron = buildMockElectron();
+    const grantFailureFs = buildMockFs({
+      statSync: vi.fn(() => ({ isFile: () => false, isDirectory: () => false, size: 1, mtimeMs: 1 })),
+    });
+    grantFailureElectron.dialog.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/notes/grant.md' });
+    bootstrap({ electron: grantFailureElectron, fs: grantFailureFs, proc: buildMockProc(['node', 'main.js']) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const saveGrantFailure = grantFailureElectron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
+    await expect(saveGrantFailure({}, { content: 'x' })).resolves.toEqual({ error: 'write-failed' });
+  });
+});
+
 describe('preload.js', () => {
   let mockElectron;
 
@@ -285,6 +352,33 @@ describe('preload.js', () => {
       .filter(c => c[0] === 'fs:readVault')
       .map(c => c[1]);
     expect(calls).toEqual(['\\\\server\\share', '//server/share', 'C:\\Users\\Legend\\notes']);
+  });
+
+  test('open/read/write/save and settings bridge methods invoke their exact channels', () => {
+    mockElectron.ipcRenderer.invoke.mockClear();
+    const api = getApi();
+    api.openFile();
+    api.readFile('cap-document');
+    api.writeFile({ documentId: 'cap-document', content: 'x' });
+    api.saveFileAs({ name: 'x.md', content: 'x' });
+    api.getSettings();
+    api.setSettings({ theme: 'ink' });
+    expect(mockElectron.ipcRenderer.invoke.mock.calls).toEqual([
+      ['dialog:openFile'],
+      ['fs:readFile', 'cap-document'],
+      ['fs:writeFile', { documentId: 'cap-document', content: 'x' }],
+      ['dialog:saveFile', { name: 'x.md', content: 'x' }],
+      ['settings:get'],
+      ['settings:set', { theme: 'ink' }],
+    ]);
+  });
+
+  test('onCloseRequested subscribes and invokes the callback without exposing the event', () => {
+    const cb = vi.fn();
+    getApi().onCloseRequested(cb);
+    const call = mockElectron.ipcRenderer.on.mock.calls.find(c => c[0] === 'app:request-close');
+    call[1]({ sender: 'private' });
+    expect(cb).toHaveBeenCalledWith();
   });
 
   // ─ editCommand (kills L13) ─────────────────────────────────────────

@@ -4,6 +4,10 @@
  * by the renderer using these strings + uiDirection.
  */
 
+import { translate, localeDirection } from './locale-logic.js';
+
+export { localeDirection };
+
 export const MESSAGES = {
   en: {
     'menu.file': 'File', 'menu.edit': 'Edit', 'menu.view': 'View', 'menu.help': 'Help',
@@ -122,13 +126,5 @@ export const MESSAGES = {
 
 /** Translate a key for a locale, falling back to English then the key itself. */
 export function t(key, locale = 'en') {
-  const table = MESSAGES[locale] || MESSAGES.en;
-  if (key in table) return table[key];
-  if (key in MESSAGES.en) return MESSAGES.en[key];
-  return key;
-}
-
-/** UI direction implied by a locale. */
-export function localeDirection(locale) {
-  return locale === 'ar' ? 'rtl' : 'ltr';
+  return translate(MESSAGES, key, locale);
 }

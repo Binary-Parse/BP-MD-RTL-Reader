@@ -551,12 +551,17 @@ test.describe('[CA16] Command palette items', () => {
     }
   });
 
-  test('palette opens and items are clickable', async ({ page }) => {
+  test('palette command click performs its action and closes the palette', async ({ page }) => {
     await goto(page);
+    const before = await page.evaluate(() => window._appState.sidebarVisible);
     await page.click('#searchBtn');
-    await page.waitForTimeout(200);
-    const items = await page.$$('.pal-item');
-    expect(items.length).toBeGreaterThan(0);
+    await expect(page.locator('#palOverlay')).toHaveClass(/open/);
+    await page.fill('#palInput', 'Toggle Sidebar');
+    const command = page.locator('.pal-item', { hasText: 'Toggle Sidebar' }).first();
+    await expect(command).toBeVisible();
+    await command.click();
+    await expect.poll(() => page.evaluate(() => window._appState.sidebarVisible)).toBe(!before);
+    await expect(page.locator('#palOverlay')).not.toHaveClass(/open/);
   });
 });
 
@@ -583,43 +588,42 @@ test.describe('[CA17] Modal close buttons', () => {
   test('palOverlay click outside palette closes it', async ({ page }) => {
     await goto(page);
     await page.click('#searchBtn');
-    await page.waitForTimeout(100);
-    // Click the overlay backdrop (corner pixel)
-    await page.evaluate(() => {
-      const ov = document.getElementById('palOverlay');
-      ov.dispatchEvent(new MouseEvent('click', { bubbles: true, target: ov }));
-      // Force the handler condition: e.target === palOverlay
-      ov.click();
-    });
-    await page.waitForTimeout(100);
-    // Looser assertion: just verify no pageerror
+    const overlay = page.locator('#palOverlay');
+    await expect(overlay).toHaveClass(/open/);
+    await overlay.click({ position: { x: 10, y: 10 } });
+    await expect(overlay).not.toHaveClass(/open/);
   });
 });
 
 // ===========================================================================
 // 18 — pageerror sweep
 // ===========================================================================
-test.describe('[CA18] Global pageerror sweep', () => {
-  test('no pageerror when clicking every static button id', async ({ page }) => {
+test.describe('[CA18] Stateful control outcome sweep', () => {
+  test('representative static controls produce their documented outcomes without page errors', async ({ page }) => {
     const errors = [];
-    page.on('pageerror', e => errors.push({ id: 'unknown', msg: e.message }));
+    page.on('pageerror', e => errors.push(e.message));
     await goto(page);
-    const ids = [
-      'sidebarToggleBtn', 'inspectorToggleBtn', 'themeBtn', 'rtlBtn', 'tabAddBtn', 'searchBtn',
-      'wbOpenVault', 'wbOpenFile', 'wbNewNote', 'wbLoadDemo',
-      'sbOpenVaultBtn', 'sbOpenFileBtn', 'sbNewNoteBtn',
-      'tbHeading', 'tbBold', 'tbItalic', 'tbStrike', 'tbCode',
-      'tbLink', 'tbWikilink', 'tbMath',
-      'tbQuote', 'tbCallout', 'tbList', 'tbListOrdered', 'tbTaskList',
-      'tbCodeBlock', 'tbTable', 'tbImage', 'tbRule'
-    ];
-    for (const id of ids) {
-      const el = await page.$(`#${id}`);
-      if (el) {
-        try { await el.click({ timeout: 1000 }); } catch (_) {}
-        await page.waitForTimeout(20);
-      }
-    }
+
+    const before = await page.evaluate(() => ({
+      sidebar: window._appState.sidebarVisible,
+      inspector: window._appState.inspectorVisible,
+      theme: window._appState.theme,
+      direction: window._appState.direction
+    }));
+    await page.click('#sidebarToggleBtn');
+    await expect.poll(() => page.evaluate(() => window._appState.sidebarVisible)).toBe(!before.sidebar);
+    await page.click('#inspectorToggleBtn');
+    await expect.poll(() => page.evaluate(() => window._appState.inspectorVisible)).toBe(!before.inspector);
+    await page.click('#themeBtn');
+    await expect.poll(() => page.evaluate(() => window._appState.theme)).not.toBe(before.theme);
+    await page.click('#rtlBtn');
+    await expect.poll(() => page.evaluate(() => window._appState.direction)).not.toBe(before.direction);
+    await page.click('#wbLoadDemo');
+    await expect.poll(() => page.evaluate(() => window._appState.files.length)).toBeGreaterThan(0);
+    await page.click('#searchBtn');
+    await expect(page.locator('#palOverlay')).toHaveClass(/open/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#palOverlay')).not.toHaveClass(/open/);
     expect(errors).toEqual([]);
   });
 });

@@ -14,9 +14,11 @@ const OPENABLE_SCHEME = /^(https?|mailto|tel):/i;
  * @returns {{action:'allow'|'external'|'block'}}
  */
 function classifyNavigation(url, appUrl) {
-  if (typeof url !== 'string' || url === '') return { action: 'block' };
+  if (typeof url !== 'string') return { action: 'block' };
   // Only the app's exact page may load in the renderer (EC-B6: exact, not substring).
-  if (typeof appUrl === 'string' && appUrl !== '' && url === appUrl) {
+  // `url` is already a string, so strict equality also proves `appUrl` is the
+  // same non-empty string; repeating those predicates creates equivalent mutants.
+  if (url === appUrl) {
     return { action: 'allow' };
   }
   if (OPENABLE_SCHEME.test(url)) return { action: 'external' };

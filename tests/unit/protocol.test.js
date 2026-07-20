@@ -79,6 +79,26 @@ describe('parseBpmdUrl — guard + anchoring (mutation kills)', () => {
   test('percent-encoded traversal decodes (so the resolver can reject it)', () => {
     expect(parseBpmdUrl('bpmd://vault/%2e%2e/secret')).toBe('../secret');
   });
+  test('malformed percent encoding falls back to the undecoded relative path', () => {
+    expect(parseBpmdUrl('bpmd://vault/bad%2')).toBe('bad%2');
+  });
+});
+
+describe('validateAsset — exact MIME and size-boundary results', () => {
+  test('returns the exact MIME for every supported extension, case-insensitively', async () => {
+    const expected = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+      webp: 'image/webp', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',
+    };
+    for (const [extension, type] of Object.entries(expected)) {
+      const fs = { promises: {
+        realpath: async value => value,
+        stat: async () => ({ isFile: () => true, size: 5 * 1024 * 1024 }),
+      } };
+      await expect(validateAsset(`/vault/a.${extension.toUpperCase()}`, '/vault', fs, path.posix))
+        .resolves.toEqual({ path: `/vault/a.${extension.toUpperCase()}`, type, size: 5 * 1024 * 1024 });
+    }
+  });
 });
 
 describe('resolveAsset — every guard branch (mutation kills)', () => {

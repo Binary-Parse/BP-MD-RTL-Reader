@@ -4,7 +4,7 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after five verified batches: **37 Fixed, 4 Partially Fixed, 19 In Progress**. Final repository-wide validation remains pending.
+Current status after the test/CI assurance batch: **48 Fixed, 4 Partially Fixed, 8 In Progress**. Configuration/documentation remediation and final repository-wide validation remain pending.
 
 ## Baseline vs. Post-Fix
 
@@ -62,18 +62,18 @@ Current status after five verified batches: **37 Fixed, 4 Partially Fixed, 19 In
 | DEP-001 | Medium | Fixed | package/lock, vendor sync/manifest/assets/licenses + tests | Y |
 | DEP-002 | Medium | Fixed | package allowlist, notices/licenses + tests | Y |
 | DEP-003 | Low | Fixed | package/lock + audit/vendor/unit/browser checks | Y |
-| TEST-001 | Medium | In Progress | — | N |
-| TEST-002 | Medium | In Progress | — | N |
-| TEST-003 | Medium | In Progress | — | N |
-| TEST-004 | Medium | In Progress | — | N |
-| TEST-005 | Low | In Progress | — | N |
-| TEST-006 | Medium | In Progress | — | N |
-| TEST-007 | Medium | In Progress | — | N |
-| TEST-008 | Medium | In Progress | — | N |
-| TEST-009 | Low | In Progress | — | N |
+| TEST-001 | Medium | Fixed | Electron config/runtime spec, main bootstrap + CI | Y |
+| TEST-002 | Medium | Fixed | renderer manifest/collector/config + CI | Y |
+| TEST-003 | Medium | Fixed | coverage wrappers/metadata/merge/config + CI | Y |
+| TEST-004 | Medium | Fixed | production IPC security spec | Y |
+| TEST-005 | Low | Fixed | fast-check production property tests | Y |
+| TEST-006 | Medium | Fixed | axe tests + accessible theme/control styles | Y |
+| TEST-007 | Medium | Fixed | performance/click outcome tests | Y |
+| TEST-008 | Medium | Fixed | package matrix, verification/checksum scripts | Y (CI matrix static; Windows package local) |
+| TEST-009 | Low | Fixed | mutation tiers/locale logic + focused tests | Y |
 | CONF-001 | Medium | In Progress | — | N |
-| CONF-002 | Medium | In Progress | — | N |
-| CONF-003 | Medium | In Progress | — | N |
+| CONF-002 | Medium | Fixed | CI checkout + Gitleaks history invocation | Y |
+| CONF-003 | Medium | Fixed | CI pinned Gitleaks version/SHA-256 verification | Y |
 | CONF-004 | Medium | In Progress | — | N |
 | DOC-001 | Low | In Progress | — | N |
 | DOC-002 | Medium | In Progress | — | N |
@@ -473,6 +473,116 @@ Current status after five verified batches: **37 Fixed, 4 Partially Fixed, 19 In
 - **Files touched:** `package.json:157-196`; `package-lock.json`; `tests/unit/vendor-provenance.test.js:35-40`.
 - **Verification:** Fresh `npm audit --json` reports 0 vulnerabilities; `npm ls --depth=0 --json` resolves all declared direct packages; the exact-version unit assertion passes; full unit, vendor, focused browser, and x64 package-directory gates pass.
 - **Risk & notes:** Risky dependency batch. The initial install summary transiently printed three vulnerabilities while npm reconciled the tree; the post-install authoritative audit is clean. Deprecated transitive packages not selected by project code remain controlled by their upstream tools; no unverified breaking-major migration was introduced.
+
+### [TEST-001] Browser-only tests did not exercise the Electron runtime boundary
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** The default Playwright suite loaded `index.html` directly and could not prove BrowserWindow, preload, IPC, native lifecycle, or main-process filesystem composition.
+- **Change made:** Added a dedicated production-Electron Playwright configuration and runtime spec that launches `electron .` against a temporary user-data directory, then proves context isolation/sandbox/preload exposure, settings and note persistence, visible startup, and the real renderer-to-main close IPC. The package test command and CI now include this lane; the Electron entry guard keys off `process.versions.electron` so the packaged runtime boots while Node imports remain injectable.
+- **Files touched:** `playwright.electron.config.js:1-20`; `tests/electron/runtime-boundary.spec.js:1-105`; `package.json:18-25`; `main.js:710-716`; `.github/workflows/ci.yml:235-266`.
+- **Verification:** `npm run test:electron` launched the production app and passed 3/3 tests in 2.3 seconds. Browser-only tests remain as the fast renderer lane.
+- **Risk & notes:** Tests use temporary user data and a temporary Markdown file; no real profile or document is mutated. Cross-platform package launch remains represented by native CI runners rather than claimed from Windows alone.
+
+### [TEST-002] Renderer coverage was excluded from the normal CI gate and measured only observed files
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Coverage collected one bespoke spec and silently omitted unobserved renderer modules.
+- **Change made:** Added an expected-source manifest covering all 38 renderer JavaScript files, auto-coverage instrumentation for the complete non-visual Playwright suite, completeness validation, aggregate renderer floors, and explicit critical-file floors for `app.js`, `theme-boot.js`, and the CodeMirror adapter. CI runs the collector as part of the combined gate.
+- **Files touched:** `config/renderer-coverage-files.json:1-40`; `playwright.config.js:8-69`; `scripts/generate-renderer-coverage.js:1-252`; `.github/workflows/ci.yml:197-233`; `tests/unit/remediation-tooling.test.js:30-32`.
+- **Verification:** Fresh `npm run test:e2e:coverage` passed 683/683 non-visual tests, merged 25,308 entries from 665 JSON files, and reported 88.50% statements / 77.51% functions; critical files were 86.70%, 100%, and 100% statements against 45%, 80%, and 35% floors.
+- **Risk & notes:** Visual snapshots stay in their reproducible container lane and are intentionally excluded from the long coverage collection; every renderer source is still required in the coverage map.
+
+### [TEST-003] Advertised combined coverage did not combine and tolerated missing/stale inputs
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** The merge script treated inputs opportunistically and no command guaranteed both coverage sides came from the same current commit.
+- **Change made:** Added commit/timestamp metadata, non-empty and completeness checks, a unit wrapper that corrects Vitest's duplicate-CommonJS overwrite artifact through a direct-module shard, shared thresholds, a mandatory unit→renderer→merge command, and combined statement/function floors.
+- **Files touched:** `config/coverage-thresholds.json:1-15`; `scripts/coverage-metadata.js:1-50`; `scripts/run-unit-coverage.js:1-128`; `scripts/merge-coverage.js:1-69`; `vitest.config.js:1-92`; `package.json:20-32`; `tests/unit/remediation-tooling.test.js:34-47`.
+- **Verification:** Fresh unit coverage passed 96.45% statements / 92.39% branches / 97.52% functions / 98.41% lines. The merge first rejected a pre-commit unit artifact, then passed after same-commit regeneration at 90.82% statements / 87.25% functions.
+- **Risk & notes:** The two-pass unit merge differs from the audit recommendation because it addresses a confirmed Vitest 4 CommonJS coverage-overwrite artifact while retaining the unchanged 95/90/95/95 project thresholds; it does not exclude source or relax coverage.
+
+### [TEST-004] Legacy IPC security tests exercised a copied handler
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** The suite recreated validation logic in test code, so production-handler drift could pass unnoticed.
+- **Change made:** Replaced the copied handler with injected production `bootstrap`, captured the registered IPC callback, and drove malformed payload, size, capability, conflict, and metadata paths through that real callback.
+- **Files touched:** `tests/ipc-security.spec.js:1-167`.
+- **Verification:** `npx playwright test tests/ipc-security.spec.js` passed 3/3; the test assertions now fail when production handler behavior changes.
+- **Risk & notes:** The fake filesystem is confined to the test process and performs no real writes.
+
+### [TEST-005] Property-based tests used hand-written loops and fallback copies
+
+- **Status:** Fixed
+- **Severity:** Low
+- **Root cause:** Random loops did not shrink failures and some properties targeted duplicate fallback implementations.
+- **Change made:** Rewrote the suite with `fast-check` arbitraries against imported production functions for bidi direction, table round-trips, and path/file predicates, with deterministic 30-run budgets.
+- **Files touched:** `tests/property-based.spec.js:1-86`.
+- **Verification:** Focused Playwright property suite passed 3/3; failures now carry fast-check seeds/counterexamples and shrink through the real implementations.
+- **Risk & notes:** The bounded run count keeps the browser suite practical while materially improving counterexample quality.
+
+### [TEST-006] Accessibility tests globally suppressed known serious violations
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Axe exclusions converted known contrast/focus defects into permanent blind spots.
+- **Change made:** Removed global suppressions; separated filled-control accent color from text/link accent; corrected paper/ink/sepia muted and status colors; fixed palette/modal semantics and focusability; and made axe assertions report the complete critical/serious result set.
+- **Files touched:** `tests/accessibility.spec.js:1-130`; `index.html:28-123,694-718,1250-1320,1614-1655`.
+- **Verification:** All 10 accessibility scenarios passed unsuppressed, including every theme, CM6, palette, modal, find bar, and callout contrast.
+- **Risk & notes:** Visual colors changed only where the audit identified insufficient contrast; accent-fill preserves the intended warm palette while meeting white-text contrast.
+
+### [TEST-007] Performance and click audits asserted weak proxies
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Timers measured scheduling rather than completed rendering, heap/listener checks lacked GC/outcome evidence, and click sweeps tolerated swallowed exceptions without proving state changes.
+- **Change made:** Performance tests now await animation frames and visible layout, measure completed zoom operations, use CDP heap/GC evidence, and verify DOM/listener bounds. Click tests assert command-palette results, backdrop dismissal, representative control outcomes, and zero swallowed click exceptions.
+- **Files touched:** `tests/performance.spec.js:1-177`; `tests/click-audit-all.spec.js:1-142`; `tests/focus-trap.spec.js:39-47`; `tests/i18n.spec.js:134-141`.
+- **Verification:** Combined performance/click focused run passed 63/63; the corrected focus and bidi assertions passed in a 47-test regression set.
+- **Risk & notes:** Thresholds remain generous enough for CI variance but now guard completed work and observable outcomes.
+
+### [TEST-008] Installer and cross-platform package behavior were absent from CI
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** CI ran only Ubuntu tests and never built the declared Windows/macOS/Linux target/architecture matrix or inspected release payloads.
+- **Change made:** Added native-runner package jobs that build every configured target and architecture, run non-destructive Windows installer logic tests, inspect every generated `app.asar` for required licenses and forbidden development payloads, generate SHA-256 manifests, and upload verified artifacts. Added exact `@electron/asar` tooling.
+- **Files touched:** `.github/workflows/ci.yml:365-422`; `scripts/verify-package-contents.js:1-65`; `scripts/write-artifact-checksums.js:1-43`; `package.json:14-15,169`; `package-lock.json`; `tests/unit/remediation-tooling.test.js:49-54`.
+- **Verification:** CI YAML parsed successfully with PyYAML; package verification unit tests reject forbidden paths; local Windows packaging previously built all six NSIS/portable x64/ia32/arm64 artifacts. Final rebuilt-package inspection is pending the final validation gate.
+- **Risk & notes:** CI packages are intentionally unsigned when repository signing credentials are absent; the offline threat model does not justify inventing or weakening signing secrets. Native runner builds provide the missing repository-owned gate; signing/notarization remains conditional external release evidence.
+
+### [TEST-009] Mutation tiers were not enforced and locale behavior was excluded
+
+- **Status:** Fixed
+- **Severity:** Low
+- **Root cause:** One aggregate score could mask a weak trust-boundary file, and executable locale fallback/direction lived beside an excluded translation table.
+- **Change made:** Extracted locale behavior into a mutatable module; declared exact non-overlapping T1/T2/T3 file inventories; added a per-file JSON post-processor (85%/75%/60% floors); retained an independent 80% whole-scope floor; added targeted tests for every initially sub-threshold file; and isolated Stryker from the user's unrelated untracked TypeScript config.
+- **Files touched:** `src/renderer/locale-logic.js:1-12`; `src/renderer/locale.js:1-8,126-132`; `config/mutation-tiers.json:1-58`; `scripts/check-mutation-tiers.js:1-62`; `stryker.config.json:1-74`; `package.json:26-27`; mutation-focused tests in `tests/unit/{main.vitest,capabilities,navigation,protocol,settings,markdown,table-edit,locale,remediation-tooling}.test.js`.
+- **Verification:** Full `npm run test:mutation` instrumented 44 files / 5,623 mutants, ran 1,196 initial tests, scored 86.63% overall, and passed all 44 per-file tier checks. Lowest results remained above their floors (T1 main.js 87.74%; T2 export.js 75.63%; T3 syntax-guards.js 65.00%).
+- **Risk & notes:** Two Stryker workers were restarted after memory exhaustion but the runner recovered and completed with exit 0. No mutant or test was suppressed; redundant navigation predicates were simplified only where strict equality made them provably equivalent.
+
+### [CONF-002] Gitleaks scanned a shallow working tree rather than committed history
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Checkout depth and directory mode could not establish full reachable-history coverage.
+- **Change made:** The lint job checks out full history and runs `gitleaks git . --log-opts="--all"` with redaction and a failing exit code.
+- **Files touched:** `.github/workflows/ci.yml:49-74`.
+- **Verification:** Workflow YAML parsed successfully; command and `fetch-depth: 0` were verified by configuration inspection. CI execution is required for remote history evidence.
+- **Risk & notes:** No local history rewrite or secret rotation was performed; the original audit found no visible secret.
+
+### [CONF-003] CI executed an unverified downloaded Gitleaks archive
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** A versioned URL alone did not authenticate downloaded bytes before extraction/execution.
+- **Change made:** Pinned Gitleaks 8.30.1 and verifies the Linux x64 release archive against SHA-256 `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb` with strict `sha256sum` before extraction.
+- **Files touched:** `.github/workflows/ci.yml:67-74`.
+- **Verification:** Workflow YAML parsed successfully; the verified checksum step precedes `tar` and execution. The checksum was cross-checked against the published 8.30.1 release assets.
+- **Risk & notes:** A checksum pin is deliberately simpler than introducing another privileged action or key-management path for this offline project.
 
 ## Deferred & Not Applicable
 

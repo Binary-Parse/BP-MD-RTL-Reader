@@ -1,9 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
+import { readFileSync } from 'fs';
 
 // ✅ الحل البديل لـ __dirname في ESM
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const coverageThresholds = JSON.parse(
+  readFileSync(resolve(__dirname, 'config/coverage-thresholds.json'), 'utf8'),
+);
 
 export default defineConfig({
   test: {
@@ -15,8 +19,10 @@ export default defineConfig({
       'tests/e2e/**',              // safety: never let Playwright specs slip in
       'tests/**/*.e2e.spec.js',    // safety: same
     ],
-    deps: {
-      inline: [/src\/main-logic\.js/],
+    server: {
+      deps: {
+        inline: [/src[\\/]main-logic\.js/],
+      },
     },
     coverage: {
       provider: 'v8',
@@ -35,12 +41,7 @@ export default defineConfig({
       // Coverage gate (audit #5): SAFE thresholds set BELOW current measured
       // coverage (≈98% stmt / 95% branch / 100% func / 98% lines) so the gate
       // enforces a regression floor without false-failing on normal runs.
-      thresholds: {
-        statements: 95,
-        branches: 90,
-        functions: 95,
-        lines: 95,
-      },
+      thresholds: coverageThresholds.unit,
     },
   },
   resolve: {

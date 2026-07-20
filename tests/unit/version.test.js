@@ -28,4 +28,20 @@ describe('compareVersions (T-Q6)', () => {
     expect(parse('v1.2.3-rc.2')).toMatchObject({ major: 1, minor: 2, patch: 3, prerelease: ['rc', 2] });
     expect(parse(null)).toBeNull();
   });
+
+  test('covers every SemVer prerelease precedence rule and strict identifier validation', () => {
+    expect(parse('1.0.0-01')).toBeNull();
+    expect(parse('1.2.3-alpha+build.7')).toEqual({
+      major: 1, minor: 2, patch: 3, prerelease: ['alpha'], build: ['build', '7'],
+    });
+    expect(compareVersions('1.0.0', '1.0.0-rc.1')).toBe(1);
+    expect(compareVersions('1.0.0-rc.1', '1.0.0')).toBe(-1);
+    expect(compareVersions('1.0.0-alpha', '1.0.0-alpha.1')).toBe(-1);
+    expect(compareVersions('1.0.0-alpha.1', '1.0.0-alpha')).toBe(1);
+    expect(compareVersions('1.0.0-1', '1.0.0-alpha')).toBe(-1);
+    expect(compareVersions('1.0.0-alpha', '1.0.0-1')).toBe(1);
+    expect(compareVersions('1.0.0-beta', '1.0.0-alpha')).toBe(1);
+    expect(compareVersions('1.0.0-alpha', '1.0.0-beta')).toBe(-1);
+    expect(compareVersions('1.0.0-alpha', '1.0.0-alpha')).toBe(0);
+  });
 });

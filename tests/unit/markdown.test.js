@@ -361,6 +361,52 @@ describe('markdown.js — mutation killers (audit #7)', () => {
   });
 });
 
+describe('configureMarked inline extensions — boundary semantics', () => {
+  function extensions() {
+    const use = vi.fn();
+    configureMarked({ use });
+    return Object.fromEntries(use.mock.calls[0][0].extensions.map(extension => [extension.name, extension]));
+  }
+
+  function tokenize(extension, source) {
+    return extension.tokenizer.call({ lexer: { inlineTokens: text => [`token:${text}`] } }, source);
+  }
+
+  test('highlight requires anchored, non-space-bounded content and preserves multiline text', () => {
+    const extension = extensions().highlight;
+    expect(extension.start('abc==x==')).toBe(3);
+    expect(extension.start('plain')).toBe(-1);
+    expect(tokenize(extension, '==x==')).toEqual({ type: 'highlight', raw: '==x==', text: 'x', tokens: ['token:x'] });
+    expect(tokenize(extension, '==a\nb==')).toMatchObject({ raw: '==a\nb==', text: 'a\nb' });
+    for (const invalid of ['x==a==', '== x==', '==x ==', '====']) expect(tokenize(extension, invalid)).toBeUndefined();
+    expect(extension.renderer.call({ parser: { parseInline: tokens => tokens.join('|') } }, { tokens: ['safe'] }))
+      .toBe('<mark>safe</mark>');
+  });
+
+  test('subscript excludes escapes, strike syntax, spaces, newlines, and unclosed markers', () => {
+    const extension = extensions().subscript;
+    expect(extension.start('a ~x~')).toBe(2);
+    // The escaped opener is skipped; the closing tilde remains a later scan hint.
+    expect(extension.start('a \\~x~')).toBe(5);
+    expect(extension.start('~~x~~')).toBeUndefined();
+    expect(tokenize(extension, '~x~')).toEqual({ type: 'subscript', raw: '~x~', text: 'x', tokens: ['token:x'] });
+    expect(tokenize(extension, '~ab cd~')).toMatchObject({ raw: '~ab cd~', text: 'ab cd' });
+    for (const invalid of ['x~a~', '~~a~~', '~ a~', '~a\nb~', '~a']) expect(tokenize(extension, invalid)).toBeUndefined();
+    expect(extension.renderer.call({ parser: { parseInline: tokens => tokens[0] } }, { tokens: ['safe'] }))
+      .toBe('<sub>safe</sub>');
+  });
+
+  test('superscript is anchored, non-empty, and contains no spaces or carets', () => {
+    const extension = extensions().superscript;
+    expect(extension.start('a^2^')).toBe(1);
+    expect(extension.start('plain')).toBe(-1);
+    expect(tokenize(extension, '^2^')).toEqual({ type: 'superscript', raw: '^2^', text: '2', tokens: ['token:2'] });
+    for (const invalid of ['x^2^', '^two words^', '^^', '^a\nb^']) expect(tokenize(extension, invalid)).toBeUndefined();
+    expect(extension.renderer.call({ parser: { parseInline: tokens => tokens[0] } }, { tokens: ['safe'] }))
+      .toBe('<sup>safe</sup>');
+  });
+});
+
 describe('wikilinkTokenizer ReDoS defence (audit #19)', () => {
   // eslint-plugin-security flagged the wikilink regex as detect-unsafe-regex
   // due to lazy quantifiers on negated character classes. The classes exclude

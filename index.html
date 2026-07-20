@@ -76,13 +76,14 @@
   --paper-edge: #E6DFCC;
   --ink: #1F1B16;
   --ink-soft: #4A413A;
-  --ink-mute: #877D6F;
+  --ink-mute: #6F665B;
   --rule: #D6CDB6;
-  --accent: #C0492C;
+  --accent: #A63F25;
+  --accent-fill: #A63F25;
   --accent-soft: #E8C4B6;
   /* Highlight surface for marks / wikilink pills — a translucent accent so it stays visible
      on ANY theme background (the old solid --accent-soft vanished on the dark theme). */
-  --hl-bg: rgba(192, 73, 44, 0.15);
+  --hl-bg: rgba(166, 63, 37, 0.15);
   --gold: #B7943A;
   --teal: #2D5F4E;
   --plum: #6B3E5E;
@@ -105,9 +106,10 @@
   --paper-edge: #2A2F36;
   --ink: #E8E2D5;
   --ink-soft: #C4BCAB;
-  --ink-mute: #7A7263;
+  --ink-mute: #A9A08F;
   --rule: #2F343C;
   --accent: #D9885F;
+  --accent-fill: #984326;
   --accent-soft: #3A2A22;
   --hl-bg: rgba(217, 136, 95, 0.28); /* visible warm highlight on the dark canvas */
   --gold: #D9B85C;
@@ -124,9 +126,10 @@
   --paper-edge: #DCC9A0;
   --ink: #3D2B14;
   --ink-soft: #5C4424;
-  --ink-mute: #8A704A;
+  --ink-mute: #705936;
   --rule: #C9B284;
-  --accent: #A8512B;
+  --accent: #8B3F20;
+  --accent-fill: #8B3F20;
   --accent-soft: #E8C4A0;
   --hl-bg: rgba(168, 81, 43, 0.18);
 }
@@ -188,7 +191,7 @@ body {
   font-size: 1rem; line-height: 1;
 }
 .tb-menu-btn:hover { background: var(--paper-edge); color: var(--ink); }
-.tb-menu-btn.open { background: var(--accent); color: white; }
+.tb-menu-btn.open { background: var(--accent-fill); color: white; }
 
 .tb-brand-name {
   font-family: var(--serif);
@@ -217,7 +220,7 @@ body {
   height: 100%;
 }
 .tb-menu-item:hover, .tb-menu-item.active { background: var(--paper-edge); color: var(--ink); }
-.tb-menu-item.open-menu { background: var(--accent); color: white; }
+.tb-menu-item.open-menu { background: var(--accent-fill); color: white; }
 .tb-menu-item u { text-decoration: underline; text-underline-offset: 2px; }
 
 .tabs {
@@ -310,7 +313,7 @@ body {
   font-size: 0.8125rem;
 }
 .tb-btn:hover { background: var(--paper-edge); border-color: var(--rule); color: var(--ink); }
-.tb-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.tb-btn.active { background: var(--accent-fill); color: white; border-color: var(--accent-fill); }
 
 .tb-search {
   height: 24px;
@@ -383,7 +386,7 @@ body {
   white-space: nowrap;
   gap: 12px;
 }
-.dd-item:hover { background: var(--accent); color: white; }
+.dd-item:hover { background: var(--accent-fill); color: white; }
 .dd-item:hover .dd-shortcut, .dd-item:hover .dd-icon, .dd-item:hover .dd-check { color: rgba(255,255,255,0.85); }
 .dd-item .dd-icon {
   position: absolute;
@@ -459,7 +462,7 @@ body {
   z-index: 10;
   transition: background 0.15s, color 0.15s;
 }
-.reveal-strip:hover { background: var(--accent); color: white; }
+.reveal-strip:hover { background: var(--accent-fill); color: white; }
 /* T-R7: logical insets so the strips track the panel edge under both LTR and RTL UI. */
 .reveal-sidebar  { inset-inline-start: 0; border-inline-start: none; border-start-end-radius: 6px; border-end-end-radius: 6px; }
 .reveal-inspector { inset-inline-end: 0; border-inline-end: none; border-start-start-radius: 6px; border-end-start-radius: 6px; }
@@ -587,7 +590,7 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
   gap: 8px;
   justify-content: center;
 }
-.sb-empty button:hover { background: var(--accent); color: white; border-color: var(--accent); }
+.sb-empty button:hover { background: var(--accent-fill); color: white; border-color: var(--accent-fill); }
 .sb-empty button .ic { font-family: var(--serif); font-style: italic; font-size: 0.875rem; }
 
 .tree { padding: 0 6px; }
@@ -603,7 +606,7 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
   user-select: none;
 }
 .tree-node:hover { background: var(--paper-edge); color: var(--ink); }
-.tree-node.active { background: var(--accent); color: white; font-weight: 500; }
+.tree-node.active { background: var(--accent-fill); color: white; font-weight: 500; }
 .tree-node.active .tree-icon { color: white; opacity: 0.9; }
 .tree-icon {
   font-family: var(--serif);
@@ -640,7 +643,7 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
   border-style: solid;
 }
 .tag:hover { border-color: var(--accent); color: var(--accent); }
-.tag.active { background: var(--accent); color: white; border-color: var(--accent); }
+.tag.active { background: var(--accent-fill); color: white; border-color: var(--accent-fill); }
 .tag .count { opacity: 0.6; font-size: 0.6875rem; }
 
 /* Search pane */
@@ -762,7 +765,7 @@ mark.find-hit {
   border-radius: 2px;
   padding: 0 1px;
 }
-mark.find-hit.current { background: var(--accent); color: white; }
+mark.find-hit.current { background: var(--accent-fill); color: white; }
 
 /* ============ EDITOR ============ */
 .editor-wrap {
@@ -808,11 +811,11 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-size: 0.8125rem;
 }
 .tool-btn:hover { background: var(--paper-edge); color: var(--ink); }
-.tool-btn.active { background: var(--accent); color: white; }
+.tool-btn.active { background: var(--accent-fill); color: white; }
 /* Active-state: the caret is inside this construct (bold/heading/list/quote/code). Tinted, not
    solid, so it reads as "currently applied" without looking like a pressed/disabled control. */
 .tool-btn.is-active { background: var(--accent-soft); color: var(--accent); }
-.tool-btn.is-active:hover { background: var(--accent); color: white; }
+.tool-btn.is-active:hover { background: var(--accent-fill); color: white; }
 /* Table controls — a slim secondary strip revealed only when the caret is in a table. */
 .table-controls { display: none; align-items: center; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--paper-edge); background: var(--paper); }
 .table-controls.show { display: flex; }
@@ -855,7 +858,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-family: var(--sans); font-size: 0.8125rem; color: var(--ink); white-space: nowrap;
   width: 100%; background: transparent; border: 0; text-align: start;
 }
-.tool-dropdown .td-item:hover { background: var(--accent); color: #fff; }
+.tool-dropdown .td-item:hover { background: var(--accent-fill); color: #fff; }
 .tool-dropdown .td-item .td-h { font-family: var(--serif); font-weight: 600; color: var(--ink-mute); width: 1.6em; }
 .tool-dropdown .td-item:hover .td-h { color: rgba(255,255,255,0.85); }
 .tool-dropdown .td-item .td-h1 { font-size: 1.35rem; }
@@ -1078,7 +1081,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   cursor: pointer;
   text-decoration: none !important;
 }
-.wikilink:hover { background: var(--accent); color: white !important; }
+.wikilink:hover { background: var(--accent-fill); color: white !important; }
 .wikilink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Footnotes (R11): superscript refs + the end-of-document notes list. */
@@ -1297,7 +1300,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-family: var(--sans);
   color: var(--ink);
 }
-.welcome-btn:hover { background: var(--accent); border-color: var(--accent); color: white; }
+.welcome-btn:hover { background: var(--accent-fill); border-color: var(--accent-fill); color: white; }
 .welcome-btn:hover .wb-sub { color: rgba(255,255,255,0.8); }
 .welcome-btn:hover .wb-icon { color: white; }
 .welcome-btn:hover .wb-shortcut { color: rgba(255,255,255,0.7); }
@@ -1454,7 +1457,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .sb-stat.ok::before { content: '●'; color: var(--green); font-size: 0.6875rem; }
 /* Use --accent (not the translucent --accent-soft, which is ~1.2:1 and invisible on the dark
    status bar) for the LTR/RTL indicator: accent #D9885F on the ink status bar = 5.87:1 (AA). */
-.sb-stat.dir { color: var(--accent); font-weight: 600; }
+.sb-stat.dir { color: var(--statusbar-fg); font-weight: 600; }
 
 /* palette */
 .palette-overlay {
@@ -1522,9 +1525,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
 .pi-icon { font-family: var(--serif); font-style: italic; font-size: 0.875rem; color: var(--ink-mute); width: 20px; text-align: center; }
 /* T-F2: palette rows now carry a vendored Lucide line-icon, not a glyph. */
 .pal-item .pi-icon .ic { width: 14px; height: 14px; display: inline-block; vertical-align: middle; }
-.pal-item.active .pi-icon, .pal-item:hover .pi-icon { color: var(--accent); }
+.pal-item.active .pi-icon, .pal-item:hover .pi-icon { color: var(--ink); }
 .pi-name { flex: 1; font-size: 0.8125rem; color: var(--ink); }
-.pal-item.active .pi-name, .pal-item:hover .pi-name { color: var(--accent); }
+.pal-item.active .pi-name, .pal-item:hover .pi-name { color: var(--ink); }
+.pal-item.active .pi-meta, .pal-item:hover .pi-meta { color: var(--ink-soft); }
 .pi-meta { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.08em; }
 .pi-shortcut { display: flex; gap: 3px; }
 .pi-shortcut .kbd {
@@ -2364,7 +2368,7 @@ html.electron .tab-add {
         <span class="modal-title" id="modalTitle">Modal</span>
         <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
       </div>
-      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-body" id="modalBody" tabindex="0"></div>
     </div>
   </div>
 

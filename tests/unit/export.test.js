@@ -56,6 +56,20 @@ describe('buildExportDoc (T-F12)', () => {
     expect(fullHtml).toContain('[Image: local]');
   });
 
+  test('keeps embedded data images, strips media URLs, and converts wikilinks to inert text', () => {
+    const parseMarkdown = () => [
+      '<img src="data:image/png;base64,AA" alt="embedded">',
+      '<video src="movie.mp4" poster="poster.png"></video>',
+      '<audio src="sound.mp3"></audio>',
+      '<source src="clip.mp4" srcset="clip-2x.mp4">',
+      '<a class="wikilink" data-target="Target"></a>',
+    ].join('');
+    const { fullHtml } = buildExportDoc({ name: 'safe', content: 'x' }, { parseMarkdown });
+    expect(fullHtml).toContain('src="data:image/png;base64,AA"');
+    expect(fullHtml).not.toMatch(/movie\.mp4|poster\.png|sound\.mp3|clip-2x\.mp4/);
+    expect(fullHtml).toContain('<span class="wikilink">Target</span>');
+  });
+
   test('applies callout semantics and injected code highlighting before serialization', () => {
     const parseMarkdown = () => '<blockquote><p>[!NOTE] Heads up\nBody.</p></blockquote><pre><code class="language-js">const x=1</code></pre>';
     const hljs = { getLanguage: () => true, highlight: () => ({ value: '<span class="kw">const</span> x=1' }) };
@@ -73,6 +87,17 @@ describe('buildExportDoc (T-F12)', () => {
     expect(fullHtml).toContain('<div class="mermaid" dir="ltr">');
     expect(fullHtml).toContain('<svg><text>diagram</text></svg>');
     expect(fullHtml).not.toContain('language-mermaid');
+  });
+
+  test('async export returns the built document when Mermaid is absent or fails to load', async () => {
+    const ordinary = await buildExportDocAsync({ name: 'plain', content: 'x' }, { parseMarkdown: md });
+    expect(ordinary.fullHtml).toMatch(/<p[^>]*dir="ltr"[^>]*>x<\/p>/);
+    const parseMarkdown = () => '<pre><code class="language-mermaid">graph TD</code></pre>';
+    const failed = await buildExportDocAsync(
+      { name: 'diagram', content: 'x' },
+      { parseMarkdown, loadMermaid: async () => { throw new Error('load failed'); } },
+    );
+    expect(failed.fullHtml).toContain('language-mermaid');
   });
 
   test('Arabic content (first-strong) derives RTL even without a manual override', () => {

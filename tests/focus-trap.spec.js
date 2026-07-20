@@ -36,11 +36,12 @@ test.describe('[T-F4] overlay focus trap & restore', () => {
     expect((await activeInfo(page)).id).toBe('searchBtn'); // focus came back to the opener
   });
 
-  test('palette: Tab stays inside (single focusable → input keeps focus)', async ({ page }) => {
+  test('palette: Tab and Shift+Tab stay inside all focusable controls', async ({ page }) => {
     await page.evaluate(() => window.openPalette());
     await expect.poll(async () => (await activeInfo(page)).id).toBe('palInput');
     await page.keyboard.press('Tab');
-    expect((await activeInfo(page)).id).toBe('palInput');
+    expect(await page.evaluate(() => document.querySelector('#palOverlay')?.contains(document.activeElement))).toBe(true);
+    expect((await activeInfo(page)).cls).toContain('pal-item');
     await page.keyboard.press('Shift+Tab');
     expect((await activeInfo(page)).id).toBe('palInput');
   });

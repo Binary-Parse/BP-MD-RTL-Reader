@@ -190,6 +190,8 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
       .toEqual([{ name: 'B', path: 'b', vaultId: 'cap-v', documentId: null }, { name: 'C', path: 'c', vaultId: null, documentId: 'cap-d' }]);
     const many = Array.from({ length: 15 }, (_, i) => ({ path: 'p' + i, vaultId: `cap-v${i}` }));
     expect(migrate({ recents: many }).recents.length).toBe(10);
+    expect(migrate({ recents: [{ path: 'unnamed.md', vaultId: 'cap-v' }] }).recents[0].name).toBe('');
+    expect(migrate({ recents: [{ path: 'x', vaultId: 'xcap-v' }, { path: 'y', documentId: 'cap-d!' }] }).recents).toEqual([]);
   });
   test('window: finite x/y kept, non-finite dropped; w/h default; maximized coerced', () => {
     expect(migrate({ window: { x: 10, y: 20, w: 800, h: 600, maximized: 1 } }).window)
@@ -232,5 +234,14 @@ describe('clampWindowBounds — geometry branches (exact)', () => {
   });
   test('partially on-screen (overlaps an edge) is kept', () => {
     expect(clampWindowBounds({ x: 1900, y: 1000, w: 800, h: 600 }, DISP).x).toBe(1900); // overlaps right/bottom edge
+  });
+  test('merely touching a display edge is off-screen; one-pixel overlap is on-screen', () => {
+    for (const win of [
+      { x: 1920, y: 100, w: 800, h: 600 },
+      { x: -800, y: 100, w: 800, h: 600 },
+      { x: 100, y: 1080, w: 800, h: 600 },
+      { x: 100, y: -600, w: 800, h: 600 },
+    ]) expect(clampWindowBounds(win, DISP)).not.toHaveProperty('x');
+    expect(clampWindowBounds({ x: 1919, y: 1079, w: 1, h: 1 }, DISP)).toMatchObject({ x: 1919, y: 1079 });
   });
 });

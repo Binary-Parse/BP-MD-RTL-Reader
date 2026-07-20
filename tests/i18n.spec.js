@@ -133,16 +133,10 @@ test.describe('I18N & Localization', () => {
 
   test('Bidi isolation: search mark has unicode-bidi:isolate', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
-    const hasIsolate = await page.evaluate(() => {
-      document.querySelector('.sb-tab[data-pane="search"]').click();
-      document.getElementById('sbSearchInput').value = 'the';
-      document.getElementById('sbSearchInput').dispatchEvent(new Event('input'));
-      const mark = document.querySelector('.sr-snip mark');
-      if (!mark) return false;
-      const style = getComputedStyle(mark);
-      return style.unicodeBidi === 'isolate';
-    });
-    expect(hasIsolate).toBe(true);
+    await page.locator('.sb-tab[data-pane="search"]').click();
+    await page.locator('#sbSearchInput').fill('the');
+    const mark = page.locator('.sr-snip mark').first();
+    await expect(mark).toBeVisible();
+    await expect(mark).toHaveCSS('unicode-bidi', 'isolate');
   });
 });

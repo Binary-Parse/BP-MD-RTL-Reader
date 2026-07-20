@@ -60,6 +60,7 @@ describe('classifyNavigation — guard clauses (mutation kills)', () => {
     expect(_cn(42, APP)).toEqual({ action: 'block' });
     expect(_cn(null, APP)).toEqual({ action: 'block' });
     expect(_cn('', APP)).toEqual({ action: 'block' });
+    expect(_cn({ toString: () => 'https://example.com' }, APP)).toEqual({ action: 'block' });
   });
   test('allow ONLY on exact app-url match (all three clauses matter)', () => {
     expect(_cn(APP, APP)).toEqual({ action: 'allow' });
@@ -82,6 +83,7 @@ describe('isExternallyOpenable — guard + anchoring', () => {
     expect(_ico(42)).toBe(false);
     expect(_ico(null)).toBe(false);
     expect(_ico(undefined)).toBe(false);
+    expect(_ico({ toString: () => 'https://example.com' })).toBe(false);
   });
   test('only anchored http(s)/mailto/tel → true', () => {
     expect(_ico('https://x')).toBe(true);

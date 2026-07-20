@@ -49,6 +49,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0 # Gitleaks scans every reachable commit, not a shallow snapshot.
       - name: Setup Node 24
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
@@ -67,8 +68,9 @@ jobs:
         run: |
           GL=8.30.1
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" -o /tmp/gitleaks.tgz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz" | sha256sum --check --strict
           tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
-          /tmp/gitleaks dir . --no-banner --redact --exit-code 1
+          /tmp/gitleaks git . --log-opts="--all" --no-banner --redact --exit-code 1
       - name: Dependency audit
         run: npm audit --audit-level=moderate
 
@@ -99,7 +101,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Unit tests + coverage
-        run: npx vitest run --config vitest.config.js --coverage --no-file-parallelism
+        run: npm run test:unit:coverage
       - name: Upload Vitest coverage
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -192,9 +194,74 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  # Full, unsharded renderer collection is intentionally separate: every
+  # first-party renderer source must be observed, then fresh unit + renderer
+  # inputs from this commit are merged and thresholded by `npm run coverage`.
+  coverage:
+    name: Combined unit + renderer coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium + OS dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Enforce combined coverage
+        run: npm run coverage
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: coverage-combined
+          path: |
+            coverage/node/
+            coverage/renderer-report/
+            coverage/merged/
+          retention-days: 14
+
+  electron-boundary:
+    name: Real Electron runtime boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Electron Linux runtime libraries
+        run: npx playwright install-deps chromium
+      - name: Launch production Electron boundary tests
+        run: xvfb-run --auto-servernum npm run test:electron
+
   # ---------------------------------------------------------------------------
   # @visual snapshots run INSIDE the same image that generated the committed
-  # Linux baselines (mcr.microsoft.com/playwright:v1.60.0-jammy) so fonts match
+  # Linux baselines (mcr.microsoft.com/playwright:v1.61.1-jammy) so fonts match
   # and we don't rely on the bare-runner font stack staying byte-identical.
   # Browsers are preinstalled in the image — no `playwright install` needed.
   # ---------------------------------------------------------------------------
@@ -202,7 +269,7 @@ jobs:
     name: Visual snapshots (@visual, jammy container)
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-jammy
+      image: mcr.microsoft.com/playwright:v1.61.1-jammy
     timeout-minutes: 15
     # Use the browsers baked into the image (baseline-matched) — skip the
     # postinstall download so we don't shadow them with a fresh copy.
@@ -238,7 +305,8 @@ jobs:
   #   • schedule (nightly) / workflow_dispatch → FULL run
   #   • pull_request                           → --incremental (changed-only)
   #   • plain branch push                      → skipped (cost; covered nightly)
-  # thresholds.break (90) lives in stryker.config.json. The incremental baseline
+  # The aggregate break threshold and per-file T1/T2/T3 floors live in
+  # stryker.config.json and config/mutation-tiers.json. The incremental baseline
   # (reports/stryker-incremental.json) is persisted via actions/cache below so PR
   # runs reuse the last result instead of re-running every mutant from scratch.
   # ---------------------------------------------------------------------------
@@ -284,8 +352,9 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             npx stryker run --incremental
+            node scripts/check-mutation-tiers.js --allow-partial
           else
-            npx stryker run
+            npm run test:mutation
           fi
       - name: Upload Stryker mutation report
         if: always()
@@ -293,6 +362,63 @@ jobs:
         with:
           name: mutation-report
           path: reports/mutation/
+          retention-days: 14
+
+  # Build every configured target/architecture on its native runner. Package
+  # archives are inspected before upload, and release artifacts carry SHA-256
+  # checksums. Windows also runs the non-destructive installer logic tests.
+  package-matrix:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Build every Windows target and architecture
+        if: runner.os == 'Windows'
+        run: npm run dist
+      - name: Build every macOS target and architecture
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac
+      - name: Build every Linux target and architecture
+        if: runner.os == 'Linux'
+        run: npx electron-builder --linux
+      - name: Run Windows installer logic tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/installer/run-tests.ps1 -SkipMutation -InstallPester
+      - name: Verify packaged licenses and source inventory
+        run: npm run package:verify
+      - name: Generate artifact checksums
+        run: npm run package:checksums
+      - name: Upload verified packages
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: packages-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
           retention-days: 14
 
   # ---------------------------------------------------------------------------

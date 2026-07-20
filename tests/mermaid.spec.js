@@ -24,9 +24,9 @@ test.describe('[T-F16] Mermaid diagrams', () => {
   test('mermaid is lazy: not loaded until a diagram is rendered', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
-    expect(await page.evaluate(() => typeof window.mermaidNS)).toBe('undefined'); // not loaded on the welcome screen
+    expect(await page.evaluate(() => typeof (window.mermaidNS || window.mermaid))).toBe('undefined'); // not loaded on the welcome screen
     await inject(page, DOC);
-    await expect.poll(() => page.evaluate(() => typeof window.mermaidNS), { timeout: 15000 }).toBe('object');
+    await expect.poll(() => page.evaluate(() => typeof (window.mermaidNS || window.mermaid)), { timeout: 15000 }).toBe('object');
   });
 
   test('a valid block renders an inline SVG (dir=ltr, no foreignObject); invalid → code fallback', async ({ page }) => {

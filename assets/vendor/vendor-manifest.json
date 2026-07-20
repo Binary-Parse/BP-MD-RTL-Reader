@@ -31,7 +31,7 @@
     },
     {
       "package": "dompurify",
-      "version": "3.4.2"
+      "version": "3.4.12"
     },
     {
       "package": "highlight.js",
@@ -61,7 +61,7 @@
     },
     {
       "file": "assets/vendor/dompurify/purify.min.js",
-      "sha256": "ef9a98b5b21aac33c73e316ef21f5cf06f68eff003a40ac953022129112cff3c"
+      "sha256": "c45ba939765574f96cbf35ee9b6d89f73756a17921814425e74b82f7c54603ce"
     },
     {
       "file": "assets/vendor/highlight/highlight.min.js",

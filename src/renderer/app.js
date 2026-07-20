@@ -300,10 +300,14 @@ function loadMermaid() {
       m.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: { htmlLabels: false } });
       resolve(m);
     };
-    if (typeof mermaidNS !== 'undefined') return init(mermaidNS);
+    // Mermaid's official UMD distribution exposes `window.mermaid`.  Older
+    // vendored builds used `window.mermaidNS`; retain that alias so existing
+    // sessions/tests that inject the legacy namespace continue to work.
+    const existing = window.mermaidNS || window.mermaid;
+    if (existing) return init(existing);
     const s = document.createElement('script');
     s.src = 'assets/vendor/mermaid/mermaid.min.js';
-    s.onload = () => init(window.mermaidNS);
+    s.onload = () => init(window.mermaidNS || window.mermaid);
     s.onerror = () => { s.remove(); reject(new Error('mermaid script failed to load')); };
     document.head.appendChild(s);
   });

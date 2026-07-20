@@ -4,7 +4,7 @@
  * Post-processes already-rendered (and DOMPurify-sanitized) blockquotes: when a
  * blockquote's first line is a `[!TYPE]` marker (parsed by the pure
  * markdown.parseCalloutHeader core, injected), it is rewritten into a styled
- * callout — `<div class="callout callout-<type>">` with a title row (icon +
+ * callout — `<aside class="callout callout-<type>">` with a title row (icon +
  * title text) and a body. Body content is MOVED node-by-node (never re-parsed
  * from a string), so the upstream sanitization is preserved and no untrusted
  * HTML is re-introduced. Operates on an injected root so it runs under jsdom and
@@ -69,9 +69,12 @@ export function transformCallouts(root, { parseCalloutHeader, resolveDirection }
     body.className = 'callout-body';
     while (bq.firstChild) body.appendChild(bq.firstChild); // move sanitized nodes
 
-    const wrap = doc.createElement('div');
+    const wrap = doc.createElement('aside');
     wrap.className = `callout callout-${callout.type}`;
     wrap.setAttribute('data-callout', callout.type);
+    wrap.setAttribute('role', 'note');
+    const typeLabel = callout.type.charAt(0).toUpperCase() + callout.type.slice(1);
+    wrap.setAttribute('aria-label', callout.title === typeLabel ? typeLabel : `${typeLabel}: ${callout.title}`);
     // Resolve the callout's own direction from its content (title + body). dir="auto"
     // can't be used on the wrapper because the leading icon glyph is strong-LTR and
     // would force ltr; resolveDirection reads the first strong char of the prose.
@@ -86,7 +89,6 @@ export function transformCallouts(root, { parseCalloutHeader, resolveDirection }
     icon.textContent = CALLOUT_ICONS[callout.type] || CALLOUT_ICONS.note;
     const titleText = doc.createElement('span');
     titleText.className = 'callout-title-text';
-    titleText.setAttribute('dir', 'auto');
     titleText.textContent = callout.title; // plain text via textContent — safe
     titleRow.append(icon, titleText);
 

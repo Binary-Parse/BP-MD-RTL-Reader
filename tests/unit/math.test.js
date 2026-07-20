@@ -43,6 +43,12 @@ describe('mathExtension tokenizer', () => {
     expect(ph.charCodeAt(0)).toBe(0xE000);
     expect(ph.charCodeAt(ph.length - 1)).toBe(0xE001);
   });
+  test('oversized expressions remain literal before placeholder amplification', () => {
+    const tex = 'x'.repeat(40000);
+    const rendered = ext.renderer({ tex, display: false });
+    expect(rendered).toBe(`$${tex}$`);
+    expect(rendered.charCodeAt(0)).not.toBe(0xE000);
+  });
 });
 
 describe('restoreMath (jsdom)', () => {

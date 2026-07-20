@@ -172,6 +172,13 @@ body {
   align-items: stretch;
   height: 36px;
 }
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}
 .tb-brand { display: flex; align-items: center; padding-block: 0; padding-inline: 12px 10px; gap: 8px; }
 .tb-menu-btn {
   width: 24px; height: 24px;
@@ -225,6 +232,7 @@ body {
   scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
+.tab-list { display: flex; align-items: end; gap: 1px; min-width: 0; }
 .tab {
   padding: 7px 14px 8px;
   background: transparent;
@@ -629,6 +637,7 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  border-style: solid;
 }
 .tag:hover { border-color: var(--accent); color: var(--accent); }
 .tag.active { background: var(--accent); color: white; border-color: var(--accent); }
@@ -669,6 +678,14 @@ html[dir="rtl"] .reveal-strip { transform: translateY(-50%) scaleX(-1); }
   border-bottom: 1px dashed var(--rule);
   cursor: pointer;
   border-radius: 4px;
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  font: inherit;
+  border-inline: 0;
+  border-top: 0;
 }
 .search-result:hover { background: var(--paper); }
 .sr-name {
@@ -773,7 +790,11 @@ mark.find-hit.current { background: var(--accent); color: white; }
   top: 0;
   z-index: 5;
   flex-shrink: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
+.toolbar-strip > * { flex-shrink: 0; }
 .tool-btn {
   min-width: 26px; height: 26px;
   padding: 0 6px;
@@ -832,6 +853,7 @@ mark.find-hit.current { background: var(--accent); color: white; }
   display: flex; align-items: baseline; gap: 10px;
   padding: 6px 10px; border-radius: 4px; cursor: pointer;
   font-family: var(--sans); font-size: 0.8125rem; color: var(--ink); white-space: nowrap;
+  width: 100%; background: transparent; border: 0; text-align: start;
 }
 .tool-dropdown .td-item:hover { background: var(--accent); color: #fff; }
 .tool-dropdown .td-item .td-h { font-family: var(--serif); font-weight: 600; color: var(--ink-mute); width: 1.6em; }
@@ -1111,10 +1133,10 @@ mark.find-hit.current { background: var(--accent); color: white; }
 #editor h1[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 2.375rem; letter-spacing: 0; }
 #editor h2[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 1.625rem; }
 #editor h3[dir="rtl"] { font-family: var(--arabic); font-weight: 600; }
-/* The Arabic FACE follows CONTENT (lang="ar"), not the dir attribute, so Arabic glyphs keep the
+/* The Arabic FACE follows CONTENT (script marker), not the dir attribute, so Arabic glyphs keep the
    Arabic font even when the user FORCES a block LTR (alignment flips; the font must not revert to
-   a Latin serif, which would mis-render Arabic). lang="ar" is set on Arabic-dominant blocks. */
-#editor [lang="ar"] { font-family: var(--arabic); }
+   a Latin serif, which would mis-render Arabic). Language metadata remains author-controlled. */
+#editor [data-script="arabic"] { font-family: var(--arabic); }
 #editor blockquote[dir="rtl"] {
   padding-inline-start: 0;
   padding-inline-end: 24px;
@@ -1142,9 +1164,9 @@ mark.find-hit.current { background: var(--accent); color: white; }
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0;
-  color: var(--callout-color, var(--accent));
+  color: var(--ink);
 }
-.callout-icon { font-size: 0.9375rem; line-height: 1; flex: none; }
+.callout-icon { font-size: 0.9375rem; line-height: 1; flex: none; color: var(--callout-color, var(--accent)); }
 .callout-title-text { unicode-bidi: plaintext; }
 .callout-body { color: var(--ink-soft); font-size: 1rem; line-height: 1.7; }
 .callout-body > :first-child { margin-top: 0; }
@@ -1319,6 +1341,8 @@ mark.find-hit.current { background: var(--accent); color: white; }
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%; background: transparent; border-inline: 0; border-top: 0;
+  text-align: start; font-family: inherit;
 }
 .recent-item:hover { color: var(--accent); }
 .recent-item .r-ic { font-family: var(--serif); font-style: italic; color: var(--accent); }
@@ -1378,6 +1402,8 @@ mark.find-hit.current { background: var(--accent); color: white; }
   border-inline-start: 2px solid transparent;
   cursor: pointer;
   line-height: 1.4;
+  display: block; width: 100%; background: transparent; border-block: 0;
+  border-inline-end: 0; text-align: start;
 }
 .toc-item:hover { color: var(--ink); border-inline-start-color: var(--ink-mute); }
 .toc-item.active { color: var(--accent); border-inline-start-color: var(--accent); font-weight: 500; }
@@ -1485,6 +1511,12 @@ mark.find-hit.current { background: var(--accent); color: white; }
   gap: 12px;
   border-radius: 5px;
   cursor: pointer;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
 }
 .pal-item:hover, .pal-item.active { background: var(--accent-soft); color: var(--accent); }
 .pi-icon { font-family: var(--serif); font-style: italic; font-size: 0.875rem; color: var(--ink-mute); width: 20px; text-align: center; }
@@ -1677,7 +1709,26 @@ mark.find-hit.current { background: var(--accent); color: white; }
 
 @media (max-width: 1100px) {
   .app-body { grid-template-columns: 220px 1fr 0; }
+  .app-body.no-sidebar { grid-template-columns: 1fr 0; }
+  .app-body.no-inspector { grid-template-columns: 220px 1fr; }
+  .app-body.no-sidebar.no-inspector { grid-template-columns: 1fr; }
   .inspector { display: none; }
+}
+
+@media (max-width: 800px) {
+  .titlebar { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+  .tb-brand { display: none; }
+  .tb-search { width: 32px; justify-content: center; }
+  .tb-search > :not(:first-child) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Electron native window overrides — removes card chrome */
@@ -1799,15 +1850,16 @@ html.electron .tab-add {
     </div>
 
     <div class="tabs" id="tabs">
+      <div class="tab-list" id="tabList" role="tablist" aria-label="Open documents"></div>
       <button class="tab-add" id="tabAddBtn" title="New tab (Ctrl+N)" aria-label="New tab">+</button>
     </div>
 
     <div class="tb-actions">
-      <div class="tb-search" id="searchBtn" role="button" tabindex="0" aria-label="Search files">
+      <button type="button" class="tb-search" id="searchBtn" aria-label="Search files">
         <span style="font-family: var(--serif); font-style: italic;">⌘</span>
         <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
-      </div>
+      </button>
       <button class="tb-btn" id="viewModeBtn" title="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="true"><svg class="ic"><use href="#ic-book-open"/></svg></button>
       <button class="tb-btn" id="rtlBtn" title="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
       <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-theme"/></svg></button>
@@ -1869,7 +1921,7 @@ html.electron .tab-add {
               <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> Try Demo Notes</button>
             </div>
           </div>
-          <div class="tree" id="tree" style="display: none;"></div>
+          <div class="tree" id="tree" role="tree" aria-label="Files" style="display: none;"></div>
         </div>
 
         <div class="sb-pane" data-pane="tags">
@@ -1881,6 +1933,7 @@ html.electron .tab-add {
         <div class="sb-pane" data-pane="search">
           <div class="search-pane">
             <div class="search-input-wrap">
+              <label class="visually-hidden" for="sbSearchInput">Search in all files</label>
               <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…" data-i18n-placeholder="search.placeholder">
             </div>
             <div class="search-results" id="searchResults">
@@ -1930,12 +1983,12 @@ html.electron .tab-add {
         <!-- Heading-level pop-down (H1–H6); toggled by #tbHeading. Inside the sticky toolbar so
              it's positioned relative to it (not .app), and doesn't disturb the find-bar anchor. -->
         <div class="tool-dropdown" id="headingMenu" role="menu" aria-label="Heading level">
-          <div class="td-item" role="menuitem" data-level="1"><span class="td-h td-h1">H</span>Heading 1</div>
-          <div class="td-item" role="menuitem" data-level="2"><span class="td-h td-h2">H</span>Heading 2</div>
-          <div class="td-item" role="menuitem" data-level="3"><span class="td-h td-h3">H</span>Heading 3</div>
-          <div class="td-item" role="menuitem" data-level="4"><span class="td-h td-h4">H</span>Heading 4</div>
-          <div class="td-item" role="menuitem" data-level="5"><span class="td-h td-h5">H</span>Heading 5</div>
-          <div class="td-item" role="menuitem" data-level="6"><span class="td-h td-h6">H</span>Heading 6</div>
+          <button type="button" class="td-item" role="menuitem" data-level="1"><span class="td-h td-h1">H</span>Heading 1</button>
+          <button type="button" class="td-item" role="menuitem" data-level="2"><span class="td-h td-h2">H</span>Heading 2</button>
+          <button type="button" class="td-item" role="menuitem" data-level="3"><span class="td-h td-h3">H</span>Heading 3</button>
+          <button type="button" class="td-item" role="menuitem" data-level="4"><span class="td-h td-h4">H</span>Heading 4</button>
+          <button type="button" class="td-item" role="menuitem" data-level="5"><span class="td-h td-h5">H</span>Heading 5</button>
+          <button type="button" class="td-item" role="menuitem" data-level="6"><span class="td-h td-h6">H</span>Heading 6</button>
         </div>
       </div>
       <!-- Table row/column controls — shown only while the caret is inside a table (E). -->
@@ -1953,6 +2006,7 @@ html.electron .tab-add {
 
       <div class="editor-area" id="editorArea">
         <div class="source-pane">
+          <label class="visually-hidden" for="srcTextarea">Markdown source</label>
           <textarea class="source-textarea" id="srcTextarea" placeholder="# Start writing…"></textarea>
         </div>
         <div class="preview-pane">
@@ -1994,10 +2048,11 @@ html.electron .tab-add {
 
       <!-- Find bar -->
       <div class="find-bar" id="findBar">
+        <label class="visually-hidden" for="findInput">Find in note</label>
         <input type="text" id="findInput" placeholder="Find in note…" data-i18n-placeholder="find.placeholder">
         <span class="find-info" id="findInfo">0/0</span>
-        <button class="find-btn" id="findPrevBtn" title="Previous" data-i18n-title="find.prev">↑</button>
-        <button class="find-btn" id="findNextBtn" title="Next" data-i18n-title="find.next">↓</button>
+        <button class="find-btn" id="findPrevBtn" title="Previous" aria-label="Previous match" data-i18n-title="find.prev">↑</button>
+        <button class="find-btn" id="findNextBtn" title="Next" aria-label="Next match" data-i18n-title="find.next">↓</button>
         <button class="find-btn" id="findCloseBtn" title="Close" aria-label="Close find" data-i18n-title="find.close">×</button>
       </div>
     </main>
@@ -2041,9 +2096,10 @@ html.electron .tab-add {
   <div class="palette-overlay" id="palOverlay">
     <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
       <div class="pal-input-wrap">
-        <input class="pal-input" id="palInput" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">
+        <label class="visually-hidden" for="palInput">Command or file</label>
+        <input class="pal-input" id="palInput" role="combobox" aria-autocomplete="list" aria-controls="palResults" aria-expanded="true" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">
       </div>
-      <div class="pal-results" id="palResults"></div>
+      <div class="pal-results" id="palResults" role="listbox" aria-label="Commands and files"></div>
       <div class="pal-footer">
         <span><span class="kbd">↑↓</span> <span data-i18n="palette.navigate">navigate</span></span>
         <span><span class="kbd">↵</span> <span data-i18n="palette.openHint">open</span></span>

@@ -26,6 +26,9 @@ describe('transformCallouts (T-F14)', () => {
     expect(c).not.toBeNull();
     expect(c.classList.contains('callout-note')).toBe(true);
     expect(c.getAttribute('data-callout')).toBe('note');
+    expect(c.tagName).toBe('ASIDE');
+    expect(c.getAttribute('role')).toBe('note');
+    expect(c.getAttribute('aria-label')).toBe('Note: Heads up');
     expect(c.querySelector('.callout-title-text').textContent).toBe('Heads up');
     expect(c.querySelector('.callout-icon').textContent).toBe(CALLOUT_ICONS.note);
     expect(c.querySelector('.callout-icon').getAttribute('aria-hidden')).toBe('true');
@@ -76,12 +79,12 @@ describe('transformCallouts (T-F14)', () => {
     expect(codeAfter.textContent).toBe('npm test');
   });
 
-  test('Arabic callout: wrapper resolves rtl (icon does not force ltr); title dir=auto', () => {
+  test('Arabic callout: wrapper resolves rtl and title inherits that direction', () => {
     const root = frag('<blockquote><p>[!NOTE] ملاحظة مهمة\nنص عربي.</p></blockquote>');
     transformCallouts(root, opts);
     const c = root.querySelector('.callout');
     expect(c.getAttribute('dir')).toBe('rtl'); // from content, not defeated by the LTR icon glyph
-    expect(c.querySelector('.callout-title-text').getAttribute('dir')).toBe('auto');
+    expect(c.querySelector('.callout-title-text').hasAttribute('dir')).toBe(false);
     expect(c.querySelector('.callout-title-text').textContent).toBe('ملاحظة مهمة');
   });
 

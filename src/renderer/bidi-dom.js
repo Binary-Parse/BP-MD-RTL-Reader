@@ -5,7 +5,7 @@
  * the rendered Markdown tree. It:
  *   - sets per-block direction (dir + data-dir) on paragraphs, headings, list
  *     items, blockquotes and table cells from each block's first-strong char
- *     (T-R1), tagging Arabic blocks with lang="ar" (EC-C6); and
+ *     (T-R1), tagging Arabic-script blocks without overriding their language; and
  *   - inside RTL blocks, isolates inline opposite/neutral runs (inline code,
  *     links, numbers, #tags) in <bdi> so they cannot reorder surrounding RTL
  *     text (T-R2 / the Obsidian failure set).
@@ -18,7 +18,7 @@
 import { resolveDirection, resolveBlockDirection, needsIsolation, isolate } from './bidi.js';
 
 const ARABIC = /\p{Script=Arabic}/u;
-const BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th';
+const BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, .callout';
 // Neutral inline runs to isolate inside RTL blocks: #tags or number groups.
 // The number group keeps separator-joined sequences (dates 2026-06-01, ranges
 // 10-20, times 12:30, decimals 3.14) as ONE run, so a single <bdi> isolates the
@@ -29,7 +29,7 @@ const HAS_RUN = /#[\p{L}\p{N}_-]|\d/u;
 const SKIP_PARENT = new Set(['CODE', 'PRE', 'A', 'BDI', 'SCRIPT', 'STYLE']);
 
 /**
- * Per-block direction + Arabic lang tagging (T-R1, EC-C6). When `forceDir` is set
+ * Per-block direction + Arabic script tagging (T-R1, EC-C6). When `forceDir` is set
  * ('rtl'|'ltr'), EVERY block takes it verbatim — the user (toggle) or the note
  * (front-matter `direction:`) has chosen a direction, which must win over per-block
  * auto-detection. When null (default/AUTO), each block resolves its own dominant-script
@@ -45,12 +45,10 @@ export function applyBlockDirection(root, baseDir = 'ltr', forceDir = null) {
     const dir = forceDir || autoDir;
     el.setAttribute('dir', dir);
     el.setAttribute('data-dir', dir);
-    // lang follows the CONTENT direction (autoDir), NOT the forced dir, so an Arabic block keeps
-    // lang="ar" — and therefore its Arabic font — even when the user forces it LTR (font is
-    // content-driven; only alignment/bidi follow the forced dir). An English block that merely
-    // cites one Arabic word stays unmarked (EC-C6: lang on Arabic-dominant blocks only).
-    if (autoDir === 'rtl' && ARABIC.test(text)) el.setAttribute('lang', 'ar');
-    else el.removeAttribute('lang');
+    // Font selection is script-driven. Never invent or overwrite `lang`: Arabic,
+    // Persian and Urdu share a script but require different language metadata.
+    if (autoDir === 'rtl' && ARABIC.test(text)) el.setAttribute('data-script', 'arabic');
+    else el.removeAttribute('data-script');
   });
   return root;
 }

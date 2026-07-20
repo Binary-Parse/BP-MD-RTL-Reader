@@ -4,9 +4,14 @@
  * so mixed Arabic/English renders correctly in every block (beats whole-doc flip).
  */
 
-// Strong RTL scripts (Arabic family + Hebrew + others).
-const RTL_SCRIPT = /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
+// Strong RTL scripts represented in Unicode's Script property. Checking the
+// Letter category separately excludes Arabic-family digits and combining marks.
+const RTL_SCRIPT = /(?:\p{Script=Arabic}|\p{Script=Hebrew}|\p{Script=Syriac}|\p{Script=Thaana}|\p{Script=Nko}|\p{Script=Samaritan}|\p{Script=Mandaic}|\p{Script=Adlam}|\p{Script=Hanifi_Rohingya})/u;
 const ANY_LETTER = /\p{L}/u;
+
+function isRtlLetter(ch) {
+  return ANY_LETTER.test(ch) && RTL_SCRIPT.test(ch);
+}
 
 /**
  * Resolve a block's direction from its first strong character (Unicode UBA P2/P3).
@@ -19,7 +24,7 @@ const ANY_LETTER = /\p{L}/u;
 export function resolveDirection(text, inherited = 'ltr') {
   if (typeof text !== 'string' || text === '') return inherited;
   for (const ch of text) {
-    if (RTL_SCRIPT.test(ch)) return 'rtl';
+    if (isRtlLetter(ch)) return 'rtl';
     if (ANY_LETTER.test(ch)) return 'ltr';
   }
   return inherited;
@@ -54,7 +59,7 @@ export function resolveBlockDirection(text, inherited = 'ltr') {
   let ltr = 0;
   for (const ch of text) {
     // RTL scripts are also letters, so test RTL first and use else-if to avoid double count.
-    if (RTL_SCRIPT.test(ch)) rtl++;
+    if (isRtlLetter(ch)) rtl++;
     else if (ANY_LETTER.test(ch)) ltr++;
   }
   const total = rtl + ltr;

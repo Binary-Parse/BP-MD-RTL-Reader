@@ -7,6 +7,8 @@
  * the per-line RTL pass (R1/R2). Operates on an injected root → jsdom-testable.
  */
 
+import { MAX_CODE_BYTES, utf8ByteLength } from './limits.js';
+
 export function highlightCode(root, { hljs, sanitize = (s) => s } = {}) {
   if (!root || typeof root.querySelectorAll !== 'function' || !hljs || typeof hljs.highlight !== 'function') return root;
   root.querySelectorAll('pre > code').forEach((code) => {
@@ -18,6 +20,10 @@ export function highlightCode(root, { hljs, sanitize = (s) => s } = {}) {
     const m = /\blanguage-([\w-]+)/.exec(code.className || '');
     const lang = m && m[1];
     const text = code.textContent || '';
+    if (utf8ByteLength(text) > MAX_CODE_BYTES) {
+      code.setAttribute('data-render-skipped', 'oversize');
+      return;
+    }
     let value;
     try {
       value = (lang && typeof hljs.getLanguage === 'function' && hljs.getLanguage(lang))

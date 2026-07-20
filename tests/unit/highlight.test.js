@@ -4,7 +4,7 @@
  * highlight.test.js — T-F9 code syntax highlighting DOM helper. jsdom-tested with
  * an injected fake hljs + sanitize (like trusted.test.js / callouts.test.js).
  */
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { highlightCode } from '../../src/renderer/highlight.js';
 
 const fakeHljs = {
@@ -76,5 +76,14 @@ describe('highlightCode (T-F9)', () => {
     const boom = { getLanguage: () => ({}), highlight: () => { throw new Error('boom'); } };
     expect(() => highlightCode(root, { hljs: boom })).not.toThrow();
     expect(root.querySelector('code').classList.contains('hljs')).toBe(false);
+  });
+
+  test('oversized code blocks remain literal and never reach the synchronous highlighter', () => {
+    const root = frag(`<pre><code class="language-js">${'x'.repeat(300000)}</code></pre>`);
+    const hljs = { getLanguage: vi.fn(() => ({})), highlight: vi.fn(() => ({ value: 'bad' })) };
+    highlightCode(root, { hljs });
+    expect(hljs.highlight).not.toHaveBeenCalled();
+    expect(root.querySelector('code').classList.contains('hljs')).toBe(false);
+    expect(root.querySelector('code').getAttribute('data-render-skipped')).toBe('oversize');
   });
 });

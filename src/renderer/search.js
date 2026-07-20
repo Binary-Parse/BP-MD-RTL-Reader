@@ -3,14 +3,26 @@
  * Pure function: no DOM, no side effects.
  */
 
-export function vaultSearch(query, files) {
+const normalizedFiles = new WeakMap();
+
+function normalizeFile(file) {
+  const content = file.content || '';
+  const name = file.name || '';
+  const cached = normalizedFiles.get(file);
+  if (cached && cached.content === content && cached.name === name) return cached;
+  const normalized = { content, name, contentLower: content.toLowerCase(), nameLower: name.toLowerCase() };
+  normalizedFiles.set(file, normalized);
+  return normalized;
+}
+
+export function vaultSearch(query, files, maxResults = 100) {
   if (!query || query.length < 2 || !files.length) return [];
   const lower = query.toLowerCase();
   const results = [];
-  files.forEach((f, fileIdx) => {
-    const c = f.content || '';
-    const cl = c.toLowerCase();
-    const nameMatch = f.name.toLowerCase().includes(lower);
+  for (let fileIdx = 0; fileIdx < files.length && results.length < maxResults; fileIdx++) {
+    const f = files[fileIdx];
+    const { content: c, contentLower: cl, name, nameLower } = normalizeFile(f);
+    const nameMatch = nameLower.includes(lower);
     const hits = [];
     let searchFrom = 0;
     while (hits.length < 5) {
@@ -30,8 +42,8 @@ export function vaultSearch(query, files) {
       searchFrom = idx + query.length;
     }
     if (hits.length > 0 || nameMatch) {
-      results.push({ name: f.name, fileIdx, hits: hits.length > 0 ? hits : [] });
+      results.push({ name, fileIdx, hits: hits.length > 0 ? hits : [] });
     }
-  });
+  }
   return results;
 }

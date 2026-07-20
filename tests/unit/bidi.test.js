@@ -43,6 +43,14 @@ describe('resolveDirection (T-R1)', () => {
   test('leading numbers then Arabic → rtl (first strong is Arabic)', () => {
     expect(resolveDirection('42 درجة')).toBe('rtl');
   });
+  test('Arabic-script digits and combining marks are neutral, not strong RTL', () => {
+    expect(resolveDirection('١٢٣', 'ltr')).toBe('ltr');
+    expect(resolveDirection('َُِ', 'ltr')).toBe('ltr');
+    expect(resolveDirection('١٢٣ فارسی', 'ltr')).toBe('rtl');
+  });
+  test('additional Unicode RTL scripts are recognized', () => {
+    expect(resolveDirection('𞤀𞤣𞤤𞤢𞤥')).toBe('rtl'); // Adlam
+  });
   test('empty/non-string → inherited', () => {
     expect(resolveDirection('', 'rtl')).toBe('rtl');
     expect(resolveDirection(null, 'ltr')).toBe('ltr');

@@ -13,6 +13,9 @@
  * CM6 is injected so this stays decoupled from the vendored engine and testable.
  */
 
+import { isEscaped } from '../limits.js';
+import { syntaxRangeAllowed } from './syntax-guards.js';
+
 // Mirror of the wikilink tokenizer in markdown.js: [[target]] or [[target|alias]],
 // no newlines/pipes inside the target, no newline inside the alias.
 const WIKILINK_RE = /\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g;
@@ -27,12 +30,20 @@ export function createWikilinkPreview(CM6, onNavigate) {
       const a = document.createElement('a');
       a.className = 'wikilink';
       a.setAttribute('data-target', this.target);
+      a.href = '#';
+      a.tabIndex = 0;
+      a.setAttribute('aria-label', `Open note ${this.alias}`);
       a.textContent = this.alias;
-      // mousedown (not click): fire BEFORE CodeMirror moves the caret into the widget,
-      // and preventDefault so focus/selection isn't disturbed by the navigation.
-      a.addEventListener('mousedown', (e) => {
+      const activate = (e) => {
         e.preventDefault();
         if (typeof onNavigate === 'function') onNavigate(this.target);
+      };
+      // mousedown (not click): fire BEFORE CodeMirror moves the caret into the widget,
+      // and preventDefault so focus/selection isn't disturbed by the navigation.
+      a.addEventListener('mousedown', activate);
+      a.addEventListener('click', (e) => e.preventDefault());
+      a.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') activate(e);
       });
       return a;
     }
@@ -50,8 +61,10 @@ export function createWikilinkPreview(CM6, onNavigate) {
       WIKILINK_RE.lastIndex = 0;
       let m;
       while ((m = WIKILINK_RE.exec(text))) {
+        if (isEscaped(text, m.index)) continue;
         const start = from + m.index;
         const end = start + m[0].length;
+        if (!syntaxRangeAllowed(CM6, view.state, start, end)) continue;
         if (end >= activeFrom && start <= activeTo) continue; // active line → leave raw/editable
         const target = m[1].trim();
         const alias = (m[2] && m[2].trim()) || target;

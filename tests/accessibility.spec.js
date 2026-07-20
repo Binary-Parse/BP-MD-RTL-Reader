@@ -123,19 +123,21 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
   });
 
-  test('Color contrast known violations are documented (do not fail build)', async ({ page }) => {
+  test('Callouts have no WCAG AA color-contrast violation in any shipped theme', async ({ page }) => {
     const themes = ['paper', 'ink', 'sepia'];
     for (const theme of themes) {
       await page.evaluate((t) => {
         document.documentElement.setAttribute('data-theme', t);
-        if (typeof window.loadDemo === 'function') window.loadDemo();
+        const host = document.getElementById('noteContent');
+        host.style.display = 'block';
+        host.innerHTML = '<aside class="callout callout-note" role="note" aria-label="Note: Heads up"><div class="callout-title"><span class="callout-icon" aria-hidden="true">ⓘ</span><span>Heads up</span></div><div class="callout-body">Readable callout body.</div></aside>';
       }, theme);
       await page.waitForTimeout(300);
-      const results = await runAxe(page);
-      const contrast = results.violations.find(v => v.id === 'color-contrast');
-      // We document the count but do not assert zero — these are design-level choices
-      expect(contrast).toBeDefined(); // known violation exists
-      expect(contrast.impact).toBe('serious');
+      const callout = page.locator('.callout').first();
+      await expect(callout).toBeVisible();
+      const results = await runAxe(page, '.callout');
+      const contrast = results.violations.filter(v => v.id === 'color-contrast');
+      expect(contrast, `${theme} callout contrast violations`).toHaveLength(0);
     }
   });
 });

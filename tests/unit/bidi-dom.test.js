@@ -50,13 +50,14 @@ describe('applyTableDirection (T-R9 table column mirror)', () => {
 });
 
 describe('applyBlockDirection (T-R1)', () => {
-  test('Arabic block → dir/data-dir rtl + lang="ar" (EC-C6)', () => {
+  test('Arabic block → dir/data-dir rtl + script marker without invented language (EC-C6)', () => {
     const root = frag('<p>مرحبا بالعالم</p>');
     applyBlockDirection(root);
     const p = root.querySelector('p');
     expect(p.getAttribute('dir')).toBe('rtl');
     expect(p.getAttribute('data-dir')).toBe('rtl');
-    expect(p.getAttribute('lang')).toBe('ar');
+    expect(p.hasAttribute('lang')).toBe(false);
+    expect(p.getAttribute('data-script')).toBe('arabic');
   });
 
   test('English block → dir ltr, no lang', () => {
@@ -67,14 +68,24 @@ describe('applyBlockDirection (T-R1)', () => {
     expect(p.hasAttribute('lang')).toBe(false);
   });
 
-  test('dominant-script wins: Arabic-majority block that OPENS with English → rtl + lang=ar (T-R1 mixed-heading fix)', () => {
+  test('preserves author-provided language and uses a non-language script marker for font selection', () => {
+    const root = frag('<p lang="fa">متن فارسی</p><p lang="ur">اردو متن</p><p>نص عربي</p>');
+    applyBlockDirection(root);
+    const ps = root.querySelectorAll('p');
+    expect(ps[0].getAttribute('lang')).toBe('fa');
+    expect(ps[1].getAttribute('lang')).toBe('ur');
+    expect(ps[2].hasAttribute('lang')).toBe(false);
+    expect([...ps].every(p => p.getAttribute('data-script') === 'arabic')).toBe(true);
+  });
+
+  test('dominant-script wins: Arabic-majority block that OPENS with English → rtl + Arabic-script marker', () => {
     // Previously first-strong returned ltr here ("Hello" leads), which left Arabic headings/
     // paragraphs that open with an English word or number wrongly laid out left-to-right.
     const root = frag('<p>Hello مرحبا مرحبا مرحبا</p>');
     applyBlockDirection(root);
     const p = root.querySelector('p');
     expect(p.getAttribute('dir')).toBe('rtl');
-    expect(p.getAttribute('lang')).toBe('ar');
+    expect(p.getAttribute('data-script')).toBe('arabic');
   });
 
   test('Arabic heading that opens with an English brand/number → rtl (the reported header bug)', () => {
@@ -240,7 +251,7 @@ describe('applyBidi (combined)', () => {
     expect(root.querySelector('h1').getAttribute('dir')).toBe('rtl');
     const ps = root.querySelectorAll('p');
     expect(ps[0].getAttribute('dir')).toBe('rtl');
-    expect(ps[0].getAttribute('lang')).toBe('ar');
+    expect(ps[0].getAttribute('data-script')).toBe('arabic');
     expect(ps[1].getAttribute('dir')).toBe('ltr');
     expect(ps[0].querySelectorAll('bdi').length).toBeGreaterThan(0);
     expect(ps[1].querySelectorAll('bdi').length).toBe(0);
@@ -295,5 +306,12 @@ describe('forced direction (toggle / front-matter overrides per-block auto)', ()
     expect(a.querySelector('p').getAttribute('dir')).toBe('ltr');
     expect(b.querySelector('h1').getAttribute('dir')).toBe('rtl');
     expect(b.querySelector('p').getAttribute('dir')).toBe('ltr');
+  });
+
+  test('forced direction applies to the whole callout wrapper and title', () => {
+    const root = frag('<aside class="callout" role="note"><div class="callout-title">Warning</div><div class="callout-body"><p>مرحبا</p></div></aside>');
+    applyBidi(root, { forceDir: 'rtl' });
+    expect(root.querySelector('.callout').getAttribute('dir')).toBe('rtl');
+    expect(root.querySelector('.callout-title').closest('[dir]').getAttribute('dir')).toBe('rtl');
   });
 });

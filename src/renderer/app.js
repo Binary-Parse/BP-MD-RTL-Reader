@@ -19,7 +19,7 @@ import { renderMermaid } from './mermaid.js';
 import { tableEdit } from './table-edit.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
 import { t as tr, localeDirection } from './locale.js';
-import { buildExportDoc as buildExportDocImpl } from './export.js';
+import { buildExportDocAsync as buildExportDocImpl } from './export.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
 import { isDroppableFile } from './file-predicates.js';
 import { buildSession, pickActiveIndex } from './session.js';
@@ -108,7 +108,7 @@ let _restoring = false;
 const $ = id => document.getElementById(id);
 const appEl = $('app');
 const appBody = $('appBody');
-const tabsEl = $('tabs');
+const tabsEl = $('tabList');
 const treeEl = $('tree');
 const sbEmptyEl = $('sbEmpty');
 const noteContent = $('noteContent');
@@ -860,22 +860,24 @@ function findStep(d) {
 // =====================================================================
 // Thin renderer wrapper around the extracted, import-testable export module (T-F12):
 // injects the app's configured parseMarkdown + the manual-direction state + math globals.
-function buildExportDoc(f, { csp = false } = {}) {
+function buildExportDoc(f) {
   return buildExportDocImpl(f, {
-    manualRtl: !!(appBody._manualRTL || State.direction === 'rtl'),
+    direction: State.forcedDir || 'auto',
     parseMarkdown,
-    csp,
     katex: (typeof katex !== 'undefined') ? katex : null,
     DOMPurify: (typeof DOMPurify !== 'undefined') ? DOMPurify : null,
+    hljs: (typeof hljs !== 'undefined') ? hljs : null,
+    sanitizeHighlight: (html) => sanitizeHtml(html, DOMPurify),
+    loadMermaid,
   });
 }
 
-function exportHTML() {
+async function exportHTML() {
   closeMenu();
   if (State.activeFile === null || !State.files[State.activeFile]) {
     showToast('No file to export', 'error'); return;
   }
-  const { fullHtml, baseName } = buildExportDoc(State.files[State.activeFile]);
+  const { fullHtml, baseName } = await buildExportDoc(State.files[State.activeFile]);
   const blob = new Blob([fullHtml], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -899,7 +901,7 @@ async function exportPDF() {
   if (!window.electronAPI || typeof window.electronAPI.exportPDF !== 'function') {
     showToast('PDF export needs the desktop app', 'error'); return;
   }
-  const { fullHtml, baseName } = buildExportDoc(State.files[State.activeFile], { csp: true });
+  const { fullHtml, baseName } = await buildExportDoc(State.files[State.activeFile]);
   showToast('Exporting PDF…');
   let res;
   try {
@@ -996,6 +998,7 @@ function applyLocale(locale) {
 function setUiLocale(locale) {
   if (locale !== 'en' && locale !== 'ar') return;
   State.uiLocale = locale;
+  document.documentElement.setAttribute('lang', locale);
   applyLocale(locale);
 }
 // Mirror the whole chrome by setting the document direction; the grid/flex layout and
@@ -1107,7 +1110,8 @@ function runSidebarSearch(q) {
     return;
   }
   results.forEach(r => {
-    const card = document.createElement('div');
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = 'search-result';
     card.addEventListener('click', () => { renderFile(r.fileIdx); switchSbPane('files'); });
 
@@ -1140,6 +1144,16 @@ function runSidebarSearch(q) {
 
     out.appendChild(card);
   });
+}
+
+let _sidebarSearchTimer = null;
+let _sidebarSearchGeneration = 0;
+function scheduleSidebarSearch(q) {
+  const generation = ++_sidebarSearchGeneration;
+  clearTimeout(_sidebarSearchTimer);
+  _sidebarSearchTimer = setTimeout(() => {
+    if (generation === _sidebarSearchGeneration) runSidebarSearch(q);
+  }, 150);
 }
 
 // =====================================================================
@@ -1189,21 +1203,60 @@ window.zoomReset = zoomReset;
 // =====================================================================
 function renderTabs() {
   tabsEl.querySelectorAll('.tab').forEach(t => t.remove());
-  const addBtn = $('tabAddBtn');
   State.files.forEach((f, i) => {
     if (f.open === false) return;
-    const tab = document.createElement('div');
+    const tab = document.createElement('button');
+    tab.type = 'button';
     tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '') + (f.conflict ? ' conflict' : '');
+    tab.dataset.fileIdx = String(i);
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(i === State.activeFile));
+    tab.setAttribute('aria-controls', 'noteContent');
+    tab.tabIndex = i === State.activeFile ? 0 : -1;
     tab.title = f.conflict ? `${f.name} — changed on disk (unresolved)` : f.name;
     const closeIcon = f.dirty ? '●' : '×';
     // T-B9/EC-A2: a ⚠ marks a background tab whose file diverged on disk (surfaces the
     // conflict even when the tab isn't active; the resolve banner shows on switching to it).
-    const conflictMark = f.conflict ? '<span class="tab-conflict" aria-label="changed on disk">⚠</span>' : '';
-    tab.innerHTML = `${conflictMark}<span class="tab-name">${escapeHtml(f.name)}</span><span class="close">${closeIcon}</span>`;
+    if (f.conflict) {
+      const conflictMark = document.createElement('span');
+      conflictMark.className = 'tab-conflict';
+      conflictMark.setAttribute('aria-label', 'changed on disk');
+      conflictMark.textContent = '⚠';
+      tab.appendChild(conflictMark);
+    }
+    const name = document.createElement('span');
+    name.className = 'tab-name';
+    name.textContent = f.name;
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.setAttribute('aria-hidden', 'true');
+    close.textContent = closeIcon;
+    tab.append(name, close);
     tab.querySelector('.close').addEventListener('click', e => { e.stopPropagation(); closeTab(i); });
     tab.addEventListener('click', () => renderFile(i));
-    tabsEl.insertBefore(tab, addBtn);
+    tab.addEventListener('keydown', e => {
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); closeTab(i); return; }
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const openTabs = [...tabsEl.querySelectorAll('.tab')];
+      const at = openTabs.indexOf(tab);
+      const next = openTabs[(at + (e.key === 'ArrowRight' ? 1 : -1) + openTabs.length) % openTabs.length];
+      next?.focus();
+      next?.click();
+    });
+    tabsEl.appendChild(tab);
   });
+}
+
+function updateTabState(idx) {
+  const f = State.files[idx];
+  const tab = tabsEl.querySelector(`.tab[data-file-idx="${idx}"]`);
+  if (!f || !tab) return;
+  tab.classList.toggle('dirty', Boolean(f.dirty));
+  tab.classList.toggle('conflict', Boolean(f.conflict));
+  tab.title = f.conflict ? `${f.name} — changed on disk (unresolved)` : f.name;
+  const close = tab.querySelector('.close');
+  if (close) close.textContent = f.dirty ? '●' : '×';
 }
 
 function closeTab(idx) {
@@ -1455,7 +1508,8 @@ function buildTOC() {
         else if (srcHeads[i] && !usedSrc.has(i)) { pos = srcHeads[i].pos; usedSrc.add(i); } // last-resort index
       }
     }
-    const item = document.createElement('div');
+    const item = document.createElement('button');
+    item.type = 'button';
     item.className = `toc-item h${el.tagName.charAt(1)}` + (_tocHeadings.length === 0 ? ' active' : '');
     item.textContent = text; // clean rendered text (no raw markdown punctuation)
     item.setAttribute('dir', 'auto'); // Arabic outline entries render RTL
@@ -1491,7 +1545,8 @@ function scrollToHeading(entry) {
   const wrap = previewScroller();
   if (!wrap || !el) return;
   const top = el.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
-  wrap.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  wrap.scrollTo({ top: Math.max(0, top - 12), behavior: reduceMotion ? 'auto' : 'smooth' });
 }
 
 function setupScrollSync() {
@@ -1565,9 +1620,19 @@ function renderTree(entries) {
   flattenTree(root, collapsed).forEach(row => {
     const node = document.createElement('div');
     node.setAttribute('role', 'treeitem');
-    node.setAttribute('tabindex', '0');
+    node.setAttribute('tabindex', treeEl.childElementCount === 0 ? '0' : '-1');
     node.setAttribute('aria-label', row.name);
     node.style.paddingInlineStart = `${8 + row.depth * 14}px`;
+    const moveFocus = (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return false;
+      e.preventDefault();
+      const nodes = [...treeEl.querySelectorAll('[role="treeitem"]')];
+      const current = nodes.indexOf(node);
+      const next = nodes[Math.max(0, Math.min(nodes.length - 1, current + (e.key === 'ArrowDown' ? 1 : -1)))];
+      nodes.forEach(n => { n.tabIndex = n === next ? 0 : -1; });
+      next?.focus();
+      return true;
+    };
     const nameIsAr = isArabicHeavy(row.name);
     const nameHtml = `<span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(row.name)}</span>`;
     if (row.type === 'dir') {
@@ -1582,6 +1647,7 @@ function renderTree(entries) {
       };
       node.addEventListener('click', () => setOpen(collapsed.has(row.path)));
       node.addEventListener('keydown', e => {
+        if (moveFocus(e)) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(collapsed.has(row.path)); }
         else if (e.key === 'ArrowRight') { e.preventDefault(); setOpen(true); }
         else if (e.key === 'ArrowLeft') { e.preventDefault(); setOpen(false); }
@@ -1592,7 +1658,10 @@ function renderTree(entries) {
       node.innerHTML = `<span class="tree-icon">¶</span>${nameHtml}`;
       const activate = () => openFromTree(row.fileIdx);
       node.addEventListener('click', activate);
-      node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+      node.addEventListener('keydown', e => {
+        if (moveFocus(e)) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+      });
     }
     treeEl.appendChild(node);
   });
@@ -1620,12 +1689,23 @@ function renderTags() {
     tagsPane.innerHTML = '<div class="search-empty">No tags found.</div>';
     return;
   }
-  tagsPane.innerHTML = `<div class="tag-cloud">${tags.map(([t, files]) =>
-    `<span class="tag" data-tag="${escapeHtml(t)}">${escapeHtml(t)}<span class="count">${files.length}</span></span>`
-  ).join('')}</div>`;
-  tagsPane.querySelectorAll('.tag').forEach(el => {
-    el.addEventListener('click', () => filterByTag(el.dataset.tag));
+  tagsPane.textContent = '';
+  const cloud = document.createElement('div');
+  cloud.className = 'tag-cloud';
+  tags.forEach(([tag, files]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tag';
+    button.dataset.tag = tag;
+    button.appendChild(document.createTextNode(tag));
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = String(files.length);
+    button.appendChild(count);
+    button.addEventListener('click', () => filterByTag(tag));
+    cloud.appendChild(button);
   });
+  tagsPane.appendChild(cloud);
 }
 
 function filterByTag(tag) {
@@ -1946,11 +2026,23 @@ function renderRecents() {
   if (!list) return;
   if (State.recents.length === 0) { empty.style.display = 'block'; list.innerHTML = ''; return; }
   empty.style.display = 'none';
-  list.innerHTML = State.recents.map((r, i) =>
-    `<div class="recent-item" data-idx="${i}"><span class="r-ic">¶</span><span>${escapeHtml(r.name)}</span><span class="r-path">${escapeHtml(r.path)}</span></div>`
-  ).join('');
-  list.querySelectorAll('.recent-item').forEach(el => {
-    el.addEventListener('click', () => openRecent(State.recents[Number(el.dataset.idx)]));
+  list.textContent = '';
+  State.recents.forEach((recent, i) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'recent-item';
+    button.dataset.idx = String(i);
+    const icon = document.createElement('span');
+    icon.className = 'r-ic';
+    icon.textContent = '¶';
+    const name = document.createElement('span');
+    name.textContent = recent.name;
+    const path = document.createElement('span');
+    path.className = 'r-path';
+    path.textContent = recent.path;
+    button.append(icon, name, path);
+    button.addEventListener('click', () => openRecent(recent));
+    list.appendChild(button);
   });
 }
 // Open a recent note. Fast path: it's already loaded (same vault session) → just
@@ -2058,7 +2150,7 @@ function applyEditorInput(val, pos) {
   f.content = val;
   f.revision = (Number.isInteger(f.revision) ? f.revision : 0) + 1;
   f.dirty = true;
-  renderTabs();
+  updateTabState(State.activeFile);
   // Fast: cursor position update on every keystroke
   const upto = val.slice(0, pos);
   const ln = upto.split('\n').length;
@@ -2735,6 +2827,7 @@ function openPalette() {
   if (dropdown.classList.contains('open')) closeMenu(); // don't strand a menu open behind the overlay (returns focus to its button first)
   if (!palOverlay.classList.contains('open')) pushFocus(); // remember the opener (may be inside a modal)
   palOverlay.classList.add('open');
+  palInput.setAttribute('aria-expanded', 'true');
   palInput.value = '';
   filterPalette('');
   setTimeout(() => palInput.focus(), 50);
@@ -2742,6 +2835,7 @@ function openPalette() {
 function closePalette() {
   const wasOpen = palOverlay.classList.contains('open');
   palOverlay.classList.remove('open');
+  palInput.setAttribute('aria-expanded', 'false');
   palInput.value = '';
   if (wasOpen) restoreFocus();
 }
@@ -2782,17 +2876,20 @@ function filterPalette(q) {
     arr.forEach(it => {
       palVisible.push(it);
       const sk = it.sk ? `<span class="pi-shortcut">${it.sk.split('+').map(p => `<span class="kbd">${p}</span>`).join('')}</span>` : '';
-      html += `<div class="pal-item${palVisible.length === 1 ? ' active' : ''}" data-i="${palVisible.length - 1}">
+      const optionIndex = palVisible.length - 1;
+      html += `<button type="button" class="pal-item${palVisible.length === 1 ? ' active' : ''}" role="option" id="pal-option-${optionIndex}" aria-selected="${palVisible.length === 1}" data-i="${optionIndex}">
         <span class="pi-icon">${it.icon ? `<svg class="ic"><use href="#ic-${escapeHtml(it.icon)}"/></svg>` : ''}</span>
         <span class="pi-name">${escapeHtml(it._label || it.name)}</span>
         <span class="pi-meta">${escapeHtml(it.meta || '')}</span>
         ${sk}
-      </div>`;
+      </button>`;
     });
   });
   if (!items.length) html = `<div class="search-empty" style="padding: 20px;">${escapeHtml(tr('palette.noMatches', loc))}</div>`;
   palResults.innerHTML = html;
   palIdx = 0;
+  if (palVisible.length) palInput.setAttribute('aria-activedescendant', 'pal-option-0');
+  else palInput.removeAttribute('aria-activedescendant');
   palResults.querySelectorAll('.pal-item').forEach(el => {
     el.addEventListener('click', () => {
       const i = parseInt(el.dataset.i);
@@ -2804,10 +2901,21 @@ function filterPalette(q) {
   });
 }
 
+function syncPaletteActive(items) {
+  items.forEach((item, i) => {
+    const active = i === palIdx;
+    item.classList.toggle('active', active);
+    item.setAttribute('aria-selected', String(active));
+  });
+  const active = items[palIdx];
+  if (active) palInput.setAttribute('aria-activedescendant', active.id);
+  else palInput.removeAttribute('aria-activedescendant');
+}
+
 palInput.addEventListener('keydown', e => {
   const items = palResults.querySelectorAll('.pal-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(palIdx + 1, items.length - 1); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); items[palIdx]?.scrollIntoView({ block: 'nearest' }); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(palIdx - 1, 0); items.forEach((it, i) => it.classList.toggle('active', i === palIdx)); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(palIdx + 1, items.length - 1); syncPaletteActive(items); items[palIdx]?.scrollIntoView({ block: 'nearest' }); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(palIdx - 1, 0); syncPaletteActive(items); }
   else if (e.key === 'Enter') { e.preventDefault(); items[palIdx]?.click(); }
   // Stop the Esc from also reaching the global handler — otherwise it would see the
   // palette already closed and go on to close a modal underneath it (nested overlays).
@@ -2939,7 +3047,7 @@ document.querySelectorAll('.tb-menu-item').forEach(btn => {
 document.querySelectorAll('.sb-tab').forEach(btn => {
   btn.addEventListener('click', () => switchSbPane(btn.dataset.pane));
 });
-$('sbSearchInput').addEventListener('input', e => runSidebarSearch(e.target.value));
+$('sbSearchInput').addEventListener('input', e => scheduleSidebarSearch(e.target.value));
 $('sbOpenVaultBtn').addEventListener('click', openVault);
 $('sbOpenFileBtn').addEventListener('click', openSingleFile);
 $('sbNewNoteBtn').addEventListener('click', newNote);

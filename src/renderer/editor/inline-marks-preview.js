@@ -8,6 +8,9 @@
  * Same rendering as the preview pane (markdown.js extensions → <mark>/<sub>/<sup>, <u> raw HTML).
  */
 
+import { isEscaped } from '../limits.js';
+import { syntaxRangeAllowed } from './syntax-guards.js';
+
 const MARKS = [
   { re: /==(?=\S)([\s\S]*?\S)==/g, open: '==', close: '==', cls: 'cm-hl' },
   { re: /<u>([\s\S]*?)<\/u>/gi, open: '<u>', close: '</u>', cls: 'cm-u' },
@@ -34,6 +37,7 @@ export function createInlineMarksPreview(CM6) {
         while ((m = re.exec(text))) {
           const s = from + m.index, e = s + m[0].length;
           if (e >= activeFrom && s <= activeTo) continue; // active line → leave raw
+          if (isEscaped(text, m.index) || !syntaxRangeAllowed(CM6, view.state, s, e)) continue;
           const innerS = s + open.length, innerE = e - close.length;
           if (innerE <= innerS) continue;
           ranges.push(HIDE.range(s, innerS));

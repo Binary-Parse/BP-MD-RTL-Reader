@@ -76,11 +76,27 @@ describe('createWikilinkPreview', () => {
     expect(el.tagName).toBe('A');
     expect(el.className).toBe('wikilink');
     expect(el.getAttribute('data-target')).toBe('Apple');
+    expect(el.getAttribute('href')).toBe('#');
+    expect(el.tabIndex).toBe(0);
     expect(el.textContent).toBe('Apple');
     const ev = new window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
     expect(onNav).toHaveBeenCalledWith('Apple');
     expect(ev.defaultPrevented).toBe(true); // does not disturb editor focus/selection
+  });
+
+  test('widget supports keyboard activation with Enter and Space', () => {
+    const onNav = vi.fn();
+    const inst = instantiate(fakeCM6(), fakeView(DOC, 0), onNav);
+    const el = inst.decorations.ranges[0].spec.widget.toDOM();
+    el.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    el.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+    expect(onNav).toHaveBeenCalledTimes(2);
+  });
+
+  test('escaped wikilinks stay literal', () => {
+    const doc = 'active\n\\[[not a link]]';
+    expect(instantiate(fakeCM6(), fakeView(doc, 0)).decorations.ranges).toEqual([]);
   });
 
   test('widget eq() compares target + alias', () => {

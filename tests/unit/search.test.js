@@ -79,6 +79,11 @@ describe('vaultSearch()', () => {
     expect(vaultSearch('zzznomatch', files)).toEqual([]);
   });
 
+  test('caps total result cards for very large vaults', () => {
+    const files = Array.from({ length: 150 }, (_, i) => ({ name: `${i}.md`, content: 'shared needle' }));
+    expect(vaultSearch('needle', files)).toHaveLength(100);
+  });
+
   test('query at start of content produces no ellipsis prefix', () => {
     const files = [{ name: 'a.md', content: 'hello world' }];
     const results = vaultSearch('hello', files);

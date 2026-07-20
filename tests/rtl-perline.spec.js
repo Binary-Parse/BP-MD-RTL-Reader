@@ -33,10 +33,11 @@ test.describe('[T-R1/R2] live per-line RTL on a mixed AR/EN document', () => {
 
   // ── T-R1: each block carries its own direction ───────────────────────────
 
-  test('[R1] Arabic heading → dir=rtl + lang=ar (EC-C6)', async ({ page }) => {
+  test('[R1] Arabic heading → dir=rtl + script marker without invented language (EC-C6)', async ({ page }) => {
     const h1 = page.locator('#noteContent h1').first();
     await expect(h1).toHaveAttribute('dir', 'rtl');
-    await expect(h1).toHaveAttribute('lang', 'ar');
+    await expect(h1).not.toHaveAttribute('lang', /.+/);
+    await expect(h1).toHaveAttribute('data-script', 'arabic');
   });
 
   test('[R1] Arabic paragraph → rtl; English paragraph → ltr (no whole-doc flip)', async ({ page }) => {

@@ -11,6 +11,7 @@
  * so math reads left-to-right even inside RTL prose. jsdom-testable (inject katex).
  */
 import { katexOptions, sanitizeMath } from './trusted.js';
+import { MAX_MATH_BYTES, utf8ByteLength } from './limits.js';
 
 // Private-use sentinels (U+E000/U+E001) — never appear in real content, and being
 // non-markdown, non-HTML they survive marked + DOMPurify verbatim.
@@ -28,13 +29,17 @@ function hexEncode(s) {
   return out;
 }
 function hexDecode(hex) {
-  const m = hex.match(/../g) || [];
-  const bytes = new Uint8Array(m.map((h) => parseInt(h, 16)));
+  const bytes = new Uint8Array(Math.floor(hex.length / 2));
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return new TextDecoder().decode(bytes);
 }
 
 /** Build the placeholder a math token renders to (carries the raw TeX). */
 export function mathPlaceholder(tex, display) {
+  if (utf8ByteLength(tex) > MAX_MATH_BYTES) {
+    const delimiter = display ? '$$' : '$';
+    return delimiter + tex + delimiter;
+  }
   return PH_OPEN + (display ? '1' : '0') + hexEncode(tex) + PH_CLOSE;
 }
 

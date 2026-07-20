@@ -50,6 +50,11 @@ describe('createInlineMarksPreview', () => {
     const { instance } = inst(fakeCM6(), fakeView(doc, 0));
     expect(classes(instance.decorations)).toEqual([]); // no cm-sub
   });
+  test('escaped custom marks remain literal', () => {
+    const doc = 'h\n\\==literal== and \\^plain^';
+    const { instance } = inst(fakeCM6(), fakeView(doc, 0));
+    expect(classes(instance.decorations)).toEqual([]);
+  });
   test('the active line stays raw (no decorations)', () => {
     const doc = 'see ==hi== there';
     const { instance } = inst(fakeCM6(), fakeView(doc, 5)); // caret on the only line

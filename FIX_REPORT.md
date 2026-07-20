@@ -4,7 +4,7 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after three verified batches: **25 Fixed, 3 Partially Fixed, 32 In Progress**. Final repository-wide validation remains pending.
+Current status after four verified batches: **34 Fixed, 4 Partially Fixed, 22 In Progress**. Final repository-wide validation remains pending.
 
 ## Baseline vs. Post-Fix
 
@@ -29,12 +29,12 @@ Current status after three verified batches: **25 Fixed, 3 Partially Fixed, 32 I
 | SEC-006 | Medium | Fixed | main/main-logic + tests | Y |
 | SEC-007 | Medium | Fixed | Claude workflow + tests | Y |
 | SEC-008 | Low | Fixed | macOS entitlements/build config + tests | Y (static on Windows) |
-| FE-001 | Medium | In Progress | — | N |
-| FE-002 | Medium | In Progress | — | N |
-| FE-003 | Medium | In Progress | — | N |
-| FE-004 | Medium | In Progress | — | N |
-| FE-005 | Medium | In Progress | — | N |
-| FE-006 | Medium | In Progress | — | N |
+| FE-001 | Medium | Fixed | renderer markup/app + accessibility/browser tests | Y |
+| FE-002 | Medium | Fixed | bidi/renderer styles + unit/browser tests | Y |
+| FE-003 | Medium | Fixed | callouts/bidi/styles + accessibility tests | Y |
+| FE-004 | Medium | Fixed | export/app + unit/browser tests | Y |
+| FE-005 | Medium | Fixed | editor preview guards/widgets + unit tests | Y |
+| FE-006 | Medium | Fixed | responsive/motion styles/app + browser tests | Y |
 | BE-001 | Medium | Fixed | main/main-logic + tests | Y |
 | BE-002 | Medium | Fixed | main/renderer + tests | Y |
 | BE-003 | Medium | Fixed | main + tests | Y |
@@ -50,15 +50,15 @@ Current status after three verified batches: **25 Fixed, 3 Partially Fixed, 32 I
 | DATA-010 | Medium | Fixed | main/preload/renderer + tests | Y |
 | DATA-011 | Medium | Partially Fixed | Inno installer + tests | Y (Inno compile unavailable) |
 | DATA-012 | Low | Fixed | main/preload/renderer + tests | Y |
-| ARCH-001 | Medium | In Progress | — | N |
+| ARCH-001 | Medium | Partially Fixed | renderer limits/syntax/export boundaries + tests | Y |
 | ARCH-002 | Medium | Fixed | renderer/session + tests | Y |
 | QUAL-001 | Low | Fixed | frontmatter + tests | Y |
 | QUAL-002 | Medium | Fixed | tags + tests | Y |
 | QUAL-003 | Medium | Fixed | outline/renderer + tests | Y |
 | QUAL-004 | Low | Fixed | version/main + tests | Y |
-| PERF-001 | Medium | In Progress | — | N |
-| PERF-002 | Medium | In Progress | — | N |
-| PERF-003 | Medium | In Progress | — | N |
+| PERF-001 | Medium | Fixed | renderer tabs/app + browser tests | Y |
+| PERF-002 | Medium | Fixed | search/app + unit/browser tests | Y |
+| PERF-003 | Medium | Fixed | renderer math/highlight/limits + unit tests | Y |
 | DEP-001 | Medium | In Progress | — | N |
 | DEP-002 | Medium | In Progress | — | N |
 | DEP-003 | Low | In Progress | — | N |
@@ -344,6 +344,106 @@ Current status after three verified batches: **25 Fixed, 3 Partially Fixed, 32 I
 - **Verification:** 12 focused version/update tests and complete unit/e2e gates passed.
 - **Risk & notes:** Differs from adding a SemVer package to avoid dependency churn for one comparison; the narrow parser is fully tested and rejects instead of coercing.
 
+### [FE-001] Generated controls and file tree violate keyboard/ARIA patterns
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Dynamic navigation used click-only generic elements and incomplete ARIA ownership/focus patterns.
+- **Change made:** Converted search cards, tabs, outline entries, tags, recents, heading items, and palette options to native controls; added a valid tablist/listbox/combobox/tree structure, accessible labels/names, tab Delete/arrow behavior, tree roving focus, palette active-descendant state, and root locale metadata.
+- **Files touched:** `index.html:174-181,1852-1854,1924-2002,2051-2100`; `src/renderer/app.js:998-1002,1109-1140,1204-1259,1508-1694,2024-2048,2849-2917`; `tests/accessibility.spec.js:1-141`; `tests/audit-remediation.spec.js:1-64`.
+- **Verification:** Full unit gate passed (68 files, 1,221 tests). Accessibility suite passed 10/10. Focused UI contract suite passed 5/5. The wider browser regression set passed 152/153 before one intentionally stale `lang="ar"` assertion was corrected; the corrected RTL suite passed 12/12.
+- **Risk & notes:** Native button conversions retain existing CSS and click behavior. Tab close remains pointer-accessible via its visual affordance and keyboard-accessible via Delete/Backspace on the selected tab, avoiding an invalid nested-button tab pattern.
+
+### [FE-002] Bidi heuristics conflate script membership with strong direction and overwrite language
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Script membership treated digits/marks as strong RTL characters, omitted RTL scripts, and reused `lang` as a font-selection hook.
+- **Change made:** Direction now requires a Unicode letter in an expanded RTL script set; neutral digits/marks inherit direction. Author `lang` is preserved, Arabic-script font selection uses `data-script="arabic"`, forced callout direction participates in the bidi pass, and UI locale updates root `lang`.
+- **Files touched:** `src/renderer/bidi.js:7-68`; `src/renderer/bidi-dom.js:19-53`; `src/renderer/app.js:998-1002`; `index.html:1123-1139`; bidi unit/browser tests.
+- **Verification:** Focused bidi tests passed within the 158-test renderer gate; full unit gate passed; corrected `tests/rtl-perline.spec.js` passed 12/12, including Arabic typography and export direction.
+- **Risk & notes:** This deliberately stops inventing Arabic language metadata for Persian/Urdu content. Existing author-provided language remains available to screen readers and spellcheckers.
+
+### [FE-003] Callouts have direction, semantic, and contrast defects
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Generic wrappers, visual-only type cues, independent title direction, and type color on low-contrast backgrounds weakened semantics and readability.
+- **Change made:** Callouts are semantic `aside role="note"` elements with type-preserving accessible labels; title direction inherits the wrapper; forced document direction applies to the whole callout; title text uses theme foreground while the type color is confined to the icon/border.
+- **Files touched:** `src/renderer/callouts.js:52-101`; `src/renderer/bidi-dom.js:21-53`; `index.html:1152-1171`; callout unit and accessibility tests.
+- **Verification:** Callout unit tests passed; all three shipped themes pass the new scoped zero-contrast-violation axe gate; full accessibility suite passed 10/10.
+- **Risk & notes:** Custom titles retain their visual text while the accessible label includes both localized type and custom title.
+
+### [FE-004] HTML export loses direction/feature parity and can load remote resources
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Export collapsed forced LTR into auto, omitted live transforms, and generated standalone HTML without a network-denying policy.
+- **Change made:** Replaced the Boolean direction option with `auto|rtl|ltr`; preserves a valid front-matter language; runs callout, code-highlight, math, bidi, and optional asynchronous Mermaid transforms; neutralizes non-data media and nonfunctional vault wikilinks; and always embeds a CSP denying network/object/form/base access. Both HTML and PDF use the same asynchronous builder.
+- **Files touched:** `src/renderer/export.js:1-107`; `src/renderer/app.js:22,863-915`; `tests/unit/export.test.js:1-131`; `tests/rtl-perline.spec.js:125-135`; `docs/USER_GUIDE.md` documentation update remains in the documentation batch.
+- **Verification:** Export/typography unit gate passed 26/26; full unit gate passed; RTL/export browser suite passed 12/12. Mermaid serialization, forced LTR, callouts, highlighting, CSP, language preservation, and media neutralization have direct tests.
+- **Risk & notes:** Non-embedded images become explicit text placeholders, which is safer and more truthful than a nominally self-contained artifact that fetches later. This follows the audit's allowed “inline or neutralize” path without adding filesystem reads to export.
+
+### [FE-005] Editor previews use raw regex parsing and mouse-only wikilink widgets
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Custom preview regexes ignored Markdown syntax context/escapes, and wikilink widgets were pointer-only anchors without link mechanics.
+- **Change made:** Added one shared syntax-tree guard that rejects code/comment/escape/error ancestors; applied it to custom marks, math, and wikilinks; added escape checks and math bounds; and made wikilinks focusable named anchors with href plus Enter/Space activation and consistent pointer prevention.
+- **Files touched:** `src/renderer/editor/syntax-guards.js:1-21`; `src/renderer/editor/inline-marks-preview.js:10-45`; `src/renderer/editor/math-preview.js:12-76`; `src/renderer/editor/wikilink-preview.js:16-73`; focused editor unit tests.
+- **Verification:** RED: missing guard and escaped-mark tests failed as intended. GREEN: 39 focused editor tests and the complete 1,221-test unit gate passed.
+- **Risk & notes:** Regexes remain only for app-specific constructs that the Markdown grammar does not parse; syntax-tree eligibility now controls where those matches may become decorations.
+
+### [FE-006] Responsive and motion accommodations are incomplete
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Fixed one-row chrome lacked a toolbar overflow strategy, narrow grid overrides conflicted, and motion ignored user preference.
+- **Change made:** Made the editor toolbar horizontally scrollable with nonshrinking controls, added specific panel-state grid rules, collapses nonessential titlebar brand/search text at 800 px, applies a global reduced-motion override, and chooses non-smooth outline scrolling when reduced motion is requested.
+- **Files touched:** `index.html:780-797,1704-1733`; `src/renderer/app.js:1532-1550`; `tests/audit-remediation.spec.js:43-63`.
+- **Verification:** Browser contracts verify 760 px containment/toolbar overflow and reduced transition duration; 5/5 focused UI tests passed.
+- **Risk & notes:** Controls remain available in a horizontal toolbar rather than being hidden at narrow widths.
+
+### [ARCH-001] Renderer and UI monoliths concentrate unrelated responsibilities
+
+- **Status:** Partially Fixed
+- **Severity:** Medium
+- **Root cause:** High-level DOM, state, persistence, rendering, and lifecycle orchestration remain concentrated in large entry files.
+- **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The previously extracted main/document/session modules from earlier batches were retained and extended rather than folded back into entry points.
+- **Files touched:** `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-21`; `src/renderer/export.js:1-107`; `src/renderer/app.js:863-915,1204-1259`.
+- **Verification:** New modules have direct unit tests; full unit and focused browser gates passed.
+- **Risk & notes:** A complete split of `app.js`, `index.html`, and `main.js` is intentionally not claimed. That repository-scale refactor would conflict with the audit's minimal-diff/behavior-preservation constraints and cannot be safely completed as a surgical finding fix. Remaining architecture work is consolidated below.
+
+### [PERF-001] Every edit rebuilds all tabs across the full vault inventory
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** `applyEditorInput` called the full inventory-backed `renderTabs()` on each keystroke.
+- **Change made:** Added `updateTabState(idx)` and changed the edit hot path to mutate only the active tab's dirty/conflict/title/marker state while preserving the stable tab node.
+- **Files touched:** `src/renderer/app.js:1204-1259,2147-2155`; `tests/audit-remediation.spec.js:24-31`.
+- **Verification:** Browser test retains an object reference to the active tab, types in CodeMirror, proves node identity is unchanged, and observes the dirty class; 5/5 UI contract tests passed.
+- **Risk & notes:** Full rerenders remain for structural tab operations, where they are appropriate; only the keystroke path changed.
+
+### [PERF-002] Vault-wide search rescans all content on every input event
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Every input event synchronously lowercased every file and rendered an unbounded result list.
+- **Change made:** Added a 150 ms generation-checked debounce, caches normalized name/content per unchanged file object, retains the five-snippet per-file cap, and caps total result cards at 100.
+- **Files touched:** `src/renderer/search.js:6-52`; `src/renderer/app.js:1089-1158,3050`; `tests/unit/search.test.js:20-99`.
+- **Verification:** Direct 150-file cap test passes; all sidebar integration/browser regressions passed within the 152/153 run (the sole failure was unrelated stale bidi metadata), and full unit gate passed.
+- **Risk & notes:** A worker/index would add significant lifecycle complexity for an offline 100 MiB-bounded store; caching, debounce, generation, and result bounds remove the documented interaction-path amplification without that overreach.
+
+### [PERF-003] Large math and code inputs lack per-expression/per-block bounds before synchronous preprocessing
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** A single token could allocate amplified hex/array intermediates and enter synchronous KaTeX/highlight work up to the whole-file cap.
+- **Change made:** Added allocation-free UTF-8 byte measurement and 32 KiB math/256 KiB code limits before preprocessing; oversized constructs remain literal/skipped; hex decoding writes directly into one pre-sized typed array; live math preview shares the expression limit.
+- **Files touched:** `src/renderer/limits.js:1-23`; `src/renderer/math.js:14-45`; `src/renderer/highlight.js:10-29`; `src/renderer/editor/math-preview.js:12-31`; focused math/highlight tests.
+- **Verification:** Direct 40 KiB math and 300 KiB code tests prove KaTeX/highlighter are not invoked; the original 13 red focused failures became 158/158 green; full unit gate passed.
+- **Risk & notes:** Limits are conservative defense-in-depth for local files; source remains visible and editable instead of failing the entire document.
+
 ## Deferred & Not Applicable
 
 None classified at this stage.
@@ -356,4 +456,5 @@ None at this stage.
 
 - `67c1579` — SEC-001, SEC-002, DATA-011 installer remediation.
 - `b094561` — SEC-003 through SEC-006; BE-001 through BE-003; DATA-001 through DATA-010 and DATA-012; ARCH-002; QUAL-001 through QUAL-004.
-- Workflow/macOS hardening batch — commit pending immediately after this report update.
+- `75af54b` — SEC-007 and SEC-008 workflow/macOS hardening.
+- Frontend/accessibility/export/performance batch — commit pending immediately after this report update.

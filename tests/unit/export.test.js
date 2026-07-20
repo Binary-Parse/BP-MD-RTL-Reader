@@ -6,7 +6,7 @@
  * real configured marked + DOMPurify are exercised by the e2e).
  */
 import { describe, test, expect } from 'vitest';
-import { buildExportDoc } from '../../src/renderer/export.js';
+import { buildExportDoc, buildExportDocAsync } from '../../src/renderer/export.js';
 
 const md = (s) => `<p>${s}</p>`; // a trivial fake parseMarkdown
 
@@ -26,16 +26,53 @@ describe('buildExportDoc (T-F12)', () => {
     expect(buildExportDoc({ name: '.md', content: '' }, { parseMarkdown: md }).baseName).toBe('document');
   });
 
-  test('csp:true embeds a strict CSP meta; csp:false (default) does not', () => {
-    expect(buildExportDoc({ name: 'a', content: '' }, { parseMarkdown: md, csp: true }).fullHtml)
-      .toMatch(/Content-Security-Policy[^>]*default-src 'none'/);
+  test('every standalone export embeds a network-denying CSP', () => {
     expect(buildExportDoc({ name: 'a', content: '' }, { parseMarkdown: md }).fullHtml)
-      .not.toContain('Content-Security-Policy');
+      .toMatch(/Content-Security-Policy[^>]*default-src 'none'/);
   });
 
-  test('manualRtl forces an RTL document (lang=ar, dir=rtl)', () => {
-    const { fullHtml } = buildExportDoc({ name: 'a', content: 'hello' }, { parseMarkdown: md, manualRtl: true });
+  test('explicit rtl forces an RTL document (lang=ar, dir=rtl)', () => {
+    const { fullHtml } = buildExportDoc({ name: 'a', content: 'hello' }, { parseMarkdown: md, direction: 'rtl' });
     expect(fullHtml).toMatch(/<html lang="ar" dir="rtl">/);
+  });
+
+  test('explicit ltr is not collapsed back to automatic direction', () => {
+    const { fullHtml } = buildExportDoc({ name: 'a', content: 'مرحبا بكم' }, { parseMarkdown: md, direction: 'ltr' });
+    expect(fullHtml).toMatch(/<html lang="en" dir="ltr">/);
+  });
+
+  test('preserves a valid front-matter language independent of script direction', () => {
+    const content = '---\nlang: fa\ndirection: rtl\n---\nمتن فارسی';
+    expect(buildExportDoc({ name: 'fa', content }, { parseMarkdown: md }).fullHtml)
+      .toMatch(/<html lang="fa" dir="rtl">/);
+  });
+
+  test('neutralizes remote and local images so opening an export cannot request them', () => {
+    const parseMarkdown = () => '<p><img src="https://tracker.test/pixel" alt="remote"><img src="local.png" alt="local"></p>';
+    const { fullHtml } = buildExportDoc({ name: 'safe', content: 'x' }, { parseMarkdown });
+    expect(fullHtml).not.toContain('tracker.test');
+    expect(fullHtml).not.toContain('src="local.png"');
+    expect(fullHtml).toContain('[Image: remote]');
+    expect(fullHtml).toContain('[Image: local]');
+  });
+
+  test('applies callout semantics and injected code highlighting before serialization', () => {
+    const parseMarkdown = () => '<blockquote><p>[!NOTE] Heads up\nBody.</p></blockquote><pre><code class="language-js">const x=1</code></pre>';
+    const hljs = { getLanguage: () => true, highlight: () => ({ value: '<span class="kw">const</span> x=1' }) };
+    const { fullHtml } = buildExportDoc({ name: 'parity', content: 'x' }, { parseMarkdown, hljs, sanitizeHighlight: (s) => s });
+    expect(fullHtml).toContain('<aside class="callout callout-note"');
+    expect(fullHtml).toContain('role="note"');
+    expect(fullHtml).toContain('class="language-js hljs"');
+  });
+
+  test('async export renders Mermaid when the optional local engine is available', async () => {
+    const parseMarkdown = () => '<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>';
+    const loadMermaid = async () => ({ render: async () => ({ svg: '<svg><text>diagram</text></svg>' }) });
+    const DOMPurify = { sanitize: (value) => value };
+    const { fullHtml } = await buildExportDocAsync({ name: 'diagram', content: 'x' }, { parseMarkdown, loadMermaid, DOMPurify });
+    expect(fullHtml).toContain('<div class="mermaid" dir="ltr">');
+    expect(fullHtml).toContain('<svg><text>diagram</text></svg>');
+    expect(fullHtml).not.toContain('language-mermaid');
   });
 
   test('Arabic content (first-strong) derives RTL even without a manual override', () => {
@@ -57,7 +94,7 @@ describe('buildExportDoc (T-F12)', () => {
 describe('buildExportDoc — exact output (mutation kills)', () => {
   const P = (s) => `<p>${s}</p>`;
   test('manual RTL override forces dir=rtl / lang=ar', () => {
-    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'hello' }, { manualRtl: true, parseMarkdown: P });
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'hello' }, { direction: 'rtl', parseMarkdown: P });
     expect(fullHtml).toContain('dir="rtl"');
     expect(fullHtml).toContain('lang="ar"');
   });
@@ -70,11 +107,9 @@ describe('buildExportDoc — exact output (mutation kills)', () => {
     const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'هذا نص عربي طويل بما يكفي' }, { parseMarkdown: P });
     expect(fullHtml).toContain('dir="rtl"');
   });
-  test('csp:true embeds the strict CSP meta; csp:false omits it', () => {
-    expect(buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P, csp: true }).fullHtml)
+  test('strict CSP is unconditional', () => {
+    expect(buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P }).fullHtml)
       .toContain("default-src 'none'");
-    expect(buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P, csp: false }).fullHtml)
-      .not.toContain('Content-Security-Policy');
   });
   test('baseName strips .md/.markdown/.txt (case-insensitive); empty → "document"', () => {
     expect(buildExportDoc({ name: 'Note.MD', content: 'x' }, { parseMarkdown: P }).baseName).toBe('Note');

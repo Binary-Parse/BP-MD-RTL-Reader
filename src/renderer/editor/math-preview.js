@@ -9,6 +9,9 @@
  * may come from a ViewPlugin; the actual TeX→DOM render is INJECTED (renderMath) + LTR-isolated.
  */
 
+import { MAX_MATH_BYTES, isEscaped, utf8ByteLength } from '../limits.js';
+import { syntaxRangeAllowed } from './syntax-guards.js';
+
 // Block $$…$$ (single line) first, then inline $…$ — both require non-space adjacency so prose
 // dollar amounts aren't treated as math.
 const MATH_RE = /\$\$(?=\S)([^\n]+?)(?<=\S)\$\$|\$(?!\$)(?=\S)([^$\n]+?)(?<=\S)\$/g;
@@ -19,8 +22,10 @@ export function findMath(text) {
   MATH_RE.lastIndex = 0;
   let m;
   while ((m = MATH_RE.exec(text)) !== null) {
-    if (m[1] != null) out.push({ start: m.index, end: m.index + m[0].length, tex: m[1], display: true });
-    else out.push({ start: m.index, end: m.index + m[0].length, tex: m[2], display: false });
+    const tex = m[1] != null ? m[1] : m[2];
+    if (!isEscaped(text, m.index) && utf8ByteLength(tex) <= MAX_MATH_BYTES) {
+      out.push({ start: m.index, end: m.index + m[0].length, tex, display: m[1] != null });
+    }
     if (m.index === MATH_RE.lastIndex) MATH_RE.lastIndex += 1;
   }
   return out;
@@ -60,9 +65,12 @@ export function buildMathDecorations(CM6, renderMath, view) {
       if (!seen.has(line.number) && !(line.number >= activeFrom && line.number <= activeTo)) {
         seen.add(line.number);
         for (const mm of findMath(line.text)) {
+          const start = line.from + mm.start;
+          const end = line.from + mm.end;
+          if (!syntaxRangeAllowed(CM6, view.state, start, end)) continue;
           ranges.push(
             Decoration.replace({ widget: new MathWidget(mm.tex, mm.display) })
-              .range(line.from + mm.start, line.from + mm.end),
+              .range(start, end),
           );
         }
       }

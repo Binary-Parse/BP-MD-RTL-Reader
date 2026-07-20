@@ -23,6 +23,9 @@ describe('findMath', () => {
   test('two inline spans on a line', () => {
     expect(findMath('$a$ and $b$').length).toBe(2);
   });
+  test('escaped math delimiters stay literal', () => {
+    expect(findMath('literal \\$x$ text')).toEqual([]);
+  });
 });
 
 function fakeCM6() {

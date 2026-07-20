@@ -35,6 +35,7 @@ $testFiles = @(
     'path_validate.test.ps1'
     'registry_mock.test.ps1'
     'uninstall_check.test.ps1'
+    'installer_security.test.ps1'
 ) | ForEach-Object { Join-Path $PSScriptRoot $_ }
 
 Write-Host '== Unit tests ==' -ForegroundColor Cyan

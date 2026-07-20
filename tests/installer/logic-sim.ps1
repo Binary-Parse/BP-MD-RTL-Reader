@@ -115,24 +115,23 @@ function Get-InstallAction {
 }
 
 function Get-InstalledVersion {
-    # Mirrors DetectInstalled/GetInstalledInfo: check THIS installer's Inno _is1
-    # key AND the electron-builder NSIS key, across HKLM and HKCU. (The Pascal
-    # additionally probes both 64/32-bit views; PowerShell's HKLM:/HKCU: map to
-    # the native view, which is where a 64-bit install writes.)
+    # Mirrors mode-scoped GetInstalledVersion. A per-machine installer trusts
+    # only HKLM version metadata; a current-user installer trusts only HKCU.
     param(
+        [ValidateSet('Machine', 'User')]
+        [string]$InstallMode = 'Machine',
         [string[]]$SubKeys = @(
             'Software\Microsoft\Windows\CurrentVersion\Uninstall\{32586DF8-1F67-400F-9D8B-6426C3D5B405}_is1',
             'Software\Microsoft\Windows\CurrentVersion\Uninstall\4f0623fc-2d71-59f2-b165-b36fb9982268'
         )
     )
+    $hive = if ($InstallMode -eq 'Machine') { 'HKLM:' } else { 'HKCU:' }
     foreach ($sub in $SubKeys) {
-        foreach ($hive in 'HKLM:', 'HKCU:') {
-            try {
-                $p = Get-ItemProperty -Path ($hive + '\' + $sub) -ErrorAction Stop
-                if ($null -ne $p.DisplayVersion) { return [string]$p.DisplayVersion }
-            } catch {
-                # key absent in this hive/path — keep looking
-            }
+        try {
+            $p = Get-ItemProperty -Path ($hive + '\' + $sub) -ErrorAction Stop
+            if ($null -ne $p.DisplayVersion) { return [string]$p.DisplayVersion }
+        } catch {
+            # key absent in this mode's protected hive/path — keep looking
         }
     }
     return ''

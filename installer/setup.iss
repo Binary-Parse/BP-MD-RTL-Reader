@@ -138,38 +138,14 @@ const
 
 var
   gKeepUserData: Boolean;
-  gExistingUninstaller: string;
 
-{ --- Detect an existing install (this installer's Inno _is1 key OR the
-      electron-builder NSIS key), across both hives and both registry views;
-      record its uninstaller command in gExistingUninstaller. ---------------- }
+{ --- Detect only a version in the registry hive appropriate to this setup's
+      privilege mode. Registry command strings are never read or executed. ---- }
 function DetectInstalled: string;
-var
-  U: string;
 begin
-  gExistingUninstaller := '';
-  Result := GetInstalledInfo(UNINSTALL_KEY, U);
-  if Result <> '' then begin gExistingUninstaller := U; Exit; end;
-  Result := GetInstalledInfo(EB_NSIS_KEY, U);
-  if Result <> '' then gExistingUninstaller := U;
-end;
-
-{ --- Run the detected uninstaller silently and wait for it. ----------------- }
-function RunExistingUninstaller: Boolean;
-var
-  Exe, Params: string;
-  ResultCode: Integer;
-begin
-  Result := False;
-  if Trim(gExistingUninstaller) = '' then Exit;
-  { gExistingUninstaller is the QuietUninstallString when available, so it already
-    carries the right silent switch (/SILENT for Inno, /S for NSIS). }
-  SplitCommand(gExistingUninstaller, Exe, Params);
-  if Exe = '' then Exit;
-  { NOTE: an Inno/NSIS uninstaller may relaunch from a temp copy, so
-    ewWaitUntilTerminated can return early; benign here because the only caller
-    (Action='same' -> Remove) sets Result:=False right after and Setup exits. }
-  Result := Exec(Exe, Params, '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
+  Result := GetInstalledVersion(UNINSTALL_KEY, IsAdminInstallMode);
+  if Result <> '' then Exit;
+  Result := GetInstalledVersion(EB_NSIS_KEY, IsAdminInstallMode);
 end;
 
 { --- MANDATORY version detection before any file copy. --------------------- }
@@ -190,23 +166,14 @@ begin
   begin
     if WizardSilent then
       Exit;                                 { silent: reinstall/repair over the top }
-    Choice := TaskDialogMsgBox(
-      Format('BP MD RTL Reader %s is already installed', [Installed]),
-      'What would you like to do?' + #13#10#13#10 +
-      'Repair — reinstall the current version.' + #13#10 +
-      'Remove — uninstall BP MD RTL Reader from this PC.' + #13#10 +
-      'Cancel — exit Setup without changes.',
-      mbConfirmation, MB_YESNOCANCEL, ['&Repair', 'Re&move', 'Cancel'], 0);
-    if Choice = IDYES then
-      Result := True
-    else if Choice = IDNO then
-    begin
-      RunExistingUninstaller;
-      Result := False;                      { stop Setup after launching uninstaller }
-    end
-    else
-      Result := False;
-    Exit;
+      Choice := TaskDialogMsgBox(
+        Format('BP MD RTL Reader %s is already installed', [Installed]),
+        'What would you like to do?' + #13#10#13#10 +
+        'Repair — reinstall the current version.' + #13#10 +
+        'Cancel — exit Setup without changes.',
+        mbConfirmation, MB_OKCANCEL, ['&Repair', 'Cancel'], 0);
+      Result := (Choice = IDOK);
+      Exit;
   end;
 
   if Action = 'newer' then
@@ -259,13 +226,15 @@ function InitializeUninstall: Boolean;
 begin
   Result := True;
   if UninstallSilent then
-    gKeepUserData := False                  { spec default: silent removes everything }
+    gKeepUserData := not CmdLineParamExists('/DELETEUSERDATA')
+  else if CmdLineParamExists('/DELETEUSERDATA') then
+    gKeepUserData := False
   else
     gKeepUserData :=
       MsgBox('Keep your BP MD RTL Reader settings and data?' + #13#10#13#10 +
              'Yes  — keep your data folder (%APPDATA%\BP MD RTL Reader: settings, recent files, notes) and remove only the program.' + #13#10 +
              'No   — remove everything, including settings and data.',
-             mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+             mbConfirmation, MB_YESNO or MB_DEFBUTTON1) = IDYES;
 end;
 
 { --- Uninstall: perform the complete cleanup after files are removed. ------- }

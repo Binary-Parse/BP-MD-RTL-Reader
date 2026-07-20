@@ -27,7 +27,7 @@ begin
   T_EqStr('reg missing -> fresh',
           DetermineInstallAction(MockGetInstalledVersion, '1.0.0'), 'fresh');
 
-  { Same version installed -> Repair/Remove prompt }
+  { Same version installed -> Repair/Cancel prompt }
   Mock_KeyExists := True; Mock_DisplayVersion := '1.0.0';
   T_EqStr('reg 1.0.0 vs setup 1.0.0 -> same',
           DetermineInstallAction(MockGetInstalledVersion, '1.0.0'), 'same');

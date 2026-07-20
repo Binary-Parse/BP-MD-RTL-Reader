@@ -8,7 +8,7 @@ BeforeAll {
     . (Join-Path $PSScriptRoot 'logic-sim.ps1')
 }
 
-Describe 'Get-InstalledVersion (mocked HKLM ARP read)' {
+Describe 'Get-InstalledVersion (mode-scoped mocked ARP read)' {
     It 'returns DisplayVersion when the uninstall key exists' {
         Mock Get-ItemProperty { [pscustomobject]@{ DisplayVersion = '1.2.3' } }
         Get-InstalledVersion | Should -Be '1.2.3'
@@ -21,10 +21,15 @@ Describe 'Get-InstalledVersion (mocked HKLM ARP read)' {
         Mock Get-ItemProperty { [pscustomobject]@{ SomethingElse = 'x' } }
         Get-InstalledVersion | Should -Be ''
     }
-    It 'falls back to HKCU when the HKLM key is absent (per-user install)' {
+    It 'per-machine detection ignores a spoofed HKCU entry' {
         Mock Get-ItemProperty -ParameterFilter { $Path -like 'HKLM:*' } { throw 'no HKLM key' }
         Mock Get-ItemProperty -ParameterFilter { $Path -like 'HKCU:*' } { [pscustomobject]@{ DisplayVersion = '0.8.0' } }
-        Get-InstalledVersion | Should -Be '0.8.0'
+        Get-InstalledVersion -InstallMode Machine | Should -Be ''
+    }
+    It 'per-user detection reads HKCU but ignores HKLM' {
+        Mock Get-ItemProperty -ParameterFilter { $Path -like 'HKLM:*' } { [pscustomobject]@{ DisplayVersion = '9.9.9' } }
+        Mock Get-ItemProperty -ParameterFilter { $Path -like 'HKCU:*' } { [pscustomobject]@{ DisplayVersion = '0.8.0' } }
+        Get-InstalledVersion -InstallMode User | Should -Be '0.8.0'
     }
     It 'detects the electron-builder NSIS key when the Inno _is1 key is absent' {
         # Default: NOTHING is present (also shields the test from any real
@@ -41,7 +46,7 @@ Describe 'Registry-driven install decision (mock + compare)' {
         Mock Get-ItemProperty { throw 'not found' }
         Get-InstallAction (Get-InstalledVersion) '1.0.0' | Should -Be 'fresh'
     }
-    It 'same version present -> same (Repair/Remove prompt)' {
+    It 'same version present -> same (Repair/Cancel prompt)' {
         Mock Get-ItemProperty { [pscustomobject]@{ DisplayVersion = '1.0.0' } }
         Get-InstallAction (Get-InstalledVersion) '1.0.0' | Should -Be 'same'
     }

@@ -1,100 +1,104 @@
 <#
-  build-installer.ps1 — compile the BP MD RTL Reader installer with Inno Setup 6.3+.
+  Build the x64 Inno installer from a fresh, policy-checked electron-builder tree.
 
-  Steps:
-    1. locate ISCC.exe (PATH or default install locations)
-    2. read the app version from package.json (override with -Version)
-    3. verify the packaged app exists (dist\win-unpacked\BP MD RTL Reader.exe)
-    4. compile installer\setup.iss
-    5. verify "dist\BP MD RTL Reader Setup.exe" exists and is > 10 MB
-    6. print the SHA256 hash
+  The build deliberately ignores PATH. ISCC must be the pinned, signed compiler
+  installed below Program Files. The Electron payload is built into a unique
+  scratch directory, checked against the committed file inventory, copied into
+  a clean staging directory, hashed, and only then passed to setup.iss.
 
   Usage:
-    pwsh -File installer\build-installer.ps1
-    pwsh -File installer\build-installer.ps1 -Version 1.0.1
-    pwsh -File installer\build-installer.ps1 -SourceDir dist\win-unpacked
+    pwsh -File installer/build-installer.ps1
+    pwsh -File installer/build-installer.ps1 -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
 #>
 [CmdletBinding()]
 param(
     [string]$Version,
-    [string]$SourceDir,
+    [string]$IsccPath,
     [string]$Iss = (Join-Path $PSScriptRoot 'setup.iss')
 )
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path -Parent $PSScriptRoot          # installer\ -> repo root
+Set-StrictMode -Version Latest
 
-# 1. locate ISCC.exe ---------------------------------------------------------
-$iscc = $null
-$cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
-if ($cmd) { $iscc = $cmd.Source }
-if (-not $iscc) {
-    foreach ($c in @(
-        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
-    )) {
-        if ($c -and (Test-Path $c)) { $iscc = $c; break }
-    }
-}
-if (-not $iscc) {
-    Write-Error "ISCC.exe (Inno Setup 6.3+) not found in PATH or the default install folders. Install from https://jrsoftware.org/isdl.php"
-    exit 2
-}
-Write-Host "ISCC : $iscc" -ForegroundColor Cyan
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$distRoot = Join-Path $repoRoot 'dist'
+. (Join-Path $PSScriptRoot 'build-policy.ps1')
 
-# 2. version -----------------------------------------------------------------
-if (-not $Version) {
-    $pkg = Get-Content (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json
-    $Version = $pkg.version
+$toolPolicy = Get-Content (Join-Path $PSScriptRoot 'toolchain-policy.json') -Raw | ConvertFrom-Json
+$sourcePolicy = Get-Content (Join-Path $PSScriptRoot 'source-manifest-policy.json') -Raw | ConvertFrom-Json
+$package = Get-Content (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json
+if (-not $Version) { $Version = $package.version }
+if ($Version -ne $package.version) {
+    throw "-Version must match package.json ($($package.version)); update the package version before building."
 }
+if ($sourcePolicy.electronVersion -ne $package.devDependencies.electron) {
+    throw "Source manifest policy targets Electron $($sourcePolicy.electronVersion), but package.json pins $($package.devDependencies.electron)."
+}
+
+$compiler = Get-TrustedIscc -ExplicitPath $IsccPath -Policy $toolPolicy
+Write-Host "ISCC   : $($compiler.Path)" -ForegroundColor Cyan
 Write-Host "Version: $Version" -ForegroundColor Cyan
 
-# 3. packaged app source -----------------------------------------------------
-if (-not $SourceDir) { $SourceDir = Join-Path $repoRoot 'dist\win-unpacked' }
-elseif (-not [System.IO.Path]::IsPathRooted($SourceDir)) { $SourceDir = Join-Path $repoRoot $SourceDir }
-$appExe = Join-Path $SourceDir 'BP MD RTL Reader.exe'
-if (-not (Test-Path $appExe)) {
-    Write-Error "Packaged app not found: $appExe`nRun the app build first (e.g. 'npx electron-builder --dir' or 'npm run dist')."
-    exit 3
-}
-Write-Host "Source : $SourceDir" -ForegroundColor Cyan
-
-# 4. compile -----------------------------------------------------------------
-$outDir  = Join-Path $repoRoot 'dist'
-$outFile = Join-Path $outDir 'BP MD RTL Reader Setup.exe'
-if (Test-Path $outFile) { Remove-Item $outFile -Force }
-
-$isccArgs = @(
-    "/DAppVersion=$Version",
-    "/DSourceDir=$SourceDir",
-    "/O$outDir",
-    '/FBP MD RTL Reader Setup',
-    $Iss
-)
-Write-Host "Compiling..." -ForegroundColor Cyan
-& $iscc @isccArgs
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "ISCC failed with exit code $LASTEXITCODE"
-    exit $LASTEXITCODE
+$builder = Join-Path $repoRoot 'node_modules\.bin\electron-builder.cmd'
+if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) {
+    throw "Pinned local electron-builder not found: $builder. Run 'npm ci' first."
 }
 
-# 5. verify output -----------------------------------------------------------
-if (-not (Test-Path $outFile)) {
-    Write-Error "Expected output not produced: $outFile"
-    exit 4
-}
-$size = (Get-Item $outFile).Length
-if ($size -lt 10MB) {
-    Write-Error ("Output is suspiciously small ({0:N0} bytes < 10 MB)." -f $size)
-    exit 5
-}
+New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
+$nonce = [Guid]::NewGuid().ToString('N')
+$appBuildRoot = Join-Path $distRoot ".inno-app-build-$nonce"
+$stagingRoot = Join-Path $distRoot ".inno-staging-$nonce"
+$outFile = Join-Path $distRoot 'BP MD RTL Reader Setup.exe'
+$manifestFile = Join-Path $distRoot 'BP MD RTL Reader Setup.source-manifest.json'
 
-# 6. hash --------------------------------------------------------------------
-$hash = (Get-FileHash $outFile -Algorithm SHA256).Hash
-Write-Host ''
-Write-Host '================ BUILD OK ================' -ForegroundColor Green
-Write-Host ("Output : {0}" -f $outFile)
-Write-Host ("Size   : {0:N1} MB" -f ($size / 1MB))
-Write-Host ("SHA256 : {0}" -f $hash)
-Write-Host '=========================================' -ForegroundColor Green
-exit 0
+try {
+    Write-Host 'Building a fresh x64 Electron directory...' -ForegroundColor Cyan
+    & $builder --dir --win --x64 "--config.directories.output=$appBuildRoot"
+    if ($LASTEXITCODE -ne 0) { throw "electron-builder failed with exit code $LASTEXITCODE" }
+
+    $sourceDir = Join-Path $appBuildRoot 'win-unpacked'
+    $payload = Get-PackagedFileManifest -SourceRoot $sourceDir -Policy $sourcePolicy -AppVersion $Version
+    New-VerifiedStaging -SourceRoot $sourceDir -StagingRoot $stagingRoot -Files $payload.Files | Out-Null
+
+    $buildRecord = [ordered]@{
+        schemaVersion = 1
+        createdAtUtc = [DateTime]::UtcNow.ToString('o')
+        appVersion = $Version
+        electronVersion = $package.devDependencies.electron
+        compiler = $compiler
+        executable = $payload.Executable
+        files = $payload.Files
+    }
+    $buildRecord | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestFile -Encoding utf8
+
+    if (Test-Path -LiteralPath $outFile) { Remove-Item -LiteralPath $outFile -Force }
+    $isccArgs = @(
+        "/DAppVersion=$Version",
+        "/DSourceDir=$stagingRoot",
+        '/DVerifiedStaging=1',
+        "/O$distRoot",
+        '/FBP MD RTL Reader Setup',
+        $Iss
+    )
+    Write-Host 'Compiling verified staging tree...' -ForegroundColor Cyan
+    & $compiler.Path @isccArgs
+    if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+    if (-not (Test-Path -LiteralPath $outFile -PathType Leaf)) {
+        throw "Expected output not produced: $outFile"
+    }
+    $size = (Get-Item -LiteralPath $outFile).Length
+    if ($size -lt 10MB) { throw ("Output is suspiciously small ({0:N0} bytes < 10 MB)." -f $size) }
+    $hash = (Get-FileHash -LiteralPath $outFile -Algorithm SHA256).Hash
+
+    Write-Host ''
+    Write-Host '================ BUILD OK ================' -ForegroundColor Green
+    Write-Host "Output   : $outFile"
+    Write-Host ("Size     : {0:N1} MB" -f ($size / 1MB))
+    Write-Host "SHA256   : $hash"
+    Write-Host "Manifest : $manifestFile"
+    Write-Host '=========================================' -ForegroundColor Green
+}
+finally {
+    Remove-InstallerScratch -Path $stagingRoot -DistRoot $distRoot
+    Remove-InstallerScratch -Path $appBuildRoot -DistRoot $distRoot
+}

@@ -2,8 +2,7 @@
 ;  BP MD RTL Reader — Inno Setup 6.3+ installer
 ;  Compiler: ISCC.exe   |   Output: dist\BP MD RTL Reader Setup.exe   |   x64-only
 ;
-;  Build:   installer\build-installer.ps1
-;  Manual:  ISCC.exe /DAppVersion=1.0.0 installer\setup.iss
+;  Build:   installer\build-installer.ps1 (the only supported entry point)
 ;
 ;  The product name is "BP MD RTL Reader" (matches package.json productName /
 ;  appId com.binaryparse.bpmdrtlreader / the bundled BP MD RTL Reader.exe),
@@ -15,11 +14,15 @@
   #define AppVersion "1.0.0"
 #endif
 
-; ---- Source of the packaged app (electron-builder --dir output) -------------
-; Relative to this .iss file (installer\..\dist\win-unpacked). Overridable with
-; /DSourceDir=...  Must contain BP MD RTL Reader.exe + the Electron runtime.
+; ---- Verified source --------------------------------------------------------
+; build-installer.ps1 creates and hashes a clean staging tree that exactly
+; matches source-manifest-policy.json. Direct compilation is intentionally
+; rejected so an ambient recursive source directory cannot be packaged.
+#ifndef VerifiedStaging
+  #error Use installer/build-installer.ps1 to compile a verified payload.
+#endif
 #ifndef SourceDir
-  #define SourceDir "..\dist\win-unpacked"
+  #error The verified staging directory was not supplied.
 #endif
 
 ; ---- Stable identity --------------------------------------------------------
@@ -89,7 +92,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "associatemd";  Description: "Add an ""Open with BP MD RTL Reader"" entry to .md and .markdown files"
 
 [Files]
-; Package the entire x64 build tree.
+; This recursion is confined to the freshly-created, exact-manifest staging tree.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]

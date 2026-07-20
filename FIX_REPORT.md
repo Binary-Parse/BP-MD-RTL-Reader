@@ -4,7 +4,7 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after the security-lint batch: **49 Fixed, 4 Partially Fixed, 7 In Progress**. Installer-build and documentation remediation plus final repository-wide validation remain pending.
+Current status after the installer-build batch: **49 Fixed, 5 Partially Fixed, 6 In Progress**. Documentation remediation and final repository-wide validation remain pending.
 
 ## Baseline vs. Post-Fix
 
@@ -74,7 +74,7 @@ Current status after the security-lint batch: **49 Fixed, 4 Partially Fixed, 7 I
 | CONF-001 | Medium | Fixed | ESLint config, exact reviewed baseline/runner + tests | Y |
 | CONF-002 | Medium | Fixed | CI checkout + Gitleaks history invocation | Y |
 | CONF-003 | Medium | Fixed | CI pinned Gitleaks version/SHA-256 verification | Y |
-| CONF-004 | Medium | In Progress | — | N |
+| CONF-004 | Medium | Partially Fixed | pinned compiler/payload policies, deterministic build staging + tests | Y (Inno compile unavailable) |
 | DOC-001 | Low | In Progress | — | N |
 | DOC-002 | Medium | In Progress | — | N |
 | DOC-003 | Medium | In Progress | — | N |
@@ -594,6 +594,16 @@ Current status after the security-lint batch: **49 Fixed, 4 Partially Fixed, 7 I
 - **Verification:** Workflow YAML parsed successfully; the verified checksum step precedes `tar` and execution. The checksum was cross-checked against the published 8.30.1 release assets.
 - **Risk & notes:** A checksum pin is deliberately simpler than introducing another privileged action or key-management path for this offline project.
 
+### [CONF-004] Installer build trusted ambient ISCC and an unverified recursive source tree
+
+- **Status:** Partially Fixed
+- **Severity:** Medium
+- **Root cause:** The build selected the first `ISCC.exe` on PATH and recursively consumed a caller-selected package directory after checking only one filename.
+- **Change made:** Removed PATH discovery and custom source-tree input. The supported build now requires the exact Inno Setup 6.3.3 compiler in a canonical Program Files installation, a valid Authenticode signature from `Open Source Developer, Martijn Laan`, and a matching file version; records its SHA-256; builds a fresh x64 Electron directory using the repository-pinned builder; rejects reparse points, missing files, extra files, Electron-version drift, executable metadata drift, and invalid signatures against a committed exact 74-file policy; copies only verified files into a unique clean staging tree; rechecks every SHA-256 after copy; records the source manifest; and cleans only validated scratch paths. Direct `setup.iss` compilation is rejected unless the verified-staging define is supplied.
+- **Files touched:** `installer/build-installer.ps1:1-109`; `installer/build-policy.ps1:1-159`; `installer/toolchain-policy.json:1-5`; `installer/source-manifest-policy.json:1-89`; `installer/setup.iss:5-27,96-98`; `tests/installer/installer_security.test.ps1:8-72`.
+- **Verification:** PowerShell parsed all changed scripts without errors; the 74-file policy matched the locally built `dist/win-unpacked` tree and validated all hashes plus executable metadata; installer Pester passed 71 tests with 4 intentionally skipped post-uninstall machine-state checks; focused tests reject a noncanonical compiler, wrong compiler version, invalid signature, and unlisted staging files. Running the build entry point stopped before side effects with the expected pinned-compiler error because Inno Setup is not installed.
+- **Risk & notes:** The status is partial only because the actual ISCC compilation cannot be exercised on this workstation. The application payload is intentionally allowed to be unsigned for local builds (`NotSigned` is recorded); invalid signatures are rejected, and any valid application signature must match `Binary Parse`. This is proportionate to the offline/local build threat model while removing ambient PATH and stale-tree trust. Installing the pinned signed compiler and running the command is the manual completion step.
+
 ## Deferred & Not Applicable
 
 None classified at this stage.
@@ -610,4 +620,5 @@ None at this stage.
 - `ed8363c` — FE-001 through FE-006; ARCH-001; PERF-001 through PERF-003.
 - `55ff0ed`, `dab7e0a` — DEP-001 through DEP-003 dependency provenance, licensing, updates, and refreshed vendor assets.
 - `691b7e7` — TEST-001 through TEST-009; CONF-002 and CONF-003 assurance gates.
-- CONF-001 lint enforcement batch — commit pending immediately after this report update.
+- `d9453b4` — CONF-001 security lint enforcement.
+- CONF-004 installer-build hardening batch — commit pending immediately after this report update.

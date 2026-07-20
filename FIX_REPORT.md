@@ -4,7 +4,7 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after four verified batches: **34 Fixed, 4 Partially Fixed, 22 In Progress**. Final repository-wide validation remains pending.
+Current status after five verified batches: **37 Fixed, 4 Partially Fixed, 19 In Progress**. Final repository-wide validation remains pending.
 
 ## Baseline vs. Post-Fix
 
@@ -59,9 +59,9 @@ Current status after four verified batches: **34 Fixed, 4 Partially Fixed, 22 In
 | PERF-001 | Medium | Fixed | renderer tabs/app + browser tests | Y |
 | PERF-002 | Medium | Fixed | search/app + unit/browser tests | Y |
 | PERF-003 | Medium | Fixed | renderer math/highlight/limits + unit tests | Y |
-| DEP-001 | Medium | In Progress | — | N |
-| DEP-002 | Medium | In Progress | — | N |
-| DEP-003 | Low | In Progress | — | N |
+| DEP-001 | Medium | Fixed | package/lock, vendor sync/manifest/assets/licenses + tests | Y |
+| DEP-002 | Medium | Fixed | package allowlist, notices/licenses + tests | Y |
+| DEP-003 | Low | Fixed | package/lock + audit/vendor/unit/browser checks | Y |
 | TEST-001 | Medium | In Progress | — | N |
 | TEST-002 | Medium | In Progress | — | N |
 | TEST-003 | Medium | In Progress | — | N |
@@ -444,6 +444,36 @@ Current status after four verified batches: **34 Fixed, 4 Partially Fixed, 22 In
 - **Verification:** Direct 40 KiB math and 300 KiB code tests prove KaTeX/highlighter are not invoked; the original 13 red focused failures became 158/158 green; full unit gate passed.
 - **Risk & notes:** Limits are conservative defense-in-depth for local files; source remains visible and editable instead of failing the entire document.
 
+### [DEP-001] Shipped browser libraries are outside lockfile and audit provenance
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Runtime JavaScript, CodeMirror, and inline Lucide symbols were committed as opaque assets without exact package sources or a reproducibility check.
+- **Change made:** Added exact source packages to the lockfile, a deterministic vendor synchronizer/checker, a machine-readable source/version/SHA-256 manifest, reproducible CodeMirror and highlight.js builds, direct copies for DOMPurify/KaTeX/marked/Mermaid, and Lucide symbol generation from an explicit name map. Upgraded marked from 18.0.4 to the compatible 18.0.6 patch while preserving the established major versions of the other already-vendored libraries.
+- **Files touched:** `package.json:13-16,157-196`; `package-lock.json`; `scripts/sync-vendor.js:1-225`; `scripts/highlight-entry.mjs:1-5`; `assets/vendor/vendor-manifest.json`; generated `assets/vendor/{codemirror,dompurify,highlight,katex,marked,mermaid}/**`; `index.html:1769-2067`; `tests/unit/vendor-provenance.test.js:1-41`.
+- **Verification:** `npm run vendor:check` rebuilt/compared all governed assets and reported an exact match; focused provenance tests passed 3/3; full unit suite passed 1,221/1,221; focused smoke/remediation Playwright passed 20/20 after installing Playwright 1.61.1's matching Chromium revision.
+- **Risk & notes:** Risky dependency/vendor batch, isolated in its own commit. The first focused browser attempt could not launch because only the old Playwright browser revision was cached; it reached no app code. Installing the exact new revision resolved that environmental failure. No major package upgrade was taken merely to chase “latest.”
+
+### [DEP-002] Packaged applications omit required project and third-party license texts
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** The electron-builder allowlist omitted the root license/notices, the font directory contained only a link to OFL-1.1, and runtime bundles lacked their complete license corpus.
+- **Change made:** Included `LICENSE` and `THIRD-PARTY-NOTICES.md` explicitly; shipped the official OFL-1.1 text and font copyrights; generated a complete license-text aggregate for the vendored runtime dependency closure; and updated notices with exact source versions and verification commands.
+- **Files touched:** `package.json:41-47`; `THIRD-PARTY-NOTICES.md:6-63`; `assets/vendor/THIRD-PARTY-LICENSES.txt`; `assets/vendor/fonts/LICENSES.md:1-21`; `assets/vendor/fonts/OFL-1.1.txt:1-80`; `scripts/sync-vendor.js:140-225`; `tests/unit/vendor-provenance.test.js:23-33`.
+- **Verification:** A real `electron-builder --dir --win --x64` package succeeded; listing `dist/win-unpacked/resources/app.asar` proved it contains `LICENSE`, `THIRD-PARTY-NOTICES.md`, `assets/vendor/THIRD-PARTY-LICENSES.txt`, `assets/vendor/fonts/OFL-1.1.txt`, and the vendor manifest. Provenance tests passed 3/3.
+- **Risk & notes:** License inclusion affects package contents only. The OFL text was taken from SIL's official OFL 1.1 plaintext; no installed application or user data was touched.
+
+### [DEP-003] Direct development dependencies are stale, ranged, and partially implicit
+
+- **Status:** Fixed
+- **Severity:** Low
+- **Root cause:** Direct tools used compatible ranges, 19 had newer compatible releases, and Istanbul libraries imported by project scripts were available only transitively.
+- **Change made:** Applied controlled compatible updates, pinned every direct dependency to an exact version, declared the two directly imported Istanbul libraries, and added exact packages for vendor provenance. Electron remains on major 42 (updated to 42.7.0) and jscpd remains on major 4 (updated to 4.2.5); breaking majors were neither required by an advisory nor justified for this local remediation.
+- **Files touched:** `package.json:157-196`; `package-lock.json`; `tests/unit/vendor-provenance.test.js:35-40`.
+- **Verification:** Fresh `npm audit --json` reports 0 vulnerabilities; `npm ls --depth=0 --json` resolves all declared direct packages; the exact-version unit assertion passes; full unit, vendor, focused browser, and x64 package-directory gates pass.
+- **Risk & notes:** Risky dependency batch. The initial install summary transiently printed three vulnerabilities while npm reconciled the tree; the post-install authoritative audit is clean. Deprecated transitive packages not selected by project code remain controlled by their upstream tools; no unverified breaking-major migration was introduced.
+
 ## Deferred & Not Applicable
 
 None classified at this stage.
@@ -457,4 +487,5 @@ None at this stage.
 - `67c1579` — SEC-001, SEC-002, DATA-011 installer remediation.
 - `b094561` — SEC-003 through SEC-006; BE-001 through BE-003; DATA-001 through DATA-010 and DATA-012; ARCH-002; QUAL-001 through QUAL-004.
 - `75af54b` — SEC-007 and SEC-008 workflow/macOS hardening.
-- Frontend/accessibility/export/performance batch — commit pending immediately after this report update.
+- `ed8363c` — FE-001 through FE-006; ARCH-001; PERF-001 through PERF-003.
+- Dependency provenance/license/update batch — commit pending immediately after this report update.

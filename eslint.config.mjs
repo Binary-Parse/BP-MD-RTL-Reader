@@ -16,26 +16,32 @@ export default [
     files: ['**/*.html'],
     plugins: { html },
   },
-  // First-party JS + extracted scripts from HTML
+  // First-party runtime, executed build/report tooling, configs, and extracted HTML scripts.
   {
-    files: ['main.js', 'preload.js', 'src/**/*.js', '**/*.html'],
+    files: [
+      'main.js', 'preload.js', 'src/**/*.js', 'scripts/**/*.{js,mjs}',
+      '*.config.{js,mjs}', '**/*.html',
+    ],
     plugins: {
       security,
       'no-unsanitized': noUnsanitized,
     },
     rules: {
       ...security.configs.recommended.rules,
-      'no-unsanitized/method': 'warn',
-      'no-unsanitized/property': 'warn',
+      'no-unsanitized/method': 'error',
+      'no-unsanitized/property': 'error',
     },
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
     },
   },
-  // Electron main + preload + main-logic are CommonJS — override sourceType
+  // Electron/main-side modules, Node scripts, and CJS configs use CommonJS.
   {
-    files: ['main.js', 'preload.js', 'src/main-logic.js'],
+    files: [
+      'main.js', 'preload.js', 'src/main-logic.js', 'src/main/**/*.js',
+      'scripts/**/*.js', 'playwright.config.js', 'playwright.electron.config.js',
+    ],
     languageOptions: {
       sourceType: 'commonjs',
     },

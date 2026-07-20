@@ -31,7 +31,7 @@
     "test:watch": "vitest --config vitest.config.js",
     "coverage": "npm run test:unit:coverage && npm run test:e2e:coverage && npm run report:merge",
     "report:merge": "node scripts/merge-coverage.js",
-    "lint:security": "eslint main.js preload.js \"src/**/*.js\" index.html",
+    "lint:security": "node scripts/run-security-lint.js",
     "postinstall": "playwright install chromium"
   },
   "build": {

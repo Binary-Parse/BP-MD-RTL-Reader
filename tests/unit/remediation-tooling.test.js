@@ -9,6 +9,7 @@ const { evaluateTiers, mutationScore } = require('../../scripts/check-mutation-t
 const { writeCoverageMetadata, loadCoverageInput } = require('../../scripts/coverage-metadata.js');
 const { loadExpectedFiles, collectSourceFiles } = require('../../scripts/generate-renderer-coverage.js');
 const { verifyPackageEntries, REQUIRED } = require('../../scripts/verify-package-contents.js');
+const { fingerprint, countByRule, compareBaseline } = require('../../scripts/run-security-lint.js');
 
 const temporary = [];
 afterEach(() => {
@@ -67,5 +68,17 @@ describe('remediation build and test gates', () => {
     expect(new Set(tierFiles).size).toBe(tierFiles.length);
     expect(tierFiles.slice().sort()).toEqual(stryker.mutate.slice().sort());
     expect(stryker.tsconfigFile).toBe('config/stryker-javascript-project-no-tsconfig.json');
+  });
+
+  test('security lint baseline rejects new or moved findings', () => {
+    const findings = [{ file: 'a.js', line: 1, column: 2, severity: 1, rule: 'security/example', fatal: false }];
+    const baseline = {
+      expectedTotal: 1,
+      fingerprintSha256: fingerprint(findings),
+      countsByRule: countByRule(findings),
+    };
+    expect(compareBaseline(findings, baseline)).toEqual([]);
+    expect(compareBaseline([...findings, { ...findings[0], line: 2 }], baseline)).not.toEqual([]);
+    expect(compareBaseline([{ ...findings[0], line: 3 }], baseline)).not.toEqual([]);
   });
 });

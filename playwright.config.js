@@ -29,7 +29,6 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
   const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 
   const patchedTest = pwTest.test.extend({
-    // eslint-disable-next-line no-empty-pattern
     _rendererCoverage: [async ({ page }, use, testInfo) => {
       let started = false;
       try {

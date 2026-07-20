@@ -4,7 +4,7 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after the test/CI assurance batch: **48 Fixed, 4 Partially Fixed, 8 In Progress**. Configuration/documentation remediation and final repository-wide validation remain pending.
+Current status after the security-lint batch: **49 Fixed, 4 Partially Fixed, 7 In Progress**. Installer-build and documentation remediation plus final repository-wide validation remain pending.
 
 ## Baseline vs. Post-Fix
 
@@ -71,7 +71,7 @@ Current status after the test/CI assurance batch: **48 Fixed, 4 Partially Fixed,
 | TEST-007 | Medium | Fixed | performance/click outcome tests | Y |
 | TEST-008 | Medium | Fixed | package matrix, verification/checksum scripts | Y (CI matrix static; Windows package local) |
 | TEST-009 | Low | Fixed | mutation tiers/locale logic + focused tests | Y |
-| CONF-001 | Medium | In Progress | — | N |
+| CONF-001 | Medium | Fixed | ESLint config, exact reviewed baseline/runner + tests | Y |
 | CONF-002 | Medium | Fixed | CI checkout + Gitleaks history invocation | Y |
 | CONF-003 | Medium | Fixed | CI pinned Gitleaks version/SHA-256 verification | Y |
 | CONF-004 | Medium | In Progress | — | N |
@@ -564,6 +564,16 @@ Current status after the test/CI assurance batch: **48 Fixed, 4 Partially Fixed,
 - **Verification:** Full `npm run test:mutation` instrumented 44 files / 5,623 mutants, ran 1,196 initial tests, scored 86.63% overall, and passed all 44 per-file tier checks. Lowest results remained above their floors (T1 main.js 87.74%; T2 export.js 75.63%; T3 syntax-guards.js 65.00%).
 - **Risk & notes:** Two Stryker workers were restarted after memory exhaustion but the runner recovered and completed with exit 0. No mutant or test was suppressed; redundant navigation predicates were simplified only where strict equality made them provably equivalent.
 
+### [CONF-001] Security lint passed despite warnings and omitted executed code
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** The lint command excluded executed scripts/configuration, used an incomplete CommonJS override, and returned success for every security warning without a zero-growth contract.
+- **Change made:** Expanded the scan to first-party runtime code, executed JavaScript/MJS tooling, both Playwright configs, the ESM Vitest config, and HTML; classified CommonJS and ESM files explicitly; promoted DOM-sink rules to errors; and replaced the raw CLI with an exact reviewed finding fingerprint. The baseline records rule counts and review rationale, while the gate fails on a new, removed, moved, reclassified, fatal, or configuration finding rather than silently tolerating drift.
+- **Files touched:** `eslint.config.mjs:1-49`; `scripts/run-security-lint.js:1-74`; `config/security-lint-baseline.json:1-19`; `package.json:34`; `playwright.config.js:32`; `tests/unit/remediation-tooling.test.js:12,72-83`.
+- **Verification:** `npm run lint:security` passed with the exact 169-finding reviewed fingerprint and reported zero new/moved findings; focused Vitest passed 7/7 remediation-tooling tests, including rejection of both an added and a moved finding.
+- **Risk & notes:** The count rose from 85 to 169 because the executable-tooling/configuration scope is now included (61 file-path heuristic findings plus related script heuristics), not because runtime warnings were added. Existing findings remain visible and fail the gate if their identity changes. The file/path warnings are repository-anchored local build/report operations, and DOM sinks were traced to sanitised, escaped, or fixed templates with hostile-content/CSP coverage. This reviewed-baseline approach follows the audit's zero-new-warning option without blanket suppressions.
+
 ### [CONF-002] Gitleaks scanned a shallow working tree rather than committed history
 
 - **Status:** Fixed
@@ -598,4 +608,6 @@ None at this stage.
 - `b094561` — SEC-003 through SEC-006; BE-001 through BE-003; DATA-001 through DATA-010 and DATA-012; ARCH-002; QUAL-001 through QUAL-004.
 - `75af54b` — SEC-007 and SEC-008 workflow/macOS hardening.
 - `ed8363c` — FE-001 through FE-006; ARCH-001; PERF-001 through PERF-003.
-- Dependency provenance/license/update batch — commit pending immediately after this report update.
+- `55ff0ed`, `dab7e0a` — DEP-001 through DEP-003 dependency provenance, licensing, updates, and refreshed vendor assets.
+- `691b7e7` — TEST-001 through TEST-009; CONF-002 and CONF-003 assurance gates.
+- CONF-001 lint enforcement batch — commit pending immediately after this report update.

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "reviewedAtCommit": "691b7e7",
+  "expectedTotal": 169,
+  "fingerprintSha256": "da02e097ee52a8e21b9612c23affb3f34d7aa2c8fb8d90c27d9fc50025d5724f",
+  "countsByRule": {
+    "no-unsanitized/property": 19,
+    "security/detect-non-literal-fs-filename": 61,
+    "security/detect-non-literal-regexp": 5,
+    "security/detect-object-injection": 74,
+    "security/detect-unsafe-regex": 10
+  },
+  "reviewRationale": {
+    "no-unsanitized/property": "Exact DOM sinks were traced to DOMPurify/sanitizeSvg/sanitizeMath output, escaped text, fixed local templates, or vetted renderer output; hostile-content and CSP tests cover the active sinks.",
+    "security/detect-non-literal-fs-filename": "Executed tooling only reads or writes paths anchored below the repository, generated coverage/package directories, or an explicit local report path; none are reachable from rendered document content.",
+    "security/detect-non-literal-regexp": "Dynamic expressions use escaped literal search text or fixed parser delimiters and are bounded by local document limits.",
+    "security/detect-object-injection": "Findings are bounded array/tuple iteration, Map/locale lookups, parser token access, or state keys rather than attacker-selected object prototype writes.",
+    "security/detect-unsafe-regex": "Expressions use terminator-excluding classes or bounded local inputs; focused long-input tests cover the parser expressions flagged by the heuristic."
+  }
+}

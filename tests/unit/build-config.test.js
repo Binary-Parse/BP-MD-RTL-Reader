@@ -36,6 +36,20 @@ describe('electron-builder cross-platform config (T-B7)', () => {
     expect(xml).toContain('com.apple.security.cs.allow-jit');                    // Chromium/V8 under hardened runtime
   });
 
+  test('app and helper entitlements retain only the required hardened-runtime exceptions', () => {
+    expect(pkg.build.mac.entitlementsInherit).toBe('build/entitlements.mac.inherit.plist');
+    for (const relative of [pkg.build.mac.entitlements, pkg.build.mac.entitlementsInherit]) {
+      const xml = readFileSync(path.join(root, relative), 'utf8');
+      expect(xml).toContain('com.apple.security.cs.allow-jit');
+      expect(xml).not.toContain('com.apple.security.cs.allow-unsigned-executable-memory');
+      expect(xml).not.toContain('com.apple.security.cs.allow-dyld-environment-variables');
+      expect(xml).not.toContain('com.apple.security.cs.disable-library-validation');
+    }
+    const helper = readFileSync(path.join(root, pkg.build.mac.entitlementsInherit), 'utf8');
+    expect(helper).not.toContain('com.apple.security.files.user-selected.read-write');
+    expect(helper).not.toContain('com.apple.security.files.bookmarks.app-scope');
+  });
+
   test('win packaging (pre-existing) is preserved alongside the new targets', () => {
     expect(targetsOf(pkg.build.win)).toEqual(expect.arrayContaining(['nsis']));
     expect(pkg.build.appId).toBe('com.binaryparse.bpmdrtlreader');

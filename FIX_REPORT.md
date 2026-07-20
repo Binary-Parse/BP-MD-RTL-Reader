@@ -4,7 +4,7 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after two verified batches: **23 Fixed, 3 Partially Fixed, 34 In Progress**. Final repository-wide validation remains pending.
+Current status after three verified batches: **25 Fixed, 3 Partially Fixed, 32 In Progress**. Final repository-wide validation remains pending.
 
 ## Baseline vs. Post-Fix
 
@@ -27,8 +27,8 @@ Current status after two verified batches: **23 Fixed, 3 Partially Fixed, 34 In 
 | SEC-004 | Medium | Fixed | document store/main + tests | Y |
 | SEC-005 | Medium | Fixed | protocol/main + tests | Y |
 | SEC-006 | Medium | Fixed | main/main-logic + tests | Y |
-| SEC-007 | Medium | In Progress | — | N |
-| SEC-008 | Low | In Progress | — | N |
+| SEC-007 | Medium | Fixed | Claude workflow + tests | Y |
+| SEC-008 | Low | Fixed | macOS entitlements/build config + tests | Y (static on Windows) |
 | FE-001 | Medium | In Progress | — | N |
 | FE-002 | Medium | In Progress | — | N |
 | FE-003 | Medium | In Progress | — | N |
@@ -133,6 +133,26 @@ Current status after two verified batches: **23 Fixed, 3 Partially Fixed, 34 In 
 - **Files touched:** `main.js:209-233,680-685`; `src/main-logic.js:17-32`; lifecycle/main-logic tests.
 - **Verification:** Focused lifecycle tests and complete unit/e2e gates passed; macOS event behavior is verified with injected Electron/fs mocks (not a real macOS host).
 - **Risk & notes:** Offline calibration does not change the guard; network paths and invalid files fail closed.
+
+### [SEC-007] Privileged Claude workflow runs mutable action tags
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** A repository-writing workflow executed mutable action tags and requested an unused OIDC token.
+- **Change made:** Pinned checkout to `11bd71901bbe5b1630ceea73d27597364c9af683` and Claude Code Action v1.0.178 to `af0559ee4f514d1ef21826982bed13f7edc3c35e`; removed `id-token: write`. Existing contents/PR/issues write and actions read permissions remain because the declared workflow creates branches/PRs, comments, and investigates checks.
+- **Files touched:** `.github/workflows/claude.yml:24-48`; `tests/unit/workflow-security.test.js:1-19`.
+- **Verification:** RED: 2 workflow-policy tests failed on mutable tags/OIDC. GREEN: both passed; the full-SHA regex covers every `uses:` reference.
+- **Risk & notes:** Supply-chain risk affects development automation, not the offline runtime. No workflow was dispatched. The pinned Claude SHA was resolved from the upstream `v1` release before editing; future upgrades must be explicit reviewed commits.
+
+### [SEC-008] macOS build disables several hardened-runtime protections
+
+- **Status:** Fixed
+- **Severity:** Low
+- **Root cause:** App and helpers shared broad DYLD, unsigned-memory, and disabled-library-validation exceptions plus app-only file entitlements.
+- **Change made:** Removed the three unsupported exceptions; retained JIT; added a separate helper plist containing only JIT; retained user-selected file/bookmark access only on the main app.
+- **Files touched:** `build/entitlements.mac.plist:1-13`; `build/entitlements.mac.inherit.plist:1-10`; `package.json:118-121`; `tests/unit/build-config.test.js:30-55`.
+- **Verification:** RED: entitlement policy test failed on the shared plist. GREEN: 5 build-config and 2 workflow-security tests passed. Package references and plist contents are statically verified.
+- **Risk & notes:** No macOS host/signing identity is available, so signed launch and notarization remain a manual platform verification item. Under the offline threat model this is defense-in-depth; removing unevidenced exceptions is still appropriate.
 
 ### [BE-001] Recursive vault enumeration can exceed the 5,000-file cap
 
@@ -335,4 +355,5 @@ None at this stage.
 ## Commit map
 
 - `67c1579` — SEC-001, SEC-002, DATA-011 installer remediation.
-- Filesystem/data/quality batch — commit pending immediately after this report update.
+- `b094561` — SEC-003 through SEC-006; BE-001 through BE-003; DATA-001 through DATA-010 and DATA-012; ARCH-002; QUAL-001 through QUAL-004.
+- Workflow/macOS hardening batch — commit pending immediately after this report update.

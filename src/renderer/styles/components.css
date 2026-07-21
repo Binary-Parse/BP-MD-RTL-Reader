@@ -1131,6 +1131,15 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 #editor[dir="rtl"] { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
 .editor table { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
 
+/* Explicit reader hierarchy uses the same local scale; app chrome remains outside these selectors. */
+.editor h1 { font-size: calc(2.625rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] h1 { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
+.editor h2 { font-size: calc(1.75rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] h2 { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
+.editor h3 { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
+.editor .doc-meta { font-size: calc(0.6875rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] .doc-meta { font-size: calc(0.75rem * var(--reader-text-scale, 1)); }
+
 /* A rendered table can use the centre pane (one-rem gutters) but scrolls only here. */
 .table-frame {
   box-sizing: border-box;

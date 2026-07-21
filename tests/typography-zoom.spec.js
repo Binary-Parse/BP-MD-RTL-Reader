@@ -130,3 +130,39 @@ test.describe('[T-T5] minimum label size', () => {
     expect(worst.fs, `smallest chrome label: ${worst.fs}px on ${worst.tag}.${worst.cls}`).toBeGreaterThanOrEqual(10.99);
   });
 });
+test.describe('[Task 2] reader text scale', () => {
+  test('scales rendered headings and document metadata without changing image geometry', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+    await page.evaluate(() => {
+      window._appState.files = [{
+        name: 'scale.md', path: 'scale.md', dirty: false,
+        content: '# Heading\n\n## Subheading\n\nBody text.',
+      }];
+      window.renderFile(0);
+      window.setViewMode('reading');
+      const image = document.createElement('img');
+      image.style.width = '200px';
+      image.style.height = '80px';
+      document.getElementById('noteContent').appendChild(image);
+    });
+
+    const measure = (scale) => page.evaluate((value) => {
+      document.documentElement.style.setProperty('--reader-text-scale', value);
+      const size = (selector) => parseFloat(getComputedStyle(document.querySelector(selector)).fontSize);
+      return {
+        h1: size('#noteContent h1'),
+        h2: size('#noteContent h2'),
+        meta: size('#noteContent .doc-meta'),
+        imageWidth: document.querySelector('#noteContent img').getBoundingClientRect().width,
+      };
+    }, String(scale));
+
+    const base = await measure(1);
+    const scaled = await measure(1.25);
+    expect(scaled.h1).toBeCloseTo(base.h1 * 1.25, 1);
+    expect(scaled.h2).toBeCloseTo(base.h2 * 1.25, 1);
+    expect(scaled.meta).toBeCloseTo(base.meta * 1.25, 1);
+    expect(scaled.imageWidth).toBeCloseTo(base.imageWidth, 1);
+  });
+});

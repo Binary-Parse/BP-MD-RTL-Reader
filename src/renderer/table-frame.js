@@ -11,7 +11,13 @@ const labels = {
   ar: 'جدول قابل للتمرير أفقيًا',
   en: 'Scrollable table',
 };
-const observers = new WeakMap();
+
+// One observer tracks the live frames. Disconnected frames are removed on the following
+// microtask (after CM6 can mount a freshly rendered widget) and on every resize callback.
+const trackedFrames = new Map();
+let overflowObserver = null;
+let windowResizeWired = false;
+let cleanupScheduled = false;
 
 export function tableFrameLabel(locale = 'en') {
   return locale === 'ar' ? labels.ar : labels.en;
@@ -26,13 +32,62 @@ export function updateTableFrameOverflow(frame) {
   return overflows;
 }
 
+function untrackFrame(frame) {
+  const table = trackedFrames.get(frame);
+  if (overflowObserver) {
+    overflowObserver.unobserve(frame);
+    if (table) overflowObserver.unobserve(table);
+  }
+  trackedFrames.delete(frame);
+}
+
+function cleanupDisconnectedFrames() {
+  trackedFrames.forEach((_, frame) => {
+    if (!frame.isConnected) untrackFrame(frame);
+  });
+}
+
+function scheduleDisconnectedFrameCleanup() {
+  if (cleanupScheduled) return;
+  cleanupScheduled = true;
+  const run = () => {
+    cleanupScheduled = false;
+    cleanupDisconnectedFrames();
+  };
+  if (typeof globalThis.queueMicrotask === 'function') globalThis.queueMicrotask(run);
+  else Promise.resolve().then(run);
+}
+
+function refreshTrackedFrameOverflow() {
+  cleanupDisconnectedFrames();
+  trackedFrames.forEach((_, frame) => updateTableFrameOverflow(frame));
+}
+
+function ensureWindowResizeListener() {
+  if (windowResizeWired || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+  windowResizeWired = true;
+  // This is the active fallback when ResizeObserver is unavailable, and harmless otherwise.
+  window.addEventListener('resize', refreshTrackedFrameOverflow, { passive: true });
+}
+
+function ensureOverflowObserver() {
+  if (overflowObserver || typeof globalThis.ResizeObserver !== 'function') return overflowObserver;
+  overflowObserver = new globalThis.ResizeObserver(refreshTrackedFrameOverflow);
+  return overflowObserver;
+}
+
 function observeOverflow(frame) {
-  if (observers.has(frame) || typeof globalThis.ResizeObserver !== 'function') return;
-  const observer = new globalThis.ResizeObserver(() => updateTableFrameOverflow(frame));
-  observers.set(frame, observer);
-  observer.observe(frame);
   const table = frame.querySelector('table');
-  if (table) observer.observe(table);
+  const previousTable = trackedFrames.get(frame);
+  if (previousTable === table) return;
+
+  const observer = ensureOverflowObserver();
+  if (observer && previousTable) observer.unobserve(previousTable);
+  if (observer && !previousTable) observer.observe(frame);
+  trackedFrames.set(frame, table);
+  if (observer && table) observer.observe(table);
+  ensureWindowResizeListener();
+  scheduleDisconnectedFrameCleanup();
 }
 
 /**

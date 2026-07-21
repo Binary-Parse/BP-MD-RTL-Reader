@@ -1352,6 +1352,8 @@ function setViewMode(mode) {
     if (open) { renderReadingContent(); noteContent.focus(); } // focusable scroll region (a11y)
   } else if (cmAdapter && typeof cmAdapter.focus === 'function') {
     cmAdapter.focus();
+    // Reading wires the preview listener; rebuild after returning to Edit so CM6 owns sync.
+    if (open) buildTOC();
   }
 }
 window.setViewMode = setViewMode;

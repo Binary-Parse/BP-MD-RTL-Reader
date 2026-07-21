@@ -60,6 +60,21 @@ test.describe('Reading mode (T-F17)', () => {
     await page.click('#viewModeBtn');
     await expect(page.locator('#editorArea')).toHaveClass(/reading/);
   });
+  test('switching from Reading to Edit wires CodeMirror outline synchronization', async ({ page }) => {
+    await boot(page);
+    const pad = (n) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n');
+    await injectNote(page, `# One\n\n${pad(50)}\n\n## Two\n\n${pad(50)}\n\n### Three\n\n${pad(50)}\n`);
+    await expect(page.locator('.toc-item')).toHaveCount(3);
+
+    await page.click('#viewModeBtn');
+    await expect(page.locator('#editorArea')).not.toHaveClass(/reading/);
+    await page.evaluate(() => {
+      const adapter = window.getActiveCmAdapter();
+      adapter.scrollToPos(adapter.getValue().indexOf('### Three'), { select: false });
+    });
+
+    await expect.poll(() => page.evaluate(() => document.querySelector('.toc-item.active')?.textContent)).toBe('Three');
+  });
 
   test('Ctrl+E toggles Reading ⇄ Edit', async ({ page }) => {
     await boot(page);

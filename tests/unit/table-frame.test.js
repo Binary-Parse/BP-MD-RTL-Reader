@@ -44,11 +44,23 @@ describe('table frames', () => {
     expect(frame.hasAttribute('tabindex')).toBe(false);
   });
 
-  test('does not require ResizeObserver in DOM test environments', () => {
+  test('updates overflow on window resize when ResizeObserver is unavailable', () => {
     vi.stubGlobal('ResizeObserver', undefined);
     const root = rootWithTable();
+    document.body.appendChild(root);
+    wrapTablesInFrames(root);
+    const frame = root.querySelector('.table-frame');
 
-    expect(() => wrapTablesInFrames(root)).not.toThrow();
+    setWidths(frame, 240, 240);
+    expect(frame.hasAttribute('tabindex')).toBe(false);
+    setWidths(frame, 240, 480);
+    window.dispatchEvent(new Event('resize'));
+    expect(frame.getAttribute('tabindex')).toBe('0');
+    setWidths(frame, 240, 240);
+    window.dispatchEvent(new Event('resize'));
+    expect(frame.hasAttribute('tabindex')).toBe(false);
+
+    root.remove();
     vi.unstubAllGlobals();
   });
 

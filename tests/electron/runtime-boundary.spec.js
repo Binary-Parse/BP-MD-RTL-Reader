@@ -83,16 +83,28 @@ test.describe('real Electron runtime boundary @electron', () => {
   });
   test('uses the real preload webFrame zoom bridge and leaves renderer fallback scaling cleared', async () => {
     expect(await page.evaluate(() => typeof window.electronAPI?.setAppZoom)).toBe('function');
+    const viewportBefore = await page.evaluate(() => ({
+      innerWidth: window.innerWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
     await page.evaluate(() => window.setZoom(1.25));
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeLessThan(viewportBefore.innerWidth);
     const renderer = await page.evaluate(() => ({
       stateZoom: window._appState.zoomFactor,
       rootFontSize: document.documentElement.style.fontSize,
       editorZoom: document.getElementById('editorArea').style.zoom,
     }));
+    const viewportAfter = await page.evaluate(() => ({
+      innerWidth: window.innerWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
     const nativeZoom = await electronApp.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
 
     expect(renderer).toEqual({ stateZoom: 1.25, rootFontSize: '', editorZoom: '' });
+    expect(viewportAfter.innerWidth).toBeLessThan(viewportBefore.innerWidth);
+    expect(viewportAfter.clientWidth).toBeLessThan(viewportBefore.clientWidth);
+    expect(viewportAfter.innerWidth / viewportBefore.innerWidth).toBeCloseTo(1 / 1.25, 1);
     expect(nativeZoom).toBeCloseTo(1.25, 3);
   });
 

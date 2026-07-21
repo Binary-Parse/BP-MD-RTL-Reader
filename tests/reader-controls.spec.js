@@ -82,6 +82,49 @@ test.describe('Reader controls', () => {
     await expect.poll(() => page.evaluate(() => window._appState.readerTextScale)).toBe(1);
   });
 
+  test('uses Aa controls to clamp text scale and content width at their advertised boundaries', async ({ page }) => {
+    await boot(page, { readerTextScale: 1, readerWidthCh: 72 });
+    await injectNote(page);
+    await page.locator('#readerControlsButton').click();
+
+    const decrease = page.locator('#readerTextScaleDecrease');
+    const increase = page.locator('#readerTextScaleIncrease');
+    const reset = page.locator('#readerTextScaleReset');
+    const width = page.locator('#readerWidthSlider');
+
+    await decrease.click();
+    await decrease.click();
+    await expect(reset).toHaveText('80%');
+    await expect.poll(() => page.evaluate(() => window._appState.readerTextScale)).toBe(0.8);
+    await decrease.click();
+    await expect(reset).toHaveText('80%');
+    await expect.poll(() => page.evaluate(() => window._appState.readerTextScale)).toBe(0.8);
+
+    for (let i = 0; i < 12; i += 1) await increase.click();
+    await expect(reset).toHaveText('200%');
+    await expect.poll(() => page.evaluate(() => window._appState.readerTextScale)).toBe(2);
+    await increase.click();
+    await expect(reset).toHaveText('200%');
+    await expect.poll(() => page.evaluate(() => window._appState.readerTextScale)).toBe(2);
+
+    await width.focus();
+    await page.keyboard.press('Home');
+    await expect(width).toHaveValue('48');
+    await expect(page.locator('#readerWidthValue')).toHaveText('48ch');
+    await expect.poll(() => page.evaluate(() => window._appState.readerWidthCh)).toBe(48);
+    await page.keyboard.press('ArrowRight');
+    await expect(width).toHaveValue('50');
+    await page.keyboard.press('ArrowLeft');
+    await expect(width).toHaveValue('48');
+
+    await page.keyboard.press('End');
+    await expect(width).toHaveValue('120');
+    await expect(page.locator('#readerWidthValue')).toHaveText('120ch');
+    await expect.poll(() => page.evaluate(() => window._appState.readerWidthCh)).toBe(120);
+    await page.keyboard.press('ArrowRight');
+    await expect(width).toHaveValue('120');
+    await expect.poll(() => page.evaluate(() => window._appState.readerWidthCh)).toBe(120);
+  });
   test('is a non-modal popover that closes on Escape or outside press and returns focus to Aa', async ({ page }) => {
     await boot(page);
     await injectNote(page);

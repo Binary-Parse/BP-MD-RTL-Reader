@@ -802,6 +802,11 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
    and hide the CM6 editor surface. Read-only, copy-clean, no markdown-on-click. */
 .editor-area.cm-single.reading .preview-pane { display: block; flex: 1; }
 .editor-area.cm-single.reading .source-pane { display: none; }
+/* Reading (display) mode with a document open: #noteContent owns the measure via
+   --reader-width, so the 800px document shell must not re-cap it — that throttled "increase
+   content width" past ~75ch. Excludes the welcome shell, which keeps its own 800px measure
+   (the `reading` class can linger from the persisted view mode while no file is open). */
+.editor-area.reading:not(.welcome) .editor { max-width: none; }
 
 .source-textarea {
   width: 100%;

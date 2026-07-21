@@ -159,6 +159,29 @@ test.describe('Reader controls', () => {
     await expect(width).toHaveValue('120');
     await expect.poll(() => page.evaluate(() => window._appState.readerWidthCh)).toBe(120);
   });
+
+  test('widens the reading surface as content width increases past the document shell (regression)', async ({ page }) => {
+    // The document shell (.editor) used to keep a legacy max-width:800px that re-capped the
+    // reader measure to ~640px, so "increase content width" did nothing past ~75ch while
+    // "decrease" worked. At a wide viewport, 80ch and 120ch both clear that old cap — so with
+    // the bug their rendered widths were equal, and only the fix makes 120ch measurably wider.
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await boot(page, { viewMode: 'reading', readerWidthCh: 72 });
+    await injectNote(page);
+    await expect(page.locator('#editorArea')).toHaveClass(/reading/);
+
+    const noteWidthAt = (ch) => page.evaluate((value) => {
+      const slider = document.getElementById('readerWidthSlider');
+      slider.value = String(value);
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      return document.getElementById('noteContent').clientWidth;
+    }, ch);
+
+    const w80 = await noteWidthAt(80);
+    const w120 = await noteWidthAt(120);
+    expect(w120).toBeGreaterThan(w80 + 100);
+  });
+
   test('is a non-modal popover that closes on Escape or outside press and returns focus to Aa', async ({ page }) => {
     await boot(page);
     await injectNote(page);

@@ -394,6 +394,7 @@ function toggleRTL() {
   // Re-resolve per-block direction + inline isolation under the new choice (also recomputes
   // State.direction + the indicator for AUTO/front-matter, where direction follows the content).
   const af = State.files[State.activeFile];
+  if (af) af.forcedDir = State.forcedDir; // per-note durable choice (PARTIAL-01) — restored on tab switch in renderFile
   if (af) applyBidiToNote(af.content || '');
   updateDirUI();
   showToast(`Direction: ${State.forcedDir ? State.forcedDir.toUpperCase() : 'Auto'}`);
@@ -1444,6 +1445,15 @@ function renderFile(idx) {
   file.open = true;
   State.activeFile = idx;
 
+  // Per-note toolbar direction (PARTIAL-01): restore this tab's own forced choice.
+  // A note with no stored choice resolves to AUTO. applyBidiToNote (below) sets the
+  // #editor dir, syncs the CM6 adapter, and calls updateDirUI(); here we only sync the
+  // bits it doesn't cover — the #srcTextarea dir and the appBody._manualRTL mirror.
+  State.forcedDir = file.forcedDir ?? null;
+  appBody._manualRTL = State.forcedDir === 'rtl';
+  if (State.forcedDir === 'rtl') srcTextarea.setAttribute('dir', 'auto');
+  else srcTextarea.removeAttribute('dir');
+
   welcomeEl.style.display = 'none';
   noteContent.style.display = 'block';
   editorArea.classList.remove('welcome'); // T-F13: a file is open → show the CM6 live-preview surface
@@ -1535,8 +1545,10 @@ function resolveConflict(idx, action) {
     if (f.diskContent != null) f.content = f.diskContent; // take the disk version…
     f.dirty = false;                                       // …discarding local edits
   } // 'keep' → retain edits + dirty
+  if (f.diskMeta) f.meta = f.diskMeta; // acknowledge current disk identity (both keep + reload) so we don't re-nag / mis-baseHash the next Save
   f.conflict = false;
   f.diskContent = null;
+  f.diskMeta = null;
   renderFile(idx);
   showToast(action === 'reload' ? 'Reloaded from disk' : 'Kept your edits', 'info');
 }

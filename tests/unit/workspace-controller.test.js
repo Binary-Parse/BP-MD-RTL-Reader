@@ -361,6 +361,50 @@ describe('workspace controller', () => {
     ]);
   });
 
+  test('ISSUE-01: does NOT flag a conflict when a dirty note\'s disk copy is unchanged', async () => {
+    const state = {
+      files: [
+        { name: 'a.md', path: 'a.md', content: 'newer unsaved edits', dirty: true, meta: { hash: 'baseA' }, vaultId: 'v' },
+        { name: 'b.md', path: 'b.md', content: 'b', dirty: false, meta: { hash: 'baseB' }, vaultId: 'v' },
+      ],
+      activeFile: 1, vaultName: 'Vault', recents: [],
+    };
+    // Watcher fires after an own-save of b.md; readVault re-lists the whole vault.
+    // a.md's on-disk hash is UNCHANGED (still baseA) even though its in-memory buffer diverged.
+    const readVault = vi.fn(async () => ({
+      vault: { id: 'v', name: 'Vault', generation: 2 },
+      entries: [
+        { name: 'a.md', relPath: 'a.md', content: 'a last saved on disk', meta: { hash: 'baseA' } },
+        { name: 'b.md', relPath: 'b.md', content: 'b', meta: { hash: 'baseB' } },
+      ],
+    }));
+    const { controller, calls } = harness({ state, electronAPI: { readVault } });
+    controller.setVaultIdentity('v', 1);
+    await controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+    expect(state.files[0]).toMatchObject({ content: 'newer unsaved edits', dirty: true });
+    expect(!!state.files[0].conflict).toBe(false);
+    expect(state.files[0].diskContent == null).toBe(true);
+    expect(calls.toasts).toEqual([]);
+  });
+
+  test('ISSUE-01 guard: still flags a genuine conflict when the disk hash actually changed', async () => {
+    const state = {
+      files: [{ name: 'a.md', path: 'a.md', content: 'my edits', dirty: true, meta: { hash: 'baseA' }, vaultId: 'v' }],
+      activeFile: 0, vaultName: 'Vault', recents: [],
+    };
+    const readVault = vi.fn(async () => ({
+      vault: { id: 'v', name: 'Vault', generation: 2 },
+      entries: [{ name: 'a.md', relPath: 'a.md', content: 'changed externally', meta: { hash: 'extA' } }],
+    }));
+    const { controller } = harness({ state, electronAPI: { readVault } });
+    controller.setVaultIdentity('v', 1);
+    await controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+    expect(state.files[0]).toMatchObject({
+      content: 'my edits', dirty: true, conflict: true,
+      diskContent: 'changed externally', diskMeta: { hash: 'extA' },
+    });
+  });
+
   test('saves an authorized document with metadata and clears dirty only for the submitted revision', async () => {
     const writeFile = vi.fn(async () => ({ ok: true, meta: { hash: 'next' } }));
     const state = {

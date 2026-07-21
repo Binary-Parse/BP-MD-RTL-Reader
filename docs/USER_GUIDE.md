@@ -122,8 +122,12 @@ BP MD RTL Reader is bilingual at its core.
 - **Automatic detection.** When you open a document whose text is predominantly
   Arabic, the layout flips to right-to-left automatically, with Arabic-aware fonts,
   heading alignment, and weight.
-- **Manual flip.** Press `Ctrl+Shift+L` (or the **⇄** button) to set the direction
-  yourself; your choice then sticks for that document.
+- **Manual flip.** Press `Ctrl+Shift+L` (or the **⇄** button) to force the direction
+  yourself. The choice is **per note** — it applies to the active tab, is restored when
+  you switch back to that tab, and never leaks into your other open notes. Manual choices
+  are cleared on relaunch (each note reopens in Auto).
+- **Make it durable.** To have a note always open in a fixed direction, add a
+  `direction: rtl` (or `ltr`) key to its YAML front matter — that persists across sessions.
 - **Mixed content** is handled per element, so embedded English in an Arabic document
   (and vice-versa) reads correctly.
 

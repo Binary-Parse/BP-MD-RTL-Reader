@@ -266,10 +266,10 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, arabicWithList);
     await page.waitForTimeout(300);
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
 
     const listPadding = await page.evaluate(() => {
       const ul = document.querySelector('#noteContent ul');
@@ -416,30 +416,26 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
     expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(false);
   });
 
-  test('[C5] loading Arabic file when already in RTL (manual) does NOT reset _manualRTL', async ({ page }) => {
-    // If _manualRTL=true and we load Arabic content, the auto-RTL branch
-    // (isAr && State.direction !== 'rtl') is FALSE because direction is already rtl.
-    // _manualRTL must remain true so the next English file load does not auto-revert.
+  test('[C5] a forced-RTL note does not leak its direction to a newly loaded note', async ({ page }) => {
+    // Per-note direction: forcing RTL applies to the active note only. Loading a
+    // different note afterwards adopts that note's own (AUTO) direction — the prior
+    // note's manual RTL must not carry over.
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Set manual RTL
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-
-    // Load Arabic content
+    // Load an Arabic note, then force RTL on it.
     await injectMarkdown(page, ARABIC_HEAVY);
     await page.waitForTimeout(300);
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(true);
+    await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
 
-    const manualRTL = await page.evaluate(() => document.getElementById('appBody')._manualRTL);
-    expect(manualRTL).toBe(true);
-
-    // Now load English — _manualRTL=true should PREVENT auto-revert
+    // Load a DIFFERENT note (English) — it adopts its own AUTO direction, not the prior RTL.
     await injectMarkdown(page, ENGLISH_CONTENT);
     await page.waitForTimeout(300);
-
-    const computedDirAfterEnglish = await getEditorComputedDirection(page);
-    expect(computedDirAfterEnglish).toBe('rtl');
+    expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(false);
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
 
 });
@@ -632,24 +628,24 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     expect(srcDir).not.toBe('rtl');
   });
 
-  test('[E4] new note created while _manualRTL=true renders with RTL direction', async ({ page }) => {
-    // newNote() creates LTR English content ("# Untitled\n\nStart writing...").
-    // If _manualRTL=true, renderFile will NOT auto-revert because of the
-    // !appBody._manualRTL guard. RTL direction should persist.
+  test('[E4] a new note opens in AUTO even when another note is forced RTL', async ({ page }) => {
+    // Per-note direction: newNote() creates a fresh note with no stored direction, so it
+    // opens in AUTO (LTR for its English content) regardless of another note's forced RTL.
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Set manual RTL
+    // Load a note and force RTL on it.
+    await injectMarkdown(page, ARABIC_HEAVY);
+    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
+    await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
 
-    // Create a new note (English content, isArabicHeavy=false)
+    // Create a new note — it must NOT inherit the previous note's forced RTL.
     await page.evaluate(() => window.newNote());
     await page.waitForTimeout(300);
-
-    // _manualRTL=true must prevent auto-revert to LTR
-    const computedDir = await getEditorComputedDirection(page);
-    expect(computedDir).toBe('rtl');
+    await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
 
   test('[E5] theme cycling while RTL is active does not alter editor direction', async ({ page }) => {
@@ -850,23 +846,33 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
     expect(computedDir).toBe('ltr');
   });
 
-  test('[G2-mutation] removing the _manualRTL guard would break AC4 — verify guard is present', async ({ page }) => {
-    // Mutation: remove the !appBody._manualRTL check in renderFile().
-    // Without it, loading English after manual RTL would revert direction.
-    // This test directly verifies the guard is effective:
-    // manual RTL + English content = RTL must persist.
+  test('[G2-mutation] renderFile restores a tab\'s stored per-note direction on re-activation', async ({ page }) => {
+    // Guards the `State.forcedDir = file.forcedDir ?? null` restore in renderFile: a note
+    // forced RTL must come back RTL when re-activated after visiting another tab. Removing
+    // that restore would leave the returned tab in whatever direction the other tab set.
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
+    await page.evaluate(({ ar, en }) => {
+      window._appState.files = [
+        { name: 'a.md', path: 'a.md', handle: null, content: ar, dirty: false },
+        { name: 'b.md', path: 'b.md', handle: null, content: en, dirty: false },
+      ];
+      window.renderFile(0);
+      document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
+    }, { ar: ARABIC_HEAVY, en: ENGLISH_CONTENT });
+
+    // Force RTL on tab A, visit tab B, then return to A.
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
+    await page.evaluate(() => window.renderFile(1));
+    await page.waitForTimeout(50);
+    await page.evaluate(() => window.renderFile(0));
+    await page.waitForTimeout(100);
 
-    await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(300);
-
-    // Guard is in place → direction stays RTL
-    expect(await getEditorComputedDirection(page)).toBe('rtl');
+    // A's stored RTL is restored.
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
+    expect(await getEditorComputedDirection(page)).toBe('rtl');
   });
 
   test('[G3-mutation] negating the isAr condition would apply RTL to English — verify gate', async ({ page }) => {

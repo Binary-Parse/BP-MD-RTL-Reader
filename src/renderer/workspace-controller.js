@@ -440,10 +440,19 @@ export function createWorkspaceController({
     const merged = entries.map((entry) => {
       const previous = previousByPath.get(entry.relPath);
       if (!previous) return fileFromSnapshot(entry, changedVaultId);
-      if (normalizeText(previous.content) === normalizeText(entry.content)) return previous;
+      const prevHash = previous.meta && previous.meta.hash;
+      const diskHash = entry.meta && entry.meta.hash;
+      // Authoritative when both baselines exist: compare on-disk identity, NOT the
+      // (possibly dirty) in-memory buffer — an unchanged disk copy must never be a
+      // conflict just because the editor has unsaved edits. Fall back to a logical
+      // content compare only when a hash baseline is missing (browser/legacy paths).
+      const diskChanged = (prevHash != null && diskHash != null)
+        ? diskHash !== prevHash
+        : normalizeText(previous.content) !== normalizeText(entry.content);
+      if (!diskChanged) return previous; // app-owned save / unchanged disk → keep in-memory state (incl. dirty edits)
       if (previous.dirty) {
         if (entry.relPath === activePath) conflictName = previous.name;
-        return { ...previous, conflict: true, diskContent: entry.content };
+        return { ...previous, conflict: true, diskContent: entry.content, diskMeta: entry.meta };
       }
       if (entry.relPath === activePath) reloadedActive = true;
       return {

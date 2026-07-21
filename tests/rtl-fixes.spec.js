@@ -298,13 +298,13 @@ test.describe('RTL and theme bug fixes', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Toggle RTL manually first (sets _manualRTL=true, dir=rtl on #editor)
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-
-    // Inject Arabic content (auto-RTL: State.direction already 'rtl' so no toggle)
+    // Per-note direction: load Arabic content first, then force RTL on that note.
     await injectMarkdown(page, ARABIC_CONTENT);
     await page.waitForTimeout(200);
+
+    // Toggle RTL — attaches to the now-active note (sets _manualRTL=true, dir=rtl on #editor).
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
 
     // Assert dir attribute is set (pre-existing assertion class)
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
@@ -347,12 +347,12 @@ test.describe('RTL and theme bug fixes', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Toggle RTL manually first, then inject Arabic (prevents auto-RTL toggle conflict)
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-
+    // Per-note direction: load Arabic content first, then force RTL on that note.
     await injectMarkdown(page, ARABIC_CONTENT);
     await page.waitForTimeout(300);
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
 
     // Geometric assertion: paragraph text must be right-aligned in RTL mode
     const paraTextAlign = await page.evaluate(() => {
@@ -382,33 +382,40 @@ test.describe('RTL and theme bug fixes', () => {
   });
 
   // ----------------------------------------------------------------
-  // AC4 — RTL state persists across file switch
+  // AC4 — per-note direction: restored on return to its tab, isolated from other tabs
   // ----------------------------------------------------------------
 
-  test('[AC4] RTL computed direction persists after switching files', async ({ page }) => {
+  test('[AC4] per-note RTL is restored on return to its tab and does not leak to other tabs', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // Set RTL manually (_manualRTL = true, persists across file loads)
+    // Two open tabs — A (Arabic) and B (English) — both starting in AUTO.
+    await page.evaluate(({ ar, en }) => {
+      window._appState.files = [
+        { name: 'a.md', path: 'a.md', handle: null, content: ar, dirty: false },
+        { name: 'b.md', path: 'b.md', handle: null, content: en, dirty: false },
+      ];
+      window.renderFile(0);
+      document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
+    }, { ar: ARABIC_CONTENT, en: ENGLISH_CONTENT });
+
+    // Force RTL on tab A — the choice attaches to that note.
     await page.click('#rtlBtn');
     await page.waitForTimeout(100);
-
-    // Load file A (Arabic) — auto-RTL path doesn't conflict since already rtl
-    await injectMarkdown(page, ARABIC_CONTENT);
-    await page.waitForTimeout(200);
-
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
-    const dirAfterA = await getEditorComputedDirection(page);
-    expect(dirAfterA).toBe('rtl');
+    expect(await getEditorComputedDirection(page)).toBe('rtl');
 
-    // Load file B (English) — _manualRTL=true prevents auto-LTR revert
-    await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(200);
+    // Switch to tab B — it keeps its own AUTO direction, NOT tab A's forced RTL.
+    await page.evaluate(() => window.renderFile(1));
+    await page.waitForTimeout(100);
+    await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
+    expect(await getEditorComputedDirection(page)).toBe('ltr');
 
-    // With _manualRTL set, English content should NOT revert to ltr
+    // Return to tab A — its forced RTL is restored.
+    await page.evaluate(() => window.renderFile(0));
+    await page.waitForTimeout(100);
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
-    const dirAfterB = await getEditorComputedDirection(page);
-    expect(dirAfterB).toBe('rtl');
+    expect(await getEditorComputedDirection(page)).toBe('rtl');
   });
 
   // ----------------------------------------------------------------
@@ -437,11 +444,11 @@ test.describe('RTL and theme bug fixes', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-
     await injectMarkdown(page, RTL_HEADINGS_MD);
     await page.waitForTimeout(200);
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -461,11 +468,11 @@ test.describe('RTL and theme bug fixes', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-
     await injectMarkdown(page, RTL_HEADINGS_MD);
     await page.waitForTimeout(200);
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h2 = document.querySelector('#noteContent h2');
@@ -485,11 +492,11 @@ test.describe('RTL and theme bug fixes', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
-
     await injectMarkdown(page, RTL_HEADINGS_MD);
     await page.waitForTimeout(200);
+
+    await page.click('#rtlBtn');
+    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h3 = document.querySelector('#noteContent h3');

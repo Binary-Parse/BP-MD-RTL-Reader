@@ -31,9 +31,11 @@
       "src/renderer/math.js",
       "src/renderer/mermaid.js",
       "src/renderer/search.js",
+      "src/renderer/settings-controller.js",
       "src/renderer/session.js",
       "src/renderer/table-edit.js",
-      "src/renderer/tree.js"
+      "src/renderer/tree.js",
+      "src/renderer/workspace-controller.js"
     ]
   },
   "T3": {

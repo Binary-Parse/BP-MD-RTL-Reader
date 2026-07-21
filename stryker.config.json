@@ -29,6 +29,7 @@
     "src/renderer/footnotes.js",
     "src/renderer/table-edit.js",
     "src/renderer/search.js",
+    "src/renderer/settings-controller.js",
     "src/renderer/tags.js",
     "src/renderer/state.js",
     "src/renderer/theme.js",
@@ -47,6 +48,7 @@
     "src/renderer/highlight.js",
     "src/renderer/mermaid.js",
     "src/renderer/focus.js",
+    "src/renderer/workspace-controller.js",
     "src/renderer/editor/live-preview.js",
     "src/renderer/editor/wikilink-preview.js",
     "src/renderer/editor/inline-marks-preview.js",
@@ -56,7 +58,7 @@
     "src/renderer/editor/list-continuation.js",
     "src/renderer/editor/syntax-guards.js"
   ],
-  "thresholds_comment": "The repository-wide break score is a secondary 80% floor over the complete 44-file scope. scripts/check-mutation-tiers.js is the authoritative stricter gate: every T1 file must reach 85%, every T2 file 75%, and every T3 file 60%, so a strong aggregate cannot mask a weak boundary file.",
+  "thresholds_comment": "The repository-wide break score is a secondary 80% floor over the complete configured scope. scripts/check-mutation-tiers.js is the authoritative stricter gate: every T1 file must reach 85%, every T2 file 75%, and every T3 file 60%, so a strong aggregate cannot mask a weak boundary file.",
   "thresholds": {
     "high": 95,
     "low": 80,

@@ -29,6 +29,7 @@
   "src/renderer/mermaid.js",
   "src/renderer/outline.js",
   "src/renderer/search.js",
+  "src/renderer/settings-controller.js",
   "src/renderer/session.js",
   "src/renderer/state.js",
   "src/renderer/table-edit.js",
@@ -36,5 +37,6 @@
   "src/renderer/theme-boot.js",
   "src/renderer/theme.js",
   "src/renderer/tree.js",
-  "src/renderer/trusted.js"
+  "src/renderer/trusted.js",
+  "src/renderer/workspace-controller.js"
 ]

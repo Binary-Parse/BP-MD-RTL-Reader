@@ -47,7 +47,9 @@ New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
 $nonce = [Guid]::NewGuid().ToString('N')
 $appBuildRoot = Join-Path $distRoot ".inno-app-build-$nonce"
 $stagingRoot = Join-Path $distRoot ".inno-staging-$nonce"
+$compilerOutputRoot = Join-Path $distRoot ".inno-output-$nonce"
 $outFile = Join-Path $distRoot 'BP MD RTL Reader Setup.exe'
+$compiledOutFile = Join-Path $compilerOutputRoot 'BP MD RTL Reader Setup.exe'
 $manifestFile = Join-Path $distRoot 'BP MD RTL Reader Setup.source-manifest.json'
 
 try {
@@ -70,12 +72,12 @@ try {
     }
     $buildRecord | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestFile -Encoding utf8
 
-    if (Test-Path -LiteralPath $outFile) { Remove-Item -LiteralPath $outFile -Force }
+    New-Item -ItemType Directory -Path $compilerOutputRoot | Out-Null
     $isccArgs = @(
         "/DAppVersion=$Version",
         "/DSourceDir=$stagingRoot",
         '/DVerifiedStaging=1',
-        "/O$distRoot",
+        "/O$compilerOutputRoot",
         '/FBP MD RTL Reader Setup',
         $Iss
     )
@@ -83,12 +85,18 @@ try {
     & $compiler.Path @isccArgs
     if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 
-    if (-not (Test-Path -LiteralPath $outFile -PathType Leaf)) {
-        throw "Expected output not produced: $outFile"
+    if (-not (Test-Path -LiteralPath $compiledOutFile -PathType Leaf)) {
+        throw "Expected output not produced: $compiledOutFile"
     }
-    $size = (Get-Item -LiteralPath $outFile).Length
+    $size = (Get-Item -LiteralPath $compiledOutFile).Length
     if ($size -lt 10MB) { throw ("Output is suspiciously small ({0:N0} bytes < 10 MB)." -f $size) }
-    $hash = (Get-FileHash -LiteralPath $outFile -Algorithm SHA256).Hash
+    $hash = (Get-FileHash -LiteralPath $compiledOutFile -Algorithm SHA256).Hash
+
+    if (Test-Path -LiteralPath $outFile) { Remove-Item -LiteralPath $outFile -Force }
+    Move-Item -LiteralPath $compiledOutFile -Destination $outFile
+    if ((Get-FileHash -LiteralPath $outFile -Algorithm SHA256).Hash -ne $hash) {
+        throw 'Published installer hash does not match the verified compiler output.'
+    }
 
     Write-Host ''
     Write-Host '================ BUILD OK ================' -ForegroundColor Green
@@ -99,6 +107,7 @@ try {
     Write-Host '=========================================' -ForegroundColor Green
 }
 finally {
+    Remove-InstallerScratch -Path $compilerOutputRoot -DistRoot $distRoot
     Remove-InstallerScratch -Path $stagingRoot -DistRoot $distRoot
     Remove-InstallerScratch -Path $appBuildRoot -DistRoot $distRoot
 }

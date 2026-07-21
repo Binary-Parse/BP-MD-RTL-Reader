@@ -139,7 +139,7 @@ function Remove-InstallerScratch {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$DistRoot)
     if (-not (Test-Path -LiteralPath $Path)) { return }
     $leaf = Split-Path -Leaf $Path
-    if (-not (Test-PathWithinRoot -Path $Path -Root $DistRoot) -or $leaf -notmatch '^\.inno-(app-build|staging)-[a-f0-9]{32}$') {
+    if (-not (Test-PathWithinRoot -Path $Path -Root $DistRoot) -or $leaf -notmatch '^\.inno-(app-build|staging|output)-[a-f0-9]{32}$') {
         throw "Refusing to remove unexpected scratch path: $Path"
     }
     Remove-Item -LiteralPath $Path -Recurse -Force

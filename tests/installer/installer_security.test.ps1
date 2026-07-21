@@ -38,6 +38,12 @@ Describe 'Verified installer build chain' {
         $PascalSelfTest | Should -Match 'toolchain-policy\.json'
     }
 
+    It 'isolates Pascal self-test executables in a nonce-scoped temporary directory' {
+        $PascalSelfTest | Should -Match '\$outputRoot\s*=.*BP-MD-RTL-Reader-SelfTest-'
+        $PascalSelfTest | Should -Match '"/O\$outputRoot"'
+        $PascalSelfTest | Should -Match 'finally\s*\{[\s\S]*Remove-Item -LiteralPath \$outputRoot -Recurse -Force'
+    }
+
     It 'commits an exact Electron payload inventory and blocks direct Inno compilation' {
         $SourcePolicy.electronVersion | Should -Be '42.7.0'
         $SourcePolicy.files.Count | Should -Be 74
@@ -63,6 +69,19 @@ Describe 'Verified installer build chain' {
         Test-Path -LiteralPath (Join-Path $stage 'one.bin') | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $stage 'resources\two.bin') | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $stage 'unlisted.bin') | Should -BeFalse
+    }
+
+    It 'compiles into nonce-scoped output before publishing the stable installer name' {
+        $Build | Should -Match '\$compilerOutputRoot\s*=\s*Join-Path \$distRoot "\.inno-output-\$nonce"'
+        $Build | Should -Match '"/O\$compilerOutputRoot"'
+        $Build | Should -Match '\$compiledOutFile\s*=\s*Join-Path \$compilerOutputRoot'
+        $Build | Should -Match 'Move-Item -LiteralPath \$compiledOutFile -Destination \$outFile'
+        $Build | Should -Match 'Remove-InstallerScratch -Path \$compilerOutputRoot'
+
+        $outputScratch = Join-Path $TestDrive ('.inno-output-' + ('a' * 32))
+        New-Item -ItemType Directory -Path $outputScratch | Out-Null
+        { Remove-InstallerScratch -Path $outputScratch -DistRoot $TestDrive } | Should -Not -Throw
+        Test-Path -LiteralPath $outputScratch | Should -BeFalse
     }
 }
 

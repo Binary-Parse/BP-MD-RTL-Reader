@@ -15,36 +15,41 @@ $toolPolicy = Get-Content (Join-Path $repoRoot 'installer\toolchain-policy.json'
 $compiler = Get-TrustedIscc -ExplicitPath $IsccPath -Policy $toolPolicy
 $iscc = $compiler.Path
 
-$iss    = Join-Path $PSScriptRoot 'selftest.iss'
-$exe    = Join-Path $PSScriptRoot 'BP-MD-RTL-Reader-SelfTest.exe'
-$result = Join-Path $PSScriptRoot 'selftest-result.txt'
+$iss = Join-Path $PSScriptRoot 'selftest.iss'
+$outputRoot = Join-Path ([IO.Path]::GetTempPath()) ("BP-MD-RTL-Reader-SelfTest-" + [Guid]::NewGuid().ToString('N'))
+$exe = Join-Path $outputRoot 'BP-MD-RTL-Reader-SelfTest.exe'
+$result = Join-Path $outputRoot 'selftest-result.txt'
 
-Write-Host "Compiling selftest.iss..." -ForegroundColor Cyan
-& $iscc $iss
-if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
-if (-not (Test-Path $exe)) { Write-Error "Self-test exe not produced: $exe"; exit 3 }
+New-Item -ItemType Directory -Path $outputRoot | Out-Null
+try {
+    Write-Host "Compiling selftest.iss..." -ForegroundColor Cyan
+    & $iscc "/O$outputRoot" $iss
+    if ($LASTEXITCODE -ne 0) { Write-Error "ISCC failed ($LASTEXITCODE)" }
+    if (-not (Test-Path -LiteralPath $exe)) { Write-Error "Self-test exe not produced: $exe" }
 
-if (Test-Path $result) { Remove-Item $result -Force }
-Write-Host "Running self-test..." -ForegroundColor Cyan
-# /VERYSILENT: no UI; harness writes selftest-result.txt next to the exe and cancels.
-$p = Start-Process -FilePath $exe -ArgumentList '/VERYSILENT' -Wait -PassThru
-Start-Sleep -Milliseconds 200
+    Write-Host "Running self-test..." -ForegroundColor Cyan
+    # /VERYSILENT: no UI; harness writes selftest-result.txt next to the exe and cancels.
+    $null = Start-Process -FilePath $exe -ArgumentList '/VERYSILENT' -Wait -PassThru
+    Start-Sleep -Milliseconds 200
 
-if (-not (Test-Path $result)) { Write-Error "No result file produced at $result"; exit 4 }
-$content = Get-Content $result -Raw
-$content -split "`r?`n" | Where-Object { $_ -match 'PASS |FAIL |RESULT:' } | ForEach-Object { Write-Host $_ }
+    if (-not (Test-Path -LiteralPath $result)) { Write-Error "No result file produced at $result" }
+    $content = Get-Content -LiteralPath $result -Raw
+    $content -split "`r?`n" | Where-Object { $_ -match 'PASS |FAIL |RESULT:' } | ForEach-Object { Write-Host $_ }
 
-if ($content -match 'RESULT:\s+(\d+)\s+passed,\s+(\d+)\s+failed') {
-    $passed = [int]$Matches[1]; $failed = [int]$Matches[2]
-    Write-Host ''
-    if ($failed -eq 0) {
-        Write-Host "Pascal self-test PASS: $passed passed, 0 failed." -ForegroundColor Green
-        exit 0
-    } else {
-        Write-Error "Pascal self-test FAILED: $passed passed, $failed failed."
-        exit 1
+    if ($content -notmatch 'RESULT:\s+(\d+)\s+passed,\s+(\d+)\s+failed') {
+        Write-Error "Could not find the RESULT summary in $result"
     }
-} else {
-    Write-Error "Could not find the RESULT summary in $result"
-    exit 5
+
+    $passed = [int]$Matches[1]
+    $failed = [int]$Matches[2]
+    Write-Host ''
+    if ($failed -ne 0) {
+        Write-Error "Pascal self-test FAILED: $passed passed, $failed failed."
+    }
+    Write-Host "Pascal self-test PASS: $passed passed, 0 failed." -ForegroundColor Green
+}
+finally {
+    if (Test-Path -LiteralPath $outputRoot) {
+        Remove-Item -LiteralPath $outputRoot -Recurse -Force
+    }
 }

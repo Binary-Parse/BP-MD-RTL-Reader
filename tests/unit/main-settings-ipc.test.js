@@ -253,12 +253,14 @@ describe('preload exposes getSettings / setSettings', () => {
     const webFrame = { setZoomFactor: vi.fn() };
     const { api: a, ipc } = api({ webFrame });
 
+    expect(a.setAppZoom(0.2)).toBe(0.6);
     expect(a.setAppZoom(0.6)).toBe(0.6);
     expect(a.setAppZoom(1.25)).toBe(1.25);
     expect(a.setAppZoom(2.4)).toBe(2);
     expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(1, 0.6);
-    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(2, 1.25);
-    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(3, 2);
+    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(2, 0.6);
+    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(3, 1.25);
+    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(4, 2);
     expect(ipc.invoke).not.toHaveBeenCalled();
   });
 

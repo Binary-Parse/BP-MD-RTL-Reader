@@ -24,11 +24,41 @@ export const CALLOUT_ICONS = Object.freeze({
 });
 
 /**
- * Remove the first line (up to and including the first '\n') from an element's
- * text flow. Returns true if a newline was found (body text remains in the
- * element), false if the element held only the first line.
+ * Text of the first visual line of `el`: the run of text before the first hard
+ * break. A hard break is a literal '\n' (marked `breaks: false` — a soft break)
+ * OR a <br> element (marked `breaks: true` — every newline becomes a <br>). Used
+ * to read the `[!TYPE]` marker without dragging the body text in with it.
+ */
+function firstLineText(el) {
+  if (!el) return '';
+  let out = '';
+  for (let node = el.firstChild; node; node = node.nextSibling) {
+    if (node.nodeName === 'BR') break;
+    const text = node.textContent || '';
+    const nl = text.indexOf('\n');
+    if (nl !== -1) return out + text.slice(0, nl);
+    out += text;
+  }
+  return out;
+}
+
+/**
+ * Remove the first line from an element's flow. The line ends at the first top-level
+ * <br> (marked `breaks: true`) or the first '\n' in the text flow (`breaks: false`).
+ * Returns true if body content remains in the element, false if it held only the
+ * first line (caller then drops the whole paragraph).
  */
 function removeFirstLine(p) {
+  // breaks:true — the first line ends at a top-level <br>. Drop everything up to and
+  // including it; the body remains after.
+  for (let node = p.firstChild; node; node = node.nextSibling) {
+    if (node.nodeName === 'BR') {
+      while (node.previousSibling) node.previousSibling.remove();
+      node.remove();
+      return true;
+    }
+  }
+  // breaks:false — strip up to and including the first '\n' in the text flow.
   const doc = p.ownerDocument;
   const walker = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT);
   const nodes = [];
@@ -54,7 +84,7 @@ export function transformCallouts(root, { parseCalloutHeader, resolveDirection }
   const doc = root.ownerDocument;
   root.querySelectorAll('blockquote').forEach((bq) => {
     const firstP = bq.querySelector(':scope > p');
-    const firstLine = (firstP ? firstP.textContent : (bq.textContent || '')).split('\n')[0];
+    const firstLine = firstLineText(firstP || bq);
     const callout = parseCalloutHeader(firstLine);
     if (!callout) return;
 

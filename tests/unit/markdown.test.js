@@ -262,11 +262,11 @@ describe('markdown.js — mutation killers (audit #7)', () => {
     expect(opts.gfm).toBe(true);
   });
 
-  test('configureMarked passes breaks: false (kills L28 BooleanLiteral mutant)', () => {
+  test('configureMarked passes breaks: true (kills L28 BooleanLiteral mutant)', () => {
     const useFn = vi.fn();
     configureMarked({ use: useFn });
     const opts = useFn.mock.calls[0][0];
-    expect(opts.breaks).toBe(false);
+    expect(opts.breaks).toBe(true);
   });
 
   test('configureMarked wikilink extension has level: "inline" (kills L31 StringLiteral mutant)', () => {

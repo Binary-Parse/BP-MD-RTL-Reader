@@ -162,17 +162,50 @@ test.describe('adaptive reading tables', () => {
       const pane = document.querySelector('.preview-pane');
       const frame = document.querySelector('#noteContent .table-frame');
       const table = frame.querySelector('table');
+      const paneRect = pane.getBoundingClientRect();
+      const frameRect = frame.getBoundingClientRect();
       return {
         paneClientWidth: pane.clientWidth,
         paneScrollWidth: pane.scrollWidth,
         frameClientWidth: frame.clientWidth,
         frameScrollWidth: frame.scrollWidth,
         tableWidth: table.getBoundingClientRect().width,
+        paneLeft: paneRect.left,
+        paneRight: paneRect.right,
+        frameLeft: frameRect.left,
+        frameRight: frameRect.right,
       };
     });
 
     expect(geometry.frameScrollWidth).toBeGreaterThan(geometry.frameClientWidth);
     expect(geometry.tableWidth).toBeGreaterThan(geometry.frameClientWidth);
     expect(geometry.paneScrollWidth).toBeLessThanOrEqual(geometry.paneClientWidth + 1);
+    // The frame must stay within the pane on both edges — a breakout that overhangs would
+    // be clipped by the pane's overflow-x:hidden, hiding part of the table.
+    expect(geometry.frameLeft).toBeGreaterThanOrEqual(geometry.paneLeft - 1);
+    expect(geometry.frameRight).toBeLessThanOrEqual(geometry.paneRight + 1);
+  });
+});
+
+test.describe('inline code scales with its context', () => {
+  test('inline code inside a heading is far larger than inline code in body text', async ({ page }) => {
+    await boot(page);
+    await setFiles(page, [{
+      name: 'code.md',
+      content: '# Title `H1CODE`\n\nBody with `BODYCODE` inline.',
+    }]);
+    await page.evaluate(() => window.setViewMode('reading'));
+
+    const sizes = await page.evaluate(() => {
+      const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+      return {
+        heading: px(document.querySelector('#noteContent h1 code')),
+        body: px(document.querySelector('#noteContent p code')),
+      };
+    });
+
+    // 0.85em of the h1 (2.625rem) must dwarf 0.85em of body text (1.0625rem) — a fixed
+    // rem size (the previous bug) would make heading code the same tiny size as body code.
+    expect(sizes.heading).toBeGreaterThan(sizes.body * 1.5);
   });
 });

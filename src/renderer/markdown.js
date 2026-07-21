@@ -28,7 +28,7 @@ export function configureMarked(marked) {
   if (!marked || typeof marked.use !== 'function') return;
   marked.use({
     gfm: true,
-    breaks: false,
+    breaks: true,
     extensions: [{
       name: 'wikilink',
       level: 'inline',

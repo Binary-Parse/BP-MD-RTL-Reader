@@ -1095,7 +1095,9 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   padding: 1px 6px;
   border-radius: 3px;
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  /* Relative to the surrounding text so inline code inside a heading scales with the
+     heading (0.85em) instead of being pinned to a tiny absolute size. */
+  font-size: 0.85em;
   color: var(--accent);
 }
 
@@ -1163,19 +1165,18 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 #noteContent .callout-body { font-size: calc(1rem * var(--reader-text-scale, 1)); }
 #noteContent pre { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
 #noteContent pre code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
-#noteContent code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+#noteContent code { font-size: 0.85em; } /* em inherits the already-scaled parent (incl. headings) */
 
 /* Prose, lists, and KaTeX inherit the scaled reader text size; tables scale above. */
 
-/* A rendered table can use the centre pane (one-rem gutters) but scrolls only here. */
+/* A rendered table stays within the reading column and scrolls horizontally inside its
+   own frame — it never widens the pane or the window (the earlier 100cqi full-bleed
+   breakout could be positioned past the pane edge and get clipped by the pane's
+   overflow-x:hidden, hiding the table). */
 .table-frame {
   box-sizing: border-box;
-  width: calc(100% - 2rem);
-  max-width: calc(100% - 2rem);
-  width: calc(100cqi - 2rem);
-  max-width: calc(100cqi - 2rem);
-  margin: 16px 50%;
-  transform: translateX(-50%);
+  max-width: 100%;
+  margin: 16px 0;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;

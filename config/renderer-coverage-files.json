@@ -33,6 +33,7 @@
   "src/renderer/session.js",
   "src/renderer/state.js",
   "src/renderer/table-edit.js",
+  "src/renderer/table-frame.js",
   "src/renderer/tags.js",
   "src/renderer/theme-boot.js",
   "src/renderer/theme.js",

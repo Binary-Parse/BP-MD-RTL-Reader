@@ -8,9 +8,11 @@
       "src/main/capabilities.js",
       "src/main/context-menu.js",
       "src/main/document-store.js",
+      "src/main/ipc-controller.js",
       "src/main/navigation.js",
       "src/main/protocol.js",
       "src/main/settings.js",
+      "src/main/window-controller.js",
       "src/renderer/trusted.js"
     ]
   },

@@ -46,17 +46,19 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 
 ```
 ├── index.html                    Renderer — UI markup + ordered external stylesheet links
-├── main.js                       Electron main process (window, IPC, files, export, logging)
+├── main.js                       Electron bootstrap and application lifecycle composition
 ├── preload.js                    contextBridge — the renderer's ONLY door to the main process
 ├── src/
 │   ├── main-logic.js             Pure, Electron-free file/security helpers (unit-testable in Node)
 │   ├── main/
 │   │   ├── context-menu.js       Pure context-menu template builder
 │   │   ├── document-store.js     File read/write/atomic-save helpers
+│   │   ├── ipc-controller.js     Privileged IPC registration and owned watcher/export state
 │   │   ├── navigation.js         Link-classification helpers (internal vs external)
 │   │   ├── protocol.js           `bpmd://` custom scheme asset resolver
 │   │   ├── settings.js           Persistent settings (JSON on disk) + migration
-│   │   └── version.js            Semver comparison utility
+│   │   ├── version.js            Semver comparison utility
+│   │   └── window-controller.js  BrowserWindow security/lifecycle/menu/navigation adapter
 │   └── renderer/
 │       ├── app.js                Main renderer application (~3K lines of state + UI glue)
 │       ├── theme-boot.js         Theme bootstrap (runs before app.js)
@@ -191,7 +193,7 @@ npm run package:checksums    # Hash package artifacts
 ## Code Style and Conventions
 
 ### Module system split
-- **CommonJS**: `main.js`, `preload.js`, `src/main-logic.js` (Node / Electron main side).
+- **CommonJS**: `main.js`, `preload.js`, `src/main-logic.js`, and `src/main/*.js` (Node / Electron main side).
 - **ES modules**: everything under `src/renderer/` (browser / renderer side).
 
 ### Injectable entry points (testability)
@@ -331,7 +333,9 @@ no committed CodeQL, Scorecard, or release-publishing workflows.
 ### What belongs where
 | Concern | Location |
 |---------|----------|
-| Electron main-process side-effects (window, menu, dialog, IPC handlers) | `main.js` |
+| Electron bootstrap, protocol, logging, and application lifecycle composition | `main.js` |
+| Privileged dialog/file/settings/export IPC and vault watcher ownership | `src/main/ipc-controller.js` |
+| BrowserWindow security options, close protocol, navigation, and native menus | `src/main/window-controller.js` |
 | Pure file / path / security logic | `src/main-logic.js` |
 | IPC bridge exposure | `preload.js` |
 | Renderer state, DOM manipulation, event handling | `src/renderer/app.js` |

@@ -4,12 +4,12 @@
 
 This report covers all 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort was calibrated to that deployment model while still closing every documented security boundary.
 
-Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**. The remaining partial status is the bounded renderer/UI architecture extraction documented below; final repository-wide validation will be refreshed after that extraction. Everything that passed at baseline still passes at this checkpoint.
+Remediation is now **60 Fixed, 0 Partially Fixed, 0 Deferred, 0 Not Applicable**. All documented findings now have complete source remediations; final repository-wide validation is being refreshed against this source state.
 
 | Status | Critical | High | Medium | Low | Total |
 |---|---:|---:|---:|---:|---:|
-| Fixed | 0 | 7 | 43 | 9 | 59 |
-| Partially Fixed | 0 | 0 | 1 | 0 | 1 |
+| Fixed | 0 | 7 | 44 | 9 | 60 |
+| Partially Fixed | 0 | 0 | 0 | 0 | 0 |
 | Deferred | 0 | 0 | 0 | 0 | 0 |
 | Not Applicable | 0 | 0 | 0 | 0 | 0 |
 
@@ -62,7 +62,7 @@ Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**
 | DATA-010 | Medium | Fixed | main/preload/renderer + tests | Y |
 | DATA-011 | Medium | Fixed | Inno installer + tests | Y |
 | DATA-012 | Low | Fixed | main/preload/renderer + tests | Y |
-| ARCH-001 | Medium | Partially Fixed | renderer styles/workspace/settings boundaries + tests | Y |
+| ARCH-001 | Medium | Fixed | renderer styles/controllers + main IPC/window controllers | Y |
 | ARCH-002 | Medium | Fixed | renderer/session + tests | Y |
 | QUAL-001 | Low | Fixed | frontmatter + tests | Y |
 | QUAL-002 | Medium | Fixed | tags + tests | Y |
@@ -438,13 +438,13 @@ Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**
 
 ### [ARCH-001] Renderer and UI monoliths concentrate unrelated responsibilities
 
-- **Status:** Partially Fixed (architecture extraction in progress)
+- **Status:** Fixed
 - **Severity:** Medium
 - **Root cause:** High-level DOM, state, persistence, rendering, and lifecycle orchestration remain concentrated in large entry files.
-- **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The 1,748-line inline application stylesheet was moved byte-for-byte into ordered `base`, `themes`, `components`, and `responsive` stylesheets (only font URLs changed to remain relative), and those files were added to the packaged payload. File/vault open-save-recent-session orchestration is now owned by an injected workspace controller, and persistence/debounce/restore policy is owned by an injected settings controller; `app.js` retains DOM composition and delegates through those boundaries.
-- **Files touched:** `index.html:13-24`; `package.json:42-51`; `src/renderer/styles/base.css:1-79`; `src/renderer/styles/themes.css:1-38`; `src/renderer/styles/components.css:1-1575`; `src/renderer/styles/responsive.css:1-56`; `src/renderer/workspace-controller.js:1-530`; `src/renderer/settings-controller.js:1-150`; `src/renderer/app.js:27-28,104,1735-1762,2819,2875-2925`; `config/renderer-coverage-files.json:1-62`; `config/mutation-tiers.json:1-62`; `stryker.config.json:1-65`; `config/security-lint-baseline.json:1-10`; `scripts/rem-convert.mjs:1-44`; `AGENTS.md:45-62`; `docs/BUILD.md:37-43,144-151`; `tests/unit/architecture-boundaries.test.js:1-41`; `tests/unit/workspace-controller.test.js:1-787`; `tests/unit/settings-controller.test.js:1-288`; `tests/unit/fonts-selfhost.test.js:1-69`; `tests/unit/typography-rem.test.js:1-79`; `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-20`; `src/renderer/export.js:1-107`.
-- **Verification:** A read-only byte comparison against the pre-extraction inline CSS passed after normalizing only the required relative font path. Architecture/font/typography/CSP contracts passed 23/23; focused workspace/settings tests passed 39/39 and the complete unit coverage gate passed 1,308/1,308 at 97.76% statements, 93.04% branches, 98.49% functions, and 99.27% lines. Focused mutation testing instrumented 1,003 controller mutants: settings scored 95.50% and workspace 75.00% by the authoritative tier checker, both above the T2 75% floor. Selected workspace/settings browser flows passed 48/48; real Electron tests passed 3/3; security lint retained its exact reviewed 169-finding gate with zero new or moved findings.
-- **Risk & notes:** Cascade order, selectors, declarations, CSP, inline SVG markup, opaque document/vault capabilities, restore race protection, and save conflict semantics are preserved. The workspace controller is T2 renderer orchestration; filesystem authorization remains in the T1 main-process boundary. This checkpoint remains partial only until the approved main-process IPC/window controller extraction is complete.
+- **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The 1,748-line inline application stylesheet was moved byte-for-byte into ordered `base`, `themes`, `components`, and `responsive` stylesheets (only font URLs changed to remain relative), and those files were added to the packaged payload. File/vault open-save-recent-session orchestration is now owned by an injected workspace controller, and persistence/debounce/restore policy is owned by an injected settings controller. Privileged dialog/file/settings/export handlers and vault-watcher state now live in an injected IPC controller; BrowserWindow security options, close protocol, navigation, and native menu wiring live in an injected window controller. `app.js` and `main.js` retain composition/lifecycle roles and delegate across explicit boundaries.
+- **Files touched:** `index.html:13-24`; `package.json:42-51`; `src/renderer/styles/base.css:1-79`; `src/renderer/styles/themes.css:1-38`; `src/renderer/styles/components.css:1-1575`; `src/renderer/styles/responsive.css:1-56`; `src/renderer/workspace-controller.js:1-530`; `src/renderer/settings-controller.js:1-150`; `src/renderer/app.js:27-28,104,1735-1762,2819,2875-2925`; `src/main/ipc-controller.js:1-486`; `src/main/window-controller.js:1-131`; `main.js:19-20,34-205,208-303`; `config/renderer-coverage-files.json:1-62`; `config/mutation-tiers.json:1-64`; `stryker.config.json:1-69`; `vitest.mutation.config.js:1-16`; `config/security-lint-baseline.json:1-10`; `scripts/rem-convert.mjs:1-44`; `AGENTS.md:45-66,194-204,327-344`; `docs/BUILD.md:37-44,144-152`; `tests/unit/architecture-boundaries.test.js:1-41`; `tests/unit/main-controller-boundaries.test.js:1-38`; `tests/unit/workspace-controller.test.js:1-787`; `tests/unit/settings-controller.test.js:1-288`; `tests/unit/fonts-selfhost.test.js:1-69`; `tests/unit/typography-rem.test.js:1-79`; `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-20`; `src/renderer/export.js:1-107`.
+- **Verification:** A read-only byte comparison against the pre-extraction inline CSS passed after normalizing only the required relative font path. Architecture/font/typography/CSP contracts passed 23/23; focused workspace/settings tests passed 39/39. After both main controllers were integrated, the complete unit suite passed 1,312/1,312 and the unit coverage gate passed at 97.77% statements, 92.85% branches, 98.53% functions, and 98.85% lines. Focused mutation testing instrumented 1,003 renderer-controller mutants (settings 95.50%, workspace 75.00%, both over T2 75%) and 704 privileged-controller mutants (IPC 87.70%, window 91.85%, both over T1 85%). Selected workspace/settings browser flows passed 48/48; real Electron tests passed 3/3 after each controller batch; security lint retained its exact reviewed 169-finding gate with zero new or moved findings.
+- **Risk & notes:** Cascade order, selectors, declarations, CSP, inline SVG markup, opaque document/vault capabilities, restore race protection, save conflicts, native close approval, watcher teardown, PDF offline isolation, and BrowserWindow sandbox options are preserved. `main.js` is 303 lines after extraction versus 718 immediately before this batch; `app.js` is 2,938 lines after extraction versus approximately 3,400 before the renderer-controller batch. The mutation-only Vitest config excludes only the vendor byte-provenance test because Stryker's copied/instrumented sandbox changes generated asset bytes; the ordinary unit/coverage/CI suites still execute that test.
 
 ### [PERF-001] Every edit rebuilds all tabs across the full vault inventory
 
@@ -628,7 +628,7 @@ Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**
 
 ### [CONF-004] Installer build trusted ambient ISCC and an unverified recursive source tree
 
-- **Status:** Partially Fixed
+- **Status:** Fixed
 - **Severity:** Medium
 - **Root cause:** The build selected the first `ISCC.exe` on PATH and recursively consumed a caller-selected package directory after checking only one filename.
 - **Change made:** Removed PATH discovery and custom source-tree input. The supported build now requires the exact Inno Setup 6.3.3 compiler in a canonical Program Files installation, a valid Authenticode signature from `Open Source Developer, Martijn Laan`, and the committed SHA-256 of the compiler from the attested immutable release; records that identity in the source manifest; builds a fresh x64 Electron directory using the repository-pinned builder; rejects reparse points, missing files, extra files, Electron-version drift, executable metadata drift, and invalid signatures against a committed exact 74-file policy; copies only verified files into a unique clean staging tree; rechecks every SHA-256 after copy; records the source manifest; and cleans only validated scratch paths. Direct `setup.iss` compilation is rejected unless the verified-staging define is supplied. The audit recommendation's version check was implemented as an exact compiler hash because the genuine `ISCC.exe` has no useful Windows file-version resource (`0.0.0.0`); the signed, attested exact-version binary hash is the stronger binding.
@@ -698,9 +698,7 @@ Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**
 
 ## Deferred & Not Applicable
 
-No findings are Deferred or Not Applicable. The only partially fixed finding is
-ARCH-001 because the audited monolith was bounded and high-risk domains were
-extracted/tested, but a wholesale rewrite was intentionally avoided to preserve behavior.
+No findings are Deferred, Partially Fixed, or Not Applicable.
 
 ## New observations
 

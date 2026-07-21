@@ -38,9 +38,10 @@ The renderer is **`index.html`** (UI markup) with ordered external stylesheets u
 **`src/renderer/styles/`**. Its JavaScript is externalized into **`src/renderer/app.js`**
 and **`src/renderer/theme-boot.js`**, loaded via external `<script>` tags to satisfy the
 strict CSP (`script-src 'self'`). Those modules import pure helpers from the rest of
-**`src/renderer/`**. The main process is **`main.js`** +
-**`preload.js`**, with Electron-free file/security logic isolated in **`src/main-logic.js`**
-and the **`src/main/`** modules so they can be unit-tested without Electron.
+**`src/renderer/`**. The main entry is **`main.js`** + **`preload.js`**;
+privileged IPC/vault-watcher state and BrowserWindow lifecycle live behind injected
+controllers in **`src/main/`**, with pure file/security policy in
+**`src/main-logic.js`** so each boundary can be unit-tested without launching Electron.
 
 ## npm scripts
 
@@ -143,11 +144,11 @@ not publish a GitHub Release or claim code signing/notarization when credentials
 
 ```
 index.html              Renderer — UI markup + ordered external CSS/JS links (CSP)
-main.js                 Electron main process — window, IPC, file handling, logging
+main.js                 Electron bootstrap — logging, protocol, app lifecycle composition
 preload.js              contextBridge — the renderer's only door to the main process
 src/
   main-logic.js         Pure file/security helpers (allow-list, size caps, BOM, symlinks)
-  main/                 Electron-free main-process modules — context-menu, document-store, navigation, protocol, settings, version
+  main/                 Main-process boundaries — IPC/window controllers plus pure stores, policy, navigation, protocol, version
   renderer/             Renderer modules — app.js, theme-boot.js, styles/, i18n, markdown, search, state, theme, edit-commands, editor/
 tests/
   unit/                 Vitest unit tests

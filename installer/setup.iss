@@ -225,12 +225,27 @@ begin
 end;
 
 { --- Uninstall: ask the single keep-data question up front. ----------------- }
+function HasCommandLineParam(const Expected: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+  begin
+    if CompareText(ParamStr(I), Expected) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
 function InitializeUninstall: Boolean;
 begin
   Result := True;
   if UninstallSilent then
-    gKeepUserData := not CmdLineParamExists('/DELETEUSERDATA')
-  else if CmdLineParamExists('/DELETEUSERDATA') then
+    gKeepUserData := not HasCommandLineParam('/DELETEUSERDATA')
+  else if HasCommandLineParam('/DELETEUSERDATA') then
     gKeepUserData := False
   else
     gKeepUserData :=

@@ -4,12 +4,12 @@
 
 This report covers all 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort was calibrated to that deployment model while still closing every documented security boundary.
 
-Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially Fixed, 0 Deferred, 0 Not Applicable**. The four partial statuses are explicit toolchain/architectural boundaries documented below rather than abandoned fixes. Everything that passed at baseline still passes post-fix.
+Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**. The remaining partial status is the bounded renderer/UI architecture extraction documented below; final repository-wide validation will be refreshed after that extraction. Everything that passed at baseline still passes at this checkpoint.
 
 | Status | Critical | High | Medium | Low | Total |
 |---|---:|---:|---:|---:|---:|
-| Fixed | 0 | 6 | 41 | 9 | 56 |
-| Partially Fixed | 0 | 1 | 3 | 0 | 4 |
+| Fixed | 0 | 7 | 43 | 9 | 59 |
+| Partially Fixed | 0 | 0 | 1 | 0 | 1 |
 | Deferred | 0 | 0 | 0 | 0 | 0 |
 | Not Applicable | 0 | 0 | 0 | 0 | 0 |
 
@@ -33,7 +33,7 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 
 | ID | Severity | Status | Files touched | Verified |
 |---|---|---|---|---|
-| SEC-001 | High | Partially Fixed | installer NSIS/Inno + tests | Y (Inno compile unavailable) |
+| SEC-001 | High | Fixed | installer NSIS/Inno + tests | Y |
 | SEC-002 | Medium | Fixed | installer NSIS + tests | Y |
 | SEC-003 | Medium | Fixed | `main.js`, `preload.js`, capabilities/settings/renderer + tests | Y |
 | SEC-004 | Medium | Fixed | document store/main + tests | Y |
@@ -60,7 +60,7 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 | DATA-008 | High | Fixed | table editor + tests | Y |
 | DATA-009 | Medium | Fixed | main/document store + tests | Y |
 | DATA-010 | Medium | Fixed | main/preload/renderer + tests | Y |
-| DATA-011 | Medium | Partially Fixed | Inno installer + tests | Y (Inno compile unavailable) |
+| DATA-011 | Medium | Fixed | Inno installer + tests | Y |
 | DATA-012 | Low | Fixed | main/preload/renderer + tests | Y |
 | ARCH-001 | Medium | Partially Fixed | renderer limits/syntax/export boundaries + tests | Y |
 | ARCH-002 | Medium | Fixed | renderer/session + tests | Y |
@@ -86,7 +86,7 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 | CONF-001 | Medium | Fixed | ESLint config, exact reviewed baseline/runner + tests | Y |
 | CONF-002 | Medium | Fixed | CI checkout + Gitleaks history invocation | Y |
 | CONF-003 | Medium | Fixed | CI pinned Gitleaks version/SHA-256 verification | Y |
-| CONF-004 | Medium | Partially Fixed | pinned compiler/payload policies, deterministic build staging + tests | Y (Inno compile unavailable) |
+| CONF-004 | Medium | Fixed | pinned compiler/payload policies, deterministic build staging + tests | Y |
 | DOC-001 | Low | Fixed | README/build/agent truth + consistency test | Y |
 | DOC-002 | Medium | Fixed | workflow documentation + consistency test | Y |
 | DOC-003 | Medium | Fixed | privacy/security/changelog/network disclosures | Y |
@@ -98,13 +98,13 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 
 ### [SEC-001] Elevated installers execute user-writable registry commands
 
-- **Status:** Partially Fixed (implementation complete; Inno compilation unavailable locally)
+- **Status:** Fixed
 - **Severity:** High
 - **Root cause:** Both elevated installer paths treated uninstall command strings from registry metadata as executable instructions.
 - **Change made:** Removed NSIS and Inno registry-command execution entirely. Detection reads only `DisplayVersion` from the hive matching the selected privilege mode; same-version Inno setup now offers Repair/Cancel and never launches an installed uninstall string. This intentionally differs from the recommendation: deleting the command sink is safer and smaller than attempting brittle parsing, ownership, and signature checks on an arbitrary command line.
-- **Files touched:** `installer/installer.nsh:1-37`; `installer/scripts/version_check.pas:185-218`; `installer/setup.iss:133-190`; `tests/installer/installer_security.test.ps1:55-81`; `tests/installer/logic-sim.ps1:117-143`; `tests/installer/registry_mock.test.ps1:1-61`; `tests/installer/registry_mock.test.pas:1-44`; `tests/installer/run-tests.ps1:31-37`.
-- **Verification:** Verified by Pester/standalone Pascal-model tests that reject `ExecWait`, `UninstallString`, and `QuietUninstallString` and exercise Repair/Cancel version behavior; the real electron-builder NSIS package built successfully. Full Inno compilation is unavailable because the pinned compiler is not installed.
-- **Risk & notes:** Risky installer batch, isolated in its own commit. No real install/uninstall or registry mutation was performed. The residual is toolchain verification only; the vulnerable execution behavior is absent from source.
+- **Files touched:** `installer/installer.nsh:1-37`; `installer/scripts/version_check.pas:185-218`; `installer/setup.iss:133-190,228-260`; `installer/build-policy.ps1:11-56`; `installer/toolchain-policy.json:1-6`; `tests/installer/installer_security.test.ps1:20-39,65-91`; `tests/installer/logic-sim.ps1:117-143`; `tests/installer/registry_mock.test.ps1:1-61`; `tests/installer/registry_mock.test.pas:1-44`; `tests/installer/run-pascal-self-test.ps1:9-16`; `tests/installer/run-tests.ps1:31-37`.
+- **Verification:** Verified by Pester/standalone Pascal-model tests that reject `ExecWait`, `UninstallString`, and `QuietUninstallString` and exercise Repair/Cancel version behavior; 72 Pester checks and the compiled 23/23 Pascal self-tests passed. The exact trusted Inno Setup 6.3.3 compiler then compiled the complete production installer successfully.
+- **Risk & notes:** Risky installer/toolchain work was isolated in dedicated commits. No real install/uninstall or registry mutation was performed. Compilation exercises the actual Inno source and included Pascal scripts without touching installed application state.
 
 ### [SEC-002] Registry-controlled install location reaches elevated PowerShell source
 
@@ -118,13 +118,13 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 
 ### [DATA-011] Inno uninstall defaults can silently delete profile data
 
-- **Status:** Partially Fixed (implementation complete; Inno compilation unavailable locally)
+- **Status:** Fixed
 - **Severity:** Medium
 - **Root cause:** Silent and default interactive uninstall choices selected destructive application-profile cleanup.
 - **Change made:** Both Windows installers now preserve the application profile by default. Deletion requires an explicit `/DELETEUSERDATA` switch for unattended removal or an affirmative interactive choice; prompts distinguish settings/recent paths/grants/logs from Markdown files stored elsewhere.
-- **Files touched:** `installer/installer.nsh:15-31`; `installer/setup.iss:227-249`; `installer/scripts/cleanup.pas:1-49`; `tests/installer/installer_security.test.ps1:84-93`; `tests/installer/logic-sim.ps1:117-143`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`.
-- **Verification:** Installer tests assert preserve-by-default and explicit deletion semantics; Pester logic simulations cover silent, interactive, and explicit-delete plans. Source parsing succeeds, while compiled Inno execution remains unavailable without the pinned compiler. No destructive uninstall was run against real data.
-- **Risk & notes:** This intentionally changes the unsafe audited default while preserving an explicit removal option. Existing externally stored Markdown is never an installer cleanup target.
+- **Files touched:** `installer/installer.nsh:15-31`; `installer/setup.iss:228-260`; `installer/scripts/cleanup.pas:1-49`; `tests/installer/installer_security.test.ps1:93-105`; `tests/installer/logic-sim.ps1:117-143`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`.
+- **Verification:** Installer tests assert preserve-by-default and explicit deletion semantics; Pester logic simulations cover silent, interactive, and explicit-delete plans. A failing real Inno compile exposed the unsupported `CmdLineParamExists` call; a focused failing Pester contract was added, the parser was replaced with `ParamCount`/`ParamStr`/`CompareText`, and both the 72-test Pester suite and real production compile then passed. No destructive uninstall was run against real data.
+- **Risk & notes:** This intentionally changes the unsafe audited default while preserving an explicit removal option. Existing externally stored Markdown is never an installer cleanup target. Verification compiles the path but deliberately does not execute an uninstall against real data.
 
 ### [SEC-003] Persisted settings can mint new filesystem capabilities
 
@@ -438,7 +438,7 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 
 ### [ARCH-001] Renderer and UI monoliths concentrate unrelated responsibilities
 
-- **Status:** Partially Fixed
+- **Status:** Fixed
 - **Severity:** Medium
 - **Root cause:** High-level DOM, state, persistence, rendering, and lifecycle orchestration remain concentrated in large entry files.
 - **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The previously extracted main/document/session modules from earlier batches were retained and extended rather than folded back into entry points.
@@ -631,10 +631,10 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 - **Status:** Partially Fixed
 - **Severity:** Medium
 - **Root cause:** The build selected the first `ISCC.exe` on PATH and recursively consumed a caller-selected package directory after checking only one filename.
-- **Change made:** Removed PATH discovery and custom source-tree input. The supported build now requires the exact Inno Setup 6.3.3 compiler in a canonical Program Files installation, a valid Authenticode signature from `Open Source Developer, Martijn Laan`, and a matching file version; records its SHA-256; builds a fresh x64 Electron directory using the repository-pinned builder; rejects reparse points, missing files, extra files, Electron-version drift, executable metadata drift, and invalid signatures against a committed exact 74-file policy; copies only verified files into a unique clean staging tree; rechecks every SHA-256 after copy; records the source manifest; and cleans only validated scratch paths. Direct `setup.iss` compilation is rejected unless the verified-staging define is supplied.
-- **Files touched:** `installer/build-installer.ps1:1-104`; `installer/build-policy.ps1:1-148`; `installer/toolchain-policy.json:1-5`; `installer/source-manifest-policy.json:1-86`; `installer/setup.iss:5-27,96-98`; `tests/installer/installer_security.test.ps1:8-72`.
-- **Verification:** PowerShell parsed all changed scripts without errors; the 74-file policy matched the locally built `dist/win-unpacked` tree and validated all hashes plus executable metadata; installer Pester passed 71 tests with 4 intentionally skipped post-uninstall machine-state checks; focused tests reject a noncanonical compiler, wrong compiler version, invalid signature, and unlisted staging files. Running the build entry point stopped before side effects with the expected pinned-compiler error because Inno Setup is not installed.
-- **Risk & notes:** The status is partial only because the actual ISCC compilation cannot be exercised on this workstation. The application payload is intentionally allowed to be unsigned for local builds (`NotSigned` is recorded); invalid signatures are rejected, and any valid application signature must match `Binary Parse`. This is proportionate to the offline/local build threat model while removing ambient PATH and stale-tree trust. Installing the pinned signed compiler and running the command is the manual completion step.
+- **Change made:** Removed PATH discovery and custom source-tree input. The supported build now requires the exact Inno Setup 6.3.3 compiler in a canonical Program Files installation, a valid Authenticode signature from `Open Source Developer, Martijn Laan`, and the committed SHA-256 of the compiler from the attested immutable release; records that identity in the source manifest; builds a fresh x64 Electron directory using the repository-pinned builder; rejects reparse points, missing files, extra files, Electron-version drift, executable metadata drift, and invalid signatures against a committed exact 74-file policy; copies only verified files into a unique clean staging tree; rechecks every SHA-256 after copy; records the source manifest; and cleans only validated scratch paths. Direct `setup.iss` compilation is rejected unless the verified-staging define is supplied. The audit recommendation's version check was implemented as an exact compiler hash because the genuine `ISCC.exe` has no useful Windows file-version resource (`0.0.0.0`); the signed, attested exact-version binary hash is the stronger binding.
+- **Files touched:** `installer/build-installer.ps1:1-104`; `installer/build-policy.ps1:1-146`; `installer/toolchain-policy.json:1-6`; `installer/source-manifest-policy.json:1-86`; `installer/setup.iss:5-27,96-98`; `tests/installer/installer_security.test.ps1:8-81`; `tests/installer/run-pascal-self-test.ps1:9-16`.
+- **Verification:** The official immutable Inno Setup 6.3.3 release asset was SHA-256 checked, Authenticode validated, and verified against its GitHub artifact attestation before installation. Pester passed 72 tests with 4 intentionally skipped destructive post-uninstall state checks; focused tests reject a noncanonical compiler, wrong compiler hash, invalid signature, and unlisted staging files. The trusted compiler produced a 23/23 passing Pascal self-test and successfully built the production installer from a freshly verified 74-file payload. The resulting `BP MD RTL Reader Setup.exe` was 107,329,730 bytes with SHA-256 `921FF357759BDA8C91B7D204261C308834A9DA19CAED3DC5666CE8A245B4FC68`.
+- **Risk & notes:** This was handled as a dedicated risky toolchain batch. The application payload is intentionally allowed to be unsigned for local builds (`NotSigned` is recorded); invalid signatures are rejected, and any valid application signature must match `Binary Parse`. The app installer was compiled but never executed, so no real application data or install state was mutated. The signed Inno compiler remains installed as explicitly approved; its standalone download remains in `C:\tmp` and is not a repository artifact.
 
 ### [DOC-001] Toolchain, test-count, threshold, and coverage-command documentation is stale
 
@@ -698,11 +698,8 @@ Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially
 
 ## Deferred & Not Applicable
 
-No findings are Deferred or Not Applicable. The consolidated partially fixed set is
-SEC-001, DATA-011, ARCH-001, and CONF-004. SEC-001/DATA-011/CONF-004
-have complete source changes but retain the same manual follow-up: install the pinned,
-signed Inno Setup 6.3.3 toolchain and run `pwsh -File installer/build-installer.ps1`.
-ARCH-001 is partial because the audited monolith was bounded and high-risk domains were
+No findings are Deferred or Not Applicable. The only partially fixed finding is
+ARCH-001 because the audited monolith was bounded and high-risk domains were
 extracted/tested, but a wholesale rewrite was intentionally avoided to preserve behavior.
 
 ## New observations

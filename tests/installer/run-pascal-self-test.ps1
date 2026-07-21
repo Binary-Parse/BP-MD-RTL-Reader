@@ -6,24 +6,14 @@
   Usage:  pwsh -File tests/installer/run-pascal-self-test.ps1
 #>
 [CmdletBinding()]
-param()
+param([string]$IsccPath)
 $ErrorActionPreference = 'Stop'
 
-# locate ISCC
-$iscc = $null
-$cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
-if ($cmd) { $iscc = $cmd.Source }
-if (-not $iscc) {
-    foreach ($c in @(
-        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
-    )) { if ($c -and (Test-Path $c)) { $iscc = $c; break } }
-}
-if (-not $iscc) {
-    Write-Error "ISCC.exe (Inno Setup 6.3+) not found. Install from https://jrsoftware.org/isdl.php"
-    exit 2
-}
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+. (Join-Path $repoRoot 'installer\build-policy.ps1')
+$toolPolicy = Get-Content (Join-Path $repoRoot 'installer\toolchain-policy.json') -Raw | ConvertFrom-Json
+$compiler = Get-TrustedIscc -ExplicitPath $IsccPath -Policy $toolPolicy
+$iscc = $compiler.Path
 
 $iss    = Join-Path $PSScriptRoot 'selftest.iss'
 $exe    = Join-Path $PSScriptRoot 'BP-MD-RTL-Reader-SelfTest.exe'

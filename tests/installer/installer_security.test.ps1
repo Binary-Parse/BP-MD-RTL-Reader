@@ -11,6 +11,7 @@ BeforeAll {
     $script:Inno = Get-Content -Raw (Join-Path $RepoRoot 'installer\setup.iss')
     $script:Version = Get-Content -Raw (Join-Path $RepoRoot 'installer\scripts\version_check.pas')
     $script:Build = Get-Content -Raw (Join-Path $RepoRoot 'installer\build-installer.ps1')
+    $script:PascalSelfTest = Get-Content -Raw (Join-Path $RepoRoot 'tests\installer\run-pascal-self-test.ps1')
     $script:ToolPolicy = Get-Content -Raw (Join-Path $RepoRoot 'installer\toolchain-policy.json') | ConvertFrom-Json
     $script:SourcePolicy = Get-Content -Raw (Join-Path $RepoRoot 'installer\source-manifest-policy.json') | ConvertFrom-Json
     . (Join-Path $RepoRoot 'installer\build-policy.ps1')
@@ -21,11 +22,20 @@ Describe 'Verified installer build chain' {
         $Build | Should -Not -Match 'Get-Command\s+iscc'
         $ToolPolicy.isccVersion | Should -Be '6.3.3'
         $ToolPolicy.isccSigner | Should -Be 'Open Source Developer, Martijn Laan'
+        $ToolPolicy.isccSha256 | Should -Be 'BF65156E415096B4B524EA7A8646D1E5B4FF7817FE8BA5DFC142A637640AE7D3'
         $signer = 'CN=Open Source Developer, Martijn Laan'
-        { Assert-IsccPolicy -Path 'C:\Program Files\Inno Setup 6\ISCC.exe' -Version '6.3.3.0' -SignatureStatus Valid -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Not -Throw
-        { Assert-IsccPolicy -Path 'C:\Users\me\ISCC.exe' -Version '6.3.3.0' -SignatureStatus Valid -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Throw
-        { Assert-IsccPolicy -Path 'C:\Program Files\Inno Setup 6\ISCC.exe' -Version '6.4.0' -SignatureStatus Valid -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Throw
-        { Assert-IsccPolicy -Path 'C:\Program Files\Inno Setup 6\ISCC.exe' -Version '6.3.3.0' -SignatureStatus HashMismatch -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Throw
+        $hash = $ToolPolicy.isccSha256
+        { Assert-IsccPolicy -Path 'C:\Program Files\Inno Setup 6\ISCC.exe' -Sha256 $hash -SignatureStatus Valid -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Not -Throw
+        { Assert-IsccPolicy -Path 'C:\Users\me\ISCC.exe' -Sha256 $hash -SignatureStatus Valid -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Throw
+        { Assert-IsccPolicy -Path 'C:\Program Files\Inno Setup 6\ISCC.exe' -Sha256 ('0' * 64) -SignatureStatus Valid -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Throw
+        { Assert-IsccPolicy -Path 'C:\Program Files\Inno Setup 6\ISCC.exe' -Sha256 $hash -SignatureStatus HashMismatch -SignerSubject $signer -AllowedRoots @('C:\Program Files\Inno Setup 6') -Policy $ToolPolicy } | Should -Throw
+    }
+
+    It 'uses the same trusted compiler policy for the Pascal self-test harness' {
+        $PascalSelfTest | Should -Not -Match 'Get-Command\s+iscc'
+        $PascalSelfTest | Should -Not -Match 'LOCALAPPDATA'
+        $PascalSelfTest | Should -Match 'Get-TrustedIscc'
+        $PascalSelfTest | Should -Match 'toolchain-policy\.json'
     }
 
     It 'commits an exact Electron payload inventory and blocks direct Inno compilation' {
@@ -82,7 +92,11 @@ Describe 'Elevated installer command boundaries' {
 
 Describe 'Profile-preserving uninstall defaults' {
     It 'Inno silent uninstall preserves data unless DELETEUSERDATA is explicit' {
-        $Inno | Should -Match "gKeepUserData\s*:=\s*not CmdLineParamExists\('/DELETEUSERDATA'\)"
+        $Inno | Should -Not -Match 'CmdLineParamExists'
+        $Inno | Should -Match 'function HasCommandLineParam'
+        $Inno | Should -Match 'for I := 1 to ParamCount'
+        $Inno | Should -Match 'CompareText\(ParamStr\(I\), Expected\)'
+        $Inno | Should -Match "gKeepUserData\s*:=\s*not HasCommandLineParam\('/DELETEUSERDATA'\)"
         $Inno | Should -Match 'MB_YESNO or MB_DEFBUTTON1'
     }
 

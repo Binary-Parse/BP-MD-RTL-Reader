@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
   "isccVersion": "6.3.3",
-  "isccSigner": "Open Source Developer, Martijn Laan"
+  "isccSigner": "Open Source Developer, Martijn Laan",
+  "isccSha256": "BF65156E415096B4B524EA7A8646D1E5B4FF7817FE8BA5DFC142A637640AE7D3"
 }

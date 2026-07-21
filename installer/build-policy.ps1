@@ -11,7 +11,7 @@ function Test-PathWithinRoot {
 function Assert-IsccPolicy {
     param(
         [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Version,
+        [Parameter(Mandatory)][string]$Sha256,
         [Parameter(Mandatory)][string]$SignatureStatus,
         [Parameter(Mandatory)][string]$SignerSubject,
         [Parameter(Mandatory)][string[]]$AllowedRoots,
@@ -21,10 +21,8 @@ function Assert-IsccPolicy {
     if (-not ($AllowedRoots | Where-Object { Test-PathWithinRoot -Path $Path -Root $_ })) {
         throw 'ISCC.exe is outside the canonical Program Files installation roots.'
     }
-    $actual = [Version]$Version
-    $expected = [Version]$Policy.isccVersion
-    if ($actual.Major -ne $expected.Major -or $actual.Minor -ne $expected.Minor -or $actual.Build -ne $expected.Build) {
-        throw "ISCC version $Version does not match pinned version $($Policy.isccVersion)."
+    if ($Sha256 -ne [string]$Policy.isccSha256) {
+        throw "ISCC SHA-256 does not match pinned Inno Setup $($Policy.isccVersion) compiler."
     }
     if ($SignatureStatus -ne 'Valid') { throw "ISCC Authenticode signature is $SignatureStatus, not Valid." }
     if ($SignerSubject -notmatch [regex]::Escape([string]$Policy.isccSigner)) {
@@ -45,15 +43,15 @@ function Get-TrustedIscc {
         throw "Pinned Inno Setup $($Policy.isccVersion) ISCC.exe was not found in Program Files."
     }
     $resolved = (Resolve-Path -LiteralPath $found).Path
-    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($resolved)
     $signature = Get-AuthenticodeSignature -LiteralPath $resolved
     $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
-    Assert-IsccPolicy -Path $resolved -Version $info.FileVersion -SignatureStatus ([string]$signature.Status) -SignerSubject $subject -AllowedRoots $roots -Policy $Policy | Out-Null
+    $sha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash
+    Assert-IsccPolicy -Path $resolved -Sha256 $sha256 -SignatureStatus ([string]$signature.Status) -SignerSubject $subject -AllowedRoots $roots -Policy $Policy | Out-Null
     return [ordered]@{
         path = $resolved
-        version = $info.FileVersion
+        version = [string]$Policy.isccVersion
         signer = $subject
-        sha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash
+        sha256 = $sha256
     }
 }
 

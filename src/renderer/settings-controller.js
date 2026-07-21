@@ -1,7 +1,7 @@
 export const PERSISTED_KEYS = new Set([
   'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible',
   'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
-  'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection',
+  'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
 ]);
 
 const noop = () => {};
@@ -30,6 +30,8 @@ export function createSettingsController({
     applyItalicRecolor: actions.applyItalicRecolor || noop,
     setUiLocale: actions.setUiLocale || noop,
     setUiDirection: actions.setUiDirection || noop,
+    setReaderTextScale: actions.setReaderTextScale || noop,
+    setReaderWidthCh: actions.setReaderWidthCh || noop,
     restoreLastSession: actions.restoreLastSession || (async () => {}),
   };
   let restoring = false;
@@ -55,6 +57,8 @@ export function createSettingsController({
       cmEditor: state.cmEditor,
       uiLocale: state.uiLocale,
       uiDirection: state.uiDirection,
+      readerTextScale: state.readerTextScale,
+      readerWidthCh: state.readerWidthCh,
       lastSession: getLastSession(),
     };
   }
@@ -99,6 +103,8 @@ export function createSettingsController({
         apply.applyTheme(saved.theme);
       }
       if (typeof saved.zoomFactor === 'number') apply.setZoom(saved.zoomFactor);
+      if (typeof saved.readerTextScale === 'number') apply.setReaderTextScale(saved.readerTextScale);
+      if (typeof saved.readerWidthCh === 'number') apply.setReaderWidthCh(saved.readerWidthCh);
       // CM6 is the sole editor. Old split/source values must not resurrect a second surface.
       apply.setEditorMode('live');
       if (saved.viewMode === 'reading' || saved.viewMode === 'edit') apply.setViewMode(saved.viewMode);

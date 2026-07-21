@@ -11,7 +11,8 @@ function state() {
     theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'edit',
     sidebarVisible: true, inspectorVisible: true, recents: [], calendar: 'gregorian',
     arabicKashida: false, italicRecolor: true, cmEditor: false,
-    uiLocale: 'en', uiDirection: 'ltr', files: [], activeFile: null,
+    uiLocale: 'en', uiDirection: 'ltr', readerTextScale: 1, readerWidthCh: 72,
+    files: [], activeFile: null,
   };
 }
 
@@ -20,6 +21,7 @@ function actions() {
     applyTheme: vi.fn(), setZoom: vi.fn(), setEditorMode: vi.fn(), setViewMode: vi.fn(),
     applyPanelLayout: vi.fn(), renderRecents: vi.fn(), applyKashida: vi.fn(),
     applyItalicRecolor: vi.fn(), setUiLocale: vi.fn(), setUiDirection: vi.fn(),
+    setReaderTextScale: vi.fn(), setReaderWidthCh: vi.fn(),
     restoreLastSession: vi.fn(async () => {}),
   };
 }
@@ -38,7 +40,7 @@ describe('settings controller', () => {
     expect([...PERSISTED_KEYS]).toEqual([
       'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible',
       'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
-      'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection',
+      'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
     ]);
   });
 
@@ -69,6 +71,8 @@ describe('settings controller', () => {
       uiLocale: 'en',
       uiDirection: 'ltr',
       lastSession: { vaultId: 'v', activePath: 'a.md' },
+      readerTextScale: 1,
+      readerWidthCh: 72,
     });
   });
 
@@ -160,6 +164,7 @@ describe('settings controller', () => {
       ],
       calendar: 'hijri', arabicKashida: true, italicRecolor: false,
       cmEditor: true, uiLocale: 'ar', uiDirection: 'rtl',
+      readerTextScale: 1.2, readerWidthCh: 84,
       lastSession: { vaultId: 'v', activePath: 'a.md' },
     })) };
     const controller = createSettingsController({
@@ -191,6 +196,8 @@ describe('settings controller', () => {
     expect(apply.setUiLocale).toHaveBeenCalledWith('ar');
     expect(apply.setUiDirection).toHaveBeenCalledWith('rtl');
     expect(apply.restoreLastSession).toHaveBeenCalledWith({ vaultId: 'v', activePath: 'a.md' });
+    expect(apply.setReaderTextScale).toHaveBeenCalledWith(1.2);
+    expect(apply.setReaderWidthCh).toHaveBeenCalledWith(84);
   });
 
   test('rejects unavailable or malformed settings and ignores invalid optional values', async () => {
@@ -225,6 +232,8 @@ describe('settings controller', () => {
     expect(apply.setZoom).not.toHaveBeenCalled();
     expect(apply.setViewMode).not.toHaveBeenCalled();
     expect(apply.applyPanelLayout).toHaveBeenCalledTimes(1);
+    expect(apply.setReaderTextScale).not.toHaveBeenCalled();
+    expect(apply.setReaderWidthCh).not.toHaveBeenCalled();
     expect(apply.restoreLastSession).toHaveBeenCalledWith(undefined);
   });
 
@@ -283,6 +292,7 @@ describe('settings controller', () => {
     controller.bind();
     listener('findHits');
     listener('theme');
-    expect(persist).toHaveBeenCalledTimes(1);
+    listener('readerWidthCh');
+    expect(persist).toHaveBeenCalledTimes(2);
   });
 });

@@ -5,13 +5,15 @@
  * window bounds are clamped to a visible display (EC-D2).
  */
 
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 const CAPABILITY_ID = /^cap-[A-Za-z0-9_-]{1,128}$/;
 
 const DEFAULTS = Object.freeze({
   version: SETTINGS_VERSION,
   theme: 'paper',
   zoomFactor: 1,
+  readerTextScale: 1,
+  readerWidthCh: 72,
   editorMode: 'live',
   viewMode: 'reading', // T-F17: Reading (clean read-only render) vs 'edit' (CM6); reading-first default
 
@@ -40,6 +42,16 @@ function clampZoom(z) {
   return Math.min(2.0, Math.max(0.6, n));
 }
 
+function clampReaderTextScale(scale) {
+  if (typeof scale !== 'number' || !Number.isFinite(scale)) return DEFAULTS.readerTextScale;
+  return Math.round(Math.min(2, Math.max(0.8, scale)) * 10) / 10;
+}
+
+function clampReaderWidthCh(width) {
+  if (typeof width !== 'number' || !Number.isFinite(width)) return DEFAULTS.readerWidthCh;
+  return Math.round(Math.min(120, Math.max(48, width)) / 2) * 2;
+}
+
 function defaultSettings() {
   return JSON.parse(JSON.stringify(DEFAULTS));
 }
@@ -52,6 +64,8 @@ function migrate(raw) {
   if (MODES.includes(raw.editorMode)) out.editorMode = raw.editorMode;
   if (raw.viewMode === 'reading' || raw.viewMode === 'edit') out.viewMode = raw.viewMode; // T-F17
   out.zoomFactor = clampZoom(raw.zoomFactor);
+  out.readerTextScale = clampReaderTextScale(raw.readerTextScale);
+  out.readerWidthCh = clampReaderWidthCh(raw.readerWidthCh);
   if (typeof raw.sidebarVisible === 'boolean') out.sidebarVisible = raw.sidebarVisible;
   if (typeof raw.inspectorVisible === 'boolean') out.inspectorVisible = raw.inspectorVisible;
   if (raw.uiDirection === 'rtl' || raw.uiDirection === 'ltr') out.uiDirection = raw.uiDirection;
@@ -131,5 +145,5 @@ function createSettingsStore({ fs, path, userDataDir }) {
 }
 
 module.exports = {
-  SETTINGS_VERSION, DEFAULTS, defaultSettings, migrate, clampZoom, clampWindowBounds, createSettingsStore,
+  SETTINGS_VERSION, DEFAULTS, defaultSettings, migrate, clampZoom, clampReaderTextScale, clampReaderWidthCh, clampWindowBounds, createSettingsStore,
 };

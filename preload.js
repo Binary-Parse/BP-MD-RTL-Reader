@@ -8,12 +8,20 @@
 // @param {object} deps
 // @param {object} deps.contextBridge - electron.contextBridge (or a mock)
 // @param {object} deps.ipcRenderer   - electron.ipcRenderer (or a mock)
-function setupBridge({ contextBridge, ipcRenderer }) {
+// @param {object} [deps.webFrame] - electron.webFrame (or a mock)
+function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
   contextBridge.exposeInMainWorld('electronAPI', {
     closeWindow:    () => ipcRenderer.send('window-close-confirmed'),
     minimizeWindow: () => ipcRenderer.send('window-minimize'),
     maximizeWindow: () => ipcRenderer.send('window-maximize'),
     // Open Folder IPC bridge (Bug 1 / AC1)
+    // Renderer-local Chromium zoom; no privileged main-process IPC is needed.
+    setAppZoom: (factor) => {
+      if (typeof factor !== 'number' || !Number.isFinite(factor)) return null;
+      const applied = Math.min(2, Math.max(0.6, factor));
+      if (webFrame && typeof webFrame.setZoomFactor === 'function') webFrame.setZoomFactor(applied);
+      return applied;
+    },
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     readVault:  (vaultId) => ipcRenderer.invoke('fs:readVault', vaultId),
     // Main-issued opaque IDs are the only filesystem authority exposed here.
@@ -62,7 +70,7 @@ module.exports = { setupBridge };
 // preload (the Vitest worker global is absent there), so the lines are
 // unreachable by unit tests. setupBridge() itself is fully mutation-tested.
 if (typeof globalThis.__vitest_worker__ === 'undefined') {
-  const { contextBridge, ipcRenderer } = require('electron');
-  setupBridge({ contextBridge, ipcRenderer });
+  const { contextBridge, ipcRenderer, webFrame } = require('electron');
+  setupBridge({ contextBridge, ipcRenderer, webFrame });
 }
 // Stryker restore all

@@ -3,7 +3,15 @@
  */
 import { describe, test, expect } from 'vitest';
 import path from 'node:path';
-import { defaultSettings, migrate, clampZoom, clampWindowBounds, createSettingsStore } from '../../src/main/settings.js';
+import {
+  defaultSettings,
+  migrate,
+  clampZoom,
+  clampReaderTextScale,
+  clampReaderWidthCh,
+  clampWindowBounds,
+  createSettingsStore,
+} from '../../src/main/settings.js';
 
 describe('migrate (EC-D1)', () => {
   test('v2 persists opaque capability IDs but never filesystem paths', () => {
@@ -14,7 +22,7 @@ describe('migrate (EC-D1)', () => {
       ],
       lastSession: { vaultId: 'cap-vault', vaultPath: '/forged', openPaths: ['sub/a.md'], activePath: 'sub/a.md' },
     });
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     expect(migrated.recents).toEqual([
       { name: 'a.md', path: 'sub/a.md', vaultId: 'cap-vault', documentId: 'cap-doc' },
     ]);
@@ -33,7 +41,7 @@ describe('migrate (EC-D1)', () => {
     expect(m.editorMode).toBe('live');   // invalid → default
     expect(m.zoomFactor).toBe(2.0);      // clamped
     expect('evil' in m).toBe(false);
-    expect(m.version).toBe(2);
+    expect(m.version).toBe(3);
   });
   test('arabicKashida (T-R10): defaults false; accepts boolean; coerces non-boolean to default', () => {
     expect(defaultSettings().arabicKashida).toBe(false);   // ragged by default
@@ -92,6 +100,45 @@ describe('clampZoom', () => {
     expect(clampZoom(0.1)).toBe(0.6);
     expect(clampZoom(9)).toBe(2.0);
     expect(clampZoom('x')).toBe(1);
+  });
+});
+
+describe('reader preference migration and clamps', () => {
+  test('v3 defaults and safely migrates reader typography preferences from earlier settings', () => {
+    expect(defaultSettings()).toMatchObject({
+      version: 3,
+      readerTextScale: 1,
+      readerWidthCh: 72,
+    });
+    expect(migrate({
+      version: 2,
+      readerTextScale: 1.26,
+      readerWidthCh: 85,
+    })).toMatchObject({
+      version: 3,
+      readerTextScale: 1.3,
+      readerWidthCh: 86,
+    });
+    expect(migrate({ readerTextScale: 'invalid', readerWidthCh: Infinity })).toMatchObject({
+      readerTextScale: 1,
+      readerWidthCh: 72,
+    });
+  });
+
+  test('clamps reader text scale to 0.8–2.0 in 0.1 increments', () => {
+    expect(clampReaderTextScale(0.74)).toBe(0.8);
+    expect(clampReaderTextScale(0.84)).toBe(0.8);
+    expect(clampReaderTextScale(1.26)).toBe(1.3);
+    expect(clampReaderTextScale(2.4)).toBe(2);
+    expect(clampReaderTextScale(NaN)).toBe(1);
+  });
+
+  test('clamps reader width to 48–120ch in two-character increments', () => {
+    expect(clampReaderWidthCh(47)).toBe(48);
+    expect(clampReaderWidthCh(49)).toBe(50);
+    expect(clampReaderWidthCh(85)).toBe(86);
+    expect(clampReaderWidthCh(121)).toBe(120);
+    expect(clampReaderWidthCh('invalid')).toBe(72);
   });
 });
 
@@ -205,7 +252,7 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
     expect(migrate({ lastSession: { openPaths: 'x' } }).lastSession).toBeNull();
   });
   test('version is always stamped', () => {
-    expect(migrate({ version: 999 }).version).toBe(2);
+    expect(migrate({ version: 999 }).version).toBe(3);
   });
 });
 

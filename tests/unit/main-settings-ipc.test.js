@@ -101,7 +101,7 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     expect(got.editorMode).toBe('live'); // invalid → default
     expect(got.zoomFactor).toBe(2.0);    // clamped to max
     expect('evil' in got).toBe(false);   // unknown key dropped
-    expect(got.version).toBe(2);
+    expect(got.version).toBe(3);
   });
 
   test('settings:set merges successive partial patches', async () => {
@@ -229,9 +229,9 @@ describe('persist window state on close / quit', () => {
 });
 
 describe('preload exposes getSettings / setSettings', () => {
-  function api() {
+  function api({ webFrame } = {}) {
     const el = buildMockElectron();
-    setupBridge({ contextBridge: el.contextBridge, ipcRenderer: el.ipcRenderer });
+    setupBridge({ contextBridge: el.contextBridge, ipcRenderer: el.ipcRenderer, webFrame });
     return { api: el.contextBridge.exposeInMainWorld.mock.calls[0][1], ipc: el.ipcRenderer };
   }
 
@@ -247,6 +247,29 @@ describe('preload exposes getSettings / setSettings', () => {
     expect(typeof a.setSettings).toBe('function');
     a.setSettings({ theme: 'ink' });
     expect(ipc.invoke).toHaveBeenCalledWith('settings:set', { theme: 'ink' });
+  });
+
+  test('setAppZoom applies finite numeric factors at the native zoom boundaries without IPC', () => {
+    const webFrame = { setZoomFactor: vi.fn() };
+    const { api: a, ipc } = api({ webFrame });
+
+    expect(a.setAppZoom(0.6)).toBe(0.6);
+    expect(a.setAppZoom(1.25)).toBe(1.25);
+    expect(a.setAppZoom(2.4)).toBe(2);
+    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(1, 0.6);
+    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(2, 1.25);
+    expect(webFrame.setZoomFactor).toHaveBeenNthCalledWith(3, 2);
+    expect(ipc.invoke).not.toHaveBeenCalled();
+  });
+
+  test('setAppZoom rejects non-numeric and non-finite input without touching the native frame', () => {
+    const webFrame = { setZoomFactor: vi.fn() };
+    const { api: a } = api({ webFrame });
+
+    for (const invalid of [NaN, Infinity, -Infinity, '1.2', null, undefined]) {
+      expect(a.setAppZoom(invalid)).toBeNull();
+    }
+    expect(webFrame.setZoomFactor).not.toHaveBeenCalled();
   });
 
   test('writeFile invokes fs:writeFile with the payload', () => {

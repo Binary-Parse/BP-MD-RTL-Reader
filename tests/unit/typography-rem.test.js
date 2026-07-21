@@ -1,6 +1,6 @@
 /**
- * typography-rem.test.js — T-T4/T5 static assertions on index.html chrome CSS.
- * Runs in Node: the app's first <style> block (the UI chrome) must size text in
+ * typography-rem.test.js — T-T4/T5 static assertions on the app chrome CSS.
+ * Runs in Node: the external app stylesheets must size text in
  * rem (T-T4, so a single root-font / zoom change scales everything) and never use
  * a label smaller than 11px ≡ 0.6875rem (T-T5, legibility floor). The HTML-export
  * <style> template (a separate, standalone document) is intentionally left in px.
@@ -16,8 +16,10 @@ const html = readFileSync(
   'utf8',
 );
 
-// The FIRST <style>…</style> is the app chrome. (The second is the export template.)
-const chromeCss = html.slice(html.indexOf('<style>') + '<style>'.length, html.indexOf('</style>'));
+const stylesRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'styles');
+const chromeCss = ['base.css', 'themes.css', 'components.css', 'responsive.css']
+  .map((file) => readFileSync(path.join(stylesRoot, file), 'utf8'))
+  .join('\n');
 const REM_PER_PX = 1 / 16;
 const MIN_LABEL_REM = 11 * REM_PER_PX; // 0.6875rem
 
@@ -53,11 +55,11 @@ describe('chrome typography sizing (T-T4 / T-T5)', () => {
 });
 
 describe('rem-convert transform (T-T4)', () => {
-  test('re-running the converter on the committed index.html is a no-op (fully converted + idempotent)', () => {
+  test('re-running the converter on the committed app CSS is a no-op (fully converted + idempotent)', () => {
     // The strongest completeness check: the live file is already fully converted, so the
     // pure transform must reproduce it byte-for-byte (no missed px, no double-conversion
     // of the :root base — which a naive converter would turn into 1rem on a second pass).
-    expect(convertChromeFontSizes(html)).toBe(html);
+    expect(convertChromeFontSizes(chromeCss)).toBe(chromeCss);
   });
 
   test('every emitted chrome rem maps back to a sane label px (floored ≥ 11, ≤ 64)', () => {

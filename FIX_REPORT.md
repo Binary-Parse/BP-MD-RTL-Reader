@@ -438,13 +438,13 @@ Remediation is now **59 Fixed, 1 Partially Fixed, 0 Deferred, 0 Not Applicable**
 
 ### [ARCH-001] Renderer and UI monoliths concentrate unrelated responsibilities
 
-- **Status:** Fixed
+- **Status:** Partially Fixed (architecture extraction in progress)
 - **Severity:** Medium
 - **Root cause:** High-level DOM, state, persistence, rendering, and lifecycle orchestration remain concentrated in large entry files.
-- **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The previously extracted main/document/session modules from earlier batches were retained and extended rather than folded back into entry points.
-- **Files touched:** `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-20`; `src/renderer/export.js:1-107`; `src/renderer/app.js:863-915,1204-1259`.
-- **Verification:** New modules have direct unit tests; full unit and focused browser gates passed.
-- **Risk & notes:** A complete split of `app.js`, `index.html`, and `main.js` is intentionally not claimed. That repository-scale refactor would conflict with the audit's minimal-diff/behavior-preservation constraints and cannot be safely completed as a surgical finding fix. Remaining architecture work is consolidated below.
+- **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The 1,748-line inline application stylesheet was moved byte-for-byte into ordered `base`, `themes`, `components`, and `responsive` stylesheets (only font URLs changed to remain relative), and those files were added to the packaged payload. The previously extracted main/document/session modules from earlier batches were retained and extended rather than folded back into entry points.
+- **Files touched:** `index.html:13-24`; `package.json:42-51`; `src/renderer/styles/base.css:1-79`; `src/renderer/styles/themes.css:1-38`; `src/renderer/styles/components.css:1-1575`; `src/renderer/styles/responsive.css:1-56`; `scripts/rem-convert.mjs:1-44`; `config/security-lint-baseline.json:1-10`; `AGENTS.md:45-62`; `docs/BUILD.md:37-43,144-151`; `tests/unit/architecture-boundaries.test.js:1-41`; `tests/unit/fonts-selfhost.test.js:1-69`; `tests/unit/typography-rem.test.js:1-79`; `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-20`; `src/renderer/export.js:1-107`; `src/renderer/app.js:863-915,1204-1259`.
+- **Verification:** A read-only byte comparison against the pre-extraction inline CSS passed after normalizing only the required relative font path. Architecture/font/typography/CSP contracts passed 23/23; the full unit suite passed 1,268/1,268; focused Playwright smoke, responsive/reduced-motion, accessibility, and visual regression passed 33/33; real Electron tests passed 3/3. Security lint passed the exact 169-finding gate after reviewing and recording that only the columns of its two existing `rem-convert.mjs` filesystem warnings moved (same files, lines, rules, severities, and total counts).
+- **Risk & notes:** Cascade order, selectors, declarations, CSP, and inline SVG markup are preserved. This checkpoint remains partial until the approved renderer workspace/settings and main-process IPC/window controller extractions are complete.
 
 ### [PERF-001] Every edit rebuilds all tabs across the full vault inventory
 

@@ -44,6 +44,7 @@
       "main.js",
       "preload.js",
       "src/**/*.js",
+      "src/**/*.css",
       "assets/icon.ico",
       "assets/icon.png",
       "assets/vendor/**",

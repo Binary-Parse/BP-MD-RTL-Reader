@@ -34,10 +34,11 @@ npm start        # launch the app (electron .)
 | Markdown / sanitise | **marked 18** + **DOMPurify 3** |
 | Linting / SAST | **ESLint 10** + `eslint-plugin-security`, `eslint-plugin-no-unsanitized` |
 
-The renderer is **`index.html`** (UI markup + inline styles) whose JavaScript is
-externalized into **`src/renderer/app.js`** and **`src/renderer/theme-boot.js`**, loaded via
-external `<script>` tags to satisfy the strict CSP (`script-src 'self'`). Those modules
-import pure helpers from the rest of **`src/renderer/`**. The main process is **`main.js`** +
+The renderer is **`index.html`** (UI markup) with ordered external stylesheets under
+**`src/renderer/styles/`**. Its JavaScript is externalized into **`src/renderer/app.js`**
+and **`src/renderer/theme-boot.js`**, loaded via external `<script>` tags to satisfy the
+strict CSP (`script-src 'self'`). Those modules import pure helpers from the rest of
+**`src/renderer/`**. The main process is **`main.js`** +
 **`preload.js`**, with Electron-free file/security logic isolated in **`src/main-logic.js`**
 and the **`src/main/`** modules so they can be unit-tested without Electron.
 
@@ -141,13 +142,13 @@ not publish a GitHub Release or claim code signing/notarization when credentials
 ## Project structure
 
 ```
-index.html              Renderer — UI markup + styles; JS externalized to src/renderer/app.js + theme-boot.js (CSP)
+index.html              Renderer — UI markup + ordered external CSS/JS links (CSP)
 main.js                 Electron main process — window, IPC, file handling, logging
 preload.js              contextBridge — the renderer's only door to the main process
 src/
   main-logic.js         Pure file/security helpers (allow-list, size caps, BOM, symlinks)
   main/                 Electron-free main-process modules — context-menu, document-store, navigation, protocol, settings, version
-  renderer/             Renderer modules — app.js, theme-boot.js, i18n, markdown, search, state, theme, edit-commands, editor/
+  renderer/             Renderer modules — app.js, theme-boot.js, styles/, i18n, markdown, search, state, theme, edit-commands, editor/
 tests/
   unit/                 Vitest unit tests
   *.spec.js             Playwright e2e (smoke, rtl, visual, a11y, performance, fuzz, …)

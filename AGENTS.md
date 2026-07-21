@@ -45,7 +45,7 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 ## Project Structure
 
 ```
-├── index.html                    Renderer — UI markup + inline styles
+├── index.html                    Renderer — UI markup + ordered external stylesheet links
 ├── main.js                       Electron main process (window, IPC, files, export, logging)
 ├── preload.js                    contextBridge — the renderer's ONLY door to the main process
 ├── src/
@@ -60,6 +60,7 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 │   └── renderer/
 │       ├── app.js                Main renderer application (~3K lines of state + UI glue)
 │       ├── theme-boot.js         Theme bootstrap (runs before app.js)
+│       ├── styles/                Base, theme, component, and responsive CSS boundaries
 │       ├── bidi.js               RTL/LTR direction resolution logic
 │       ├── bidi-dom.js           DOM-level bidi application
 │       ├── callouts.js           Markdown callout transformation

@@ -51,6 +51,40 @@ test.describe('Reader controls', () => {
     await expect(page.locator('#readerControlsButton')).toBeVisible();
   });
 
+  test('does not apply reader width or text scale to the welcome editor shell at 1440x900', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await boot(page, { readerTextScale: 1.3, readerWidthCh: 48 });
+    await expect(page.locator('#welcome')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => ({
+      scale: document.documentElement.style.getPropertyValue('--reader-text-scale'),
+      width: document.documentElement.style.getPropertyValue('--reader-width'),
+    }))).toEqual({ scale: '1.3', width: '48ch' });
+
+    const shell = await page.evaluate(() => {
+      const editor = document.getElementById('editor');
+      return {
+        maxWidth: getComputedStyle(editor).maxWidth,
+        fontSize: parseFloat(getComputedStyle(editor).fontSize),
+      };
+    });
+
+    expect(shell.maxWidth).toBe('800px');
+    expect(shell.fontSize).toBeCloseTo(17, 1);
+
+    await injectNote(page);
+    const documentSurface = await page.evaluate(() => {
+      const note = document.getElementById('noteContent');
+      return {
+        maxWidth: getComputedStyle(note).maxWidth,
+        fontSize: parseFloat(getComputedStyle(note).fontSize),
+      };
+    });
+
+    expect(documentSurface.maxWidth).not.toBe('none');
+    expect(documentSurface.fontSize).toBeCloseTo(22.1, 1);
+  });
+
+
   test('restores reader preferences, applies them immediately, and persists user adjustments', async ({ page }) => {
     await boot(page, { readerTextScale: 1.2, readerWidthCh: 84 });
     await expect.poll(() => page.evaluate(() => ({

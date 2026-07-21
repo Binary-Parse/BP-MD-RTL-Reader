@@ -1127,33 +1127,38 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .cm-mount .cm-scroller { font-size: calc(1.0625rem * var(--reader-text-scale, 1)); }
 .cm-mount .cm-content { max-width: var(--reader-width, 72ch); }
 .cm-mount .cm-lp-block table { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
-.editor { max-width: var(--reader-width, 72ch); font-size: calc(1.0625rem * var(--reader-text-scale, 1)); }
-#editor[dir="rtl"] { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
-.editor table { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
+#noteContent {
+  width: 100%;
+  max-width: var(--reader-width, 72ch);
+  margin-inline: auto;
+  font-size: calc(1.0625rem * var(--reader-text-scale, 1));
+}
+#editor[dir="rtl"] #noteContent { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
+#noteContent table { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
 
 /* Explicit reader hierarchy uses the same local scale; app chrome remains outside these selectors. */
-.editor h1 { font-size: calc(2.625rem * var(--reader-text-scale, 1)); }
-#editor[dir="rtl"] h1 { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
-.editor h2 { font-size: calc(1.75rem * var(--reader-text-scale, 1)); }
-#editor[dir="rtl"] h2 { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
-.editor h3 { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
-.editor .doc-meta { font-size: calc(0.6875rem * var(--reader-text-scale, 1)); }
-#editor[dir="rtl"] .doc-meta { font-size: calc(0.75rem * var(--reader-text-scale, 1)); }
+#noteContent h1 { font-size: calc(2.625rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent h1 { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
+#noteContent h2 { font-size: calc(1.75rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent h2 { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
+#noteContent h3 { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
+#noteContent .doc-meta { font-size: calc(0.6875rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent .doc-meta { font-size: calc(0.75rem * var(--reader-text-scale, 1)); }
 
 /* Fixed-size reader text keeps the local scale in mixed-direction documents. */
-.editor blockquote { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
-#editor[dir="rtl"] blockquote { font-size: calc(1.3125rem * var(--reader-text-scale, 1)); }
-#editor h1[dir="rtl"] { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
-#editor h2[dir="rtl"] { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
-#editor h3[dir="rtl"] { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
-#editor blockquote[dir="rtl"] { font-size: calc(1.3125rem * var(--reader-text-scale, 1)); }
+#noteContent blockquote { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent blockquote { font-size: calc(1.3125rem * var(--reader-text-scale, 1)); }
+#noteContent h1[dir="rtl"] { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
+#noteContent h2[dir="rtl"] { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
+#noteContent h3[dir="rtl"] { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
+#noteContent blockquote[dir="rtl"] { font-size: calc(1.3125rem * var(--reader-text-scale, 1)); }
 
-.editor .callout-title { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
-.editor .callout-icon { font-size: calc(0.9375rem * var(--reader-text-scale, 1)); }
-.editor .callout-body { font-size: calc(1rem * var(--reader-text-scale, 1)); }
-.editor pre { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
-.editor pre code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
-.editor code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+#noteContent .callout-title { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
+#noteContent .callout-icon { font-size: calc(0.9375rem * var(--reader-text-scale, 1)); }
+#noteContent .callout-body { font-size: calc(1rem * var(--reader-text-scale, 1)); }
+#noteContent pre { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+#noteContent pre code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+#noteContent code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
 
 /* Prose, lists, and KaTeX inherit the scaled reader text size; tables scale above. */
 

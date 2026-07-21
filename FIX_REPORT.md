@@ -2,14 +2,14 @@
 
 ## Summary
 
-Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
+This report covers all 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort was calibrated to that deployment model while still closing every documented security boundary.
 
-Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not Applicable**. Final repository-wide validation is in progress; the five partial statuses are verification/scope limitations documented below rather than abandoned fixes.
+Remediation and repository-wide validation are complete: **56 Fixed, 4 Partially Fixed, 0 Deferred, 0 Not Applicable**. The four partial statuses are explicit toolchain/architectural boundaries documented below rather than abandoned fixes. Everything that passed at baseline still passes post-fix.
 
 | Status | Critical | High | Medium | Low | Total |
 |---|---:|---:|---:|---:|---:|
-| Fixed | 0 | 6 | 40 | 9 | 55 |
-| Partially Fixed | 0 | 1 | 4 | 0 | 5 |
+| Fixed | 0 | 6 | 41 | 9 | 56 |
+| Partially Fixed | 0 | 1 | 3 | 0 | 4 |
 | Deferred | 0 | 0 | 0 | 0 | 0 |
 | Not Applicable | 0 | 0 | 0 | 0 | 0 |
 
@@ -17,19 +17,24 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 
 | Gate | Baseline | Post-fix |
 |---|---|---|
-| Starting point | `9649ba37016984cc32ee8b9a67ed4a10af86c77f` on `master`; pre-existing untracked `AUDIT_REPORT.md`, `assets/d7c23e25-0dd9-48a0-a08a-e1867b047600.png`, and `tsconfig.json` | Pending |
-| Runtime | Node `v24.18.0`; npm `11.16.0` | Pending |
-| Security lint | Exit 0 with 85 warnings | Pending |
-| Tests | `npm test`: 1,174 unit and 724 Playwright tests passed after a managed-sandbox `spawn EPERM` rerun in a permitted context | Pending |
-| Build | `npm run dist`: Windows x64, ia32, arm64 NSIS and portable outputs passed; Node emitted one `DEP0190` warning | Pending |
-| Typecheck | Not configured: no script and no local/global `tsc` | Pending (will remain explicitly N/A unless a finding requires a real type contract) |
+| Starting point | `9649ba37016984cc32ee8b9a67ed4a10af86c77f` on `master`; pre-existing untracked `AUDIT_REPORT.md`, `assets/d7c23e25-0dd9-48a0-a08a-e1867b047600.png`, and `tsconfig.json` | Source validation at `821e76d`; all three pre-existing untracked files remain untouched and uncommitted |
+| Runtime | Node `v24.18.0`; npm `11.16.0` | Same Node/npm versions |
+| Security lint | Exit 0 with 85 warnings over the narrower baseline scope | Exit 0; exact reviewed 169-finding fingerprint over expanded runtime/tooling/config/HTML scope; 0 new or moved findings |
+| Tests | `npm test`: 1,174 unit and 724 browser Playwright tests passed after a managed-sandbox `spawn EPERM` rerun in a permitted context | `npm test`: 1,266/1,266 unit, 706/706 browser Playwright, and 3/3 production-Electron tests passed |
+| Build | `npm run dist`: Windows x64, ia32, arm64 NSIS and portable targets passed; Node emitted one `DEP0190` warning | `npm run dist` passed for x64/ia32/arm64; produced one multi-architecture NSIS and one multi-architecture portable executable; 3/3 `app.asar` archives passed content inspection; checksums written for 8 executable artifacts |
+| Typecheck | Not configured: no script and no local/global `tsc` | N/A: still no typecheck script and no local/global `tsc`; the pre-existing untracked `tsconfig.json` was not treated as project configuration |
+| Coverage | Not separately captured at baseline | Unit gate: 97.71% statements / 93.79% branches / 98.51% functions / 99.17% lines; renderer: 88.50% statements / 77.51% functions with required-source completeness; merged: 91.07% statements / 87.37% functions |
+| Mutation | Not separately captured at baseline | 5,623 mutants across 44 files; 86.63% overall; all 44 T1/T2/T3 per-file floors passed |
+| Installer/security/provenance | Not separate baseline gates | Pester 71 passed / 0 failed / 4 destructive state checks skipped; `npm audit` 0 vulnerabilities; vendor bytes, license inventory, workflow YAML, and PowerShell parsing passed |
+
+**No-regression conclusion:** every baseline gate that passed also passes at the final source state. The first final `npm test` run exposed one stale RTL/ink golden after intentional contrast/icon changes; the actual/expected/diff images were reviewed, only that golden was regenerated, and the complete suite then passed.
 
 ## Status Table
 
 | ID | Severity | Status | Files touched | Verified |
 |---|---|---|---|---|
 | SEC-001 | High | Partially Fixed | installer NSIS/Inno + tests | Y (Inno compile unavailable) |
-| SEC-002 | Medium | Partially Fixed | installer NSIS/Inno + tests | Y (Inno compile unavailable) |
+| SEC-002 | Medium | Fixed | installer NSIS + tests | Y |
 | SEC-003 | Medium | Fixed | `main.js`, `preload.js`, capabilities/settings/renderer + tests | Y |
 | SEC-004 | Medium | Fixed | document store/main + tests | Y |
 | SEC-005 | Medium | Fixed | protocol/main + tests | Y |
@@ -97,19 +102,19 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** High
 - **Root cause:** Both elevated installer paths treated uninstall command strings from registry metadata as executable instructions.
 - **Change made:** Removed NSIS and Inno registry-command execution entirely. Detection reads only `DisplayVersion` from the hive matching the selected privilege mode; same-version Inno setup now offers Repair/Cancel and never launches an installed uninstall string. This intentionally differs from the recommendation: deleting the command sink is safer and smaller than attempting brittle parsing, ownership, and signature checks on an arbitrary command line.
-- **Files touched:** `installer/installer.nsh:1-38`; `installer/scripts/version_check.pas:185-218`; `installer/setup.iss:133-190`; `tests/installer/installer_security.test.ps1:55-81`; `tests/installer/logic-sim.ps1:117-143`; `tests/installer/registry_mock.test.ps1:1-61`; `tests/installer/registry_mock.test.pas:1-44`; `tests/installer/run-tests.ps1:31-37`.
+- **Files touched:** `installer/installer.nsh:1-37`; `installer/scripts/version_check.pas:185-218`; `installer/setup.iss:133-190`; `tests/installer/installer_security.test.ps1:55-81`; `tests/installer/logic-sim.ps1:117-143`; `tests/installer/registry_mock.test.ps1:1-61`; `tests/installer/registry_mock.test.pas:1-44`; `tests/installer/run-tests.ps1:31-37`.
 - **Verification:** Verified by Pester/standalone Pascal-model tests that reject `ExecWait`, `UninstallString`, and `QuietUninstallString` and exercise Repair/Cancel version behavior; the real electron-builder NSIS package built successfully. Full Inno compilation is unavailable because the pinned compiler is not installed.
 - **Risk & notes:** Risky installer batch, isolated in its own commit. No real install/uninstall or registry mutation was performed. The residual is toolchain verification only; the vulnerable execution behavior is absent from source.
 
 ### [SEC-002] Registry-controlled install location reaches elevated PowerShell source
 
-- **Status:** Partially Fixed (implementation complete; packaged NSIS verified, Inno compilation unavailable locally)
+- **Status:** Fixed
 - **Severity:** Medium
-- **Root cause:** The custom NSIS flow forwarded a registry-derived install location into electron-builder''s elevated uninstall path, where it could reach generated PowerShell source.
-- **Change made:** Removed all registry-sourced uninstall command/location handling from the NSIS include. The installer no longer passes a registry-derived `_?=` location or invokes a prior uninstall command; profile cleanup is confined to the current uninstaller''s fixed application profile target.
-- **Files touched:** `installer/installer.nsh:1-38`; `tests/installer/installer_security.test.ps1:55-73,89-94`.
+- **Root cause:** The custom NSIS flow forwarded a registry-derived install location into electron-builder's elevated uninstall path, where it could reach generated PowerShell source.
+- **Change made:** Removed all registry-sourced uninstall command/location handling from the NSIS include. The installer no longer passes a registry-derived `_?=` location or invokes a prior uninstall command; profile cleanup is confined to the current uninstaller's fixed application profile target.
+- **Files touched:** `installer/installer.nsh:1-37`; `tests/installer/installer_security.test.ps1:55-73,89-93`.
 - **Verification:** Static Pester assertions reject executable registry values, `ExecWait`, and forwarded uninstall locations; a real x64 electron-builder NSIS installer and the full Windows packaging matrix built successfully.
-- **Risk & notes:** The exact tainted source-to-sink chain was removed rather than filtered. The status remains partial only because the associated Inno installer batch cannot be compiler-tested without the pinned local compiler.
+- **Risk & notes:** The exact tainted source-to-sink chain was removed rather than filtered. This finding is NSIS-specific; the real multi-architecture NSIS artifact built successfully, so the separate unavailable Inno toolchain does not limit its status.
 
 ### [DATA-011] Inno uninstall defaults can silently delete profile data
 
@@ -117,7 +122,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Silent and default interactive uninstall choices selected destructive application-profile cleanup.
 - **Change made:** Both Windows installers now preserve the application profile by default. Deletion requires an explicit `/DELETEUSERDATA` switch for unattended removal or an affirmative interactive choice; prompts distinguish settings/recent paths/grants/logs from Markdown files stored elsewhere.
-- **Files touched:** `installer/installer.nsh:15-31`; `installer/setup.iss:227-249`; `installer/scripts/cleanup.pas:1-49`; `tests/installer/installer_security.test.ps1:84-94`; `tests/installer/logic-sim.ps1:117-143`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`.
+- **Files touched:** `installer/installer.nsh:15-31`; `installer/setup.iss:227-249`; `installer/scripts/cleanup.pas:1-49`; `tests/installer/installer_security.test.ps1:84-93`; `tests/installer/logic-sim.ps1:117-143`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`.
 - **Verification:** Installer tests assert preserve-by-default and explicit deletion semantics; Pester logic simulations cover silent, interactive, and explicit-delete plans. Source parsing succeeds, while compiled Inno execution remains unavailable without the pinned compiler. No destructive uninstall was run against real data.
 - **Risk & notes:** This intentionally changes the unsafe audited default while preserving an explicit removal option. Existing externally stored Markdown is never an installer cleanup target.
 
@@ -377,7 +382,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Dynamic navigation used click-only generic elements and incomplete ARIA ownership/focus patterns.
 - **Change made:** Converted search cards, tabs, outline entries, tags, recents, heading items, and palette options to native controls; added a valid tablist/listbox/combobox/tree structure, accessible labels/names, tab Delete/arrow behavior, tree roving focus, palette active-descendant state, and root locale metadata.
-- **Files touched:** `index.html:174-181,1852-1854,1924-2002,2051-2100`; `src/renderer/app.js:998-1002,1109-1140,1204-1259,1508-1694,2024-2048,2849-2917`; `tests/accessibility.spec.js:1-141`; `tests/audit-remediation.spec.js:1-64`.
+- **Files touched:** `index.html:174-181,1852-1854,1924-2002,2051-2100`; `src/renderer/app.js:998-1002,1109-1140,1204-1259,1508-1694,2024-2048,2849-2917`; `tests/accessibility.spec.js:1-137`; `tests/audit-remediation.spec.js:1-61`.
 - **Verification:** Full unit gate passed (68 files, 1,221 tests). Accessibility suite passed 10/10. Focused UI contract suite passed 5/5. The wider browser regression set passed 152/153 before one intentionally stale `lang="ar"` assertion was corrected; the corrected RTL suite passed 12/12.
 - **Risk & notes:** Native button conversions retain existing CSS and click behavior. Tab close remains pointer-accessible via its visual affordance and keyboard-accessible via Delete/Backspace on the selected tab, avoiding an invalid nested-button tab pattern.
 
@@ -397,7 +402,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Generic wrappers, visual-only type cues, independent title direction, and type color on low-contrast backgrounds weakened semantics and readability.
 - **Change made:** Callouts are semantic `aside role="note"` elements with type-preserving accessible labels; title direction inherits the wrapper; forced document direction applies to the whole callout; title text uses theme foreground while the type color is confined to the icon/border.
-- **Files touched:** `src/renderer/callouts.js:52-101`; `src/renderer/bidi-dom.js:21-53`; `index.html:1152-1171`; callout unit and accessibility tests.
+- **Files touched:** `src/renderer/callouts.js:52-99`; `src/renderer/bidi-dom.js:21-53`; `index.html:1152-1171`; callout unit and accessibility tests.
 - **Verification:** Callout unit tests passed; all three shipped themes pass the new scoped zero-contrast-violation axe gate; full accessibility suite passed 10/10.
 - **Risk & notes:** Custom titles retain their visual text while the accessible label includes both localized type and custom title.
 
@@ -417,7 +422,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Custom preview regexes ignored Markdown syntax context/escapes, and wikilink widgets were pointer-only anchors without link mechanics.
 - **Change made:** Added one shared syntax-tree guard that rejects code/comment/escape/error ancestors; applied it to custom marks, math, and wikilinks; added escape checks and math bounds; and made wikilinks focusable named anchors with href plus Enter/Space activation and consistent pointer prevention.
-- **Files touched:** `src/renderer/editor/syntax-guards.js:1-21`; `src/renderer/editor/inline-marks-preview.js:10-45`; `src/renderer/editor/math-preview.js:12-76`; `src/renderer/editor/wikilink-preview.js:16-73`; focused editor unit tests.
+- **Files touched:** `src/renderer/editor/syntax-guards.js:1-20`; `src/renderer/editor/inline-marks-preview.js:10-45`; `src/renderer/editor/math-preview.js:12-76`; `src/renderer/editor/wikilink-preview.js:16-73`; focused editor unit tests.
 - **Verification:** RED: missing guard and escaped-mark tests failed as intended. GREEN: 39 focused editor tests and the complete 1,221-test unit gate passed.
 - **Risk & notes:** Regexes remain only for app-specific constructs that the Markdown grammar does not parse; syntax-tree eligibility now controls where those matches may become decorations.
 
@@ -427,7 +432,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Fixed one-row chrome lacked a toolbar overflow strategy, narrow grid overrides conflicted, and motion ignored user preference.
 - **Change made:** Made the editor toolbar horizontally scrollable with nonshrinking controls, added specific panel-state grid rules, collapses nonessential titlebar brand/search text at 800 px, applies a global reduced-motion override, and chooses non-smooth outline scrolling when reduced motion is requested.
-- **Files touched:** `index.html:780-797,1704-1733`; `src/renderer/app.js:1532-1550`; `tests/audit-remediation.spec.js:43-63`.
+- **Files touched:** `index.html:780-797,1704-1733`; `src/renderer/app.js:1532-1550`; `tests/audit-remediation.spec.js:43-61`.
 - **Verification:** Browser contracts verify 760 px containment/toolbar overflow and reduced transition duration; 5/5 focused UI tests passed.
 - **Risk & notes:** Controls remain available in a horizontal toolbar rather than being hidden at narrow widths.
 
@@ -437,7 +442,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** High-level DOM, state, persistence, rendering, and lifecycle orchestration remain concentrated in large entry files.
 - **Change made:** Extracted shared renderer resource limits and Markdown syntax guards, expanded the dedicated export pipeline into a deterministic sync/async boundary, and replaced full-tab rerendering with a narrow state update. The previously extracted main/document/session modules from earlier batches were retained and extended rather than folded back into entry points.
-- **Files touched:** `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-21`; `src/renderer/export.js:1-107`; `src/renderer/app.js:863-915,1204-1259`.
+- **Files touched:** `src/renderer/limits.js:1-23`; `src/renderer/editor/syntax-guards.js:1-20`; `src/renderer/export.js:1-107`; `src/renderer/app.js:863-915,1204-1259`.
 - **Verification:** New modules have direct unit tests; full unit and focused browser gates passed.
 - **Risk & notes:** A complete split of `app.js`, `index.html`, and `main.js` is intentionally not claimed. That repository-scale refactor would conflict with the audit's minimal-diff/behavior-preservation constraints and cannot be safely completed as a surgical finding fix. Remaining architecture work is consolidated below.
 
@@ -457,7 +462,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Every input event synchronously lowercased every file and rendered an unbounded result list.
 - **Change made:** Added a 150 ms generation-checked debounce, caches normalized name/content per unchanged file object, retains the five-snippet per-file cap, and caps total result cards at 100.
-- **Files touched:** `src/renderer/search.js:6-52`; `src/renderer/app.js:1089-1158,3050`; `tests/unit/search.test.js:20-99`.
+- **Files touched:** `src/renderer/search.js:6-49`; `src/renderer/app.js:1089-1158,3050`; `tests/unit/search.test.js:20-99`.
 - **Verification:** Direct 150-file cap test passes; all sidebar integration/browser regressions passed within the 152/153 run (the sole failure was unrelated stale bidi metadata), and full unit gate passed.
 - **Risk & notes:** A worker/index would add significant lifecycle complexity for an offline 100 MiB-bounded store; caching, debounce, generation, and result bounds remove the documented interaction-path amplification without that overreach.
 
@@ -477,7 +482,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Runtime JavaScript, CodeMirror, and inline Lucide symbols were committed as opaque assets without exact package sources or a reproducibility check.
 - **Change made:** Added exact source packages to the lockfile, a deterministic vendor synchronizer/checker, a machine-readable source/version/SHA-256 manifest, reproducible CodeMirror and highlight.js builds, direct copies for DOMPurify/KaTeX/marked/Mermaid, and Lucide symbol generation from an explicit name map. Upgraded marked from 18.0.4 to the compatible 18.0.6 patch while preserving the established major versions of the other already-vendored libraries.
-- **Files touched:** `package.json:13-16,157-196`; `package-lock.json`; `scripts/sync-vendor.js:1-225`; `scripts/highlight-entry.mjs:1-5`; `assets/vendor/vendor-manifest.json`; generated `assets/vendor/{codemirror,dompurify,highlight,katex,marked,mermaid}/**`; `index.html:1769-2067`; `tests/unit/vendor-provenance.test.js:1-41`.
+- **Files touched:** `package.json:13-16,157-196`; `package-lock.json`; `scripts/sync-vendor.js:1-201`; `scripts/highlight-entry.mjs:1-5`; `assets/vendor/vendor-manifest.json`; generated `assets/vendor/{codemirror,dompurify,highlight,katex,marked,mermaid}/**`; `index.html:1769-2067`; `tests/unit/vendor-provenance.test.js:1-38`.
 - **Verification:** `npm run vendor:check` rebuilt/compared all governed assets and reported an exact match; focused provenance tests passed 3/3; full unit suite passed 1,221/1,221; focused smoke/remediation Playwright passed 20/20 after installing Playwright 1.61.1's matching Chromium revision.
 - **Risk & notes:** Risky dependency/vendor batch, isolated in its own commit. The first focused browser attempt could not launch because only the old Playwright browser revision was cached; it reached no app code. Installing the exact new revision resolved that environmental failure. No major package upgrade was taken merely to chase “latest.”
 
@@ -487,7 +492,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** The electron-builder allowlist omitted the root license/notices, the font directory contained only a link to OFL-1.1, and runtime bundles lacked their complete license corpus.
 - **Change made:** Included `LICENSE` and `THIRD-PARTY-NOTICES.md` explicitly; shipped the official OFL-1.1 text and font copyrights; generated a complete license-text aggregate for the vendored runtime dependency closure; and updated notices with exact source versions and verification commands.
-- **Files touched:** `package.json:41-47`; `THIRD-PARTY-NOTICES.md:6-63`; `assets/vendor/THIRD-PARTY-LICENSES.txt`; `assets/vendor/fonts/LICENSES.md:1-21`; `assets/vendor/fonts/OFL-1.1.txt:1-80`; `scripts/sync-vendor.js:140-225`; `tests/unit/vendor-provenance.test.js:23-33`.
+- **Files touched:** `package.json:41-47`; `THIRD-PARTY-NOTICES.md:6-63`; `assets/vendor/THIRD-PARTY-LICENSES.txt`; `assets/vendor/fonts/LICENSES.md:1-21`; `assets/vendor/fonts/OFL-1.1.txt:1-80`; `scripts/sync-vendor.js:140-201`; `tests/unit/vendor-provenance.test.js:23-33`.
 - **Verification:** A real `electron-builder --dir --win --x64` package succeeded; listing `dist/win-unpacked/resources/app.asar` proved it contains `LICENSE`, `THIRD-PARTY-NOTICES.md`, `assets/vendor/THIRD-PARTY-LICENSES.txt`, `assets/vendor/fonts/OFL-1.1.txt`, and the vendor manifest. Provenance tests passed 3/3.
 - **Risk & notes:** License inclusion affects package contents only. The OFL text was taken from SIL's official OFL 1.1 plaintext; no installed application or user data was touched.
 
@@ -497,7 +502,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Low
 - **Root cause:** Direct tools used compatible ranges, 19 had newer compatible releases, and Istanbul libraries imported by project scripts were available only transitively.
 - **Change made:** Applied controlled compatible updates, pinned every direct dependency to an exact version, declared the two directly imported Istanbul libraries, and added exact packages for vendor provenance. Electron remains on major 42 (updated to 42.7.0) and jscpd remains on major 4 (updated to 4.2.5); breaking majors were neither required by an advisory nor justified for this local remediation.
-- **Files touched:** `package.json:157-196`; `package-lock.json`; `tests/unit/vendor-provenance.test.js:35-40`.
+- **Files touched:** `package.json:157-196`; `package-lock.json`; `tests/unit/vendor-provenance.test.js:35-38`.
 - **Verification:** Fresh `npm audit --json` reports 0 vulnerabilities; `npm ls --depth=0 --json` resolves all declared direct packages; the exact-version unit assertion passes; full unit, vendor, focused browser, and x64 package-directory gates pass.
 - **Risk & notes:** Risky dependency batch. The initial install summary transiently printed three vulnerabilities while npm reconciled the tree; the post-install authoritative audit is clean. Deprecated transitive packages not selected by project code remain controlled by their upstream tools; no unverified breaking-major migration was introduced.
 
@@ -507,7 +512,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** The default Playwright suite loaded `index.html` directly and could not prove BrowserWindow, preload, IPC, native lifecycle, or main-process filesystem composition.
 - **Change made:** Added a dedicated production-Electron Playwright configuration and runtime spec that launches `electron .` against a temporary user-data directory, then proves context isolation/sandbox/preload exposure, settings and note persistence, visible startup, and the real renderer-to-main close IPC. The package test command and CI now include this lane; the Electron entry guard keys off `process.versions.electron` so the packaged runtime boots while Node imports remain injectable.
-- **Files touched:** `playwright.electron.config.js:1-20`; `tests/electron/runtime-boundary.spec.js:1-105`; `package.json:18-25`; `main.js:710-716`; `.github/workflows/ci.yml:235-266`.
+- **Files touched:** `playwright.electron.config.js:1-12`; `tests/electron/runtime-boundary.spec.js:1-88`; `package.json:18-25`; `main.js:710-716`; `.github/workflows/ci.yml:235-266`.
 - **Verification:** `npm run test:electron` launched the production app and passed 3/3 tests in 2.3 seconds. Browser-only tests remain as the fast renderer lane.
 - **Risk & notes:** Tests use temporary user data and a temporary Markdown file; no real profile or document is mutated. Cross-platform package launch remains represented by native CI runners rather than claimed from Windows alone.
 
@@ -527,7 +532,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** The merge script treated inputs opportunistically and no command guaranteed both coverage sides came from the same current commit.
 - **Change made:** Added commit/timestamp metadata, non-empty and completeness checks, a unit wrapper that corrects Vitest's duplicate-CommonJS overwrite artifact through a direct-module shard, shared thresholds, a mandatory unit→renderer→merge command, and combined statement/function floors.
-- **Files touched:** `config/coverage-thresholds.json:1-15`; `scripts/coverage-metadata.js:1-50`; `scripts/run-unit-coverage.js:1-128`; `scripts/merge-coverage.js:1-69`; `vitest.config.js:1-92`; `package.json:20-32`; `tests/unit/remediation-tooling.test.js:34-47`.
+- **Files touched:** `config/coverage-thresholds.json:1-8`; `scripts/coverage-metadata.js:1-47`; `scripts/run-unit-coverage.js:1-96`; `scripts/merge-coverage.js:1-69`; `vitest.config.js:1-53`; `package.json:20-32`; `tests/unit/remediation-tooling.test.js:34-47`.
 - **Verification:** Fresh unit coverage passed 96.45% statements / 92.39% branches / 97.52% functions / 98.41% lines. The merge first rejected a pre-commit unit artifact, then passed after same-commit regeneration at 90.82% statements / 87.25% functions.
 - **Risk & notes:** The two-pass unit merge differs from the audit recommendation because it addresses a confirmed Vitest 4 CommonJS coverage-overwrite artifact while retaining the unchanged 95/90/95/95 project thresholds; it does not exclude source or relax coverage.
 
@@ -537,7 +542,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** The suite recreated validation logic in test code, so production-handler drift could pass unnoticed.
 - **Change made:** Replaced the copied handler with injected production `bootstrap`, captured the registered IPC callback, and drove malformed payload, size, capability, conflict, and metadata paths through that real callback.
-- **Files touched:** `tests/ipc-security.spec.js:1-167`.
+- **Files touched:** `tests/ipc-security.spec.js:1-110`.
 - **Verification:** `npx playwright test tests/ipc-security.spec.js` passed 3/3; the test assertions now fail when production handler behavior changes.
 - **Risk & notes:** The fake filesystem is confined to the test process and performs no real writes.
 
@@ -547,7 +552,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Low
 - **Root cause:** Random loops did not shrink failures and some properties targeted duplicate fallback implementations.
 - **Change made:** Rewrote the suite with `fast-check` arbitraries against imported production functions for bidi direction, table round-trips, and path/file predicates, with deterministic 30-run budgets.
-- **Files touched:** `tests/property-based.spec.js:1-86`.
+- **Files touched:** `tests/property-based.spec.js:1-67`.
 - **Verification:** Focused Playwright property suite passed 3/3; failures now carry fast-check seeds/counterexamples and shrink through the real implementations.
 - **Risk & notes:** The bounded run count keeps the browser suite practical while materially improving counterexample quality.
 
@@ -567,7 +572,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** Timers measured scheduling rather than completed rendering, heap/listener checks lacked GC/outcome evidence, and click sweeps tolerated swallowed exceptions without proving state changes.
 - **Change made:** Performance tests now await animation frames and visible layout, measure completed zoom operations, use CDP heap/GC evidence, and verify DOM/listener bounds. Click tests assert command-palette results, backdrop dismissal, representative control outcomes, and zero swallowed click exceptions.
-- **Files touched:** `tests/performance.spec.js:1-177`; `tests/click-audit-all.spec.js:1-142`; `tests/focus-trap.spec.js:39-47`; `tests/i18n.spec.js:134-141`.
+- **Files touched:** `tests/performance.spec.js:1-104`; `tests/click-audit-all.spec.js:1-142`; `tests/focus-trap.spec.js:39-47`; `tests/i18n.spec.js:134-141`.
 - **Verification:** Combined performance/click focused run passed 63/63; the corrected focus and bidi assertions passed in a 47-test regression set.
 - **Risk & notes:** Thresholds remain generous enough for CI variance but now guard completed work and observable outcomes.
 
@@ -578,7 +583,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Root cause:** CI ran only Ubuntu tests and never built the declared Windows/macOS/Linux target/architecture matrix or inspected release payloads.
 - **Change made:** Added native-runner package jobs that build every configured target and architecture, run non-destructive Windows installer logic tests, inspect every generated `app.asar` for required licenses and forbidden development payloads, generate SHA-256 manifests, and upload verified artifacts. Added exact `@electron/asar` tooling.
 - **Files touched:** `.github/workflows/ci.yml:365-422`; `scripts/verify-package-contents.js:1-65`; `scripts/write-artifact-checksums.js:1-43`; `package.json:14-15,169`; `package-lock.json`; `tests/unit/remediation-tooling.test.js:49-54`.
-- **Verification:** CI YAML parsed successfully with PyYAML; package verification unit tests reject forbidden paths; local Windows packaging previously built all six NSIS/portable x64/ia32/arm64 artifacts. Final rebuilt-package inspection is pending the final validation gate.
+- **Verification:** CI YAML parsed successfully with PyYAML; package-verification unit tests reject forbidden paths; a fresh `npm run dist` built the x64/ia32/arm64 target set as one multi-architecture NSIS plus one multi-architecture portable executable; `npm run package:verify` inspected 3/3 architecture-specific `app.asar` archives; `npm run package:checksums` recorded 8 executable artifact hashes.
 - **Risk & notes:** CI packages are intentionally unsigned when repository signing credentials are absent; the offline threat model does not justify inventing or weakening signing secrets. Native runner builds provide the missing repository-owned gate; signing/notarization remains conditional external release evidence.
 
 ### [TEST-009] Mutation tiers were not enforced and locale behavior was excluded
@@ -587,7 +592,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Low
 - **Root cause:** One aggregate score could mask a weak trust-boundary file, and executable locale fallback/direction lived beside an excluded translation table.
 - **Change made:** Extracted locale behavior into a mutatable module; declared exact non-overlapping T1/T2/T3 file inventories; added a per-file JSON post-processor (85%/75%/60% floors); retained an independent 80% whole-scope floor; added targeted tests for every initially sub-threshold file; and isolated Stryker from the user's unrelated untracked TypeScript config.
-- **Files touched:** `src/renderer/locale-logic.js:1-12`; `src/renderer/locale.js:1-8,126-132`; `config/mutation-tiers.json:1-58`; `scripts/check-mutation-tiers.js:1-62`; `stryker.config.json:1-74`; `package.json:26-27`; mutation-focused tests in `tests/unit/{main.vitest,capabilities,navigation,protocol,settings,markdown,table-edit,locale,remediation-tooling}.test.js`.
+- **Files touched:** `src/renderer/locale-logic.js:1-12`; `src/renderer/locale.js:1-8,126-130`; `config/mutation-tiers.json:1-58`; `scripts/check-mutation-tiers.js:1-61`; `stryker.config.json:1-65`; `package.json:26-27`; mutation-focused tests in `tests/unit/{main.vitest,capabilities,navigation,protocol,settings,markdown,table-edit,locale,remediation-tooling}.test.js`.
 - **Verification:** Full `npm run test:mutation` instrumented 44 files / 5,623 mutants, ran 1,196 initial tests, scored 86.63% overall, and passed all 44 per-file tier checks. Lowest results remained above their floors (T1 main.js 87.74%; T2 export.js 75.63%; T3 syntax-guards.js 65.00%).
 - **Risk & notes:** Two Stryker workers were restarted after memory exhaustion but the runner recovered and completed with exit 0. No mutant or test was suppressed; redundant navigation predicates were simplified only where strict equality made them provably equivalent.
 
@@ -627,7 +632,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Medium
 - **Root cause:** The build selected the first `ISCC.exe` on PATH and recursively consumed a caller-selected package directory after checking only one filename.
 - **Change made:** Removed PATH discovery and custom source-tree input. The supported build now requires the exact Inno Setup 6.3.3 compiler in a canonical Program Files installation, a valid Authenticode signature from `Open Source Developer, Martijn Laan`, and a matching file version; records its SHA-256; builds a fresh x64 Electron directory using the repository-pinned builder; rejects reparse points, missing files, extra files, Electron-version drift, executable metadata drift, and invalid signatures against a committed exact 74-file policy; copies only verified files into a unique clean staging tree; rechecks every SHA-256 after copy; records the source manifest; and cleans only validated scratch paths. Direct `setup.iss` compilation is rejected unless the verified-staging define is supplied.
-- **Files touched:** `installer/build-installer.ps1:1-109`; `installer/build-policy.ps1:1-159`; `installer/toolchain-policy.json:1-5`; `installer/source-manifest-policy.json:1-89`; `installer/setup.iss:5-27,96-98`; `tests/installer/installer_security.test.ps1:8-72`.
+- **Files touched:** `installer/build-installer.ps1:1-104`; `installer/build-policy.ps1:1-148`; `installer/toolchain-policy.json:1-5`; `installer/source-manifest-policy.json:1-86`; `installer/setup.iss:5-27,96-98`; `tests/installer/installer_security.test.ps1:8-72`.
 - **Verification:** PowerShell parsed all changed scripts without errors; the 74-file policy matched the locally built `dist/win-unpacked` tree and validated all hashes plus executable metadata; installer Pester passed 71 tests with 4 intentionally skipped post-uninstall machine-state checks; focused tests reject a noncanonical compiler, wrong compiler version, invalid signature, and unlisted staging files. Running the build entry point stopped before side effects with the expected pinned-compiler error because Inno Setup is not installed.
 - **Risk & notes:** The status is partial only because the actual ISCC compilation cannot be exercised on this workstation. The application payload is intentionally allowed to be unsigned for local builds (`NotSigned` is recorded); invalid signatures are rejected, and any valid application signature must match `Binary Parse`. This is proportionate to the offline/local build threat model while removing ambient PATH and stale-tree trust. Installing the pinned signed compiler and running the command is the manual completion step.
 
@@ -637,7 +642,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Low
 - **Root cause:** Volatile counts and configuration facts were copied into prose and drifted from executable scripts and gates.
 - **Change made:** Removed unsupported passing-test totals; aligned Node, Playwright, coverage, mutation, viewport, and command descriptions with executable configuration; and added a consistency test for these claims.
-- **Files touched:** `README.md:126-151`; `docs/BUILD.md:1-140`; `AGENTS.md:17-41,157-186,227-247`; `tests/unit/docs-consistency.test.js:1-61`.
+- **Files touched:** `README.md:126-151`; `docs/BUILD.md:1-140`; `AGENTS.md:17-41,157-186,227-247`; `tests/unit/docs-consistency.test.js:1-59`.
 - **Verification:** Verified by `tests/unit/docs-consistency.test.js` (3/3) and manual comparison to `package.json`, coverage configuration, Playwright configuration, and mutation tier files.
 - **Risk & notes:** No runtime behavior changed; documentation avoids future unqualified test-pass counts.
 
@@ -655,7 +660,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 
 - **Status:** Fixed
 - **Severity:** Medium
-- **Root cause:** App-wide privacy prose incorrectly generalized the renderer''s no-network CSP to the opt-in main-process update check.
+- **Root cause:** App-wide privacy prose incorrectly generalized the renderer's no-network CSP to the opt-in main-process update check.
 - **Change made:** Preserved the accurate no-telemetry/no-automatic-check/no-renderer-network guarantees and documented the sole explicit update action, its GitHub release-metadata GET, request metadata, and absence of note content or update download.
 - **Files touched:** `README.md:107-118`; `docs/PRIVACY.md:6-13,69-91`; `SECURITY.md:1-8`; `CHANGELOG.md:36-41`; `THIRD-PARTY-NOTICES.md:33-41`; `tests/unit/docs-consistency.test.js:44-59`.
 - **Verification:** Verified by consistency tests and manual trace from renderer menu action through preload IPC to the fixed main-process update endpoint.
@@ -679,7 +684,7 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Change made:** Established one consistent data map for external Markdown, roaming settings/logs/profile state, and local cleanup targets; documented preserve-by-default uninstall and `/DELETEUSERDATA`; updated NSIS/Inno/Pascal prompt text to call the target an app profile, never a notes directory.
 - **Files touched:** `README.md:103-118`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`; `installer/installer.nsh:15-31`; `installer/setup.iss:227-249`; `installer/scripts/cleanup.pas:1-49`; `tests/unit/docs-consistency.test.js:44-59`.
 - **Verification:** Verified by docs consistency tests, installer Pester cleanup-policy assertions, and manual cross-check of every named directory against installer source and Electron settings/log paths.
-- **Risk & notes:** No real profile or Markdown data was deleted. A per-machine Inno uninstall can address only the elevated user''s profile; that caveat is documented.
+- **Risk & notes:** No real profile or Markdown data was deleted. A per-machine Inno uninstall can address only the elevated user's profile; that caveat is documented.
 
 ### [DOC-006] Contributor and license-inventory documentation is not reproducible
 
@@ -687,14 +692,14 @@ Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not App
 - **Severity:** Low
 - **Root cause:** Runner ownership was described with an over-broad directory rule, while a stale dependency count had no reproducible source or committed artifact.
 - **Change made:** Documented exact Vitest, browser Playwright, Electron Playwright, Pester, Pascal, fixture, and helper ownership; added a deterministic lockfile-only license inventory generator, committed its JSON output and lockfile SHA-256, exposed check/update scripts, and made CI verify both vendor provenance and the license inventory.
-- **Files touched:** `CONTRIBUTING.md:18-55`; `THIRD-PARTY-NOTICES.md:33-72`; `scripts/dependency-license-inventory.js:1-56`; `docs/dependency-license-inventory.json:1-29`; `package.json:15-20`; `.github/workflows/ci.yml:58-64`; `tests/unit/docs-consistency.test.js:44-61`.
+- **Files touched:** `CONTRIBUTING.md:18-55`; `THIRD-PARTY-NOTICES.md:33-72`; `scripts/dependency-license-inventory.js:1-56`; `docs/dependency-license-inventory.json:1-29`; `package.json:15-20`; `.github/workflows/ci.yml:58-64`; `tests/unit/docs-consistency.test.js:44-59`.
 - **Verification:** `npm run license:inventory` reports 855 non-root lock entries and verifies the committed package-lock SHA-256; `npm run vendor:check` verifies bundled bytes; the docs test passes; CI YAML parses.
 - **Risk & notes:** The inventory intentionally reports lockfile entries and unique names separately rather than equating either with installed packages. It surfaces one missing lockfile `license` field (`khroma@2.1.0`) instead of guessing.
 
 ## Deferred & Not Applicable
 
 No findings are Deferred or Not Applicable. The consolidated partially fixed set is
-SEC-001, SEC-002, DATA-011, ARCH-001, and CONF-004. SEC-001/SEC-002/DATA-011/CONF-004
+SEC-001, DATA-011, ARCH-001, and CONF-004. SEC-001/DATA-011/CONF-004
 have complete source changes but retain the same manual follow-up: install the pinned,
 signed Inno Setup 6.3.3 toolchain and run `pwsh -File installer/build-installer.ps1`.
 ARCH-001 is partial because the audited monolith was bounded and high-risk domains were
@@ -705,6 +710,10 @@ extracted/tested, but a wholesale rewrite was intentionally avoided to preserve 
 - `package-lock.json` has no `license` field for `khroma@2.1.0`. The deterministic
   inventory records this as missing rather than inventing a classification. This was
   observed while fixing DOC-006 and left out of scope.
+- The final Stryker run encountered two worker out-of-memory restarts and one unexpected
+  worker exit; Stryker recovered, completed all 5,623 mutants, passed every threshold,
+  and exited 0. This is a local resource-pressure/performance observation, not an app
+  correctness failure, and was not chased outside the audited findings.
 
 ## Commit map
 
@@ -716,4 +725,5 @@ extracted/tested, but a wholesale rewrite was intentionally avoided to preserve 
 - `691b7e7` — TEST-001 through TEST-009; CONF-002 and CONF-003 assurance gates.
 - `d9453b4` — CONF-001 security lint enforcement.
 - `a87cb7d` — CONF-004 installer-build hardening.
-- DOC-001 through DOC-006 documentation and reproducibility batch — commit pending.
+- `6cc8ea6` — DOC-001 through DOC-006 documentation and reproducibility.
+- `821e76d` — reviewed RTL/ink visual golden aligned with FE-001, FE-006, and DEP-001 changes.

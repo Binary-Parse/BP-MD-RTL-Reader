@@ -81,6 +81,21 @@ test.describe('real Electron runtime boundary @electron', () => {
     expect(updated.theme).toBe('ink');
     expect(fs.existsSync(path.join(profile, 'settings.json'))).toBe(true);
   });
+  test('uses the real preload webFrame zoom bridge and leaves renderer fallback scaling cleared', async () => {
+    expect(await page.evaluate(() => typeof window.electronAPI?.setAppZoom)).toBe('function');
+    await page.evaluate(() => window.setZoom(1.25));
+    const renderer = await page.evaluate(() => ({
+      stateZoom: window._appState.zoomFactor,
+      rootFontSize: document.documentElement.style.fontSize,
+      editorZoom: document.getElementById('editorArea').style.zoom,
+    }));
+    const nativeZoom = await electronApp.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
+
+    expect(renderer).toEqual({ stateZoom: 1.25, rootFontSize: '', editorZoom: '' });
+    expect(nativeZoom).toBeCloseTo(1.25, 3);
+  });
+
 
   test('reaches a visible composed desktop window within the startup budget', () => {
     expect(launchElapsed, 'Electron startup to visible #app').toBeLessThan(8_000);

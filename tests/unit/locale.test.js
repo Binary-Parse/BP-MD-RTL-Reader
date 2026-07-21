@@ -50,6 +50,18 @@ describe('t (translate) — T-R7', () => {
       expect(MESSAGES.ar[key]).not.toBe(MESSAGES.en[key]); // actually translated
     }
   });
+
+  test('catalog covers all reader control labels and accessible names', () => {
+    for (const key of [
+      'readerControls.toggle', 'readerControls.title', 'readerControls.textSize',
+      'readerControls.decreaseText', 'readerControls.increaseText', 'readerControls.resetText',
+      'readerControls.contentWidth',
+    ]) {
+      expect(MESSAGES.en[key], `en missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `ar missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `${key} not translated`).not.toBe(MESSAGES.en[key]);
+    }
+  });
 });
 
 describe('localeDirection — T-R7', () => {

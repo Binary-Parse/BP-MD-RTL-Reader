@@ -88,6 +88,8 @@ const { state: State, subscribe } = createState({
   findHits: [],
   findIdx: 0,
   zoomFactor: 1,
+  readerTextScale: 1,
+  readerWidthCh: 72,
   calendar: 'gregorian',
   arabicKashida: false,
   italicRecolor: true,
@@ -128,6 +130,14 @@ const modalTitle = $('modalTitle');
 const modalBody = $('modalBody');
 const editorArea = $('editorArea');
 const srcTextarea = $('srcTextarea');
+const readerControlsEl = $('readerControls');
+const readerControlsButton = $('readerControlsButton');
+const readerControlsPopover = $('readerControlsPopover');
+const readerTextScaleDecrease = $('readerTextScaleDecrease');
+const readerTextScaleReset = $('readerTextScaleReset');
+const readerTextScaleIncrease = $('readerTextScaleIncrease');
+const readerWidthSlider = $('readerWidthSlider');
+const readerWidthValue = $('readerWidthValue');
 
 configureMarked(marked);
 // T-F9: tokenize math BEFORE markdown so the LaTeX source is never corrupted by
@@ -1001,6 +1011,11 @@ function applyLocale(locale) {
     if (el.dataset.i18nTitleOrig === undefined) el.dataset.i18nTitleOrig = el.getAttribute('title') || '';
     el.setAttribute('title', locale === 'en' ? el.dataset.i18nTitleOrig : tr(el.dataset.i18nTitle, locale));
   });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+    if (el.dataset.i18nAriaLabelOrig === undefined) el.dataset.i18nAriaLabelOrig = el.getAttribute('aria-label') || '';
+    el.setAttribute('aria-label', locale === 'en' ? el.dataset.i18nAriaLabelOrig : tr(el.dataset.i18nAriaLabel, locale));
+  });
+
   wrapTablesInFrames(noteContent, { locale });
   wrapTablesInFrames(document.querySelector('.cm-mount'), { locale });
 }
@@ -1195,9 +1210,18 @@ const ZOOM_BASE_PX = 16;
 function setZoom(factor) {
   if (typeof factor !== 'number' || isNaN(factor)) return;
   const clamped = clampZoom(factor);
-  State.zoomFactor = clamped;
-  document.documentElement.style.fontSize = (ZOOM_BASE_PX * clamped) + 'px';
-  editorArea.style.zoom = ''; // drop the old content-only zoom — superseded by rem scaling
+  let nativeZoom = null;
+  try {
+    if (typeof window.electronAPI?.setAppZoom === 'function') nativeZoom = window.electronAPI.setAppZoom(clamped);
+  } catch (_) { /* browser/dev fall back to the rem base */ }
+  if (typeof nativeZoom === 'number' && Number.isFinite(nativeZoom)) {
+    State.zoomFactor = clampZoom(nativeZoom);
+    document.documentElement.style.fontSize = '';
+  } else {
+    State.zoomFactor = clamped;
+    document.documentElement.style.fontSize = (ZOOM_BASE_PX * clamped) + 'px';
+  }
+  editorArea.style.zoom = ''; // clear legacy content-only scaling in both paths
 }
 function zoomIn()    { setZoom(State.zoomFactor * 1.1); }
 function zoomOut()   { setZoom(State.zoomFactor / 1.1); }
@@ -1206,6 +1230,55 @@ window.setZoom   = setZoom;
 window.zoomIn    = zoomIn;
 window.zoomOut   = zoomOut;
 window.zoomReset = zoomReset;
+
+// =====================================================================
+// READER CONTROLS — document text scale/measure only (separate from app zoom)
+// =====================================================================
+function clampReaderTextScale(scale) {
+  return Math.round(Math.min(2, Math.max(0.8, scale)) * 10) / 10;
+}
+function clampReaderWidthCh(width) {
+  return Math.round(Math.min(120, Math.max(48, width)) / 2) * 2;
+}
+function updateReaderControlValues() {
+  if (!readerTextScaleReset || !readerWidthSlider || !readerWidthValue) return;
+  readerTextScaleReset.textContent = `${Math.round(State.readerTextScale * 100)}%`;
+  readerWidthSlider.value = String(State.readerWidthCh);
+  readerWidthValue.textContent = `${State.readerWidthCh}ch`;
+}
+function setReaderTextScale(scale) {
+  if (typeof scale !== 'number' || !Number.isFinite(scale)) return State.readerTextScale;
+  const applied = clampReaderTextScale(scale);
+  State.readerTextScale = applied;
+  document.documentElement.style.setProperty('--reader-text-scale', String(applied));
+  updateReaderControlValues();
+  return applied;
+}
+function setReaderWidthCh(width) {
+  if (typeof width !== 'number' || !Number.isFinite(width)) return State.readerWidthCh;
+  const applied = clampReaderWidthCh(width);
+  State.readerWidthCh = applied;
+  document.documentElement.style.setProperty('--reader-width', `${applied}ch`);
+  updateReaderControlValues();
+  return applied;
+}
+function setReaderControlsOpen(open, restoreFocus = false) {
+  if (!readerControlsButton || !readerControlsPopover) return;
+  const next = !readerControlsEl.hidden && !!open;
+  readerControlsPopover.hidden = !next;
+  readerControlsButton.setAttribute('aria-expanded', String(next));
+  if (!next && restoreFocus) readerControlsButton.focus();
+}
+function syncReaderControls() {
+  if (!readerControlsEl) return;
+  const hasDocument = State.activeFile !== null && !!State.files[State.activeFile];
+  if (!hasDocument) setReaderControlsOpen(false);
+  readerControlsEl.hidden = !hasDocument;
+  readerControlsEl.classList.toggle('with-toolbar', hasDocument && State.viewMode !== 'reading');
+  updateReaderControlValues();
+}
+window.setReaderTextScale = setReaderTextScale;
+window.setReaderWidthCh = setReaderWidthCh;
 
 // =====================================================================
 // TABS
@@ -1292,6 +1365,7 @@ function showWelcome() {
   toolbarStrip.style.display = 'none';
   editorArea.classList.add('welcome'); // T-F13: reveal the welcome (preview pane) over the CM6 surface
   editorArea.classList.remove('reading'); // the welcome screen never carries a stale reading class (T-F17)
+  syncReaderControls();
   $('conflictBar') && ($('conflictBar').innerHTML = ''); // no open file → no conflict banner
   renderTabs();
   $('propFile').textContent = '—';
@@ -1343,6 +1417,7 @@ function setViewMode(mode) {
   editorArea.classList.toggle('reading', mode === 'reading');
   const open = State.activeFile !== null && State.files[State.activeFile];
   toolbarStrip.style.display = (mode === 'reading') ? 'none' : (open ? 'flex' : 'none');
+  syncReaderControls();
   const btn = $('viewModeBtn');
   if (btn) {
     btn.setAttribute('aria-pressed', String(mode === 'reading'));
@@ -1376,6 +1451,7 @@ function renderFile(idx) {
   // writing toolbar; Edit shows the CM6 surface. The `reading` class drives the pane CSS.
   editorArea.classList.toggle('reading', State.viewMode === 'reading');
   toolbarStrip.style.display = (State.viewMode === 'reading') ? 'none' : 'flex';
+  syncReaderControls();
 
   loadIntoEditor(file.content || ''); // textarea (default) or CodeMirror (flag) — T-F13
 
@@ -2742,6 +2818,20 @@ $('winCloseBtn').addEventListener('click', winClose);
 $('modalCloseBtn').addEventListener('click', closeModal);
 $('modalOverlay').addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
 $('palOverlay').addEventListener('click', e => { if (e.target === palOverlay) closePalette(); });
+readerControlsButton?.addEventListener('click', () => setReaderControlsOpen(readerControlsPopover.hidden));
+readerTextScaleDecrease?.addEventListener('click', () => setReaderTextScale(State.readerTextScale - 0.1));
+readerTextScaleReset?.addEventListener('click', () => setReaderTextScale(1));
+readerTextScaleIncrease?.addEventListener('click', () => setReaderTextScale(State.readerTextScale + 0.1));
+readerWidthSlider?.addEventListener('input', (event) => setReaderWidthCh(Number(event.currentTarget.value)));
+document.addEventListener('click', (event) => {
+  if (!readerControlsPopover || readerControlsPopover.hidden || readerControlsEl?.contains(event.target)) return;
+  setReaderControlsOpen(false, true);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !readerControlsPopover || readerControlsPopover.hidden) return;
+  event.preventDefault();
+  setReaderControlsOpen(false, true);
+});
 
 document.querySelectorAll('.tb-menu-item').forEach(btn => {
   // Keep the editor focused/selected when opening a menu — a mousedown would
@@ -2890,6 +2980,8 @@ settingsController = createSettingsController({
       if ($('themeLabel')) $('themeLabel').textContent = theme;
     },
     setZoom,
+    setReaderTextScale,
+    setReaderWidthCh,
     setEditorMode,
     setViewMode,
     applyPanelLayout,

@@ -22,6 +22,7 @@ const ICON_BUTTONS = [
   'winMinBtn', 'winMaxBtn', 'winCloseBtn',
   'rtlBtn', 'themeBtn', 'tabAddBtn',
   'sidebarToggleBtn', 'inspectorToggleBtn',
+  'readerControlsButton',
   // (the modeLive/modeSplit/modeSource view-mode buttons were removed — CM6 is the sole editor)
   'tbBold', 'tbItalic', 'findCloseBtn', 'modalCloseBtn', 'searchBtn',
 ];
@@ -51,5 +52,17 @@ describe('overlays are labelled modal dialogs (T-F4)', () => {
   });
   test('modal inner is role=dialog aria-modal labelled by its title', () => {
     expect(html).toMatch(/<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">/);
+  });
+});
+
+describe('reader controls are an accessible non-modal popover', () => {
+  test('Aa trigger and popover expose their relationship and accessible dialog semantics', () => {
+    const trigger = openingTagById('readerControlsButton');
+    const popover = openingTagById('readerControlsPopover');
+    expect(trigger).toMatch(/aria-controls="readerControlsPopover"/);
+    expect(trigger).toMatch(/aria-haspopup="dialog"/);
+    expect(popover).toMatch(/role="dialog"/);
+    expect(popover).toMatch(/aria-modal="false"/);
+    expect(popover).toMatch(/aria-labelledby="readerControlsTitle"/);
   });
 });

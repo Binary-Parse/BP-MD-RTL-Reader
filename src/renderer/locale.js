@@ -65,6 +65,10 @@ export const MESSAGES = {
     'palette.toggleItalic': 'Toggle Italic Recolour',
     'palette.zoomIn': 'Zoom In', 'palette.zoomOut': 'Zoom Out', 'palette.resetZoom': 'Reset Zoom',
     'palette.shortcuts': 'Keyboard Shortcuts', 'palette.about': 'About BP MD RTL Reader',
+    'readerControls.toggle': 'Reader settings', 'readerControls.title': 'Reader settings', 'readerControls.textSize': 'Text size',
+    'readerControls.decreaseText': 'Decrease text size', 'readerControls.increaseText': 'Increase text size', 'readerControls.resetText': 'Reset text size',
+    'readerControls.contentWidth': 'Content width',
+
   },
   ar: {
     'menu.file': 'ملف', 'menu.edit': 'تحرير', 'menu.view': 'عرض', 'menu.help': 'مساعدة',
@@ -121,6 +125,10 @@ export const MESSAGES = {
     'palette.toggleItalic': 'تبديل تلوين المائل',
     'palette.zoomIn': 'تكبير', 'palette.zoomOut': 'تصغير', 'palette.resetZoom': 'إعادة التكبير',
     'palette.shortcuts': 'اختصارات لوحة المفاتيح', 'palette.about': 'حول BP MD RTL Reader',
+    'readerControls.toggle': 'إعدادات القراءة', 'readerControls.title': 'إعدادات القراءة', 'readerControls.textSize': 'حجم النص',
+    'readerControls.decreaseText': 'تصغير حجم النص', 'readerControls.increaseText': 'زيادة حجم النص', 'readerControls.resetText': 'إعادة حجم النص',
+    'readerControls.contentWidth': 'عرض المحتوى',
+
   },
 };
 

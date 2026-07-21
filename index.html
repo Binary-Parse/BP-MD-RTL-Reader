@@ -512,6 +512,28 @@
            visible (the rendered #noteContent is hidden behind the CM6 surface, T-F13). -->
       <div id="conflictBar"></div>
 
+      <div class="reader-controls" id="readerControls" hidden>
+        <button type="button" class="reader-controls-trigger" id="readerControlsButton"
+          title="Reader settings" data-i18n-title="readerControls.toggle"
+          aria-label="Reader settings" data-i18n-aria-label="readerControls.toggle"
+          aria-haspopup="dialog" aria-controls="readerControlsPopover" aria-expanded="false">Aa</button>
+        <div class="reader-controls-popover" id="readerControlsPopover" role="dialog" aria-modal="false" aria-labelledby="readerControlsTitle" hidden>
+          <div class="reader-controls-title" id="readerControlsTitle" data-i18n="readerControls.title">Reader settings</div>
+          <div class="reader-control-row">
+            <span class="reader-control-label" data-i18n="readerControls.textSize">Text size</span>
+            <div class="reader-scale-actions">
+              <button type="button" id="readerTextScaleDecrease" title="Decrease text size" data-i18n-title="readerControls.decreaseText" aria-label="Decrease text size" data-i18n-aria-label="readerControls.decreaseText">A−</button>
+              <button type="button" id="readerTextScaleReset" title="Reset text size" data-i18n-title="readerControls.resetText" aria-label="Reset text size" data-i18n-aria-label="readerControls.resetText">100%</button>
+              <button type="button" id="readerTextScaleIncrease" title="Increase text size" data-i18n-title="readerControls.increaseText" aria-label="Increase text size" data-i18n-aria-label="readerControls.increaseText">A+</button>
+            </div>
+          </div>
+          <div class="reader-control-row reader-width-row">
+            <label class="reader-control-label" id="readerWidthLabel" for="readerWidthSlider" data-i18n="readerControls.contentWidth">Content width</label>
+            <output id="readerWidthValue" for="readerWidthSlider" aria-live="polite">72ch</output>
+            <input id="readerWidthSlider" type="range" min="48" max="120" step="2" value="72" aria-labelledby="readerWidthLabel readerWidthValue">
+          </div>
+        </div>
+      </div>
       <div class="editor-area" id="editorArea">
         <div class="source-pane">
           <label class="visually-hidden" for="srcTextarea">Markdown source</label>
@@ -632,6 +654,5 @@
 </div>
 
 <script type="module" src="src/renderer/app.js"></script>
-
 </body>
 </html>

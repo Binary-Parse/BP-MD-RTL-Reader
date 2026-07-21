@@ -96,6 +96,7 @@ function observeOverflow(frame) {
  */
 export function wrapTablesInFrames(root, { locale = 'en' } = {}) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
+  scheduleDisconnectedFrameCleanup();
 
   root.querySelectorAll('table').forEach((table) => {
     let frame = table.parentElement;

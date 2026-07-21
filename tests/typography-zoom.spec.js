@@ -165,4 +165,50 @@ test.describe('[Task 2] reader text scale', () => {
     expect(scaled.meta).toBeCloseTo(base.meta * 1.25, 1);
     expect(scaled.imageWidth).toBeCloseTo(base.imageWidth, 1);
   });
+  test('scales mixed RTL reader text without changing image or Mermaid geometry', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+    await page.evaluate(() => {
+      window._appState.files = [{
+        name: 'mixed-scale.md', path: 'mixed-scale.md', dirty: false,
+        content: '# English heading\n\n## \u0639\u0646\u0648\u0627\u0646 \u0639\u0631\u0628\u064a\n\n> [!NOTE] \u0645\u0644\u0627\u062d\u0638\u0629 \u0645\u0647\u0645\u0629\n> \u0646\u0635 \u0639\u0631\u0628\u064a \u0645\u0639 `inline code`.\n\n\u0641\u0642\u0631\u0629 English \u0648\u0639\u0631\u0628\u064a\u0629.',
+      }];
+      window.renderFile(0);
+      window.setViewMode('reading');
+      const note = document.getElementById('noteContent');
+      const image = document.createElement('img');
+      image.style.cssText = 'width: 200px; height: 80px';
+      const mermaid = document.createElement('div');
+      mermaid.className = 'mermaid';
+      mermaid.innerHTML = '<svg width="220" height="90" viewBox="0 0 220 90"><rect width="220" height="90"></rect></svg>';
+      note.append(image, mermaid);
+    });
+    await expect(page.locator('#noteContent h2[dir="rtl"]')).toBeVisible();
+    await expect(page.locator('#noteContent .callout-title')).toBeVisible();
+    await expect(page.locator('#noteContent .callout-body code')).toBeVisible();
+
+    const measure = (scale) => page.evaluate((value) => {
+      document.documentElement.style.setProperty('--reader-text-scale', value);
+      const size = (selector) => parseFloat(getComputedStyle(document.querySelector(selector)).fontSize);
+      const image = document.querySelector('#noteContent img').getBoundingClientRect();
+      const mermaid = document.querySelector('#noteContent .mermaid svg').getBoundingClientRect();
+      return {
+        rtlHeading: size('#noteContent h2[dir="rtl"]'),
+        calloutTitle: size('#noteContent .callout-title'),
+        calloutCode: size('#noteContent .callout-body code'),
+        imageWidth: image.width,
+        mermaidWidth: mermaid.width,
+        mermaidHeight: mermaid.height,
+      };
+    }, String(scale));
+
+    const base = await measure(1);
+    const scaled = await measure(1.25);
+    expect(scaled.rtlHeading).toBeCloseTo(base.rtlHeading * 1.25, 1);
+    expect(scaled.calloutTitle).toBeCloseTo(base.calloutTitle * 1.25, 1);
+    expect(scaled.calloutCode).toBeCloseTo(base.calloutCode * 1.25, 1);
+    expect(scaled.imageWidth).toBeCloseTo(base.imageWidth, 1);
+    expect(scaled.mermaidWidth).toBeCloseTo(base.mermaidWidth, 1);
+    expect(scaled.mermaidHeight).toBeCloseTo(base.mermaidHeight, 1);
+  });
 });

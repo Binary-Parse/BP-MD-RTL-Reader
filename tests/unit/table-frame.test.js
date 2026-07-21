@@ -64,6 +64,23 @@ describe('table frames', () => {
     vi.unstubAllGlobals();
   });
 
+  test('schedules cleanup for a detached no-ResizeObserver frame when the next render has no tables', async () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const root = rootWithTable();
+    document.body.appendChild(root);
+    wrapTablesInFrames(root);
+
+    // Let the initial deferred cleanup run while the frame is still connected.
+    await Promise.resolve();
+    const cleanupSchedule = vi.spyOn(globalThis, 'queueMicrotask');
+    root.remove();
+    wrapTablesInFrames(document.createElement('div'));
+    expect(cleanupSchedule).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+
+    cleanupSchedule.mockRestore();
+    vi.unstubAllGlobals();
+  });
   test('uses the English label by default', () => {
     expect(tableFrameLabel()).toBe('Scrollable table');
   });

@@ -1140,6 +1140,23 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .editor .doc-meta { font-size: calc(0.6875rem * var(--reader-text-scale, 1)); }
 #editor[dir="rtl"] .doc-meta { font-size: calc(0.75rem * var(--reader-text-scale, 1)); }
 
+/* Fixed-size reader text keeps the local scale in mixed-direction documents. */
+.editor blockquote { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] blockquote { font-size: calc(1.3125rem * var(--reader-text-scale, 1)); }
+#editor h1[dir="rtl"] { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
+#editor h2[dir="rtl"] { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
+#editor h3[dir="rtl"] { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
+#editor blockquote[dir="rtl"] { font-size: calc(1.3125rem * var(--reader-text-scale, 1)); }
+
+.editor .callout-title { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
+.editor .callout-icon { font-size: calc(0.9375rem * var(--reader-text-scale, 1)); }
+.editor .callout-body { font-size: calc(1rem * var(--reader-text-scale, 1)); }
+.editor pre { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+.editor pre code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+.editor code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+
+/* Prose, lists, and KaTeX inherit the scaled reader text size; tables scale above. */
+
 /* A rendered table can use the centre pane (one-rem gutters) but scrolls only here. */
 .table-frame {
   box-sizing: border-box;

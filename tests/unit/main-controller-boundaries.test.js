@@ -15,10 +15,12 @@ describe('ARCH-001 main-process controller boundaries', () => {
     expect(typeof createWindowController).toBe('function');
   });
 
-  test('keeps artifact provenance in normal tests and out of mutation sandboxes', () => {
+  test('keeps source-text meta-tests in normal tests and out of mutation sandboxes', () => {
     const config = readFileSync('vitest.mutation.config.js', 'utf8');
     expect(config).toContain('vendor-provenance.test.js');
+    expect(config).toContain('main-controller-boundaries.test.js');
     expect(readFileSync('vitest.config.js', 'utf8')).not.toContain('vendor-provenance.test.js');
+    expect(readFileSync('vitest.config.js', 'utf8')).not.toContain('main-controller-boundaries.test.js');
   });
 
   test('keeps bootstrap composition narrow and privileged wiring in its controllers', () => {

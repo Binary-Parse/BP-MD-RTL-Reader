@@ -1,8 +1,8 @@
 import baseConfig from './vitest.config.js';
 
-// Repository-byte provenance is verified by the ordinary unit/CI gates. Stryker
-// copies generated vendor assets into an instrumented sandbox, so byte-for-byte
-// artifact assertions do not describe a product-code mutant in that environment.
+// Source-text integrity is verified by the ordinary unit/CI gates. Stryker
+// rewrites source and generated assets in its instrumented sandbox, so raw byte
+// and line-count assertions do not describe product-code mutants there.
 export default {
   ...baseConfig,
   test: {
@@ -10,6 +10,7 @@ export default {
     exclude: [
       ...baseConfig.test.exclude,
       'tests/unit/vendor-provenance.test.js',
+      'tests/unit/main-controller-boundaries.test.js',
     ],
   },
 };

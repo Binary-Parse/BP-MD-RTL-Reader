@@ -4,7 +4,14 @@
 
 Remediation is in progress for the 60 findings documented in `AUDIT_REPORT.md` (0 Critical, 7 High, 44 Medium, 9 Low). The application is fully offline and local-only; security effort is calibrated to that deployment model while still closing every documented security boundary.
 
-Current status after the installer-build batch: **49 Fixed, 5 Partially Fixed, 6 In Progress**. Documentation remediation and final repository-wide validation remain pending.
+Implementation is complete: **55 Fixed, 5 Partially Fixed, 0 Deferred, 0 Not Applicable**. Final repository-wide validation is in progress; the five partial statuses are verification/scope limitations documented below rather than abandoned fixes.
+
+| Status | Critical | High | Medium | Low | Total |
+|---|---:|---:|---:|---:|---:|
+| Fixed | 0 | 6 | 40 | 9 | 55 |
+| Partially Fixed | 0 | 1 | 4 | 0 | 5 |
+| Deferred | 0 | 0 | 0 | 0 | 0 |
+| Not Applicable | 0 | 0 | 0 | 0 | 0 |
 
 ## Baseline vs. Post-Fix
 
@@ -75,24 +82,44 @@ Current status after the installer-build batch: **49 Fixed, 5 Partially Fixed, 6
 | CONF-002 | Medium | Fixed | CI checkout + Gitleaks history invocation | Y |
 | CONF-003 | Medium | Fixed | CI pinned Gitleaks version/SHA-256 verification | Y |
 | CONF-004 | Medium | Partially Fixed | pinned compiler/payload policies, deterministic build staging + tests | Y (Inno compile unavailable) |
-| DOC-001 | Low | In Progress | — | N |
-| DOC-002 | Medium | In Progress | — | N |
-| DOC-003 | Medium | In Progress | — | N |
-| DOC-004 | Medium | In Progress | — | N |
-| DOC-005 | Medium | In Progress | — | N |
-| DOC-006 | Low | In Progress | — | N |
+| DOC-001 | Low | Fixed | README/build/agent truth + consistency test | Y |
+| DOC-002 | Medium | Fixed | workflow documentation + consistency test | Y |
+| DOC-003 | Medium | Fixed | privacy/security/changelog/network disclosures | Y |
+| DOC-004 | Medium | Fixed | user guide/changelog behavior contract | Y |
+| DOC-005 | Medium | Fixed | canonical data map + installer messaging | Y |
+| DOC-006 | Low | Fixed | contributor globs, generated license inventory + CI | Y |
 
 ## Detailed Remediation Log
 
-### SEC-001 / SEC-002 / DATA-011 — Installer command execution and profile defaults
+### [SEC-001] Elevated installers execute user-writable registry commands
 
 - **Status:** Partially Fixed (implementation complete; Inno compilation unavailable locally)
-- **Severity:** High / Medium / Medium
-- **Root cause:** Elevated installers consume registry-controlled uninstall command/location data; Inno silent uninstall defaults to deleting profile data.
-- **Change made:** Removed NSIS and Inno registry-command execution entirely. Detection now reads only `DisplayVersion` from the hive matching the selected privilege mode; same-version Inno setup offers Repair/Cancel. Silent uninstall preserves profile data unless `/DELETEUSERDATA` is explicit, and interactive preservation is the default.
-- **Files touched:** `installer/installer.nsh:1-38`; `installer/scripts/version_check.pas:206-235`; `installer/setup.iss:139-237`; `tests/installer/installer_security.test.ps1:1-49`; `tests/installer/logic-sim.ps1:117-143`; `tests/installer/registry_mock.test.ps1:1-53`; `tests/installer/registry_mock.test.pas:1-44`; `tests/installer/run-tests.ps1:31-37`; `FIX_REPORT.md`.
-- **Verification:** RED: installer tests reported 7 intended failures and 61 passes. GREEN: `pwsh -NoProfile -File tests/installer/run-tests.ps1 -SkipMutation` reported 68 passed, 0 failed, 4 opt-in destructive tests skipped. `npx electron-builder --win nsis --x64` built the real x64 NSIS installer, exit 0. `npm test` reported 1,174 unit and 724 Playwright tests passed. `npm run lint:security` remained at the 85-warning baseline with no errors.
-- **Risk & notes:** Risky installer batch. No real installation, uninstallation, registry mutation, or profile deletion was performed. `tests/installer/run-pascal-self-test.ps1` exited 2 because Inno Setup 6.3+ is not installed; therefore the Inno half is not yet dynamically compiler-verified. Removing the “Remove” button differs from the audit recommendation deliberately: it eliminates the elevated registry-command sink instead of attempting brittle command ownership/signature parsing.
+- **Severity:** High
+- **Root cause:** Both elevated installer paths treated uninstall command strings from registry metadata as executable instructions.
+- **Change made:** Removed NSIS and Inno registry-command execution entirely. Detection reads only `DisplayVersion` from the hive matching the selected privilege mode; same-version Inno setup now offers Repair/Cancel and never launches an installed uninstall string. This intentionally differs from the recommendation: deleting the command sink is safer and smaller than attempting brittle parsing, ownership, and signature checks on an arbitrary command line.
+- **Files touched:** `installer/installer.nsh:1-38`; `installer/scripts/version_check.pas:185-218`; `installer/setup.iss:133-190`; `tests/installer/installer_security.test.ps1:55-81`; `tests/installer/logic-sim.ps1:117-143`; `tests/installer/registry_mock.test.ps1:1-61`; `tests/installer/registry_mock.test.pas:1-44`; `tests/installer/run-tests.ps1:31-37`.
+- **Verification:** Verified by Pester/standalone Pascal-model tests that reject `ExecWait`, `UninstallString`, and `QuietUninstallString` and exercise Repair/Cancel version behavior; the real electron-builder NSIS package built successfully. Full Inno compilation is unavailable because the pinned compiler is not installed.
+- **Risk & notes:** Risky installer batch, isolated in its own commit. No real install/uninstall or registry mutation was performed. The residual is toolchain verification only; the vulnerable execution behavior is absent from source.
+
+### [SEC-002] Registry-controlled install location reaches elevated PowerShell source
+
+- **Status:** Partially Fixed (implementation complete; packaged NSIS verified, Inno compilation unavailable locally)
+- **Severity:** Medium
+- **Root cause:** The custom NSIS flow forwarded a registry-derived install location into electron-builder''s elevated uninstall path, where it could reach generated PowerShell source.
+- **Change made:** Removed all registry-sourced uninstall command/location handling from the NSIS include. The installer no longer passes a registry-derived `_?=` location or invokes a prior uninstall command; profile cleanup is confined to the current uninstaller''s fixed application profile target.
+- **Files touched:** `installer/installer.nsh:1-38`; `tests/installer/installer_security.test.ps1:55-73,89-94`.
+- **Verification:** Static Pester assertions reject executable registry values, `ExecWait`, and forwarded uninstall locations; a real x64 electron-builder NSIS installer and the full Windows packaging matrix built successfully.
+- **Risk & notes:** The exact tainted source-to-sink chain was removed rather than filtered. The status remains partial only because the associated Inno installer batch cannot be compiler-tested without the pinned local compiler.
+
+### [DATA-011] Inno uninstall defaults can silently delete profile data
+
+- **Status:** Partially Fixed (implementation complete; Inno compilation unavailable locally)
+- **Severity:** Medium
+- **Root cause:** Silent and default interactive uninstall choices selected destructive application-profile cleanup.
+- **Change made:** Both Windows installers now preserve the application profile by default. Deletion requires an explicit `/DELETEUSERDATA` switch for unattended removal or an affirmative interactive choice; prompts distinguish settings/recent paths/grants/logs from Markdown files stored elsewhere.
+- **Files touched:** `installer/installer.nsh:15-31`; `installer/setup.iss:227-249`; `installer/scripts/cleanup.pas:1-49`; `tests/installer/installer_security.test.ps1:84-94`; `tests/installer/logic-sim.ps1:117-143`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`.
+- **Verification:** Installer tests assert preserve-by-default and explicit deletion semantics; Pester logic simulations cover silent, interactive, and explicit-delete plans. Source parsing succeeds, while compiled Inno execution remains unavailable without the pinned compiler. No destructive uninstall was run against real data.
+- **Risk & notes:** This intentionally changes the unsafe audited default while preserving an explicit removal option. Existing externally stored Markdown is never an installer cleanup target.
 
 ### [SEC-003] Persisted settings can mint new filesystem capabilities
 
@@ -604,13 +631,80 @@ Current status after the installer-build batch: **49 Fixed, 5 Partially Fixed, 6
 - **Verification:** PowerShell parsed all changed scripts without errors; the 74-file policy matched the locally built `dist/win-unpacked` tree and validated all hashes plus executable metadata; installer Pester passed 71 tests with 4 intentionally skipped post-uninstall machine-state checks; focused tests reject a noncanonical compiler, wrong compiler version, invalid signature, and unlisted staging files. Running the build entry point stopped before side effects with the expected pinned-compiler error because Inno Setup is not installed.
 - **Risk & notes:** The status is partial only because the actual ISCC compilation cannot be exercised on this workstation. The application payload is intentionally allowed to be unsigned for local builds (`NotSigned` is recorded); invalid signatures are rejected, and any valid application signature must match `Binary Parse`. This is proportionate to the offline/local build threat model while removing ambient PATH and stale-tree trust. Installing the pinned signed compiler and running the command is the manual completion step.
 
+### [DOC-001] Toolchain, test-count, threshold, and coverage-command documentation is stale
+
+- **Status:** Fixed
+- **Severity:** Low
+- **Root cause:** Volatile counts and configuration facts were copied into prose and drifted from executable scripts and gates.
+- **Change made:** Removed unsupported passing-test totals; aligned Node, Playwright, coverage, mutation, viewport, and command descriptions with executable configuration; and added a consistency test for these claims.
+- **Files touched:** `README.md:126-151`; `docs/BUILD.md:1-140`; `AGENTS.md:17-41,157-186,227-247`; `tests/unit/docs-consistency.test.js:1-61`.
+- **Verification:** Verified by `tests/unit/docs-consistency.test.js` (3/3) and manual comparison to `package.json`, coverage configuration, Playwright configuration, and mutation tier files.
+- **Risk & notes:** No runtime behavior changed; documentation avoids future unqualified test-pass counts.
+
+### [DOC-002] Documentation claims security and release workflows that are not present
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** The agent guide described absent workflow files and generalized `ci.yml` controls to a separate, more privileged Claude workflow.
+- **Change made:** Documented only committed `ci.yml` and `claude.yml`, including their distinct triggers, permissions, action pinning, and harden-runner coverage; removed nonexistent CodeQL, Scorecard, and release automation claims.
+- **Files touched:** `AGENTS.md:118-122,291-320`; `docs/BUILD.md:126-140`; `tests/unit/docs-consistency.test.js:29-42`.
+- **Verification:** Both workflow YAML files parsed successfully with PyYAML; the consistency test verifies documented workflow names against the committed directory.
+- **Risk & notes:** This corrects assurance claims rather than adding unrelated release features.
+
+### [DOC-003] Absolute no-network claims contradict the explicit update request
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** App-wide privacy prose incorrectly generalized the renderer''s no-network CSP to the opt-in main-process update check.
+- **Change made:** Preserved the accurate no-telemetry/no-automatic-check/no-renderer-network guarantees and documented the sole explicit update action, its GitHub release-metadata GET, request metadata, and absence of note content or update download.
+- **Files touched:** `README.md:107-118`; `docs/PRIVACY.md:6-13,69-91`; `SECURITY.md:1-8`; `CHANGELOG.md:36-41`; `THIRD-PARTY-NOTICES.md:33-41`; `tests/unit/docs-consistency.test.js:44-59`.
+- **Verification:** Verified by consistency tests and manual trace from renderer menu action through preload IPC to the fixed main-process update endpoint.
+- **Risk & notes:** Calibrated for a local/offline app: no hostile-network architecture was introduced; the existing voluntary request is disclosed precisely.
+
+### [DOC-004] User guide overstates save, session, close, and editor-mode behavior
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** User-facing prose described aspirational or legacy behavior rather than the remediated persistence/session state machine.
+- **Change made:** Documented Reading/Edit modes, atomic original-file Save and Save As, conflict handling, dirty-close/workspace prompts, the five-entry recent list, and last-vault/active-note restore boundaries; corrected the changelog accordingly.
+- **Files touched:** `docs/USER_GUIDE.md:61-80,173-211`; `CHANGELOG.md:28-35`; `tests/unit/docs-consistency.test.js:44-59`.
+- **Verification:** Verified by documentation consistency tests plus the save, conflict, dirty-workspace, close, and session unit/Electron tests added for DATA-001 through DATA-007 and DATA-010.
+- **Risk & notes:** Documentation follows implemented behavior; it does not promise restoration of unsaved edits, standalone tabs, or every open tab.
+
+### [DOC-005] Data-location and uninstall guarantees are materially inaccurate
+
+- **Status:** Fixed
+- **Severity:** Medium
+- **Root cause:** Documentation conflated user-selected Markdown locations with the Electron profile and misstated destructive uninstall defaults.
+- **Change made:** Established one consistent data map for external Markdown, roaming settings/logs/profile state, and local cleanup targets; documented preserve-by-default uninstall and `/DELETEUSERDATA`; updated NSIS/Inno/Pascal prompt text to call the target an app profile, never a notes directory.
+- **Files touched:** `README.md:103-118`; `docs/PRIVACY.md:15-29`; `docs/USER_GUIDE.md:194-211`; `installer/installer.nsh:15-31`; `installer/setup.iss:227-249`; `installer/scripts/cleanup.pas:1-49`; `tests/unit/docs-consistency.test.js:44-59`.
+- **Verification:** Verified by docs consistency tests, installer Pester cleanup-policy assertions, and manual cross-check of every named directory against installer source and Electron settings/log paths.
+- **Risk & notes:** No real profile or Markdown data was deleted. A per-machine Inno uninstall can address only the elevated user''s profile; that caveat is documented.
+
+### [DOC-006] Contributor and license-inventory documentation is not reproducible
+
+- **Status:** Fixed
+- **Severity:** Low
+- **Root cause:** Runner ownership was described with an over-broad directory rule, while a stale dependency count had no reproducible source or committed artifact.
+- **Change made:** Documented exact Vitest, browser Playwright, Electron Playwright, Pester, Pascal, fixture, and helper ownership; added a deterministic lockfile-only license inventory generator, committed its JSON output and lockfile SHA-256, exposed check/update scripts, and made CI verify both vendor provenance and the license inventory.
+- **Files touched:** `CONTRIBUTING.md:18-55`; `THIRD-PARTY-NOTICES.md:33-72`; `scripts/dependency-license-inventory.js:1-56`; `docs/dependency-license-inventory.json:1-29`; `package.json:15-20`; `.github/workflows/ci.yml:58-64`; `tests/unit/docs-consistency.test.js:44-61`.
+- **Verification:** `npm run license:inventory` reports 855 non-root lock entries and verifies the committed package-lock SHA-256; `npm run vendor:check` verifies bundled bytes; the docs test passes; CI YAML parses.
+- **Risk & notes:** The inventory intentionally reports lockfile entries and unique names separately rather than equating either with installed packages. It surfaces one missing lockfile `license` field (`khroma@2.1.0`) instead of guessing.
+
 ## Deferred & Not Applicable
 
-None classified at this stage.
+No findings are Deferred or Not Applicable. The consolidated partially fixed set is
+SEC-001, SEC-002, DATA-011, ARCH-001, and CONF-004. SEC-001/SEC-002/DATA-011/CONF-004
+have complete source changes but retain the same manual follow-up: install the pinned,
+signed Inno Setup 6.3.3 toolchain and run `pwsh -File installer/build-installer.ps1`.
+ARCH-001 is partial because the audited monolith was bounded and high-risk domains were
+extracted/tested, but a wholesale rewrite was intentionally avoided to preserve behavior.
 
 ## New observations
 
-None at this stage.
+- `package-lock.json` has no `license` field for `khroma@2.1.0`. The deterministic
+  inventory records this as missing rather than inventing a classification. This was
+  observed while fixing DOC-006 and left out of scope.
 
 ## Commit map
 
@@ -621,4 +715,5 @@ None at this stage.
 - `55ff0ed`, `dab7e0a` — DEP-001 through DEP-003 dependency provenance, licensing, updates, and refreshed vendor assets.
 - `691b7e7` — TEST-001 through TEST-009; CONF-002 and CONF-003 assurance gates.
 - `d9453b4` — CONF-001 security lint enforcement.
-- CONF-004 installer-build hardening batch — commit pending immediately after this report update.
+- `a87cb7d` — CONF-004 installer-build hardening.
+- DOC-001 through DOC-006 documentation and reproducibility batch — commit pending.

@@ -1,9 +1,11 @@
 # Security Policy
 
-BP MD RTL Reader is a local-first desktop app: no telemetry, no accounts, no network
-requests at runtime. Even so, we take security seriously — especially the boundaries that
-keep opening an untrusted Markdown file safe (sandboxed renderer, DOMPurify-sanitised
-output, allow-listed vault reads).
+BP MD RTL Reader is a local-first desktop app: no telemetry, no accounts, no automatic
+network requests, and no renderer network access. The sole opt-in exception is
+**Help → Check for Updates…**, which requests public release metadata from GitHub without
+note content or identifiers and does not download an update. We take security seriously —
+especially the boundaries that keep opening an untrusted Markdown file safe (sandboxed
+renderer, DOMPurify-sanitised output, capability-scoped vault reads).
 
 ## Supported versions
 

@@ -57,6 +57,10 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Verify vendored runtime provenance and bytes
+        run: npm run vendor:check
+      - name: Verify dependency license inventory
+        run: npm run license:inventory
       # audit #4: SAST — static security analysis via eslint security plugins.
       - name: SAST (lint:security)
         run: npm run lint:security

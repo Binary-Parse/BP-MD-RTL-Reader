@@ -8,20 +8,25 @@ on your own machine — and so that opening an untrusted Markdown file is safe.
 - ❌ **No telemetry.** No analytics, no usage tracking, no product metrics.
 - ❌ **No accounts, no sync, no cloud.** There is nothing to sign in to.
 - ❌ **No crash upload.** Crash reporting to any remote server is explicitly disabled.
-- ❌ **No auto-update phone-home.** The app never calls out to check for updates.
+- ❌ **No automatic update check or download.** Network access occurs only if you choose
+  **Help → Check for Updates…**; that one request is described below.
 - ✅ **Your data is yours.** Notes and settings live only on your computer.
 
 ## Where your data lives
 
 | What | Where |
 | ---- | ----- |
-| App settings (`settings.json`) — see **What persists** below | `%APPDATA%\BP MD RTL Reader` |
-| Transient caches (GPU, etc.) | `%LOCALAPPDATA%\BP MD RTL Reader` |
-| Local diagnostic logs | `%APPDATA%\BP MD RTL Reader\logs\` |
+| App settings (`settings.json`) and filesystem grants (`capabilities.json`) | `%APPDATA%\BP MD RTL Reader` |
+| Electron renderer/profile state and local diagnostic logs | `%APPDATA%\BP MD RTL Reader` (logs are in `logs\`) |
+| Transient/legacy cache cleanup target used by the Inno uninstaller | `%LOCALAPPDATA%\BP MD RTL Reader` |
 | Your notes | wherever **you** saved them — plain `.md` files |
 
-When you uninstall with the bundled installer, you're asked whether to **keep** your
-settings and data or remove everything. Nothing is deleted without your say-so.
+Both Windows installer families preserve the roaming application profile by default,
+including silent uninstall. An interactive uninstall offers an explicit delete-profile
+choice; unattended removal requires `/DELETEUSERDATA`. The Inno uninstaller always
+cleans its transient Local AppData target. Neither installer deletes Markdown files from
+the folders where you saved them. On a shared machine, the per-machine Inno uninstaller
+can act only on the Windows account that runs it.
 
 ## What persists between sessions
 
@@ -30,20 +35,20 @@ So the app reopens the way you left it, a single local file —
 file on your machine, written only by you (via the app) and **never transmitted**. It
 holds:
 
-- **Appearance & layout** — theme (paper/ink/sepia), editor zoom level, editor mode, and
-  whether the sidebar and inspector panels are shown.
-- **Recent files** — a short list (max 10) of the **names and file paths** of notes you
+- **Appearance & layout** — theme (paper/ink/sepia), editor zoom, Reading/Edit mode,
+  panel visibility, UI language/direction, calendar, Arabic kashida, and italic color.
+- **Recent files** — a short list (max five) of the **names and relative display paths** of notes you
   recently opened, so they appear under "Recents". This records *paths only* — never the
-  contents of your notes.
+  contents of your notes. Main-process opaque capability IDs provide the authority to
+  reopen them; their absolute path mapping is stored separately in `capabilities.json`.
 - **Window geometry** — the window's last size, position, and maximised state, restored
   on the next launch (clamped to a currently-visible display).
-- **Last session** — the open vault and the file paths you had open (and which was
-  active), so the app can reopen where you left off. Like Recents, this records *paths
-  only* — never the contents of your notes.
+- **Last session** — an opaque grant for the last vault plus its active relative note
+  path. On launch the app re-reads the vault from disk; it does not persist note content,
+  unsaved edits, standalone tabs, or each vault tab's open/closed state.
 
-The file also reserves a few fields for upcoming bilingual/RTL options (UI language and
-direction, digit style, calendar). These are kept at their defaults today and are not yet
-adjustable from the UI, so they do not currently change between sessions.
+The settings schema reserves a `numerals` field, but the current UI does not expose or
+apply a digit-style setting. It should not be treated as a user-visible persisted option.
 
 If this file is missing or corrupt, the app silently falls back to safe defaults — it
 never crashes and never loses your notes (your notes are separate `.md` files, untouched
@@ -63,9 +68,9 @@ Crash minidumps, if any, are written locally too — `crashReporter` is started 
 
 ## What the app fetches (and what it doesn't)
 
-**Nothing.** The app makes **zero network requests at runtime**, enforced by a strict
-Content-Security-Policy (`connect-src 'self'`). Every asset ships inside the app and loads
-from local files:
+The renderer makes **zero outbound network requests**, enforced by its strict
+Content-Security-Policy (`connect-src 'self'`). Every rendering asset ships inside the
+app and loads from local files:
 
 - the Markdown engine ([marked](https://marked.js.org/)) and the HTML sanitiser
   ([DOMPurify](https://github.com/cure53/DOMPurify)),
@@ -73,8 +78,17 @@ from local files:
 - all four font families (Inter, Fraunces, JetBrains Mono, IBM Plex Sans Arabic), vendored
   as local `woff2` files under `assets/vendor/fonts/`.
 
-Rendering — and the whole app — therefore works fully offline. No fonts or content are
-fetched from any CDN or remote server, ever.
+Rendering works fully offline: no font, library, image, or note content is fetched from a
+CDN or remote server.
+
+There is one narrow main-process exception. If—and only if—you choose **Help → Check for
+Updates…**, the app sends an HTTPS `GET` to
+`https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest` with
+GitHub's JSON `Accept` header and a `BP-MD-RTL-Reader` User-Agent. It sends no note content,
+stored path, account identifier, or telemetry; ordinary network metadata such as IP
+address and request headers is visible to GitHub. The command reads public release
+metadata only: it neither downloads nor installs an update. On an offline machine it
+fails harmlessly and the rest of the app continues to work.
 
 ## Security model
 

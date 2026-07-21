@@ -31,8 +31,8 @@ A tour of everything **BP MD RTL Reader** can do. For the full key list see
 | **Title bar** | App name, the menu bar (File · Edit · View · Help), search shortcut hint, and window controls. |
 | **Sidebar** (left) | Three tabs — **Files** (your folder tree), **Tags**, and **Search**. Toggle with `Ctrl+\`. |
 | **Tab bar** | One tab per open file; a `●` marks unsaved changes. The `+` opens a new note. |
-| **Toolbar** | View-mode switches, formatting, theme (◐), and direction (⇄) buttons. |
-| **Editor / preview** | Where your document is shown — as preview, source, or both. |
+| **Toolbar** | Reading/Edit toggle, formatting, theme (◐), and direction (⇄) buttons. |
+| **Document area** | **Reading** mode shows a clean rendered note; **Edit** mode shows the live-preview editor. |
 | **Inspector** (right) | Document **outline** and **properties**. Toggle with `Ctrl+Shift+I`. |
 | **Status bar** | Folder, encoding, format, direction, cursor position, word count, and theme. |
 
@@ -65,6 +65,10 @@ headings, bold/italic, links, callouts, tables, math, and images all appear form
 while the line your cursor is on shows the raw Markdown so you can edit it. Move the
 cursor away and that line renders too. There are no separate "source" or "split" modes
 to juggle: writing and reading are the same surface.
+
+Use the book button or `Ctrl+E` to switch between two roles: **Reading mode** is a
+clean, read-only render with the writing toolbar hidden; **Edit mode** shows the unified
+CodeMirror live-preview surface. This Reading/Edit choice is remembered globally.
 
 <div align="center">
 <img src="assets/editor.png" width="760" alt="The live-preview editor: formatting toolbar, a rendered note, and the table controls">
@@ -132,8 +136,8 @@ BP MD RTL Reader is bilingual at its core.
 ## Finding things
 
 - **Find in document** — `Ctrl+F` opens a find bar with a hit counter and next/previous
-  navigation. Matches are highlighted in the preview; in source view the match is
-  selected.
+  navigation. Matches are highlighted in Reading mode; in Edit mode the matching text
+  is selected in the live-preview editor.
 - **Command palette** — `Ctrl+K` searches every menu command *and* your open files.
   Arrow keys to move, `Enter` to run, `Esc` to dismiss.
 
@@ -170,27 +174,38 @@ Toggle the right-hand inspector with `Ctrl+Shift+I`. It has two parts:
 
 - **New note** — `Ctrl+N` creates a blank, titled note.
 - **New daily note** — `Ctrl+Shift+N` creates (or opens) a note named for today's date.
-- **Save / Save As** — `Ctrl+S` and `Ctrl+Shift+S` write your changes back to disk.
+- **Save** — `Ctrl+S` atomically writes a disk-backed note to its original Markdown
+  file while preserving BOM, line endings, and final-newline style. If the file changed
+  externally since it was opened, Save refuses to overwrite it and the conflict controls
+  let you keep your edit or reload the disk copy. A new untitled note opens **Save As**.
+- **Save As** — `Ctrl+Shift+S` asks for a destination, writes there atomically, and makes
+  that chosen file the tab's new save target.
 - **Export HTML** — **File → Export HTML** produces a single self-contained `.html`
   file (embedded styles, correct `lang`/`dir`) you can share or archive.
 - **Export PDF** — **File → Export PDF** renders the current note to a PDF offline, in an
   isolated renderer (no network).
 
-Tabs with unsaved edits show a `●`; closing one — or the window — prompts you first.
+Tabs with unsaved edits show a `●`. Closing a dirty tab, closing the native window, or
+replacing the workspace with a folder/demo/recent vault asks before discarding changes.
+Unsaved content is memory-only and is not part of session restore.
 
 ---
 
 ## What gets remembered
 
-BP MD RTL Reader remembers how you left it — all locally, nothing leaves your machine:
+BP MD RTL Reader remembers how you left it in its local application profile:
 
-- **Saved across launches:** your theme, editor zoom, view mode, and which panels
-  (sidebar/inspector) are open; UI language/direction, digit style, and calendar; recent
-  files (up to 10, paths only); and the window's size, position, and maximised state.
-- **Session restore:** the vault and the files you had open (and which one was active) are
-  remembered, so the app reopens where you left off.
-- **Per session only:** unsaved edits live until you close the app — your files change on
-  disk only when you **Save**.
+- **Saved across launches:** theme, editor zoom, Reading/Edit mode, sidebar/inspector
+  visibility, UI language/direction, calendar, Arabic kashida and italic-color choices;
+  recent files (up to five, paths and opaque grants only); and window geometry.
+- **Session restore:** for a disk-backed vault, the app remembers the vault grant and
+  active note. On launch it re-reads the current vault from disk and opens that active
+  note. Standalone files and individual tab-open/closed state are not restored.
+- **Per session only:** unsaved edits stay in memory until saved or deliberately
+  discarded. They are never written into the settings profile.
 
-Everything is stored under `%APPDATA%\BP MD RTL Reader`. Nothing leaves your machine —
-see [Privacy & Security](PRIVACY.md).
+On Windows, `%APPDATA%\BP MD RTL Reader` contains `settings.json`,
+`capabilities.json` (opaque filesystem grants mapped to the paths you selected), local
+logs, and Electron profile state. Your Markdown notes remain wherever you saved them;
+the app profile is not a notes folder. See [Privacy & Security](PRIVACY.md), including
+the explicit user-initiated update-check network exception.

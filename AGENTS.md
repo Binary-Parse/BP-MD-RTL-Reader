@@ -22,10 +22,10 @@ Key traits you should keep in mind when editing code:
 |------|----------------|--------------------------|
 | Runtime | Electron | 42 |
 | Packaging | electron-builder | 26 |
-| Additional installer | Inno Setup | 6.3+ (local builds only) |
+| Additional installer | Inno Setup | 6.3.3 pinned/signed (local builds only) |
 | Unit tests | Vitest | 4 |
-| E2E / integration tests | Playwright | 1.60 |
-| Accessibility testing | @axe-core/playwright + axe-core | 4.11 |
+| E2E / integration tests | Playwright | 1.61 |
+| Accessibility testing | @axe-core/playwright + axe-core | 4.12 |
 | Mutation testing | Stryker | 9 |
 | Property-based tests | fast-check | 4 |
 | Code bundling (editor) | esbuild | 0.28 |
@@ -95,8 +95,8 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 │           ├── line-direction.js       Per-line RTL/LTR inside CM6
 │           └── list-continuation.js    Smart list item continuation
 ├── tests/
-│   ├── unit/                     Vitest unit tests (468+)
-│   ├── *.spec.js                 Playwright e2e specs (526+) — smoke, rtl, visual, a11y, perf, fuzz, …
+│   ├── unit/                     Vitest unit tests (counts come from completed runs)
+│   ├── *.spec.js                 Playwright e2e specs — smoke, rtl, visual, a11y, perf, fuzz, …
 │   ├── integration/              Playwright integration tests
 │   ├── installer/                Pester + Inno Setup self-tests
 │   └── __mocks__/                Test mocks (electron.cjs, etc.)
@@ -115,7 +115,7 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 │   ├── generate-icons.ps1        Regenerate icon assets
 │   └── merge-coverage.js         Merge unit + e2e coverage reports
 ├── docs/                         User guides, build docs, privacy policy
-├── .github/workflows/            CI/CD (ci.yml, release.yml, codeql.yml, scorecard.yml)
+├── .github/workflows/            CI automation (`ci.yml`, `claude.yml` only)
 ├── vitest.config.js              Unit test + V8 coverage configuration
 ├── playwright.config.js          E2E test configuration (auto-coverage fixture)
 ├── eslint.config.mjs             Security-focused ESLint flat config
@@ -157,10 +157,12 @@ node scripts/capture-screenshots.mjs
 ### Testing
 
 ```bash
-npm test                     # Unit tests THEN e2e suite
+npm test                     # Unit, browser e2e, THEN real-Electron boundary suite
 npm run test:unit            # Vitest unit tests only
 npm run test:unit:coverage   # Unit tests + V8 coverage report (gated)
 npm run test:e2e             # Full Playwright suite
+npm run test:electron        # Production Electron/preload/IPC boundary suite
+npm run test:e2e:coverage    # Full non-visual renderer coverage + completeness gate
 npm run test:smoke           # Playwright smoke tests only
 npm run test:integration     # Playwright integration tests only
 npm run test:update-snapshots # Refresh visual-regression baselines
@@ -169,15 +171,19 @@ npm run test:watch           # Vitest in watch mode
 npm run coverage             # Combined unit + e2e coverage
 npm run report:merge         # Merge coverage reports
 npm run lint:security        # ESLint security / SAST pass
+npm run vendor:check         # Verify vendored runtime bytes/provenance
+npm run license:inventory    # Verify lockfile-derived license inventory
+npm run package:verify       # Inspect packaged app archives
+npm run package:checksums    # Hash package artifacts
 ```
 
 ### Coverage gates
 
 | Suite | Threshold | Notes |
 |-------|-----------|-------|
-| Unit (Vitest) | 95 % statements, 95 % lines, 95 % functions, 88 % branches | Configured in `vitest.config.js` |
+| Unit (Vitest) | 95 % statements, 90 % branches, 95 % functions, 95 % lines | Configured through `config/coverage-thresholds.json` |
 | E2E (Playwright) | Renderer V8 coverage collected per-test via auto-fixture | Merged by `scripts/generate-renderer-coverage.js` |
-| Mutation (Stryker) | 85 % break threshold | Configured in `stryker.config.json` |
+| Mutation (Stryker) | 80 % overall; per-file T1 85 % / T2 75 % / T3 60 % | Configured in `stryker.config.json` and `config/mutation-tiers.json` |
 
 ---
 
@@ -227,8 +233,9 @@ When modifying file-system access, keep these guards in place and update the cor
 
 ### E2E tests (Playwright)
 - Located in `tests/*.spec.js` and `tests/integration/`.
-- Uses Chromium only (headless, viewport 1440×900).
-- Visual-regression tests (`@visual` tag) run inside `mcr.microsoft.com/playwright:v1.60.0-jammy` so font rendering matches the committed Linux baselines.
+- Uses Chromium only. The effective `Desktop Chrome` default is 1280×720; visual specs
+  explicitly set 1440×900 before snapshots.
+- Visual-regression tests (`@visual` tag) run inside `mcr.microsoft.com/playwright:v1.61.1-jammy` so font rendering matches the committed Linux baselines.
 - Accessibility tests use `@axe-core/playwright`.
 - The `playwright.config.js` installs an **auto-coverage fixture** when `COLLECT_RENDERER_COVERAGE=1` — it starts V8 JSCoverage before each test and writes per-test JSON into `coverage/renderer/`.
 
@@ -239,8 +246,9 @@ When modifying file-system access, keep these guards in place and update the cor
 
 ### Installer tests
 - PowerShell + Pester 5 tests in `tests/installer/`.
-- Also includes a compiled Inno Setup Pascal self-test.
-- These are **manual / local only** — not run in CI.
+- Windows package CI runs the Pester suite non-destructively with `-SkipMutation`.
+- `tests/installer/run-pascal-self-test.ps1` is a separate local compiled Inno Pascal
+  self-test because it requires the pinned ISCC toolchain.
 
 ---
 
@@ -288,25 +296,27 @@ default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
 3. **E2E functional** — sharded 4 ways (excludes `@visual`); blob reports merged in a follow-up job.
 4. **Visual snapshots** — `@visual` specs inside the pinned Playwright container so baselines match.
 5. **Mutation testing** — full run on schedule / workflow_dispatch; `--incremental` on PRs.
-6. **Dependency review** — PR-only; blocks known vulnerabilities (currently `continue-on-error` until GHAS is enabled).
+6. **Real Electron boundary** — launches production Electron with temporary profile/data.
+7. **Native package matrix** — Windows/macOS/Linux targets, archive inspection,
+   checksums, and Windows Pester installer logic.
+8. **Dependency review** — PR-only and currently `continue-on-error` until GHAS is enabled.
 
-### `codeql.yml` — weekly + on PR/push
-- Inter-procedural taint analysis for JS/TS.
-- Uploads SARIF (currently `continue-on-error` if Code Scanning is not yet enabled).
+This workflow uploads verified artifacts but does not publish a GitHub Release. There are
+no committed CodeQL, Scorecard, or release-publishing workflows.
 
-### `scorecard.yml` — weekly
-- OpenSSF Scorecard supply-chain security analysis.
-
-### `release.yml` — triggered by `v*` tag push
-- Builds per-platform installers on `windows-latest`, `macos-latest`, `ubuntu-latest`.
-- Gates on unit tests + coverage before packaging.
-- Publishes to the matching GitHub Release.
-- Code signing / notarization activate only when the corresponding secrets are present.
+### `claude.yml` — explicit `@claude` issue/review requests
+- Runs only for supported issue/review events containing `@claude` and excludes bot actors.
+- Checkout and the Claude action are pinned to full commit SHAs.
+- The Claude workflow grants explicit write permissions for repository contents, pull
+  requests, and issues, plus read access to Actions; it does not inherit `ci.yml`'s
+  read-only default and does not use `harden-runner`.
 
 ### Supply-chain hardening
-- Every GitHub Action is pinned to a **full commit SHA** (tags are considered mutable after the `tj-actions/changed-files` CVE).
-- `step-security/harden-runner` audits egress on Linux jobs.
-- `permissions` are set to `contents: read` by default; jobs elevate only the scopes they need.
+- Every current `uses:` action in both workflows is pinned to a full commit SHA.
+- `step-security/harden-runner` audits egress in applicable `ci.yml` Linux jobs; container
+  and native package jobs are not described as having that step.
+- `ci.yml` defaults to `contents: read`; its dependency-review job elevates only its PR
+  scope. `claude.yml` declares the separate write permissions documented above.
 
 ---
 

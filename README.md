@@ -13,7 +13,7 @@ Plain `.md` files on disk. No proprietary format. No telemetry.
 [![Platform](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)](#-download)
 [![License](https://img.shields.io/badge/license-MIT-3ddc4a)](LICENSE)
 [![Built with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Tests](https://img.shields.io/badge/tests-994%20passing-brightgreen)](docs/BUILD.md#testing)
+[![Checks](https://img.shields.io/badge/checks-CI%20gated-brightgreen)](docs/BUILD.md#testing)
 
 <img src="docs/assets/theme-paper.png" width="820" alt="BP MD RTL Reader — reading view">
 
@@ -104,13 +104,17 @@ See the full **[Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)** reference (or 
 BP MD RTL Reader is **local-first**. There is **no telemetry, no analytics, no crash
 upload, and no auto-update phone-home** — verifiable in the source.
 
-- Your notes and settings live only in `%APPDATA%\BP MD RTL Reader`; uninstalling can
-  optionally keep them.
+- Your notes stay wherever you saved the plain Markdown files. App settings, recent-path
+  history, local logs, and filesystem grants live in the app profile under
+  `%APPDATA%\BP MD RTL Reader` on Windows.
 - The renderer runs with `contextIsolation` on and `nodeIntegration` off, behind a
   minimal preload bridge; rendered HTML is sanitised by DOMPurify.
 - The renderer makes **no outbound network requests** at any time — the Markdown engine,
   sanitiser, math/highlight/diagram libraries, and fonts are all bundled locally and
   loaded under a strict CSP (`connect-src 'self'`).
+- The sole app-level network exception is the explicit **Help → Check for Updates…**
+  command, which requests GitHub's public release metadata; it never runs automatically
+  and sends no note content.
 
 Full details: **[docs/PRIVACY.md](docs/PRIVACY.md)**.
 
@@ -135,11 +139,15 @@ documented in **[docs/BUILD.md](docs/BUILD.md)**.
 
 This is a small app with a deliberately large safety net:
 
-- **468** unit tests (Vitest) with a 95% coverage gate
-- **526** end-to-end tests (Playwright), including visual-regression and accessibility
-- **Mutation testing** (Stryker) with an 85% break threshold
-- **Installer logic** verified by Pester + a compiled Inno Setup self-test
-- **CI** on every push/PR: coverage, mutation, e2e, security lint, secret scan, `npm audit`
+- **Vitest** unit coverage gated at 95% statements/lines/functions and 90% branches
+- **Playwright** browser, accessibility, visual-regression, and production-Electron lanes
+- **Combined unit + renderer coverage** from one current commit (`npm run coverage`)
+- **Mutation testing** with an 80% overall floor and per-file T1/T2/T3 floors of
+  85%/75%/60%
+- **Installer logic** verified by Pester in Windows CI; the compiled Pascal self-test is
+  available for local Inno Setup validation
+- **CI** for lint/SAST, full-history secret scan, `npm audit`, tests, coverage, mutation,
+  native-platform packages, payload inspection, and artifact checksums
 
 ---
 

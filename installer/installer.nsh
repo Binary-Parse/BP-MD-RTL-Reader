@@ -22,7 +22,7 @@
   ${EndIf}
 
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Delete user notes and preferences too?$\n$\nThis will remove:$\n  • $APPDATA\BP MD RTL Reader (settings, recent files)$\n$\nYour Markdown files on disk are NOT touched.$\n$\nChoose 'No' to keep them for a future reinstall." \
+    "Delete the BP MD RTL Reader app profile too?$\n$\nThis removes:$\n  • $APPDATA\BP MD RTL Reader (settings, recent paths, grants, and logs)$\n$\nMarkdown files saved elsewhere are NOT touched.$\n$\nChoose 'No' to keep the profile for a future reinstall." \
     /SD IDNO IDYES delete_user_data IDNO keep_user_data
 
   delete_user_data:

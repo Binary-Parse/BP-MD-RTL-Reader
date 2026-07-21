@@ -1,5 +1,5 @@
 ; ============================================================================
-;  BP MD RTL Reader — Inno Setup 6.3+ installer
+;  BP MD RTL Reader — pinned Inno Setup 6.3.3 installer
 ;  Compiler: ISCC.exe   |   Output: dist\BP MD RTL Reader Setup.exe   |   x64-only
 ;
 ;  Build:   installer\build-installer.ps1 (the only supported entry point)
@@ -235,8 +235,8 @@ begin
   else
     gKeepUserData :=
       MsgBox('Keep your BP MD RTL Reader settings and data?' + #13#10#13#10 +
-             'Yes  — keep your data folder (%APPDATA%\BP MD RTL Reader: settings, recent files, notes) and remove only the program.' + #13#10 +
-             'No   — remove everything, including settings and data.',
+             'Yes  — keep your app profile (%APPDATA%\BP MD RTL Reader: settings, recent paths, grants, and logs) and remove only the program.' + #13#10 +
+             'No   — remove that app profile too. Markdown files saved elsewhere are never removed.',
              mbConfirmation, MB_YESNO or MB_DEFBUTTON1) = IDYES;
 end;
 

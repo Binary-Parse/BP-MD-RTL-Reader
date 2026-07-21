@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **More Markdown** — callouts (`> [!NOTE]`), KaTeX math, Mermaid diagrams, syntax-
   highlighted code, task lists, and `==highlight==` / `<u>` / sub & superscript.
 - **PDF export** — render the current note to a PDF (offline, isolated renderer).
-- **Collapsible folder tree**, **session restore**, and a **fuller Arabic interface**
+- **Collapsible folder tree**, **last-vault/active-note session restore**, and a
+  **fuller Arabic interface**
   (welcome, palette, and find/search bars localized alongside the menus and status bar).
 
 ### Changed
@@ -33,8 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aware) instead of downloading a copy.
 - **Vault images** (`![](pic.png)`) now load from disk via a sandboxed `bpmd://` scheme.
 - The outline **navigates the editor** (scrolls + places the caret) and tracks scroll.
-- All third-party assets (CodeMirror, marked, DOMPurify, KaTeX, highlight.js, Mermaid,
-  fonts) are **bundled** — the app makes **no network requests** under a strict CSP.
+- All third-party rendering assets (CodeMirror, marked, DOMPurify, KaTeX, highlight.js,
+  Mermaid, fonts) are **bundled**; rendering makes no network request under the strict
+  renderer CSP. The explicit **Check for Updates…** action is the sole opt-in main-process
+  request and reads GitHub public release metadata without downloading an update.
 - Images are constrained to the content width (no horizontal overflow).
 - Rendered notes pass through the hardened sanitizer — inline `style`, `<iframe>`, and
   event-handler attributes are stripped (the sanitizer, not just CSP, is the control).

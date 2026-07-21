@@ -29,14 +29,14 @@ end;
 { Remove the per-user data folders BP MD RTL Reader writes to.
 
   The app persists ALL of its state via Electron app.getPath('userData') =
-  %APPDATA%\BP MD RTL Reader (roaming): settings, recent files, window/zoom/theme
-  state (Chromium 'Local Storage'), and any user notes. %LOCALAPPDATA%\BP MD RTL
-  Reader holds only transient caches (GPUCache, etc.). The app does NOT use a dedicated
-  'notes' subfolder, so "keep my data" must preserve the whole roaming folder
-  rather than a single notes\ child.
+  %APPDATA%\BP MD RTL Reader (roaming): settings, recent paths, filesystem grants,
+  local logs, window/zoom/theme state, and Chromium profile storage.
+  %LOCALAPPDATA%\BP MD RTL Reader is treated as a transient/legacy cache target.
+  User-authored Markdown remains wherever the user saved it and is never an
+  installer cleanup target.
 
   KeepUserData mirrors Get-CleanupPlan in logic-sim.ps1:
-    True  -> keep the roaming data folder; clear only the transient local caches.
+    True  -> keep the roaming app profile; clear only the transient local cache target.
     False -> remove everything (roaming + local). }
 procedure DeleteUserData(KeepUserData: Boolean);
 var

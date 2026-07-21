@@ -2766,7 +2766,10 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') {
     if (palOverlay.classList.contains('open')) closePalette();
     else if (modalOverlay.classList.contains('open')) closeModal();
-    else if ($('findBar').classList.contains('open')) closeFind();
+    else if ($('findBar').classList.contains('open')) {
+      closeFind();
+      e.stopImmediatePropagation(); // preserve lower-priority reader popover for the next Escape
+    }
     else if (dropdown.classList.contains('open')) closeMenu();
   }
 });

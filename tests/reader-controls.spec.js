@@ -176,6 +176,26 @@ test.describe('Reader controls', () => {
     await expect(trigger).toBeFocused();
   });
 
+  test('gives Find precedence over the Aa popover across stacked Escape presses', async ({ page }) => {
+    await boot(page);
+    await injectNote(page);
+    const trigger = page.locator('#readerControlsButton');
+
+    await trigger.click();
+    await expect(page.locator('#readerControlsPopover')).toBeVisible();
+    await page.keyboard.press('Control+f');
+    await expect(page.locator('#findBar')).toHaveClass(/open/);
+    await expect(page.locator('#readerControlsPopover')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#findBar')).not.toHaveClass(/open/);
+    await expect(page.locator('#readerControlsPopover')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#readerControlsPopover')).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
   test('localizes reader-control labels and accessible names with the Arabic interface', async ({ page }) => {
     await boot(page);
     await injectNote(page);

@@ -17,6 +17,7 @@ import { mathExtension, restoreMath, renderTex } from './math.js';
 import { sanitizeHtml, sanitizeSvg } from './trusted.js';
 import { renderMermaid } from './mermaid.js';
 import { tableEdit } from './table-edit.js';
+import { wrapTablesInFrames } from './table-frame.js';
 import { getFocusable, trapTab, rovingNext } from './focus.js';
 import { t as tr, localeDirection } from './locale.js';
 import { buildExportDocAsync as buildExportDocImpl } from './export.js';
@@ -197,6 +198,7 @@ function applyBidiToNote(content) {
   });
   applyBidi(noteContent, { baseDir: docDir, escape: escapeHtml, forceDir: forcedDir });
   if (cmAdapter) cmAdapter.setDirection(docDir, forcedDir); // keep the CM6 editor in sync (also closes the front-matter gap)
+  wrapTablesInFrames(noteContent, { locale: State.uiLocale });
   wireTableNav(noteContent); // T-R9: logical (EC-C2) arrow-key cell traversal in rendered tables
   // An explicit choice (toggle or front matter) flips the whole note's container direction;
   // otherwise the container stays neutral and each block resolves its own (R1/R2).
@@ -999,6 +1001,8 @@ function applyLocale(locale) {
     if (el.dataset.i18nTitleOrig === undefined) el.dataset.i18nTitleOrig = el.getAttribute('title') || '';
     el.setAttribute('title', locale === 'en' ? el.dataset.i18nTitleOrig : tr(el.dataset.i18nTitle, locale));
   });
+  wrapTablesInFrames(noteContent, { locale });
+  wrapTablesInFrames(document.querySelector('.cm-mount'), { locale });
 }
 function setUiLocale(locale) {
   if (locale !== 'en' && locale !== 'ar') return;
@@ -1531,11 +1535,9 @@ window.buildTOC = buildTOC; // test hook + used to rebuild the outline after the
 // so .editor-wrap itself never scrolls).
 function previewScroller() { return document.querySelector('.preview-pane'); }
 
-// Outline click → jump to the heading. CM6 is the sole surface now, so scroll the EDITOR to the
-// heading line (and place the caret there); the old .preview-pane path stays for the textarea
-// fallback (CM6-load failure), where the rendered pane IS the visible reading surface.
+// Outline click → jump to the visible surface: CM6 only in Edit mode, otherwise the preview.
 function scrollToHeading(entry) {
-  if (cmAdapter && entry) {
+  if (State.viewMode !== 'reading' && cmAdapter && entry) {
     // Resolve the editor position on demand if it wasn't known when the outline was built
     // (e.g. the outline predated the CM6 mount): match the entry's text against the live source.
     let pos = entry.pos;
@@ -1555,8 +1557,8 @@ function scrollToHeading(entry) {
 }
 
 function setupScrollSync() {
-  // CM6 path: track the editor's own scroller and highlight the last heading at/above its top.
-  if (cmAdapter && cmAdapter._view) {
+  // Edit mode tracks CM6; Reading mode always tracks the visible rendered preview.
+  if (State.viewMode !== 'reading' && cmAdapter && cmAdapter._view) {
     const view = cmAdapter._view;
     const sc = view.scrollDOM;
     if (sc._tocSyncWired) return;
@@ -1577,7 +1579,7 @@ function setupScrollSync() {
     sc.addEventListener('scroll', sync, { passive: true });
     return;
   }
-  // Textarea-fallback path: the visible rendered preview pane scrolls.
+  // Reading mode and the textarea fallback share the visible rendered preview pane.
   const wrap = previewScroller();
   if (!wrap || wrap._tocSyncWired) return;
   wrap._tocSyncWired = true;
@@ -1921,6 +1923,7 @@ function renderCmBlock(type, source) {
     el.innerHTML = parseMarkdown(source);
     decorateBlockContent(el); // highlight code + render KaTeX inside cells (F9 parity)
     applyBidi(el, { baseDir: State.direction === 'rtl' ? 'rtl' : 'ltr', escape: escapeHtml, forceDir: State.forcedDir });
+    wrapTablesInFrames(el, { locale: State.uiLocale });
     wireTableNav(el);
     return el;
   }

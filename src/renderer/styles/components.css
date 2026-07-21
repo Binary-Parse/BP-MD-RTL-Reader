@@ -1111,6 +1111,49 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .editor th, .editor td { border: 1px solid var(--rule); padding: 8px 12px; text-align: start; }
 .editor th:focus, .editor td:focus { outline: 2px solid var(--accent); outline-offset: -2px; } /* T-R9 traversal focus ring */
 .editor th { background: var(--paper-deep); font-weight: 600; }
+/* Task 2 reader measure and text settings. Task 3 may override these without layout rewrites. */
+:root {
+  --reader-width: 50rem;
+  --reader-text-scale: 1;
+}
+
+/* The panes never own a document-wide horizontal scrollbar; breakout stays local. */
+.source-pane, .preview-pane {
+  overflow-x: hidden;
+  container-type: inline-size;
+}
+
+/* Reading text responds to the CSS scale while image and Mermaid geometry remains size-driven. */
+.cm-mount .cm-scroller { font-size: calc(1.0625rem * var(--reader-text-scale, 1)); }
+.cm-mount .cm-content { max-width: var(--reader-width, 50rem); }
+.cm-mount .cm-lp-block table { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
+.editor { max-width: var(--reader-width, 50rem); font-size: calc(1.0625rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
+.editor table { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
+
+/* A rendered table can use the centre pane (one-rem gutters) but scrolls only here. */
+.table-frame {
+  box-sizing: border-box;
+  width: calc(100% - 2rem);
+  max-width: calc(100% - 2rem);
+  width: calc(100cqi - 2rem);
+  max-width: calc(100cqi - 2rem);
+  margin: 16px 50%;
+  transform: translateX(-50%);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--rule) transparent;
+}
+.table-frame::-webkit-scrollbar { height: 8px; }
+.table-frame::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+.table-frame:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editor .table-frame > table, .cm-mount .table-frame > table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  margin: 0;
+}
 
 /* welcome */
 .editor-welcome {

@@ -97,3 +97,82 @@ test.describe('outline drives the CM6 editor', () => {
     expect(activeIdx).toBe(2);
   });
 });
+
+test.describe('outline drives the visible reading surface', () => {
+  async function openLongHeadingsDoc(page) {
+    const pad = (n) => Array.from({ length: n }, (_, i) => `reading text ${i}`).join('\n');
+    await setFiles(page, [{ name: 'reading.md', content: `# One\n\n${pad(70)}\n\n## Two\n\n${pad(70)}\n\n### Three\n\n${pad(70)}\n` }]);
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
+  }
+
+  test('clicking an outline entry in Reading mode scrolls the visible preview pane', async ({ page }) => {
+    await boot(page);
+    await openLongHeadingsDoc(page);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.evaluate(() => window.setViewMode('reading'));
+    await expect(page.locator('#editorArea')).toHaveClass(/reading/);
+
+    const before = await page.evaluate(() => document.querySelector('.preview-pane').scrollTop);
+    await page.locator('.toc-item', { hasText: 'Three' }).click();
+    const after = await page.evaluate(() => ({
+      previewScrollTop: document.querySelector('.preview-pane').scrollTop,
+      previewVisible: getComputedStyle(document.querySelector('.preview-pane')).display !== 'none',
+      sourceVisible: getComputedStyle(document.querySelector('.source-pane')).display !== 'none',
+    }));
+
+    expect(after.previewVisible).toBe(true);
+    expect(after.sourceVisible).toBe(false);
+    expect(after.previewScrollTop).toBeGreaterThan(before);
+  });
+
+  test('Reading mode tracks the active outline entry from preview scrolling even with CM6 initialized', async ({ page }) => {
+    await boot(page);
+    await openLongHeadingsDoc(page);
+    await page.evaluate(() => window.setViewMode('reading'));
+
+    await page.evaluate(() => {
+      const wrap = document.querySelector('.preview-pane');
+      const heading = [...document.querySelectorAll('#noteContent h1, #noteContent h2, #noteContent h3')]
+        .find(el => el.textContent === 'Three');
+      wrap.scrollTop = heading.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop + 1;
+      wrap.dispatchEvent(new Event('scroll'));
+    });
+
+    await expect.poll(() => page.evaluate(() => document.querySelector('.toc-item.active')?.textContent)).toBe('Three');
+  });
+});
+
+test.describe('adaptive reading tables', () => {
+  test('a wide table remains in a local scroll frame without widening the preview pane', async ({ page }) => {
+    await boot(page);
+    await setFiles(page, [{
+      name: 'wide-table.md',
+      content: '# Wide table\n\n| One | Two | Three |\n| --- | --- | --- |\n| A | B | C |',
+    }]);
+    await page.evaluate(() => window.setViewMode('reading'));
+
+    const frame = page.locator('#noteContent .table-frame');
+    await expect(frame).toHaveCount(1);
+    await page.evaluate(() => {
+      document.querySelector('#noteContent table').style.minWidth = '1800px';
+    });
+    await expect.poll(() => frame.evaluate(el => el.getAttribute('tabindex'))).toBe('0');
+
+    const geometry = await page.evaluate(() => {
+      const pane = document.querySelector('.preview-pane');
+      const frame = document.querySelector('#noteContent .table-frame');
+      const table = frame.querySelector('table');
+      return {
+        paneClientWidth: pane.clientWidth,
+        paneScrollWidth: pane.scrollWidth,
+        frameClientWidth: frame.clientWidth,
+        frameScrollWidth: frame.scrollWidth,
+        tableWidth: table.getBoundingClientRect().width,
+      };
+    });
+
+    expect(geometry.frameScrollWidth).toBeGreaterThan(geometry.frameClientWidth);
+    expect(geometry.tableWidth).toBeGreaterThan(geometry.frameClientWidth);
+    expect(geometry.paneScrollWidth).toBeLessThanOrEqual(geometry.paneClientWidth + 1);
+  });
+});

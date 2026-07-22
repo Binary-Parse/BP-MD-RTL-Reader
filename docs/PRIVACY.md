@@ -29,9 +29,9 @@ Both Windows installer families offer three actions before an interactive uninst
   `%LOCALAPPDATA%\BP MD RTL Reader` for the current Windows account.
 - **Cancel** exits before the uninstaller changes anything.
 
-The primary button is labeled **Uninstall app only** for the safe choice and
-**Uninstall and delete app data** for the destructive choice. Silent uninstall is
-equally conservative: `/S` preserves app data, while `/S /DELETEUSERDATA` explicitly
+The primary button is labeled **Uninstall** for both choices; the selected option controls
+whether app data is preserved or deleted. Silent uninstall is equally conservative:
+`/S` preserves app data, while `/S /DELETEUSERDATA` explicitly
 requests full app-data cleanup. The electron-builder compatibility switch
 `--delete-app-data` requests the same comprehensive cleanup. Neither installer derives
 cleanup targets from recent paths or filesystem grants, enumerates other Windows

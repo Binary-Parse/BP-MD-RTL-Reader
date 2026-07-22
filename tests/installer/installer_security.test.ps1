@@ -122,8 +122,6 @@ Describe 'Modern uninstall choices and complete current-account cleanup' {
         $Inno | Should -Match "Caption\s*:=\s*'Remove app only'"
         $Inno | Should -Match "Caption\s*:=\s*'Remove app and all app data'"
         $Inno | Should -Match 'gAppOnlyRadio\.Checked\s*:=\s*True'
-        $Inno | Should -Match "gActionButton\.Caption\s*:=\s*'Uninstall app only'"
-        $Inno | Should -Match "gActionButton\.Caption\s*:=\s*'Uninstall and delete app data'"
         $Inno | Should -Not -Match "TaskDialogMsgBox\(\s*'Choose how to uninstall BP MD RTL Reader'"
     }
 
@@ -137,6 +135,15 @@ Describe 'Modern uninstall choices and complete current-account cleanup' {
         $Nsis | Should -Match 'Remove app and all app data'
         $Nsis | Should -Match 'Your Markdown documents are never deleted\.'
         $Nsis | Should -Not -Match 'MessageBox\s+MB_YES'
+    }
+
+    It 'uses the stable unclipped Uninstall primary caption in both installer families' {
+        $Inno | Should -Match "gActionButton\.Caption\s*:=\s*'Uninstall'"
+        $Inno | Should -Not -Match "gActionButton\.Caption\s*:=\s*'Uninstall app only'"
+        $Inno | Should -Not -Match "gActionButton\.Caption\s*:=\s*'Uninstall and delete app data'"
+        $Nsis | Should -Match 'SendMessage\s+\$R1\s+\$\{WM_SETTEXT\}\s+0\s+"STR:Uninstall"'
+        $Nsis | Should -Not -Match 'STR:Uninstall app only'
+        $Nsis | Should -Not -Match 'STR:Uninstall and delete app data'
     }
 
     It 'keeps silent removal safe and makes both destructive switches comprehensive' {

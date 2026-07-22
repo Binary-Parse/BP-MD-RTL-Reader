@@ -85,17 +85,16 @@ Var BpmdResultPage
 Function un.BpmdSetPrimaryAction
   ${NSD_GetState} $BpmdDeleteDataRadio $R0
   GetDlgItem $R1 $HWNDPARENT 1
+  SendMessage $R1 ${WM_SETTEXT} 0 "STR:Uninstall"
 
   ${If} $R0 == ${BST_CHECKED}
     StrCpy $BpmdDeleteUserData "1"
-    SendMessage $R1 ${WM_SETTEXT} 0 "STR:Uninstall and delete app data"
     SetCtlColors $BpmdDeleteDataRadio "B42318" "transparent"
     SetCtlColors $BpmdDeleteDataNote "B42318" "transparent"
     SetCtlColors $BpmdAppOnlyRadio "000000" "transparent"
     SetCtlColors $BpmdAppOnlyNote "444444" "transparent"
   ${Else}
     StrCpy $BpmdDeleteUserData "0"
-    SendMessage $R1 ${WM_SETTEXT} 0 "STR:Uninstall app only"
     SetCtlColors $BpmdAppOnlyRadio "005FB8" "transparent"
     SetCtlColors $BpmdAppOnlyNote "005FB8" "transparent"
     SetCtlColors $BpmdDeleteDataRadio "000000" "transparent"

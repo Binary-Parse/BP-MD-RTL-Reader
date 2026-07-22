@@ -49,6 +49,7 @@ describe('documentation follows executable repository truth', () => {
     expect(privacy).toContain('no note content');
     expect(privacy).toContain('Remove app only');
     expect(privacy).toContain('Remove app and all app data');
+    expect(privacy).toContain('primary button is labeled **Uninstall**');
     expect(privacy).toContain('%APPDATA%\\bpmdrtlreader');
     expect(privacy).toContain('/DELETEUSERDATA');
     expect(privacy).toContain('current Windows account');

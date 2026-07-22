@@ -248,10 +248,10 @@ end;
 
 procedure UpdateUninstallChoice;
 begin
+  gActionButton.Caption := 'Uninstall';
   if gDeleteDataRadio.Checked then
   begin
     gKeepUserData := False;
-    gActionButton.Caption := 'Uninstall and delete app data';
     gDeleteDataRadio.Font.Color := clRed;
     gDeleteDataRadio.Font.Style := [fsBold];
     gDeleteDataNote.Font.Color := clRed;
@@ -262,7 +262,6 @@ begin
   else
   begin
     gKeepUserData := True;
-    gActionButton.Caption := 'Uninstall app only';
     gAppOnlyRadio.Font.Color := clHighlight;
     gAppOnlyRadio.Font.Style := [fsBold];
     gAppOnlyNote.Font.Color := clHighlight;

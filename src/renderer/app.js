@@ -356,7 +356,7 @@ function cycleTheme() {
   State.theme = next;
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('bpmdrtlreader-theme', next);
-  $('themeBtn').classList.toggle('active', next !== 'paper');
+  $('themeBtn').classList.toggle('active', next !== 'paper'); updateThemeIcon(next);
   if ($('themeLabel')) $('themeLabel').textContent = next;
   showToast(`Theme: ${next.charAt(0).toUpperCase() + next.slice(1)}`, 'info');
 }
@@ -366,7 +366,7 @@ function setTheme(t) {
   State.theme = t;
   document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('bpmdrtlreader-theme', t);
-  $('themeBtn').classList.toggle('active', t !== 'paper');
+  $('themeBtn').classList.toggle('active', t !== 'paper'); updateThemeIcon(t);
   if ($('themeLabel')) $('themeLabel').textContent = t;
   closeMenu();
   showToast(`Theme: ${t.charAt(0).toUpperCase() + t.slice(1)}`, 'info');
@@ -2907,6 +2907,14 @@ $('tbHeading').addEventListener('click', (e) => {
   e.stopPropagation();
   const open = headingMenu.classList.toggle('open');
   $('tbHeading').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) {
+    const buttonRect = $('tbHeading').getBoundingClientRect();
+    const inlineStart = document.documentElement.dir === 'rtl'
+      ? window.innerWidth - buttonRect.right
+      : buttonRect.left;
+    headingMenu.style.top = `${toolbarStrip.getBoundingClientRect().bottom}px`;
+    headingMenu.style.insetInlineStart = `${inlineStart}px`;
+  }
 });
 headingMenu.querySelectorAll('.td-item').forEach((it) => {
   it.addEventListener('click', () => {
@@ -2991,7 +2999,7 @@ settingsController = createSettingsController({
   actions: {
     applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
-      $('themeBtn')?.classList.toggle('active', theme !== 'paper');
+      $('themeBtn')?.classList.toggle('active', theme !== 'paper'); updateThemeIcon(theme);
       if ($('themeLabel')) $('themeLabel').textContent = theme;
     },
     setZoom,
@@ -3036,7 +3044,7 @@ window.restoreSettings = restoreSettings;
       if (stored && THEMES.includes(stored)) {
         State.theme = stored;
         document.documentElement.setAttribute('data-theme', stored);
-        $('themeBtn')?.classList.toggle('active', stored !== 'paper');
+        $('themeBtn')?.classList.toggle('active', stored !== 'paper'); updateThemeIcon(stored);
         if ($('themeLabel')) $('themeLabel').textContent = stored;
       }
     }
@@ -3048,3 +3056,10 @@ window.restoreSettings = restoreSettings;
   showWelcome();
   initDragDrop();
 })();
+
+function updateThemeIcon(theme) {
+  let icon = '#ic-sun';
+  if (theme === 'ink') icon = '#ic-moon';
+  else if (theme === 'sepia') icon = '#ic-book-open';
+  $('themeBtn')?.querySelector('use')?.setAttribute('href', icon);
+}

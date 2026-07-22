@@ -370,7 +370,7 @@
       </button>
       <button class="tb-btn" id="viewModeBtn" title="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="true"><svg class="ic"><use href="#ic-book-open"/></svg></button>
       <button class="tb-btn" id="rtlBtn" title="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
-      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-theme"/></svg></button>
+      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-sun"/></svg></button>
     </div>
 
     <div class="win-controls">
@@ -488,8 +488,8 @@
         <button class="tool-btn" id="tbRule" title="Horizontal rule" aria-label="Insert horizontal rule"><svg class="ic"><use href="#ic-rule"/></svg></button>
         <span class="tool-spacer"></span>
         <span class="read-time" id="readTime">— min read</span>
-        <!-- Heading-level pop-down (H1–H6); toggled by #tbHeading. Inside the sticky toolbar so
-             it's positioned relative to it (not .app), and doesn't disturb the find-bar anchor. -->
+        <!-- Heading-level pop-down (H1–H6); toggled by #tbHeading. Fixed positioning lets it
+             escape the toolbar's horizontal-scroll clipping without changing the toolbar layout. -->
         <div class="tool-dropdown" id="headingMenu" role="menu" aria-label="Heading level">
           <button type="button" class="td-item" role="menuitem" data-level="1"><span class="td-h td-h1">H</span>Heading 1</button>
           <button type="button" class="td-item" role="menuitem" data-level="2"><span class="td-h td-h2">H</span>Heading 2</button>

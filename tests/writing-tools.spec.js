@@ -46,6 +46,23 @@ test.describe('writing tools toggle/replace (no stacking)', () => {
     expect(await val(page)).toBe('second line\n');
   });
 
+  test('Heading menu opens above the editor and remains clickable', async ({ page }) => {
+    await open(page, 'section\n');
+    await caret(page, 3);
+    await page.click('#tbHeading');
+
+    await expect(page.locator('#tbHeading')).toHaveAttribute('aria-expanded', 'true');
+    const menuIsHitTarget = await page.locator('#headingMenu .td-item[data-level="2"]').evaluate((item) => {
+      const rect = item.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return item === hit || item.contains(hit);
+    });
+    expect(menuIsHitTarget).toBe(true);
+
+    await page.click('#headingMenu .td-item[data-level="2"]');
+    expect(await val(page)).toBe('## section\n');
+  });
+
   test('Quote toggles off on a second click', async ({ page }) => {
     await open(page, 'para\n');
     await caret(page, 2);

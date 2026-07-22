@@ -701,9 +701,9 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 
 /* Toolbar pop-down (heading levels) — small menu anchored under its button. */
 .tool-dropdown {
-  position: absolute;
-  top: 34px;
-  inset-inline-start: 14px;
+  position: fixed;
+  top: 0;
+  inset-inline-start: 0;
   background: var(--paper);
   border: 1px solid var(--rule);
   border-radius: 6px;

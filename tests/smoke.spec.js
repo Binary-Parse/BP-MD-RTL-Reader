@@ -61,21 +61,26 @@ test.describe('smoke tests', () => {
 
     // Default theme is 'paper' (no data-theme attribute or paper)
     const html = page.locator('html');
+    const themeIcon = page.locator('#themeBtn use');
+    await expect(themeIcon).toHaveAttribute('href', '#ic-sun');
 
     // Click theme button to go to ink
     await page.click('#themeBtn');
     await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'ink');
+    await expect(themeIcon).toHaveAttribute('href', '#ic-moon');
 
     // Click again to go to sepia
     await page.click('#themeBtn');
     await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'sepia');
+    await expect(themeIcon).toHaveAttribute('href', '#ic-book-open');
 
     // Click again to go back to paper
     await page.click('#themeBtn');
     await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'paper');
+    await expect(themeIcon).toHaveAttribute('href', '#ic-sun');
 
     // No console JS errors during theme cycling
     const jsErrors = errors.filter(e => !e.includes('net::ERR') && !e.includes('Failed to load'));

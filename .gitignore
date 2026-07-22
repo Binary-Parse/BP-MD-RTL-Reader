@@ -39,6 +39,11 @@ bpmd-ink.png
 bpmd-live.png
 bpmd-ref.png
 
+# ── Local-only workspace files ─────────────────────────────────────
+/AUDIT_REPORT.md
+/assets/d7c23e25-0dd9-48a0-a08a-e1867b047600.png
+/tsconfig.json
+
 # ── BINARY PARSE / Claude Code — pipeline + per-machine settings ───
 .claudedoc/
 .claude/

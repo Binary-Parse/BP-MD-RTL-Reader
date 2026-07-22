@@ -13,16 +13,22 @@ BeforeAll {
 }
 
 Describe 'User-data cleanup plan (Get-CleanupPlan)' {
-    It 'KeepUserData=$true preserves both roaming and local app data' {
+    It 'KeepUserData=$true preserves every current-account app-data alias' {
         $p = Get-CleanupPlan -KeepUserData $true
+        $p.Preserve | Should -Contain '{userappdata}\bpmdrtlreader'
         $p.Preserve | Should -Contain '{userappdata}\BP MD RTL Reader'
+        $p.Preserve | Should -Contain '{localappdata}\bpmdrtlreader'
         $p.Preserve | Should -Contain '{localappdata}\BP MD RTL Reader'
+        $p.Preserve.Count | Should -Be 4
         $p.Delete   | Should -BeNullOrEmpty
     }
-    It 'KeepUserData=$false deletes both roaming and local' {
+    It 'KeepUserData=$false deletes every current-account app-data alias' {
         $p = Get-CleanupPlan -KeepUserData $false
+        $p.Delete   | Should -Contain '{userappdata}\bpmdrtlreader'
         $p.Delete   | Should -Contain '{userappdata}\BP MD RTL Reader'
+        $p.Delete   | Should -Contain '{localappdata}\bpmdrtlreader'
         $p.Delete   | Should -Contain '{localappdata}\BP MD RTL Reader'
+        $p.Delete.Count | Should -Be 4
         $p.Preserve | Should -BeNullOrEmpty
     }
 }
@@ -42,7 +48,9 @@ Describe 'Cleanup target set (Get-UninstallTargets)' {
     }
     It 'directory set is exactly as specified' {
         ($t.Dirs -join "`n") | Should -Be (@(
+            '{userappdata}\bpmdrtlreader'
             '{userappdata}\BP MD RTL Reader'
+            '{localappdata}\bpmdrtlreader'
             '{localappdata}\BP MD RTL Reader'
             '{autoprograms}\BP MD RTL Reader'
             '{commonprograms}\BP MD RTL Reader'
@@ -64,6 +72,9 @@ Describe 'Cleanup target set (Get-UninstallTargets)' {
     It 'contains no user-authored Markdown cleanup target' {
         (($t.Dirs + $t.Files) -join '|') | Should -Not -Match '\.(?:md|markdown)(?:$|[|\\])'
     }
+    It 'contains no ProgramData or cross-account profile cleanup target' {
+        (($t.Dirs + $t.Files) -join '|') | Should -Not -Match '(?i)ProgramData|Users\\\*|ProfileList'
+    }
 }
 
 Describe 'Post-uninstall machine state' -Skip:(-not $env:BPMDRTL_UNINSTALL_TEST) {
@@ -73,8 +84,14 @@ Describe 'Post-uninstall machine state' -Skip:(-not $env:BPMDRTL_UNINSTALL_TEST)
     It 'roaming app-data is gone (full uninstall)' {
         Test-Path (Join-Path $env:APPDATA 'BP MD RTL Reader') | Should -BeFalse
     }
+    It 'actual package-name roaming profile is gone (full uninstall)' {
+        Test-Path (Join-Path $env:APPDATA 'bpmdrtlreader') | Should -BeFalse
+    }
     It 'local app-data is gone (full uninstall)' {
         Test-Path (Join-Path $env:LOCALAPPDATA 'BP MD RTL Reader') | Should -BeFalse
+    }
+    It 'package-name local cache alias is gone (full uninstall)' {
+        Test-Path (Join-Path $env:LOCALAPPDATA 'bpmdrtlreader') | Should -BeFalse
     }
     It 'ARP/uninstall registry key is gone' {
         Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{32586DF8-1F67-400F-9D8B-6426C3D5B405}_is1' | Should -BeFalse

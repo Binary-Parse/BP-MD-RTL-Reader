@@ -141,6 +141,12 @@ const
 
 var
   gKeepUserData: Boolean;
+  gCleanupFailures: string;
+  gAppOnlyRadio: TNewRadioButton;
+  gDeleteDataRadio: TNewRadioButton;
+  gAppOnlyNote: TNewStaticText;
+  gDeleteDataNote: TNewStaticText;
+  gActionButton: TNewButton;
 
 { --- Detect only a version in the registry hive appropriate to this setup's
       privilege mode. Registry command strings are never read or executed. ---- }
@@ -240,9 +246,148 @@ begin
   end;
 end;
 
-function InitializeUninstall: Boolean;
+procedure UpdateUninstallChoice;
+begin
+  if gDeleteDataRadio.Checked then
+  begin
+    gKeepUserData := False;
+    gActionButton.Caption := 'Uninstall and delete app data';
+    gDeleteDataRadio.Font.Color := clRed;
+    gDeleteDataRadio.Font.Style := [fsBold];
+    gDeleteDataNote.Font.Color := clRed;
+    gAppOnlyRadio.Font.Color := clWindowText;
+    gAppOnlyRadio.Font.Style := [];
+    gAppOnlyNote.Font.Color := clGrayText;
+  end
+  else
+  begin
+    gKeepUserData := True;
+    gActionButton.Caption := 'Uninstall app only';
+    gAppOnlyRadio.Font.Color := clHighlight;
+    gAppOnlyRadio.Font.Style := [fsBold];
+    gAppOnlyNote.Font.Color := clHighlight;
+    gDeleteDataRadio.Font.Color := clWindowText;
+    gDeleteDataRadio.Font.Style := [];
+    gDeleteDataNote.Font.Color := clGrayText;
+  end;
+end;
+
+procedure UninstallChoiceChanged(Sender: TObject);
+begin
+  UpdateUninstallChoice;
+end;
+
+function ShowUninstallChoiceForm: Boolean;
 var
-  Choice: Integer;
+  Form: TSetupForm;
+  Heading, Intro, SafetyNote: TNewStaticText;
+  CancelButton: TNewButton;
+begin
+  Form := CreateCustomForm();
+  try
+    Form.Caption := 'Uninstall BP MD RTL Reader';
+    Form.ClientWidth := ScaleX(520);
+    Form.ClientHeight := ScaleY(330);
+    Form.Position := poScreenCenter;
+
+    Heading := TNewStaticText.Create(Form);
+    Heading.Parent := Form;
+    Heading.Left := ScaleX(28);
+    Heading.Top := ScaleY(24);
+    Heading.Width := ScaleX(464);
+    Heading.Height := ScaleY(28);
+    Heading.Caption := 'Choose what to remove';
+    Heading.Font.Size := 14;
+    Heading.Font.Style := [fsBold];
+
+    Intro := TNewStaticText.Create(Form);
+    Intro.Parent := Form;
+    Intro.Left := ScaleX(28);
+    Intro.Top := ScaleY(58);
+    Intro.Width := ScaleX(464);
+    Intro.Height := ScaleY(22);
+    Intro.Caption := 'Select whether BP MD RTL Reader should keep its app data.';
+    Intro.Font.Color := clGrayText;
+
+    gAppOnlyRadio := TNewRadioButton.Create(Form);
+    gAppOnlyRadio.Parent := Form;
+    gAppOnlyRadio.Left := ScaleX(36);
+    gAppOnlyRadio.Top := ScaleY(94);
+    gAppOnlyRadio.Width := ScaleX(448);
+    gAppOnlyRadio.Height := ScaleY(22);
+    gAppOnlyRadio.Caption := 'Remove app only';
+    gAppOnlyRadio.Checked := True;
+
+    gAppOnlyNote := TNewStaticText.Create(Form);
+    gAppOnlyNote.Parent := Form;
+    gAppOnlyNote.Left := ScaleX(60);
+    gAppOnlyNote.Top := ScaleY(120);
+    gAppOnlyNote.Width := ScaleX(420);
+    gAppOnlyNote.Height := ScaleY(22);
+    gAppOnlyNote.Caption := 'Keep settings and app data for a future reinstall.';
+
+    gDeleteDataRadio := TNewRadioButton.Create(Form);
+    gDeleteDataRadio.Parent := Form;
+    gDeleteDataRadio.Left := ScaleX(36);
+    gDeleteDataRadio.Top := ScaleY(158);
+    gDeleteDataRadio.Width := ScaleX(448);
+    gDeleteDataRadio.Height := ScaleY(22);
+    gDeleteDataRadio.Caption := 'Remove app and all app data';
+
+    gDeleteDataNote := TNewStaticText.Create(Form);
+    gDeleteDataNote.Parent := Form;
+    gDeleteDataNote.Left := ScaleX(60);
+    gDeleteDataNote.Top := ScaleY(184);
+    gDeleteDataNote.Width := ScaleX(420);
+    gDeleteDataNote.Height := ScaleY(40);
+    gDeleteDataNote.AutoSize := False;
+    gDeleteDataNote.WordWrap := True;
+    gDeleteDataNote.Caption := 'Delete settings, recent paths, permissions, logs, profile data, and cache for this Windows account.';
+
+    SafetyNote := TNewStaticText.Create(Form);
+    SafetyNote.Parent := Form;
+    SafetyNote.Left := ScaleX(28);
+    SafetyNote.Top := ScaleY(238);
+    SafetyNote.Width := ScaleX(464);
+    SafetyNote.Height := ScaleY(22);
+    SafetyNote.Caption := 'Your Markdown documents are never deleted.';
+    SafetyNote.Font.Style := [fsBold];
+
+    gActionButton := TNewButton.Create(Form);
+    gActionButton.Parent := Form;
+    gActionButton.Left := ScaleX(238);
+    gActionButton.Top := ScaleY(282);
+    gActionButton.Width := ScaleX(180);
+    gActionButton.Height := ScaleY(28);
+    gActionButton.ModalResult := mrOk;
+    gActionButton.Default := True;
+
+    CancelButton := TNewButton.Create(Form);
+    CancelButton.Parent := Form;
+    CancelButton.Left := ScaleX(426);
+    CancelButton.Top := ScaleY(282);
+    CancelButton.Width := ScaleX(66);
+    CancelButton.Height := ScaleY(28);
+    CancelButton.Caption := 'Cancel';
+    CancelButton.ModalResult := mrCancel;
+    CancelButton.Cancel := True;
+
+    gAppOnlyRadio.OnClick := @UninstallChoiceChanged;
+    gDeleteDataRadio.OnClick := @UninstallChoiceChanged;
+    UpdateUninstallChoice;
+    Form.ActiveControl := gAppOnlyRadio;
+    Result := Form.ShowModal() = mrOk;
+  finally
+    Form.Free();
+    gAppOnlyRadio := nil;
+    gDeleteDataRadio := nil;
+    gAppOnlyNote := nil;
+    gDeleteDataNote := nil;
+    gActionButton := nil;
+  end;
+end;
+
+function InitializeUninstall: Boolean;
 begin
   Result := True;
   if UninstallSilent then
@@ -250,22 +395,76 @@ begin
   else if HasCommandLineParam('/DELETEUSERDATA') then
     gKeepUserData := False
   else
-  begin
-    Choice := TaskDialogMsgBox(
-      'Choose how to uninstall BP MD RTL Reader',
-      'Uninstall app only keeps the app profile for a future reinstall.' + #13#10 +
-      'Full cleanup also removes BP MD RTL Reader settings, recent paths, grants, logs, profile storage, and caches from AppData.' + #13#10#13#10 +
-      'Markdown files and other documents saved elsewhere are never removed.',
-      mbConfirmation, MB_YESNOCANCEL, ['&Uninstall app only'#13#10'Keep all BP MD RTL Reader app data.',
-       'Uninstall and &delete app data'#13#10'Remove the Roaming and Local AppData folders.'],
-      IDYES);
-    case Choice of
-      IDYES: gKeepUserData := True;
-      IDNO: gKeepUserData := False;
-      IDCANCEL: Result := False;
-    else
-      Result := False;
-    end;
+    Result := ShowUninstallChoiceForm;
+end;
+
+procedure ShowCleanupIncompleteForm(const Failures: string);
+var
+  Form: TSetupForm;
+  Heading, Explanation, SafetyNote: TNewStaticText;
+  Paths: TNewMemo;
+  CloseButton: TNewButton;
+begin
+  Form := CreateCustomForm();
+  try
+    Form.Caption := 'BP MD RTL Reader Uninstall';
+    Form.ClientWidth := ScaleX(520);
+    Form.ClientHeight := ScaleY(310);
+    Form.Position := poScreenCenter;
+
+    Heading := TNewStaticText.Create(Form);
+    Heading.Parent := Form;
+    Heading.Left := ScaleX(28);
+    Heading.Top := ScaleY(24);
+    Heading.Width := ScaleX(464);
+    Heading.Height := ScaleY(28);
+    Heading.Caption := 'Some app data could not be removed';
+    Heading.Font.Size := 13;
+    Heading.Font.Style := [fsBold];
+    Heading.Font.Color := clRed;
+
+    Explanation := TNewStaticText.Create(Form);
+    Explanation.Parent := Form;
+    Explanation.Left := ScaleX(28);
+    Explanation.Top := ScaleY(62);
+    Explanation.Width := ScaleX(464);
+    Explanation.Height := ScaleY(38);
+    Explanation.AutoSize := False;
+    Explanation.WordWrap := True;
+    Explanation.Caption := 'The app was uninstalled, but Windows kept the paths below. Close programs using them, then remove the folders manually.';
+
+    Paths := TNewMemo.Create(Form);
+    Paths.Parent := Form;
+    Paths.Left := ScaleX(28);
+    Paths.Top := ScaleY(108);
+    Paths.Width := ScaleX(464);
+    Paths.Height := ScaleY(92);
+    Paths.Text := Failures;
+    Paths.ReadOnly := True;
+    Paths.ScrollBars := ssVertical;
+
+    SafetyNote := TNewStaticText.Create(Form);
+    SafetyNote.Parent := Form;
+    SafetyNote.Left := ScaleX(28);
+    SafetyNote.Top := ScaleY(214);
+    SafetyNote.Width := ScaleX(464);
+    SafetyNote.Height := ScaleY(22);
+    SafetyNote.Caption := 'Your Markdown documents were not touched.';
+    SafetyNote.Font.Style := [fsBold];
+
+    CloseButton := TNewButton.Create(Form);
+    CloseButton.Parent := Form;
+    CloseButton.Left := ScaleX(402);
+    CloseButton.Top := ScaleY(258);
+    CloseButton.Width := ScaleX(90);
+    CloseButton.Height := ScaleY(28);
+    CloseButton.Caption := 'Close';
+    CloseButton.ModalResult := mrOk;
+    CloseButton.Default := True;
+    Form.ActiveControl := CloseButton;
+    Form.ShowModal();
+  finally
+    Form.Free();
   end;
 end;
 
@@ -274,7 +473,13 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    DeleteUserData(gKeepUserData);
+    gCleanupFailures := DeleteUserData(gKeepUserData);
     CleanupArtifacts;
+    if gCleanupFailures <> '' then
+    begin
+      Log('Unable to remove all requested app-data paths:' + #13#10 + gCleanupFailures);
+      if not UninstallSilent then
+        ShowCleanupIncompleteForm(gCleanupFailures);
+    end;
   end;
 end;

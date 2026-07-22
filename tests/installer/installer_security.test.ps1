@@ -110,40 +110,69 @@ Describe 'Elevated installer command boundaries' {
     }
 }
 
-Describe 'Profile-preserving uninstall defaults' {
-    It 'Inno exposes app-only, full-cleanup, and cancel actions with a safe default' {
+Describe 'Modern uninstall choices and complete current-account cleanup' {
+    It 'Inno uses a labeled custom choice form instead of a Yes/No task dialog' {
         $Inno | Should -Not -Match 'CmdLineParamExists'
         $Inno | Should -Match 'function HasCommandLineParam'
         $Inno | Should -Match 'for I := 1 to ParamCount'
         $Inno | Should -Match 'CompareText\(ParamStr\(I\), Expected\)'
+        $Inno | Should -Match 'function ShowUninstallChoiceForm:\s*Boolean'
+        $Inno | Should -Match 'CreateCustomForm\(\)'
+        $Inno | Should -Match "Caption\s*:=\s*'Choose what to remove'"
+        $Inno | Should -Match "Caption\s*:=\s*'Remove app only'"
+        $Inno | Should -Match "Caption\s*:=\s*'Remove app and all app data'"
+        $Inno | Should -Match 'gAppOnlyRadio\.Checked\s*:=\s*True'
+        $Inno | Should -Match "gActionButton\.Caption\s*:=\s*'Uninstall app only'"
+        $Inno | Should -Match "gActionButton\.Caption\s*:=\s*'Uninstall and delete app data'"
+        $Inno | Should -Not -Match "TaskDialogMsgBox\(\s*'Choose how to uninstall BP MD RTL Reader'"
+    }
+
+    It 'NSIS uses a labeled custom choice page instead of a Yes/No message box' {
+        $Nsis | Should -Match '!include\s+"nsDialogs\.nsh"'
+        $Nsis | Should -Match '!macro customUnWelcomePage'
+        $Nsis | Should -Match 'UninstPage custom un\.BpmdChoicePageCreate un\.BpmdChoicePageLeave'
+        $Nsis | Should -Match '\$\{NSD_CreateRadioButton\}'
+        $Nsis | Should -Match 'Choose what to remove'
+        $Nsis | Should -Match 'Remove app only'
+        $Nsis | Should -Match 'Remove app and all app data'
+        $Nsis | Should -Match 'Your Markdown documents are never deleted\.'
+        $Nsis | Should -Not -Match 'MessageBox\s+MB_YES'
+    }
+
+    It 'keeps silent removal safe and makes both destructive switches comprehensive' {
         $Inno | Should -Match "gKeepUserData\s*:=\s*not HasCommandLineParam\('/DELETEUSERDATA'\)"
-        $Inno | Should -Match 'MB_YESNOCANCEL'
-        $Inno | Should -Match 'MB_YESNOCANCEL,[^\r\n]*\['
-        $Inno | Should -Match "'&Uninstall app only'"
-        $Inno | Should -Match "'Uninstall and &delete app data'"
-        $Inno | Should -Match 'IDYES:\s*gKeepUserData\s*:=\s*True'
-        $Inno | Should -Match 'IDNO:\s*gKeepUserData\s*:=\s*False'
-        $Inno | Should -Match 'IDCANCEL:\s*Result\s*:=\s*False'
-    }
-
-    It 'NSIS exposes app-only, full-cleanup, and cancel actions with a safe default' {
-        $Nsis | Should -Match 'MB_YESNOCANCEL'
-        $Nsis | Should -Match '/SD IDYES'
         $Nsis | Should -Match '/DELETEUSERDATA'
-        $Nsis | Should -Match 'IDYES\s+keep_user_data'
-        $Nsis | Should -Match 'IDNO\s+delete_user_data'
-        $Nsis | Should -Not -Match 'IDCANCEL\s+cancel_uninstall'
-        $Nsis | Should -Match 'IDYES\s+keep_user_data\s+IDNO\s+delete_user_data\s+Goto cancel_uninstall'
+        $Nsis | Should -Match '--delete-app-data'
+        $Nsis | Should -Match '\$\{If\}\s+\$\{Silent\}'
     }
 
-    It 'full cleanup targets both app-data roots while app-only preserves both' {
+    It 'targets the actual Electron profile plus all supported aliases under current shell context' {
+        $Nsis | Should -Match 'SetShellVarContext current[\s\S]*RMDir /r "\$APPDATA\\bpmdrtlreader"'
         $Nsis | Should -Match 'RMDir /r "\$APPDATA\\BP MD RTL Reader"'
+        $Nsis | Should -Match 'RMDir /r "\$LOCALAPPDATA\\bpmdrtlreader"'
         $Nsis | Should -Match 'RMDir /r "\$LOCALAPPDATA\\BP MD RTL Reader"'
-        $Cleanup | Should -Match 'if not KeepUserData then\s*begin\s*CU_DelTree\(RoamDir\);\s*CU_DelTree\(LocalDir\);'
+        $Nsis | Should -Match 'RMDir /r "\$LOCALAPPDATA\\BP MD RTL Reader"[\s\S]*SetShellVarContext all'
+        $Cleanup | Should -Match "ExpandConstant\('\{userappdata\}\\bpmdrtlreader'\)"
+        $Cleanup | Should -Match "ExpandConstant\('\{userappdata\}\\BP MD RTL Reader'\)"
+        $Cleanup | Should -Match "ExpandConstant\('\{localappdata\}\\bpmdrtlreader'\)"
+        $Cleanup | Should -Match "ExpandConstant\('\{localappdata\}\\BP MD RTL Reader'\)"
+        $Nsis | Should -Not -Match '(?i)ProgramData|ProfileList'
+    }
+
+    It 'detects and reports incomplete destructive cleanup instead of claiming success' {
+        $Nsis | Should -Match 'Var BpmdCleanupFailures'
+        $Nsis | Should -Match '!macro customUninstallPage'
+        $Nsis | Should -Match 'UninstPage custom un\.BpmdCleanupResultPageCreate'
+        $Nsis | Should -Match 'IfFileExists.*BpmdCleanupFailures'
+        $Cleanup | Should -Match 'function DeleteUserData\(KeepUserData: Boolean\): string'
+        $Cleanup | Should -Match 'DirExists\(Path\)'
+        $Inno | Should -Match 'gCleanupFailures\s*:=\s*DeleteUserData\(gKeepUserData\)'
+        $Inno | Should -Match 'procedure ShowCleanupIncompleteForm'
     }
 
     It 'never derives cleanup targets from stored grants or Markdown paths' {
         $Nsis | Should -Not -Match '(?m)^\s*(?:RMDir|Delete)\b[^\r\n]*(?:capabilities\.json|\.(?:md|markdown)\b)'
         $Cleanup | Should -Not -Match '(?m)^\s*(?:CU_DelTree|CU_DelFile)\([^\r\n]*(?:capabilities\.json|\.(?:md|markdown)\b)'
+        ($Nsis + $Cleanup) | Should -Not -Match '(?i)Users\\\*|ProfileList|FindFirst.*Users'
     }
 }

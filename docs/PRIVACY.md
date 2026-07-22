@@ -16,29 +16,33 @@ on your own machine — and so that opening an untrusted Markdown file is safe.
 
 | What | Where |
 | ---- | ----- |
-| App settings (`settings.json`) and filesystem grants (`capabilities.json`) | `%APPDATA%\BP MD RTL Reader` |
-| Electron renderer/profile state and local diagnostic logs | `%APPDATA%\BP MD RTL Reader` (logs are in `logs\`) |
-| Transient/legacy cache cleanup target used by the Inno uninstaller | `%LOCALAPPDATA%\BP MD RTL Reader` |
+| App settings (`settings.json`), filesystem grants (`capabilities.json`), Electron profile state, and local diagnostic logs | `%APPDATA%\bpmdrtlreader` (logs are in `logs\`) |
+| Supported legacy app-data aliases | `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and `%LOCALAPPDATA%\BP MD RTL Reader` |
 | Your notes | wherever **you** saved them — plain `.md` files |
 
 Both Windows installer families offer three actions before an interactive uninstall:
 
-- **Uninstall app only** preserves both app-owned data directories so settings and local
-  state are available after a future reinstall.
-- **Uninstall and delete app data** removes both `%APPDATA%\BP MD RTL Reader` and
-  `%LOCALAPPDATA%\BP MD RTL Reader`.
+- **Remove app only** preserves app settings and data so they are available after a
+  future reinstall. This is the safe default.
+- **Remove app and all app data** removes `%APPDATA%\bpmdrtlreader`,
+  `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and
+  `%LOCALAPPDATA%\BP MD RTL Reader` for the current Windows account.
 - **Cancel** exits before the uninstaller changes anything.
 
-Silent uninstall is equally conservative: `/S` preserves both directories, while
-`/S /DELETEUSERDATA` explicitly requests full app-data cleanup. Neither installer
-derives cleanup targets from recent paths or filesystem grants, and neither deletes
-Markdown files or other documents from folders where you saved them. On a shared
-machine, the per-machine uninstaller can act only on the Windows account that runs it.
+The primary button is labeled **Uninstall app only** for the safe choice and
+**Uninstall and delete app data** for the destructive choice. Silent uninstall is
+equally conservative: `/S` preserves app data, while `/S /DELETEUSERDATA` explicitly
+requests full app-data cleanup. The electron-builder compatibility switch
+`--delete-app-data` requests the same comprehensive cleanup. Neither installer derives
+cleanup targets from recent paths or filesystem grants, enumerates other Windows
+profiles, or deletes Markdown files and other documents from folders where you saved
+them. If Windows prevents a requested folder from being deleted, the interactive
+uninstaller lists the remaining path instead of reporting complete cleanup.
 
 ## What persists between sessions
 
 So the app reopens the way you left it, a single local file —
-`%APPDATA%\BP MD RTL Reader\settings.json` — stores your preferences. It is a plain JSON
+`%APPDATA%\bpmdrtlreader\settings.json` — stores your preferences. It is a plain JSON
 file on your machine, written only by you (via the app) and **never transmitted**. It
 holds:
 

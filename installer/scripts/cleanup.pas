@@ -6,10 +6,8 @@
   and the target list) by Get-CleanupPlan / Get-UninstallTargets in
   tests/installer/logic-sim.ps1.
 
-  NOTE on user-data scope: a per-machine uninstall runs as the elevated user,
-  so the roaming/local AppData paths resolve to *that* account. On a normal
-  single-user PC this is the right profile; on a shared/multi-user machine a
-  per-machine uninstall only clears the uninstalling user's data (known caveat).
+  NOTE on user-data scope: cleanup intentionally resolves AppData for the
+  Windows account running the uninstaller. It never enumerates other profiles.
   ============================================================================ }
 
 { Delete a directory tree if it exists (files + subdirs). Safe no-op if absent. }
@@ -26,29 +24,54 @@ begin
     DeleteFile(Path);
 end;
 
-{ Remove the per-user data folders BP MD RTL Reader writes to.
+{ Remove the fixed per-user data folders BP MD RTL Reader writes to.
 
   The app persists ALL of its state via Electron app.getPath('userData') =
-  %APPDATA%\BP MD RTL Reader (roaming): settings, recent paths, filesystem grants,
-  local logs, window/zoom/theme state, and Chromium profile storage.
-  %LOCALAPPDATA%\BP MD RTL Reader is treated as a transient/legacy cache target.
+  %APPDATA%\bpmdrtlreader (roaming): settings, recent paths, filesystem grants,
+  local logs, window/zoom/theme state, and Chromium profile storage. The three
+  title-cased/local paths are supported legacy aliases.
   User-authored Markdown remains wherever the user saved it and is never an
   installer cleanup target.
 
   KeepUserData mirrors Get-CleanupPlan in logic-sim.ps1:
-    True  -> keep both roaming and local app-data targets.
-    False -> remove everything (roaming + local). }
-procedure DeleteUserData(KeepUserData: Boolean);
-var
-  RoamDir, LocalDir: string;
+    True  -> keep all app-data targets.
+    False -> remove all four fixed current-account targets. }
+function CU_DeleteAndCheck(const Path: string): string;
 begin
-  RoamDir  := ExpandConstant('{userappdata}\BP MD RTL Reader');
-  LocalDir := ExpandConstant('{localappdata}\BP MD RTL Reader');
-  if not KeepUserData then
-  begin
-    CU_DelTree(RoamDir);
-    CU_DelTree(LocalDir);
-  end;
+  CU_DelTree(Path);
+  if DirExists(Path) then
+    Result := Path
+  else
+    Result := '';
+end;
+
+procedure CU_AddFailure(var Failures: string; const Path: string);
+begin
+  if Path = '' then
+    Exit;
+  if Failures = '' then
+    Failures := Path
+  else
+    Failures := Failures + #13#10 + Path;
+end;
+
+function DeleteUserData(KeepUserData: Boolean): string;
+var
+  RoamLowerDir, RoamTitleDir, LocalLowerDir, LocalTitleDir: string;
+begin
+  Result := '';
+  if KeepUserData then
+    Exit;
+
+  RoamLowerDir := ExpandConstant('{userappdata}\bpmdrtlreader');
+  RoamTitleDir := ExpandConstant('{userappdata}\BP MD RTL Reader');
+  LocalLowerDir := ExpandConstant('{localappdata}\bpmdrtlreader');
+  LocalTitleDir := ExpandConstant('{localappdata}\BP MD RTL Reader');
+
+  CU_AddFailure(Result, CU_DeleteAndCheck(RoamLowerDir));
+  CU_AddFailure(Result, CU_DeleteAndCheck(RoamTitleDir));
+  CU_AddFailure(Result, CU_DeleteAndCheck(LocalLowerDir));
+  CU_AddFailure(Result, CU_DeleteAndCheck(LocalTitleDir));
 end;
 
 { Remove shortcuts, the Start-menu folder, app settings and file-association

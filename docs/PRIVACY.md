@@ -21,12 +21,19 @@ on your own machine — and so that opening an untrusted Markdown file is safe.
 | Transient/legacy cache cleanup target used by the Inno uninstaller | `%LOCALAPPDATA%\BP MD RTL Reader` |
 | Your notes | wherever **you** saved them — plain `.md` files |
 
-Both Windows installer families preserve the roaming application profile by default,
-including silent uninstall. An interactive uninstall offers an explicit delete-profile
-choice; unattended removal requires `/DELETEUSERDATA`. The Inno uninstaller always
-cleans its transient Local AppData target. Neither installer deletes Markdown files from
-the folders where you saved them. On a shared machine, the per-machine Inno uninstaller
-can act only on the Windows account that runs it.
+Both Windows installer families offer three actions before an interactive uninstall:
+
+- **Uninstall app only** preserves both app-owned data directories so settings and local
+  state are available after a future reinstall.
+- **Uninstall and delete app data** removes both `%APPDATA%\BP MD RTL Reader` and
+  `%LOCALAPPDATA%\BP MD RTL Reader`.
+- **Cancel** exits before the uninstaller changes anything.
+
+Silent uninstall is equally conservative: `/S` preserves both directories, while
+`/S /DELETEUSERDATA` explicitly requests full app-data cleanup. Neither installer
+derives cleanup targets from recent paths or filesystem grants, and neither deletes
+Markdown files or other documents from folders where you saved them. On a shared
+machine, the per-machine uninstaller can act only on the Windows account that runs it.
 
 ## What persists between sessions
 

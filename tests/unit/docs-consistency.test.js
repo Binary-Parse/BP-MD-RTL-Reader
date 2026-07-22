@@ -47,6 +47,10 @@ describe('documentation follows executable repository truth', () => {
     const contributing = read('CONTRIBUTING.md');
     expect(privacy).toContain('api.github.com');
     expect(privacy).toContain('no note content');
+    expect(privacy).toContain('Uninstall app only');
+    expect(privacy).toContain('Uninstall and delete app data');
+    expect(privacy).toContain('/DELETEUSERDATA');
+    expect(privacy).toContain('preserves both');
     expect(guide).toContain('up to five');
     expect(guide).toContain('Reading mode');
     expect(guide).toContain('capabilities.json');

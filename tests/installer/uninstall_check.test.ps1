@@ -13,11 +13,11 @@ BeforeAll {
 }
 
 Describe 'User-data cleanup plan (Get-CleanupPlan)' {
-    It 'KeepUserData=$true keeps roaming data, deletes only the local cache' {
+    It 'KeepUserData=$true preserves both roaming and local app data' {
         $p = Get-CleanupPlan -KeepUserData $true
         $p.Preserve | Should -Contain '{userappdata}\BP MD RTL Reader'
-        $p.Delete   | Should -Contain '{localappdata}\BP MD RTL Reader'
-        $p.Delete   | Should -Not -Contain '{userappdata}\BP MD RTL Reader'
+        $p.Preserve | Should -Contain '{localappdata}\BP MD RTL Reader'
+        $p.Delete   | Should -BeNullOrEmpty
     }
     It 'KeepUserData=$false deletes both roaming and local' {
         $p = Get-CleanupPlan -KeepUserData $false
@@ -60,6 +60,9 @@ Describe 'Cleanup target set (Get-UninstallTargets)' {
     }
     It 'no longer references the old product name "Marqam" (rename is complete)' {
         (($t.RegKeys + $t.Dirs + $t.Files) -join '|') | Should -Not -Match 'Marqam'
+    }
+    It 'contains no user-authored Markdown cleanup target' {
+        (($t.Dirs + $t.Files) -join '|') | Should -Not -Match '\.(?:md|markdown)(?:$|[|\\])'
     }
 }
 

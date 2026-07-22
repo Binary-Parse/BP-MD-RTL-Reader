@@ -36,7 +36,7 @@ end;
   installer cleanup target.
 
   KeepUserData mirrors Get-CleanupPlan in logic-sim.ps1:
-    True  -> keep the roaming app profile; clear only the transient local cache target.
+    True  -> keep both roaming and local app-data targets.
     False -> remove everything (roaming + local). }
 procedure DeleteUserData(KeepUserData: Boolean);
 var
@@ -44,9 +44,7 @@ var
 begin
   RoamDir  := ExpandConstant('{userappdata}\BP MD RTL Reader');
   LocalDir := ExpandConstant('{localappdata}\BP MD RTL Reader');
-  if KeepUserData then
-    CU_DelTree(LocalDir)              { keep roaming settings/notes; drop only caches }
-  else
+  if not KeepUserData then
   begin
     CU_DelTree(RoamDir);
     CU_DelTree(LocalDir);

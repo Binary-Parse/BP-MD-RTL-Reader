@@ -114,7 +114,7 @@ Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader\
 
 [UninstallDelete]
 ; Leftovers the app may write INTO its own program directory (logs, caches).
-; User-data folders are removed conditionally in [Code] (keep-notes choice),
+; User-data folders are removed conditionally in [Code] (app-data choice),
 ; never here, because [UninstallDelete] is unconditional.
 Type: filesandordirs; Name: "{app}\logs"
 Type: dirifempty;     Name: "{app}"
@@ -224,7 +224,7 @@ begin
   end;
 end;
 
-{ --- Uninstall: ask the single keep-data question up front. ----------------- }
+{ --- Uninstall: offer app-only, full-cleanup, or cancel up front. ------------ }
 function HasCommandLineParam(const Expected: string): Boolean;
 var
   I: Integer;
@@ -241,6 +241,8 @@ begin
 end;
 
 function InitializeUninstall: Boolean;
+var
+  Choice: Integer;
 begin
   Result := True;
   if UninstallSilent then
@@ -248,11 +250,23 @@ begin
   else if HasCommandLineParam('/DELETEUSERDATA') then
     gKeepUserData := False
   else
-    gKeepUserData :=
-      MsgBox('Keep your BP MD RTL Reader settings and data?' + #13#10#13#10 +
-             'Yes  — keep your app profile (%APPDATA%\BP MD RTL Reader: settings, recent paths, grants, and logs) and remove only the program.' + #13#10 +
-             'No   — remove that app profile too. Markdown files saved elsewhere are never removed.',
-             mbConfirmation, MB_YESNO or MB_DEFBUTTON1) = IDYES;
+  begin
+    Choice := TaskDialogMsgBox(
+      'Choose how to uninstall BP MD RTL Reader',
+      'Uninstall app only keeps the app profile for a future reinstall.' + #13#10 +
+      'Full cleanup also removes BP MD RTL Reader settings, recent paths, grants, logs, profile storage, and caches from AppData.' + #13#10#13#10 +
+      'Markdown files and other documents saved elsewhere are never removed.',
+      mbConfirmation, MB_YESNOCANCEL, ['&Uninstall app only'#13#10'Keep all BP MD RTL Reader app data.',
+       'Uninstall and &delete app data'#13#10'Remove the Roaming and Local AppData folders.'],
+      IDYES);
+    case Choice of
+      IDYES: gKeepUserData := True;
+      IDNO: gKeepUserData := False;
+      IDCANCEL: Result := False;
+    else
+      Result := False;
+    end;
+  end;
 end;
 
 { --- Uninstall: perform the complete cleanup after files are removed. ------- }

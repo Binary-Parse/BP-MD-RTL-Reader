@@ -203,14 +203,13 @@ function Test-InstallDir {
 # ----- cleanup.pas mirror ----------------------------------------------------
 
 function Get-CleanupPlan {
-    # Mirrors DeleteUserData. KeepUserData=$true keeps the roaming data folder
-    # (settings, recent files, notes) and removes only the transient local cache;
-    # $false removes both.
+    # Mirrors DeleteUserData. KeepUserData=$true preserves both app-owned data
+    # folders; $false removes both.
     param([bool]$KeepUserData)
     $roam  = '{userappdata}\BP MD RTL Reader'
     $local = '{localappdata}\BP MD RTL Reader'
     if ($KeepUserData) {
-        return [pscustomobject]@{ Delete = @($local); Preserve = @($roam) }
+        return [pscustomobject]@{ Delete = @(); Preserve = @($roam, $local) }
     }
     return [pscustomobject]@{ Delete = @($roam, $local); Preserve = @() }
 }

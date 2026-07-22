@@ -9,6 +9,7 @@ BeforeAll {
     $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
     $script:Nsis = Get-Content -Raw (Join-Path $RepoRoot 'installer\installer.nsh')
     $script:Inno = Get-Content -Raw (Join-Path $RepoRoot 'installer\setup.iss')
+    $script:Cleanup = Get-Content -Raw (Join-Path $RepoRoot 'installer\scripts\cleanup.pas')
     $script:Version = Get-Content -Raw (Join-Path $RepoRoot 'installer\scripts\version_check.pas')
     $script:Build = Get-Content -Raw (Join-Path $RepoRoot 'installer\build-installer.ps1')
     $script:PascalSelfTest = Get-Content -Raw (Join-Path $RepoRoot 'tests\installer\run-pascal-self-test.ps1')
@@ -110,17 +111,39 @@ Describe 'Elevated installer command boundaries' {
 }
 
 Describe 'Profile-preserving uninstall defaults' {
-    It 'Inno silent uninstall preserves data unless DELETEUSERDATA is explicit' {
+    It 'Inno exposes app-only, full-cleanup, and cancel actions with a safe default' {
         $Inno | Should -Not -Match 'CmdLineParamExists'
         $Inno | Should -Match 'function HasCommandLineParam'
         $Inno | Should -Match 'for I := 1 to ParamCount'
         $Inno | Should -Match 'CompareText\(ParamStr\(I\), Expected\)'
         $Inno | Should -Match "gKeepUserData\s*:=\s*not HasCommandLineParam\('/DELETEUSERDATA'\)"
-        $Inno | Should -Match 'MB_YESNO or MB_DEFBUTTON1'
+        $Inno | Should -Match 'MB_YESNOCANCEL'
+        $Inno | Should -Match 'MB_YESNOCANCEL,[^\r\n]*\['
+        $Inno | Should -Match "'&Uninstall app only'"
+        $Inno | Should -Match "'Uninstall and &delete app data'"
+        $Inno | Should -Match 'IDYES:\s*gKeepUserData\s*:=\s*True'
+        $Inno | Should -Match 'IDNO:\s*gKeepUserData\s*:=\s*False'
+        $Inno | Should -Match 'IDCANCEL:\s*Result\s*:=\s*False'
     }
 
-    It 'NSIS silent uninstall preserves data and supports explicit deletion' {
-        $Nsis | Should -Match '/SD IDNO'
+    It 'NSIS exposes app-only, full-cleanup, and cancel actions with a safe default' {
+        $Nsis | Should -Match 'MB_YESNOCANCEL'
+        $Nsis | Should -Match '/SD IDYES'
         $Nsis | Should -Match '/DELETEUSERDATA'
+        $Nsis | Should -Match 'IDYES\s+keep_user_data'
+        $Nsis | Should -Match 'IDNO\s+delete_user_data'
+        $Nsis | Should -Not -Match 'IDCANCEL\s+cancel_uninstall'
+        $Nsis | Should -Match 'IDYES\s+keep_user_data\s+IDNO\s+delete_user_data\s+Goto cancel_uninstall'
+    }
+
+    It 'full cleanup targets both app-data roots while app-only preserves both' {
+        $Nsis | Should -Match 'RMDir /r "\$APPDATA\\BP MD RTL Reader"'
+        $Nsis | Should -Match 'RMDir /r "\$LOCALAPPDATA\\BP MD RTL Reader"'
+        $Cleanup | Should -Match 'if not KeepUserData then\s*begin\s*CU_DelTree\(RoamDir\);\s*CU_DelTree\(LocalDir\);'
+    }
+
+    It 'never derives cleanup targets from stored grants or Markdown paths' {
+        $Nsis | Should -Not -Match '(?m)^\s*(?:RMDir|Delete)\b[^\r\n]*(?:capabilities\.json|\.(?:md|markdown)\b)'
+        $Cleanup | Should -Not -Match '(?m)^\s*(?:CU_DelTree|CU_DelFile)\([^\r\n]*(?:capabilities\.json|\.(?:md|markdown)\b)'
     }
 }

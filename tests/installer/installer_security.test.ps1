@@ -13,6 +13,7 @@ BeforeAll {
     $script:Version = Get-Content -Raw (Join-Path $RepoRoot 'installer\scripts\version_check.pas')
     $script:Build = Get-Content -Raw (Join-Path $RepoRoot 'installer\build-installer.ps1')
     $script:PascalSelfTest = Get-Content -Raw (Join-Path $RepoRoot 'tests\installer\run-pascal-self-test.ps1')
+    $script:ReleaseVm = Get-Content -Raw (Join-Path $RepoRoot 'tests\installer\run-release-vm-tests.ps1')
     $script:ToolPolicy = Get-Content -Raw (Join-Path $RepoRoot 'installer\toolchain-policy.json') | ConvertFrom-Json
     $script:SourcePolicy = Get-Content -Raw (Join-Path $RepoRoot 'installer\source-manifest-policy.json') | ConvertFrom-Json
     . (Join-Path $RepoRoot 'installer\build-policy.ps1')
@@ -83,6 +84,32 @@ Describe 'Verified installer build chain' {
         New-Item -ItemType Directory -Path $outputScratch | Out-Null
         { Remove-InstallerScratch -Path $outputScratch -DistRoot $TestDrive } | Should -Not -Throw
         Test-Path -LiteralPath $outputScratch | Should -BeFalse
+    }
+
+    It 'uses the exact public Inno artifact names' {
+        $Build | Should -Match '\$outputBase\s*=\s*"BP-MD-RTL-Reader-\$Version-Windows-Inno-x64"'
+        $Build | Should -Match '"\$outputBase\.exe"'
+        $Build | Should -Match '"\$outputBase\.source-manifest\.json"'
+        $Inno | Should -Match 'OutputBaseFilename=BP-MD-RTL-Reader-\{#AppVersion\}-Windows-Inno-x64'
+        $Inno | Should -Match '#define MyAppURL\s+"https://github\.com/Binary-Parse/BP-MD-RTL-Reader"'
+    }
+
+    It 'fails closed when release signing inputs or signatures are missing' {
+        $Build | Should -Match '\[switch\]\$RequireSigned'
+        $Build | Should -Match '\[string\]\$CertificateSha1'
+        $Build | Should -Match '\[string\]\$SignToolPath'
+        $Build | Should -Match 'Get-PackagedFileManifest[^\r\n]*-RequireSigned:\$RequireSigned'
+        $Build | Should -Match 'Get-TrustedSignTool'
+        $Build | Should -Match '/DReleaseSigning=1'
+        $Build | Should -Match '/Sbpmd='
+        $Build | Should -Match 'Assert-ReleaseSignature'
+        $Inno | Should -Match '#ifdef ReleaseSigning[\s\S]*SignTool=bpmd[\s\S]*SignedUninstaller=yes[\s\S]*#endif'
+
+        { Assert-ReleaseSignatureMetadata -Status Valid -SignerSubject 'CN=Binary Parse' -Thumbprint ('A' * 40) -ExpectedThumbprint ('A' * 40) -Timestamped $true -ExpectedSigner 'Binary Parse' } | Should -Not -Throw
+        { Assert-ReleaseSignatureMetadata -Status NotSigned -SignerSubject '' -Thumbprint '' -ExpectedThumbprint ('A' * 40) -Timestamped $false -ExpectedSigner 'Binary Parse' } | Should -Throw
+        { Assert-ReleaseSignatureMetadata -Status Valid -SignerSubject 'CN=Someone Else' -Thumbprint ('A' * 40) -ExpectedThumbprint ('A' * 40) -Timestamped $true -ExpectedSigner 'Binary Parse' } | Should -Throw
+        { Assert-ReleaseSignatureMetadata -Status Valid -SignerSubject 'CN=Binary Parse' -Thumbprint ('B' * 40) -ExpectedThumbprint ('A' * 40) -Timestamped $true -ExpectedSigner 'Binary Parse' } | Should -Throw
+        { Assert-ReleaseSignatureMetadata -Status Valid -SignerSubject 'CN=Binary Parse' -Thumbprint ('A' * 40) -ExpectedThumbprint ('A' * 40) -Timestamped $false -ExpectedSigner 'Binary Parse' } | Should -Throw
     }
 }
 
@@ -181,5 +208,39 @@ Describe 'Modern uninstall choices and complete current-account cleanup' {
         $Nsis | Should -Not -Match '(?m)^\s*(?:RMDir|Delete)\b[^\r\n]*(?:capabilities\.json|\.(?:md|markdown)\b)'
         $Cleanup | Should -Not -Match '(?m)^\s*(?:CU_DelTree|CU_DelFile)\([^\r\n]*(?:capabilities\.json|\.(?:md|markdown)\b)'
         ($Nsis + $Cleanup) | Should -Not -Match '(?i)Users\\\*|ProfileList|FindFirst.*Users'
+    }
+}
+
+Describe 'Disposable-runner release uninstall gate' {
+    It 'is hard-guarded to GitHub-hosted Windows CI and absolute installer inputs' {
+        $ReleaseVm | Should -Match '\$env:CI\s*-ne\s*''true'''
+        $ReleaseVm | Should -Match '\$env:GITHUB_ACTIONS\s*-ne\s*''true'''
+        $ReleaseVm | Should -Match '\$env:RUNNER_ENVIRONMENT\s*-ne\s*''github-hosted'''
+        $ReleaseVm | Should -Match '\$env:RUNNER_OS\s*-ne\s*''Windows'''
+        $ReleaseVm | Should -Match '\[IO\.Path\]::IsPathFullyQualified\(\$InstallerPath\)'
+        $ReleaseVm | Should -Match '\[ValidateSet\(''Inno'', ''NSIS''\)\]'
+    }
+
+    It 'exercises preserve and destructive modes without targeting documents' {
+        $ReleaseVm | Should -Match 'Invoke-UninstallScenario[^\r\n]*-DeleteUserData:\$false'
+        $ReleaseVm | Should -Match 'Invoke-UninstallScenario[^\r\n]*-DeleteUserData:\$true'
+        $ReleaseVm | Should -Match '/DELETEUSERDATA'
+        $ReleaseVm | Should -Match '\$env:APPDATA, ''bpmdrtlreader'''
+        $ReleaseVm | Should -Match '\$env:APPDATA, ''BP MD RTL Reader'''
+        $ReleaseVm | Should -Match '\$env:LOCALAPPDATA, ''bpmdrtlreader'''
+        $ReleaseVm | Should -Match '\$env:LOCALAPPDATA, ''BP MD RTL Reader'''
+        $ReleaseVm | Should -Match 'external\.md'
+        $ReleaseVm | Should -Match 'Get-FileHash'
+        $ReleaseVm | Should -Match 'Assert-ReleaseSignature'
+        $ReleaseVm | Should -Match 'signtool verification failed'
+        $ReleaseVm | Should -Not -Match '(?i)Users\\\*|ProfileList|Get-ChildItem[^\r\n]+Users'
+    }
+
+    It 'runs every opt-in post-uninstall Pester assertion instead of leaving it skipped' {
+        $ReleaseVm | Should -Match 'uninstall_check\.test\.ps1'
+        $ReleaseVm | Should -Match '\$env:BPMDRTL_UNINSTALL_TEST\s*=\s*''1'''
+        $ReleaseVm | Should -Match '\$env:BPMDRTL_INSTALL_DIR\s*=\s*\$installRoot'
+        $ReleaseVm | Should -Match 'Invoke-Pester'
+        $ReleaseVm | Should -Match 'SkippedCount\s*-ne\s*0'
     }
 }

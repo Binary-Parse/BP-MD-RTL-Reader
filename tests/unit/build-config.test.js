@@ -54,4 +54,9 @@ describe('electron-builder cross-platform config (T-B7)', () => {
     expect(targetsOf(pkg.build.win)).toEqual(expect.arrayContaining(['nsis']));
     expect(pkg.build.appId).toBe('com.binaryparse.bpmdrtlreader');
   });
+
+  test('Windows publisher identity is nested under the electron-builder 26 signtool schema', () => {
+    expect(pkg.build.win).not.toHaveProperty('publisherName');
+    expect(pkg.build.win.signtoolOptions).toEqual(expect.objectContaining({ publisherName: 'Binary Parse' }));
+  });
 });

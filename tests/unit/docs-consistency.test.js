@@ -29,16 +29,37 @@ describe('documentation follows executable repository truth', () => {
   test('names only committed workflows and qualifies their different permissions', () => {
     const workflows = fs.readdirSync(path.join(ROOT, '.github/workflows')).filter(name => /\.ya?ml$/.test(name)).sort();
     const agents = read('AGENTS.md');
-    expect(workflows).toEqual(['ci.yml', 'claude.yml']);
+    expect(workflows).toEqual(['ci.yml', 'claude.yml', 'release.yml']);
     for (const workflow of workflows) expect(agents).toContain(`\`${workflow}\``);
-    for (const absent of ['codeql.yml', 'release.yml', 'scorecard.yml']) expect(agents).not.toContain(absent);
+    for (const absent of ['codeql.yml', 'scorecard.yml']) expect(agents).not.toContain(absent);
     expect(agents).toContain('Claude workflow grants explicit write permissions');
+    expect(agents).toContain('Release workflow grants `contents: write`, `id-token: write`, and `attestations: write`');
 
     for (const workflow of workflows) {
       const uses = [...read(`.github/workflows/${workflow}`).matchAll(/^\s*uses:\s*[^@\s]+@([^\s#]+)/gm)];
       expect(uses.length).toBeGreaterThan(0);
       for (const [, ref] of uses) expect(ref).toMatch(/^[0-9a-f]{40}$/);
     }
+  });
+
+  test('documents the exact release repository, artifact contract, checksums, and signing gates', () => {
+    const pkg = JSON.parse(read('package.json'));
+    const readme = read('README.md');
+    const build = read('docs/BUILD.md');
+    const contributing = read('CONTRIBUTING.md');
+    const { expectedArtifactNames } = require('../../scripts/release-artifacts.js');
+    const repository = 'https://github.com/Binary-Parse/BP-MD-RTL-Reader';
+
+    expect(pkg.repository.url).toBe(`git+${repository}.git`);
+    for (const document of [readme, build, contributing]) expect(document).toContain(repository);
+    for (const artifact of expectedArtifactNames(pkg.version)) expect(build).toContain(artifact);
+    expect(build).toContain('dist/release');
+    expect(build).toContain('npm run package:checksums:verify');
+    expect(build).toContain('WIN_CSC_LINK_B64');
+    expect(build).toContain('MAC_CSC_LINK_B64');
+    expect(build).toContain('signed annotated tag');
+    expect(readme).toContain('SHA256SUMS.txt');
+    expect(readme).toContain('signed and notarized');
   });
 
   test('documents update traffic, persistence, runner ownership, and reproducible licenses', () => {

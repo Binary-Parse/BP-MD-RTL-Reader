@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "reviewedAtCommit": "70eb3a6",
-  "expectedTotal": 169,
-  "fingerprintSha256": "56fd45e9a9239c057474eecedbf73692336af9de8735e0bde6ac09b3a4b5087b",
+  "reviewedAtCommit": "a6880e3",
+  "expectedTotal": 174,
+  "fingerprintSha256": "6c65a173a28ea7d86fce4d03b5c2b9d3726bbcef9a116d03ccdc6b4793a30433",
   "countsByRule": {
     "no-unsanitized/property": 19,
-    "security/detect-non-literal-fs-filename": 61,
+    "security/detect-non-literal-fs-filename": 66,
     "security/detect-non-literal-regexp": 5,
     "security/detect-object-injection": 74,
     "security/detect-unsafe-regex": 10
   },
   "reviewRationale": {
     "no-unsanitized/property": "Exact DOM sinks were traced to DOMPurify/sanitizeSvg/sanitizeMath output, escaped text, fixed local templates, or vetted renderer output; hostile-content and CSP tests cover the active sinks.",
-    "security/detect-non-literal-fs-filename": "Executed tooling only reads or writes paths anchored below the repository, generated coverage/package directories, or an explicit local report path; none are reachable from rendered document content.",
+    "security/detect-non-literal-fs-filename": "Executed tooling only reads or writes paths anchored below the repository, generated coverage/package directories, or an explicit operator-selected report/release directory; release-note output uses create-new semantics and the checksum tool first enforces the exact artifact allowlist. None are reachable from rendered document content.",
     "security/detect-non-literal-regexp": "Dynamic expressions use escaped literal search text or fixed parser delimiters and are bounded by local document limits.",
     "security/detect-object-injection": "Findings are bounded array/tuple iteration, Map/locale lookups, parser token access, or state keys rather than attacker-selected object prototype writes.",
     "security/detect-unsafe-regex": "Expressions use terminator-excluding classes or bounded local inputs; focused long-input tests cover the parser expressions flagged by the heuristic."

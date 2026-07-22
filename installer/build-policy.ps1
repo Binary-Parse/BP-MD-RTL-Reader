@@ -55,6 +55,67 @@ function Get-TrustedIscc {
     }
 }
 
+function Assert-ReleaseSignatureMetadata {
+    param(
+        [Parameter(Mandatory)][string]$Status,
+        [AllowEmptyString()][string]$SignerSubject,
+        [AllowEmptyString()][string]$Thumbprint,
+        [Parameter(Mandatory)][string]$ExpectedThumbprint,
+        [Parameter(Mandatory)][bool]$Timestamped,
+        [Parameter(Mandatory)][string]$ExpectedSigner
+    )
+    if ($Status -ne 'Valid') { throw "Authenticode signature is $Status, not Valid." }
+    if ($SignerSubject -notmatch [regex]::Escape($ExpectedSigner)) {
+        throw "Signer '$SignerSubject' does not contain '$ExpectedSigner'."
+    }
+    if ($Thumbprint -ne $ExpectedThumbprint) {
+        throw "Signer certificate thumbprint '$Thumbprint' does not match the release certificate."
+    }
+    if (-not $Timestamped) { throw 'Authenticode signature has no trusted timestamp.' }
+    return $true
+}
+
+function Assert-ReleaseSignature {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$ExpectedThumbprint,
+        [string]$ExpectedSigner = 'Binary Parse'
+    )
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+    $thumbprint = if ($signature.SignerCertificate) { $signature.SignerCertificate.Thumbprint } else { '' }
+    Assert-ReleaseSignatureMetadata `
+        -Status ([string]$signature.Status) `
+        -SignerSubject $subject `
+        -Thumbprint $thumbprint `
+        -ExpectedThumbprint $ExpectedThumbprint `
+        -Timestamped ($null -ne $signature.TimeStamperCertificate) `
+        -ExpectedSigner $ExpectedSigner | Out-Null
+    return $signature
+}
+
+function Get-TrustedSignTool {
+    param([Parameter(Mandatory)][string]$ExplicitPath)
+    if (-not (Test-Path -LiteralPath $ExplicitPath -PathType Leaf)) {
+        throw "signtool.exe was not found: $ExplicitPath"
+    }
+    $resolved = (Resolve-Path -LiteralPath $ExplicitPath).Path
+    if ([IO.Path]::GetFileName($resolved) -ne 'signtool.exe') {
+        throw 'The signing tool must be named signtool.exe.'
+    }
+    $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+        Where-Object { $_ } | ForEach-Object { Join-Path $_ 'Windows Kits' }
+    if (-not ($roots | Where-Object { Test-PathWithinRoot -Path $resolved -Root $_ })) {
+        throw 'signtool.exe is outside the canonical Windows Kits roots.'
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $resolved
+    $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+    if ([string]$signature.Status -ne 'Valid' -or $subject -notmatch 'Microsoft') {
+        throw "signtool.exe is not validly signed by Microsoft (status=$($signature.Status), signer=$subject)."
+    }
+    return [ordered]@{ path = $resolved; signer = $subject }
+}
+
 function Get-NormalizedRelativePath {
     param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
     return [IO.Path]::GetRelativePath($Root, $Path).Replace('\', '/')
@@ -64,7 +125,9 @@ function Get-PackagedFileManifest {
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)]$Policy,
-        [Parameter(Mandatory)][string]$AppVersion
+        [Parameter(Mandatory)][string]$AppVersion,
+        [switch]$RequireSigned,
+        [string]$ExpectedThumbprint
     )
     $root = (Resolve-Path -LiteralPath $SourceRoot).Path
     $reparse = Get-ChildItem -LiteralPath $root -Recurse -Force |
@@ -86,12 +149,18 @@ function Get-PackagedFileManifest {
         throw "Packaged executable metadata does not match version/product policy."
     }
     $signature = Get-AuthenticodeSignature -LiteralPath $appExe
-    if ([string]$signature.Status -notin @('Valid', 'NotSigned')) {
-        throw "Packaged executable signature status is $($signature.Status)."
-    }
     $signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
-    if ([string]$signature.Status -eq 'Valid' -and $signer -notmatch [regex]::Escape([string]$Policy.executable.signer)) {
-        throw "Packaged executable signer '$signer' does not match policy."
+    if ($RequireSigned) {
+        if (-not $ExpectedThumbprint) { throw 'ExpectedThumbprint is required for a signed payload.' }
+        Assert-ReleaseSignature -Path $appExe -ExpectedThumbprint $ExpectedThumbprint -ExpectedSigner ([string]$Policy.executable.signer) | Out-Null
+    }
+    else {
+        if ([string]$signature.Status -notin @('Valid', 'NotSigned')) {
+            throw "Packaged executable signature status is $($signature.Status)."
+        }
+        if ([string]$signature.Status -eq 'Valid' -and $signer -notmatch [regex]::Escape([string]$Policy.executable.signer)) {
+            throw "Packaged executable signer '$signer' does not match policy."
+        }
     }
 
     $files = @($items | ForEach-Object {

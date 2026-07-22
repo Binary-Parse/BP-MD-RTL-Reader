@@ -369,8 +369,9 @@ jobs:
           retention-days: 14
 
   # Build every configured target/architecture on its native runner. Package
-  # archives are inspected before upload, and release artifacts carry SHA-256
-  # checksums. Windows also runs the non-destructive installer logic tests.
+  # archives are inspected before upload. Canonical cross-platform release
+  # checksums are created only after release.yml has assembled the exact public
+  # artifact allowlist. Windows also runs the non-destructive installer tests.
   package-matrix:
     name: Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -409,8 +410,6 @@ jobs:
         run: ./tests/installer/run-tests.ps1 -SkipMutation -InstallPester
       - name: Verify packaged licenses and source inventory
         run: npm run package:verify
-      - name: Generate artifact checksums
-        run: npm run package:checksums
       - name: Upload verified packages
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
@@ -421,7 +420,6 @@ jobs:
             dist/*.zip
             dist/*.AppImage
             dist/*.deb
-            dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 

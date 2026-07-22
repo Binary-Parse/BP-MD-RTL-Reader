@@ -7,8 +7,8 @@ this file is the quick contributor reference.
 ## Getting started
 
 ```bash
-git clone https://github.com/Binary-Parse/md-reader-rtl.git
-cd md-reader-rtl
+git clone https://github.com/Binary-Parse/BP-MD-RTL-Reader.git
+cd BP-MD-RTL-Reader
 npm install      # postinstall fetches the Playwright Chromium used by the e2e tests
 npm start        # launch the app in development (electron .)
 ```

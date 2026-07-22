@@ -14,6 +14,9 @@
 param(
     [string]$Version,
     [string]$IsccPath,
+    [switch]$RequireSigned,
+    [ValidatePattern('^[0-9A-Fa-f]{40}$')][string]$CertificateSha1,
+    [string]$SignToolPath,
     [string]$Iss = (Join-Path $PSScriptRoot 'setup.iss')
 )
 $ErrorActionPreference = 'Stop'
@@ -35,6 +38,20 @@ if ($sourcePolicy.electronVersion -ne $package.devDependencies.electron) {
 }
 
 $compiler = Get-TrustedIscc -ExplicitPath $IsccPath -Policy $toolPolicy
+$trustedSignTool = $null
+if ($RequireSigned) {
+    if (-not $CertificateSha1) { throw '-CertificateSha1 is required with -RequireSigned.' }
+    if (-not $SignToolPath) { throw '-SignToolPath is required with -RequireSigned.' }
+    if (-not $env:WIN_CSC_LINK -or -not $env:WIN_CSC_KEY_PASSWORD) {
+        throw 'WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD are required with -RequireSigned.'
+    }
+    $CertificateSha1 = $CertificateSha1.ToUpperInvariant()
+    $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$CertificateSha1" -ErrorAction SilentlyContinue
+    if (-not $certificate -or -not $certificate.HasPrivateKey -or $certificate.Subject -notmatch 'Binary Parse') {
+        throw 'The release certificate must exist in CurrentUser\My, contain Binary Parse, and have a private key.'
+    }
+    $trustedSignTool = Get-TrustedSignTool -ExplicitPath $SignToolPath
+}
 Write-Host "ISCC   : $($compiler.Path)" -ForegroundColor Cyan
 Write-Host "Version: $Version" -ForegroundColor Cyan
 
@@ -48,17 +65,21 @@ $nonce = [Guid]::NewGuid().ToString('N')
 $appBuildRoot = Join-Path $distRoot ".inno-app-build-$nonce"
 $stagingRoot = Join-Path $distRoot ".inno-staging-$nonce"
 $compilerOutputRoot = Join-Path $distRoot ".inno-output-$nonce"
-$outFile = Join-Path $distRoot 'BP MD RTL Reader Setup.exe'
-$compiledOutFile = Join-Path $compilerOutputRoot 'BP MD RTL Reader Setup.exe'
-$manifestFile = Join-Path $distRoot 'BP MD RTL Reader Setup.source-manifest.json'
+$outputBase = "BP-MD-RTL-Reader-$Version-Windows-Inno-x64"
+$outFile = Join-Path $distRoot "$outputBase.exe"
+$compiledOutFile = Join-Path $compilerOutputRoot "$outputBase.exe"
+$manifestFile = Join-Path $distRoot "$outputBase.source-manifest.json"
+$scratchManifestFile = Join-Path $compilerOutputRoot "$outputBase.source-manifest.json"
 
 try {
     Write-Host 'Building a fresh x64 Electron directory...' -ForegroundColor Cyan
-    & $builder --dir --win --x64 "--config.directories.output=$appBuildRoot"
+    $builderArgs = @('--dir', '--win', '--x64', '--publish', 'never', "--config.directories.output=$appBuildRoot")
+    if ($RequireSigned) { $builderArgs += '--config.forceCodeSigning=true' }
+    & $builder @builderArgs
     if ($LASTEXITCODE -ne 0) { throw "electron-builder failed with exit code $LASTEXITCODE" }
 
     $sourceDir = Join-Path $appBuildRoot 'win-unpacked'
-    $payload = Get-PackagedFileManifest -SourceRoot $sourceDir -Policy $sourcePolicy -AppVersion $Version
+    $payload = Get-PackagedFileManifest -SourceRoot $sourceDir -Policy $sourcePolicy -AppVersion $Version -RequireSigned:$RequireSigned -ExpectedThumbprint $CertificateSha1
     New-VerifiedStaging -SourceRoot $sourceDir -StagingRoot $stagingRoot -Files $payload.Files | Out-Null
 
     $buildRecord = [ordered]@{
@@ -70,17 +91,20 @@ try {
         executable = $payload.Executable
         files = $payload.Files
     }
-    $buildRecord | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestFile -Encoding utf8
-
     New-Item -ItemType Directory -Path $compilerOutputRoot | Out-Null
+    $buildRecord | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $scratchManifestFile -Encoding utf8
     $isccArgs = @(
         "/DAppVersion=$Version",
         "/DSourceDir=$stagingRoot",
         '/DVerifiedStaging=1',
         "/O$compilerOutputRoot",
-        '/FBP MD RTL Reader Setup',
+        "/F$outputBase",
         $Iss
     )
+    if ($RequireSigned) {
+        $signCommand = ('"{0}" sign /sha1 {1} /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $f' -f $trustedSignTool.Path, $CertificateSha1)
+        $isccArgs = @('/DReleaseSigning=1', "/Sbpmd=$signCommand") + $isccArgs
+    }
     Write-Host 'Compiling verified staging tree...' -ForegroundColor Cyan
     & $compiler.Path @isccArgs
     if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
@@ -91,11 +115,19 @@ try {
     $size = (Get-Item -LiteralPath $compiledOutFile).Length
     if ($size -lt 10MB) { throw ("Output is suspiciously small ({0:N0} bytes < 10 MB)." -f $size) }
     $hash = (Get-FileHash -LiteralPath $compiledOutFile -Algorithm SHA256).Hash
+    if ($RequireSigned) {
+        Assert-ReleaseSignature -Path $compiledOutFile -ExpectedThumbprint $CertificateSha1 | Out-Null
+    }
 
     if (Test-Path -LiteralPath $outFile) { Remove-Item -LiteralPath $outFile -Force }
+    if (Test-Path -LiteralPath $manifestFile) { Remove-Item -LiteralPath $manifestFile -Force }
     Move-Item -LiteralPath $compiledOutFile -Destination $outFile
+    Move-Item -LiteralPath $scratchManifestFile -Destination $manifestFile
     if ((Get-FileHash -LiteralPath $outFile -Algorithm SHA256).Hash -ne $hash) {
         throw 'Published installer hash does not match the verified compiler output.'
+    }
+    if ($RequireSigned) {
+        Assert-ReleaseSignature -Path $outFile -ExpectedThumbprint $CertificateSha1 | Out-Null
     }
 
     Write-Host ''

@@ -1,0 +1,495 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publication is tag-only; manual runs are validation-only.'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  RELEASE_PUBLISH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+  REPOSITORY_VISIBILITY: ${{ github.repository_visibility }}
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout complete tag history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Refuse manual publication
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          REQUESTED_PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [ "$REQUESTED_PUBLISH" = "true" ]; then
+            echo 'Manual runs are validation-only. Push a verified signed tag to publish.' >&2
+            exit 1
+          fi
+      - name: Validate version, changelog, repository, visibility, and tag
+        run: node scripts/release-preflight.js
+      - name: Verify annotated tag signature through GitHub
+        if: ${{ env.RELEASE_PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag_object="$(git rev-parse "${GITHUB_REF_NAME}^{tag}")" || {
+            echo 'Release tag must be annotated, not lightweight.' >&2
+            exit 1
+          }
+          target_commit="$(git rev-parse "${GITHUB_REF_NAME}^{}")"
+          test "$target_commit" = "$GITHUB_SHA"
+          verified="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.verification.verified')"
+          test "$verified" = 'true' || {
+            echo 'GitHub does not report the annotated release tag signature as verified.' >&2
+            exit 1
+          }
+
+  quality:
+    name: Supply-chain and security gates
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify vendored runtime
+        run: npm run vendor:check
+      - name: Verify dependency license inventory
+        run: npm run license:inventory
+      - name: Security lint
+        run: npm run lint:security
+      - name: Dependency audit
+        run: npm audit --audit-level=moderate
+      - name: Secret scan
+        run: |
+          GL=8.30.1
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" -o /tmp/gitleaks.tgz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz' | sha256sum --check --strict
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          /tmp/gitleaks git . --log-opts='--all' --no-banner --redact --exit-code 1
+
+  full-test:
+    name: Full unit, browser, visual, and Electron suite
+    needs: preflight
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-jammy
+    timeout-minutes: 50
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run the complete test command under Xvfb
+        run: xvfb-run --auto-servernum npm test
+      - name: Upload failures
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-test-failures
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  coverage:
+    name: Combined coverage gate
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Chromium and OS dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Enforce merged coverage
+        run: npm run coverage
+
+  mutation:
+    name: Full mutation gate (concurrency 2)
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run full mutation thresholds
+        run: npm run test:mutation:release
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-mutation-report
+          path: reports/mutation/
+          if-no-files-found: error
+          retention-days: 30
+
+  windows:
+    name: Signed Windows artifacts and real uninstall
+    needs: [quality, full-test, coverage, mutation]
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Require and import Binary Parse code-signing certificate
+        id: certificate
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WIN_CSC_LINK_B64 }}
+          PFX_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if (-not $env:PFX_B64 -or -not $env:PFX_PASSWORD) { throw 'Windows signing secrets are required.' }
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'binary-parse-release.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_B64))
+          $password = ConvertTo-SecureString $env:PFX_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password -Exportable
+          if (-not $certificate.HasPrivateKey -or $certificate.Subject -notmatch 'Binary Parse') { throw 'PFX is not the Binary Parse release certificate.' }
+          "thumbprint=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "WIN_CSC_LINK=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Resolve trusted Windows SDK signtool
+        id: signtool
+        shell: pwsh
+        run: |
+          $root = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $tool = Get-ChildItem -LiteralPath $root -Filter signtool.exe -File -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $tool) { throw 'Windows SDK signtool.exe was not found.' }
+          . ./installer/build-policy.ps1
+          Get-TrustedSignTool -ExplicitPath $tool.FullName | Out-Null
+          "path=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Install immutable Inno Setup 6.3.3
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.3.3.exe'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_3_3/innosetup-6.3.3.exe' -OutFile $installer
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          if ($hash -ne '0BCB2A409DEA17E305A27A6B09555CABE600E984F88570AB72575CD7E93C95E6') { throw 'Inno Setup installer hash mismatch.' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ([string]$signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Martijn Laan') { throw 'Inno Setup installer signature mismatch.' }
+          $process = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/ALLUSERS') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run non-destructive installer policy tests
+        shell: pwsh
+        run: ./tests/installer/run-tests.ps1 -SkipMutation -InstallPester
+      - name: Build signed NSIS and portable artifacts
+        shell: pwsh
+        env:
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --publish never --config.forceCodeSigning=true
+      - name: Build signed Inno x64 artifact and signed uninstaller
+        shell: pwsh
+        env:
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: >-
+          ./installer/build-installer.ps1 -RequireSigned
+          -CertificateSha1 '${{ steps.certificate.outputs.thumbprint }}'
+          -SignToolPath '${{ steps.signtool.outputs.path }}'
+      - name: Inspect every packaged app archive
+        run: npm run package:verify
+      - name: Verify all public Windows signatures and timestamps
+        shell: pwsh
+        run: |
+          . ./installer/build-policy.ps1
+          $files = @(
+            'dist\BP-MD-RTL-Reader-1.0.0-Windows-NSIS-multiarch.exe',
+            'dist\BP-MD-RTL-Reader-1.0.0-Windows-Portable-multiarch.exe',
+            'dist\BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe'
+          )
+          foreach ($file in $files) {
+            Assert-ReleaseSignature -Path $file -ExpectedThumbprint '${{ steps.certificate.outputs.thumbprint }}' | Out-Null
+            & '${{ steps.signtool.outputs.path }}' verify /pa /all /v $file
+            if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $file" }
+          }
+      - name: Real NSIS preserve/delete uninstall test
+        shell: pwsh
+        run: >-
+          ./tests/installer/run-release-vm-tests.ps1
+          -InstallerPath (Resolve-Path 'dist\BP-MD-RTL-Reader-1.0.0-Windows-NSIS-multiarch.exe').Path
+          -Kind NSIS
+          -CertificateSha1 '${{ steps.certificate.outputs.thumbprint }}'
+          -SignToolPath '${{ steps.signtool.outputs.path }}'
+      - name: Real Inno preserve/delete uninstall test
+        shell: pwsh
+        run: >-
+          ./tests/installer/run-release-vm-tests.ps1
+          -InstallerPath (Resolve-Path 'dist\BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe').Path
+          -Kind Inno
+          -CertificateSha1 '${{ steps.certificate.outputs.thumbprint }}'
+          -SignToolPath '${{ steps.signtool.outputs.path }}'
+      - name: Upload signed Windows release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-native-windows
+          path: |
+            dist/BP-MD-RTL-Reader-1.0.0-Windows-NSIS-multiarch.exe
+            dist/BP-MD-RTL-Reader-1.0.0-Windows-Portable-multiarch.exe
+            dist/BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe
+            dist/BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.source-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove imported signing material
+        if: always()
+        shell: pwsh
+        run: |
+          $thumbprint = '${{ steps.certificate.outputs.thumbprint }}'
+          if ($thumbprint -match '^[0-9A-Fa-f]{40}$') { Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -Force -ErrorAction SilentlyContinue }
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'binary-parse-release.pfx') -Force -ErrorAction SilentlyContinue
+
+  macos:
+    name: Signed and notarized macOS artifacts
+    needs: [quality, full-test, coverage, mutation]
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Require and decode Apple signing/notarization credentials
+        env:
+          MAC_CSC_LINK_B64: ${{ secrets.MAC_CSC_LINK_B64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for value in MAC_CSC_LINK_B64 CSC_KEY_PASSWORD APPLE_API_KEY_B64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            test -n "${!value}" || { echo "Missing macOS release secret: $value" >&2; exit 1; }
+          done
+          printf '%s' "$MAC_CSC_LINK_B64" | base64 --decode > "$RUNNER_TEMP/binary-parse-developer-id.p12"
+          printf '%s' "$APPLE_API_KEY_B64" | base64 --decode > "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "CSC_LINK=$RUNNER_TEMP/binary-parse-developer-id.p12" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build, sign, and notarize x64 and arm64 packages
+        env:
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --mac --x64 --arm64 --publish never --config.forceCodeSigning=true
+      - name: Inspect every packaged app archive
+        run: npm run package:verify
+      - name: Verify Developer ID signatures, Gatekeeper, and stapled tickets
+        run: |
+          found=0
+          while IFS= read -r -d '' app; do
+            found=1
+            codesign --verify --deep --strict --verbose=4 "$app"
+            spctl --assess --type execute --verbose=4 "$app"
+            xcrun stapler validate "$app"
+          done < <(find dist -type d -name 'BP MD RTL Reader.app' -print0)
+          test "$found" = 1
+          for dmg in dist/BP-MD-RTL-Reader-1.0.0-macOS-*.dmg; do
+            spctl --assess --type install --verbose=4 "$dmg"
+            xcrun stapler validate "$dmg"
+          done
+      - name: Upload notarized macOS release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-native-macos
+          path: |
+            dist/BP-MD-RTL-Reader-1.0.0-macOS-x64.dmg
+            dist/BP-MD-RTL-Reader-1.0.0-macOS-arm64.dmg
+            dist/BP-MD-RTL-Reader-1.0.0-macOS-x64.zip
+            dist/BP-MD-RTL-Reader-1.0.0-macOS-arm64.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove decoded signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/binary-parse-developer-id.p12"
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+
+  linux:
+    name: Linux x64 and arm64 artifacts
+    needs: [quality, full-test, coverage, mutation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build x64 and arm64 packages without publishing
+        run: npx electron-builder --linux --x64 --arm64 --publish never
+      - name: Inspect every packaged app archive
+        run: npm run package:verify
+      - name: Upload Linux release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-native-linux
+          path: |
+            dist/BP-MD-RTL-Reader-1.0.0-Linux-x64.AppImage
+            dist/BP-MD-RTL-Reader-1.0.0-Linux-arm64.AppImage
+            dist/BP-MD-RTL-Reader-1.0.0-Linux-x64.deb
+            dist/BP-MD-RTL-Reader-1.0.0-Linux-arm64.deb
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    name: Exact release bundle, attestations, and publication
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Download all native artifacts into one release directory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-native-*
+          path: dist/release
+          merge-multiple: true
+      - name: Enforce exact allowlist and write canonical checksums
+        run: |
+          npm run package:checksums
+          npm run package:checksums:verify
+      - name: Attest the final public files
+        if: ${{ env.RELEASE_PUBLISH == 'true' }}
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: dist/release/*
+      - name: Upload validated release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: BP-MD-RTL-Reader-${{ github.ref_name }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 90
+      - name: Extract changelog release notes
+        if: ${{ env.RELEASE_PUBLISH == 'true' }}
+        run: node scripts/release-preflight.js --write-notes "$RUNNER_TEMP/release-notes.md"
+      - name: Publish immutable GitHub Release assets
+        if: ${{ env.RELEASE_PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/release/*
+          --verify-tag
+          --title "BP MD RTL Reader 1.0.0"
+          --notes-file "$RUNNER_TEMP/release-notes.md"

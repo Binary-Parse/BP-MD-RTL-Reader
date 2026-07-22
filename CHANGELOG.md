@@ -5,85 +5,84 @@ All notable changes to **BP MD RTL Reader** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-07-22
+
+First public release.
 
 ### Added
-- **Unified live-preview editor** — a single CodeMirror 6 surface is now *the* editor:
-  text renders as you type, and only the line with the caret shows raw Markdown.
-  Per-line RTL/LTR with logical caret movement.
-- **Writing toolbar** — Bold, Italic, Strikethrough, Underline, Inline code, Highlight
-  (`==`), Subscript (`~x~`), Superscript (`^x^`), Clear-formatting; Headings H1–H6
-  (dropdown + `Ctrl+1`–`6`); Blockquote, Callout, Bulleted/Numbered/Task lists, Indent/
-  Outdent; Link, Wiki-link, Math, Footnote; Code block, Table, Image, Horizontal rule.
-  Tools **toggle** (re-applying removes the style; heading/list type *replaces*), expand
-  to the word when nothing is selected, and **highlight when the cursor is inside** them.
-- **Interactive tables** — a row/column controls bar (**+/− Row**, **+/− Col**) appears
-  when the cursor is inside a table; `Tab` / `Shift+Tab` move between cells (and add a
-  row past the end).
-- **Footnotes** — `[^1]` references render as a numbered list at the end of the note,
-  each with a back-link.
-- **More Markdown** — callouts (`> [!NOTE]`), KaTeX math, Mermaid diagrams, syntax-
-  highlighted code, task lists, and `==highlight==` / `<u>` / sub & superscript.
-- **PDF export** — render the current note to a PDF (offline, isolated renderer).
-- **Collapsible folder tree**, **last-vault/active-note session restore**, and a
-  **fuller Arabic interface**
-  (welcome, palette, and find/search bars localized alongside the menus and status bar).
+
+- A local-first Electron Markdown reader and editor for plain `.md` and `.markdown`
+  files, with no database, proprietary format, cloud sync, telemetry, or automatic
+  update traffic.
+- First-class English and Arabic reading and writing, including automatic RTL/LTR
+  detection, manual direction control, per-line bidi isolation, Arabic-aware fonts,
+  and a bilingual interface.
+- A unified CodeMirror 6 live-preview editor: rendered Markdown while typing, raw
+  syntax on the active line, per-line direction, and logical caret movement.
+- A writing toolbar for headings, emphasis, underline, inline code, highlight,
+  subscript, superscript, blockquotes, callouts, lists, links, wiki-links, math,
+  footnotes, code blocks, tables, images, and horizontal rules.
+- Interactive table row/column controls and keyboard navigation between cells.
+- Callouts, KaTeX math, Mermaid diagrams, syntax-highlighted code, task lists,
+  footnotes, wiki-links, tags, daily notes, demo notes, and HTML/PDF export.
+- File and vault opening with a searchable/collapsible file tree, tabs, tags,
+  recent files, session restore, document outline, and properties inspector.
+- Command palette, find-in-document, vault search, zoom, and Live Preview, Split,
+  Source, and Reading modes.
+- Paper, Ink, Sepia, Nord, Solarized, and Midnight themes, each represented by its
+  own theme icon and remembered between sessions.
+- Windows NSIS multi-architecture, Windows portable multi-architecture, Windows
+  Inno x64, macOS x64/arm64 DMG and ZIP, and Linux x64/arm64 AppImage and DEB
+  release targets.
+- A modern Windows uninstall choice between preserving app data and deleting all
+  current-account app data; user-authored Markdown outside app data is never removed.
 
 ### Changed
-- **Save writes back to the original file** atomically (encoding-preserving, conflict-
-  aware) instead of downloading a copy.
-- **Vault images** (`![](pic.png)`) now load from disk via a sandboxed `bpmd://` scheme.
-- The outline **navigates the editor** (scrolls + places the caret) and tracks scroll.
-- All third-party rendering assets (CodeMirror, marked, DOMPurify, KaTeX, highlight.js,
-  Mermaid, fonts) are **bundled**; rendering makes no network request under the strict
-  renderer CSP. The explicit **Check for Updates…** action is the sole opt-in main-process
-  request and reads GitHub public release metadata without downloading an update.
-- Images are constrained to the content width (no horizontal overflow).
-- Rendered notes pass through the hardened sanitizer — inline `style`, `<iframe>`, and
-  event-handler attributes are stripped (the sanitizer, not just CSP, is the control).
+
+- Save writes atomically back to the original file, preserves encoding, and detects
+  conflicts instead of downloading a copy.
+- Vault images load from disk through the sandboxed `bpmd://` protocol.
+- The outline navigates the editor, places the caret, and follows scrolling.
+- All renderer libraries and fonts are bundled locally. The explicit **Check for
+  Updates...** action is the only opt-in network request and reads GitHub release
+  metadata without downloading or installing anything.
+- Heading controls and keyboard shortcuts now apply working H1-H6 formatting.
+- The theme control now presents the icon assigned to the active theme.
 
 ### Fixed
-- Formatting tools no longer stack markers (`### ## …`, `****…****`) and block inserts
-  (table/callout/code/rule) no longer split the line you're typing on.
-- After quickly switching files, the preview/outline no longer briefly shows the
-  previous file's content.
-- Status-bar items no longer show a pointer cursor — they were never clickable.
 
-## [1.0.0] — 2026-05-29
-
-First public release. 🎉
-
-### Highlights
-- **Bilingual by design** — first-class English **and** Arabic, with automatic
-  right-to-left detection and Arabic-aware typography.
-- **Three reading themes** — Paper (light), Ink (dark), and Sepia, remembered
-  between sessions.
-- **Plain Markdown, no lock-in** — opens and renders standard `.md` / `.markdown`
-  files straight from disk.
-- **Local-first & private** — no telemetry, no analytics, no auto-update
-  phone-home; all logs stay on your machine.
-
-### Features
-- Open a single file or a whole folder ("vault") with a searchable file tree,
-  tabs, tags pane, and recent-files list.
-- Live Preview, Split, and Source view modes; zoom; a document outline and
-  properties inspector.
-- Command palette (`Ctrl+K`), find-in-document (`Ctrl+F`), wiki-links
-  (`[[note]]`), `#tags`, daily notes, demo notes, and HTML export.
-- Markdown rendering via [marked](https://marked.js.org/) with
-  [DOMPurify](https://github.com/cure53/DOMPurify) sanitisation.
+- Formatting tools no longer stack markers, and block inserts no longer split the
+  line currently being edited.
+- Rapid file switches no longer leave stale preview or outline content onscreen.
+- Images stay within the content width.
+- Status-bar labels no longer present a pointer cursor.
+- Windows uninstall actions use a stable unclipped **Uninstall** button label.
+- Destructive uninstall covers every supported roaming/local profile alias and
+  reports incomplete cleanup instead of claiming success.
 
 ### Security
-- Hardened Electron renderer: `contextIsolation` on, `nodeIntegration` off, a
-  minimal `contextBridge` preload, and DOMPurify-sanitised output.
-- Vault reads are allow-listed, size-bounded, and reject UNC/symlink escapes.
 
-### Packaging
-- Windows installers: NSIS (`BP MD RTL Reader Setup 1.0.0.exe`) and a portable
-  build (`BP MD RTL Reader 1.0.0.exe`) are produced by the automated build. A
-  standalone Inno Setup installer (`BP MD RTL Reader Setup.exe`) can also be built
-  locally (see `docs/BUILD.md`); it is not part of the automated release.
-- Optional **.md / .markdown** file association and an "Open with BP MD RTL
-  Reader" context-menu verb.
+- Electron renderer isolation uses `contextIsolation: true`, `nodeIntegration: false`,
+  sandboxing, a minimal preload bridge, and a strict Content Security Policy.
+- Rendered Markdown is sanitized with DOMPurify; inline styles, iframes, scripts,
+  event handlers, and other active content are removed.
+- Vault access is allow-listed, size-bounded, rejects network paths and symlink
+  escapes, and uses atomic writes.
+- Release publication is gated by locked dependencies, vendored-byte and license
+  verification, security lint, secret scanning, dependency audit, full unit/browser/
+  Electron/visual suites, combined coverage, and full mutation thresholds.
+- Windows public executables and installed uninstallers must be signed and timestamped
+  by Binary Parse. macOS artifacts must be Developer ID signed, notarized, and stapled.
+- The final release directory is constrained to an exact public allowlist, receives a
+  canonical `SHA256SUMS.txt`, and is attested by GitHub before publication.
 
-[1.0.0]: https://github.com/Binary-Parse/md-reader-rtl/releases/tag/v1.0.0
+### Distribution
+
+- Release builds are produced only by the staged GitHub Actions release workflow with
+  `--publish never` in native packaging jobs. Only the final aggregate job can create
+  the GitHub Release.
+- Both Windows installer families are exercised on a disposable runner in preserve-data
+  and delete-data modes, including program files, shortcuts, associations, ARP entries,
+  app-data aliases, signatures, and an external Markdown sentinel.
+
+[1.0.0]: https://github.com/Binary-Parse/BP-MD-RTL-Reader/releases/tag/v1.0.0

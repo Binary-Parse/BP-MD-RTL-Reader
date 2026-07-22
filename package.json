@@ -6,6 +6,14 @@
   "license": "MIT",
   "main": "main.js",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Binary-Parse/BP-MD-RTL-Reader.git"
+  },
+  "homepage": "https://github.com/Binary-Parse/BP-MD-RTL-Reader#readme",
+  "bugs": {
+    "url": "https://github.com/Binary-Parse/BP-MD-RTL-Reader/issues"
+  },
   "engines": {
     "node": ">=24"
   },
@@ -19,6 +27,7 @@
     "license:inventory:update": "node scripts/dependency-license-inventory.js --write",
     "package:verify": "node scripts/verify-package-contents.js",
     "package:checksums": "node scripts/write-artifact-checksums.js",
+    "package:checksums:verify": "node scripts/write-artifact-checksums.js --check",
     "test": "npm run test:unit && npm run test:e2e && npm run test:electron",
     "test:unit": "vitest run --config vitest.config.js",
     "test:unit:coverage": "node scripts/run-unit-coverage.js",
@@ -29,6 +38,7 @@
     "test:integration": "playwright test tests/integration",
     "test:update-snapshots": "playwright test --update-snapshots",
     "test:mutation": "stryker run && node scripts/check-mutation-tiers.js",
+    "test:mutation:release": "stryker run --concurrency 2 && node scripts/check-mutation-tiers.js",
     "test:mutation:check": "node scripts/check-mutation-tiers.js",
     "test:watch": "vitest --config vitest.config.js",
     "coverage": "npm run test:unit:coverage && npm run test:e2e:coverage && npm run report:merge",
@@ -71,7 +81,10 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "signtoolOptions": {
+        "publisherName": "Binary Parse"
+      }
     },
     "nsis": {
       "oneClick": false,
@@ -88,8 +101,12 @@
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
       "include": "installer/installer.nsh",
+      "artifactName": "BP-MD-RTL-Reader-${version}-Windows-NSIS-multiarch.${ext}",
       "warningsAsErrors": false,
       "differentialPackage": false
+    },
+    "portable": {
+      "artifactName": "BP-MD-RTL-Reader-${version}-Windows-Portable-multiarch.${ext}"
     },
     "fileAssociations": [
       {
@@ -126,8 +143,10 @@
       ],
       "category": "public.app-category.productivity",
       "icon": "assets/icon.png",
+      "artifactName": "BP-MD-RTL-Reader-${version}-macOS-${arch}.${ext}",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "notarize": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist"
     },
@@ -153,6 +172,7 @@
       ],
       "category": "Office",
       "icon": "assets/icon.png",
+      "artifactName": "BP-MD-RTL-Reader-${version}-Linux-${arch}.${ext}",
       "maintainer": "Binary Parse <noreply@binaryparse.example>",
       "synopsis": "A markdown reader for RTL/Arabic prose",
       "desktop": {
@@ -201,6 +221,7 @@
     "vitest": "4.1.10"
   },
   "overrides": {
+    "fast-uri": "3.1.4",
     "qs": "^6.15.2"
   }
 }

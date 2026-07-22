@@ -22,7 +22,7 @@ Key traits you should keep in mind when editing code:
 |------|----------------|--------------------------|
 | Runtime | Electron | 42 |
 | Packaging | electron-builder | 26 |
-| Additional installer | Inno Setup | 6.3.3 pinned/signed (local builds only) |
+| Additional installer | Inno Setup | 6.3.3 pinned/signed (local and release builds) |
 | Unit tests | Vitest | 4 |
 | E2E / integration tests | Playwright | 1.61 |
 | Accessibility testing | @axe-core/playwright + axe-core | 4.12 |
@@ -118,7 +118,7 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 │   ├── generate-icons.ps1        Regenerate icon assets
 │   └── merge-coverage.js         Merge unit + e2e coverage reports
 ├── docs/                         User guides, build docs, privacy policy
-├── .github/workflows/            CI automation (`ci.yml`, `claude.yml` only)
+├── .github/workflows/            CI automation (`ci.yml`, `claude.yml`, `release.yml`)
 ├── vitest.config.js              Unit test + V8 coverage configuration
 ├── playwright.config.js          E2E test configuration (auto-coverage fixture)
 ├── eslint.config.mjs             Security-focused ESLint flat config
@@ -145,7 +145,7 @@ npm start        # electron . — run the app in development
 npm run dist                 # electron-builder — Windows NSIS + portable (x64, ia32, arm64)
 # macOS / Linux targets are defined in package.json but not built in routine dev.
 
-# Optional local Inno Setup installer (x64) — requires ISCC.exe:
+# Local Inno Setup installer (x64) — requires the pinned ISCC.exe:
 pwsh -File installer/build-installer.ps1
 ```
 
@@ -170,6 +170,7 @@ npm run test:smoke           # Playwright smoke tests only
 npm run test:integration     # Playwright integration tests only
 npm run test:update-snapshots # Refresh visual-regression baselines
 npm run test:mutation        # Stryker mutation testing
+npm run test:mutation:release # Full bounded-concurrency mutation + tier gate
 npm run test:watch           # Vitest in watch mode
 npm run coverage             # Combined unit + e2e coverage
 npm run report:merge         # Merge coverage reports
@@ -177,7 +178,8 @@ npm run lint:security        # ESLint security / SAST pass
 npm run vendor:check         # Verify vendored runtime bytes/provenance
 npm run license:inventory    # Verify lockfile-derived license inventory
 npm run package:verify       # Inspect packaged app archives
-npm run package:checksums    # Hash package artifacts
+npm run package:checksums    # Enforce release allowlist + write canonical hashes
+npm run package:checksums:verify # Recheck exact names and every canonical hash
 ```
 
 ### Coverage gates
@@ -252,6 +254,10 @@ When modifying file-system access, keep these guards in place and update the cor
 - Windows package CI runs the Pester suite non-destructively with `-SkipMutation`.
 - `tests/installer/run-pascal-self-test.ps1` is a separate local compiled Inno Pascal
   self-test because it requires the pinned ISCC toolchain.
+- `tests/installer/run-release-vm-tests.ps1` is destructive and hard-guarded to a fresh,
+  elevated GitHub-hosted Windows release runner. It installs and removes each signed
+  public installer in both preserve-data and delete-data modes, then forces all opt-in
+  post-uninstall Pester checks to execute.
 
 ---
 
@@ -300,26 +306,40 @@ default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
 4. **Visual snapshots** — `@visual` specs inside the pinned Playwright container so baselines match.
 5. **Mutation testing** — full run on schedule / workflow_dispatch; `--incremental` on PRs.
 6. **Real Electron boundary** — launches production Electron with temporary profile/data.
-7. **Native package matrix** — Windows/macOS/Linux targets, archive inspection,
-   checksums, and Windows Pester installer logic.
+7. **Native package matrix** — Windows/macOS/Linux targets, archive inspection, and
+   Windows Pester installer logic. These routine CI packages are not release-signed.
 8. **Dependency review** — PR-only and currently `continue-on-error` until GHAS is enabled.
 
-This workflow uploads verified artifacts but does not publish a GitHub Release. There are
-no committed CodeQL, Scorecard, or release-publishing workflows.
+This workflow uploads verified CI artifacts but does not publish a GitHub Release. There
+are no committed CodeQL or Scorecard workflows.
 
 ### `claude.yml` — explicit `@claude` issue/review requests
 - Runs only for supported issue/review events containing `@claude` and excludes bot actors.
 - Checkout and the Claude action are pinned to full commit SHAs.
 - The Claude workflow grants explicit write permissions for repository contents, pull
   requests, and issues, plus read access to Actions; it does not inherit `ci.yml`'s
-  read-only default and does not use `harden-runner`.
+   read-only default and does not use `harden-runner`.
+
+### `release.yml` — signed tag validation and publication
+- Manual dispatch runs the complete release validation but cannot publish.
+- A signed annotated tag matching `v` plus the stable package version may publish only
+  when the repository is public and the tagged package metadata is publishable.
+- Windows outputs are Authenticode-signed and timestamped; macOS outputs are signed,
+  notarized, stapled, and validated; Linux outputs are built on native Linux runners.
+- The final job enforces the exact 12-file public allowlist, creates and verifies
+  `SHA256SUMS.txt`, creates GitHub attestations, and publishes the changelog section.
+- Real preserve-data and delete-data uninstalls run only on disposable Windows release
+  runners and never target Markdown documents outside the four current-account app aliases.
+- Release workflow grants `contents: write`, `id-token: write`, and `attestations: write`
+  only to the aggregate publication job; earlier release jobs remain read-only.
 
 ### Supply-chain hardening
-- Every current `uses:` action in both workflows is pinned to a full commit SHA.
+- Every current `uses:` action in all three workflows is pinned to a full commit SHA.
 - `step-security/harden-runner` audits egress in applicable `ci.yml` Linux jobs; container
   and native package jobs are not described as having that step.
 - `ci.yml` defaults to `contents: read`; its dependency-review job elevates only its PR
-  scope. `claude.yml` declares the separate write permissions documented above.
+  scope. `claude.yml` declares the separate write permissions documented above, while
+  `release.yml` reserves publication and provenance permissions for its final job.
 
 ---
 

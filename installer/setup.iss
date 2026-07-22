@@ -32,7 +32,7 @@
 #define MyAppName      "BP MD RTL Reader"
 #define MyAppExe       "BP MD RTL Reader.exe"
 #define MyPublisher    "Binary Parse"
-#define MyAppURL       "https://github.com/"
+#define MyAppURL       "https://github.com/Binary-Parse/BP-MD-RTL-Reader"
 
 [Setup]
 ; AppId emits as {32586DF8-...}; the {{ escapes a literal '{' and ISPP fills the GUID.
@@ -74,13 +74,17 @@ UninstallDisplayIcon={app}\{#MyAppExe}
 
 ; ---- Output -----------------------------------------------------------------
 OutputDir=..\dist
-OutputBaseFilename=BP MD RTL Reader Setup
+OutputBaseFilename=BP-MD-RTL-Reader-{#AppVersion}-Windows-Inno-x64
 SetupIconFile=assets\icon.ico
 WizardImageFile=assets\wizard-banner.bmp
 WizardSmallImageFile=assets\wizard-small.bmp
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
+#ifdef ReleaseSigning
+SignTool=bpmd
+SignedUninstaller=yes
+#endif
 ; Inno Setup 6 scripts are always Unicode -> non-ASCII (Arabic/Chinese) install
 ; paths and folder names are handled correctly end-to-end.
 

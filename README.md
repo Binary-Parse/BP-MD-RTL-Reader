@@ -10,7 +10,7 @@ Bilingual to its core — first-class English **and** Arabic.
 Plain `.md` files on disk. No proprietary format. No telemetry.
 
 [![Version](https://img.shields.io/badge/version-1.0.0-3ddc4a)](CHANGELOG.md)
-[![Platform](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)](#-download)
+[![Platform](https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-47848F)](#-download)
 [![License](https://img.shields.io/badge/license-MIT-3ddc4a)](LICENSE)
 [![Built with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![Checks](https://img.shields.io/badge/checks-CI%20gated-brightgreen)](docs/BUILD.md#testing)
@@ -55,17 +55,18 @@ plain files that stay on your machine.
 
 ## ⬇️ Download
 
-> **Requires Windows 10 (22H2 / build 19045) or Windows 11.**
+Grab the latest build from the [**Releases**](https://github.com/Binary-Parse/BP-MD-RTL-Reader/releases) page. Each release publishes the following platform choices:
 
-| Build | File | Best for |
-| ----- | ---- | -------- |
-| **Installer** (recommended) | `BP MD RTL Reader Setup 1.0.0.exe` | Normal install with Start-menu & desktop shortcuts and `.md` association |
-| **Portable** | `BP MD RTL Reader 1.0.0.exe` | Run from anywhere (USB stick, Downloads) — no install |
+| Platform | Files | Notes |
+| -------- | ----- | ----- |
+| **Windows 10/11** | `BP-MD-RTL-Reader-1.0.0-Windows-NSIS-multiarch.exe`, `BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe` | Signed installers; NSIS selects x64, 32-bit, or ARM64, while Inno is x64 |
+| **Windows portable** | `BP-MD-RTL-Reader-1.0.0-Windows-Portable-multiarch.exe` | Signed, no installation required |
+| **macOS** | x64 and arm64 `.dmg` or `.zip` | Both architectures are signed and notarized by Apple |
+| **Linux** | x64 and arm64 `.AppImage` or `.deb` | Pick the package and architecture for your distribution |
 
-Grab the latest build from the [**Releases**](https://github.com/Binary-Parse/md-reader-rtl/releases) page and run it.
-The installer is available for **x64, 32-bit, and ARM64**; the portable build likewise.
-
-<sub>A standalone [Inno Setup](https://jrsoftware.org/isinfo.php) installer (`BP MD RTL Reader Setup.exe`, x64) can also be built locally — see [docs/BUILD.md](docs/BUILD.md); it is not part of the automated release.</sub>
+The release also includes `SHA256SUMS.txt`, a source-manifest JSON for the Inno payload,
+and GitHub artifact attestations. Verify the checksum before running a downloaded file;
+the exact file list and commands are documented in [docs/BUILD.md](docs/BUILD.md).
 
 ---
 
@@ -123,8 +124,8 @@ Full details: **[docs/PRIVACY.md](docs/PRIVACY.md)**.
 ## 🛠️ Build from source
 
 ```bash
-git clone https://github.com/Binary-Parse/md-reader-rtl.git
-cd md-reader-rtl
+git clone https://github.com/Binary-Parse/BP-MD-RTL-Reader.git
+cd BP-MD-RTL-Reader
 npm install      # postinstall fetches the Playwright Chromium used by the e2e tests
 npm start        # launch the app in development
 npm run dist     # build the Windows installers into dist/
@@ -144,10 +145,11 @@ This is a small app with a deliberately large safety net:
 - **Combined unit + renderer coverage** from one current commit (`npm run coverage`)
 - **Mutation testing** with an 80% overall floor and per-file T1/T2/T3 floors of
   85%/75%/60%
-- **Installer logic** verified by Pester in Windows CI; the compiled Pascal self-test is
-  available for local Inno Setup validation
+- **Installer logic** verified by Pester, plus signed install/uninstall tests on disposable
+  Windows release runners for both preserve-data and delete-data choices
 - **CI** for lint/SAST, full-history secret scan, `npm audit`, tests, coverage, mutation,
-  native-platform packages, payload inspection, and artifact checksums
+  native-platform packages, payload inspection, signing/notarization, exact artifact
+  allowlisting, checksums, and attestations
 
 ---
 

@@ -6,7 +6,7 @@ the codebase.
 ## Prerequisites
 
 - **Node.js 24+** (the exact major in `.nvmrc` and CI) and **npm**
-- For the optional x64 **Inno installer**: the signed Inno Setup **6.3.3** compiler
+- For the x64 **Inno installer**: the signed Inno Setup **6.3.3** compiler
   (`ISCC.exe`) installed in the canonical Program Files location
 - For the **installer tests / icon scripts**: Windows PowerShell with
   [Pester 5+](https://pester.dev/) (`-InstallPester` opts into installation if missing)
@@ -14,8 +14,8 @@ the codebase.
 ## Get started
 
 ```bash
-git clone https://github.com/Binary-Parse/md-reader-rtl.git
-cd md-reader-rtl
+git clone https://github.com/Binary-Parse/BP-MD-RTL-Reader.git
+cd BP-MD-RTL-Reader
 npm install      # postinstall fetches the Playwright Chromium used by the e2e tests
 npm start        # launch the app (electron .)
 ```
@@ -59,13 +59,15 @@ controllers in **`src/main/`**, with pure file/security policy in
 | `npm run test:integration` | Playwright integration tests only |
 | `npm run test:update-snapshots` | Refresh visual-regression baselines |
 | `npm run test:mutation` | Stryker mutation testing |
+| `npm run test:mutation:release` | Full Stryker run with bounded concurrency, then per-file tier enforcement |
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run coverage` | Generate fresh unit and renderer coverage, then merge/gate both |
 | `npm run lint:security` | ESLint security/SAST pass |
 | `npm run vendor:check` | Byte-verify vendored runtime assets against their manifest |
 | `npm run license:inventory` | Verify the lockfile-derived dependency-license summary |
 | `npm run package:verify` | Inspect every built app archive for required/forbidden content |
-| `npm run package:checksums` | Write SHA-256 checksums for built artifacts |
+| `npm run package:checksums` | Validate `dist/release` against the exact public allowlist and write `SHA256SUMS.txt` |
+| `npm run package:checksums:verify` | Revalidate the allowlist and every hash in the canonical checksum file |
 
 ## Building the installers
 
@@ -85,12 +87,50 @@ This is the only supported Inno entry point. It does not use PATH or a pre-exist
 `dist/win-unpacked`: it verifies the pinned compiler's Program Files path, exact version,
 Authenticode publisher, and SHA-256; produces a fresh x64 electron-builder directory;
 checks it against `installer/source-manifest-policy.json`; hashes/copies the exact files
-to clean staging; then writes `dist/BP MD RTL Reader Setup.exe` and a source manifest.
+to clean staging; then writes
+`dist/BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe` and
+`dist/BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.source-manifest.json`.
 
-> The electron-builder config in `package.json` also defines **macOS** (dmg/zip) and
-> **Linux** (AppImage/deb) targets. CI builds and inspects every configured native target
-> and uploads workflow artifacts, but this repository has no automated GitHub Release
-> publishing workflow. The separate Inno installer remains a deliberate local build.
+Local Inno builds may be unsigned. A release build is fail-closed and requires a
+Binary Parse code-signing certificate already imported into `Cert:\CurrentUser\My`, a
+trusted Windows SDK `signtool.exe`, and the certificate PFX/password environment:
+
+```powershell
+$env:WIN_CSC_LINK = 'C:\secure\binary-parse-code-signing.pfx'
+$env:WIN_CSC_KEY_PASSWORD = '<secret>'
+pwsh -File installer/build-installer.ps1 -RequireSigned `
+  -CertificateSha1 '<40-hex-thumbprint>' `
+  -SignToolPath 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe'
+```
+
+The build script verifies the signer, exact certificate thumbprint, and timestamp on the
+application payload and generated installer. The release VM gate separately verifies the
+installed uninstaller. Neither path silently downgrades a requested release build to
+unsigned output.
+
+### Public artifact contract
+
+Version 1.0.0 publishes exactly these 12 files before the generated checksum manifest:
+
+```text
+BP-MD-RTL-Reader-1.0.0-Windows-NSIS-multiarch.exe
+BP-MD-RTL-Reader-1.0.0-Windows-Portable-multiarch.exe
+BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe
+BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.source-manifest.json
+BP-MD-RTL-Reader-1.0.0-macOS-x64.dmg
+BP-MD-RTL-Reader-1.0.0-macOS-arm64.dmg
+BP-MD-RTL-Reader-1.0.0-macOS-x64.zip
+BP-MD-RTL-Reader-1.0.0-macOS-arm64.zip
+BP-MD-RTL-Reader-1.0.0-Linux-x64.AppImage
+BP-MD-RTL-Reader-1.0.0-Linux-arm64.AppImage
+BP-MD-RTL-Reader-1.0.0-Linux-x64.deb
+BP-MD-RTL-Reader-1.0.0-Linux-arm64.deb
+```
+
+The aggregate release job downloads platform outputs into `dist/release`, rejects any
+missing, extra, duplicate, or case-colliding filename, writes `SHA256SUMS.txt`, and then
+runs `npm run package:checksums:verify`. The checksum file and all 12 allowlisted files
+are attached to the GitHub Release; GitHub attestations cover the assembled bundle.
 
 ## Regenerating assets
 
@@ -133,12 +173,42 @@ hard-coded here; a passing count is meaningful only with a named commit and comp
 3. Four functional E2E shards plus a separately reproducible visual-snapshot lane
 4. Production Electron runtime-boundary tests
 5. Full mutation on schedules/manual runs and incremental mutation on pull requests
-6. Windows/macOS/Linux native package matrices, package-content inspection, checksums,
-   and non-destructive Windows Pester installer checks
+6. Windows/macOS/Linux native package matrices, package-content inspection, and
+   non-destructive Windows Pester installer checks
 7. Pull-request dependency review (currently non-blocking until GHAS is enabled)
 
 The workflow uploads test, coverage, mutation, and verified package artifacts. It does
-not publish a GitHub Release or claim code signing/notarization when credentials are absent.
+not claim code signing/notarization and does not publish a GitHub Release.
+
+### Release workflow
+
+`.github/workflows/release.yml` is a separate fail-closed pipeline. A manual dispatch is
+validation-only. Publication occurs only for a signed annotated tag whose name exactly
+matches `v` plus `package.json`'s stable version, after the repository has been made public.
+The npm package remains private because distribution is through GitHub Release assets, not
+the npm registry. The workflow reruns security, full tests (including the pinned Jammy visual lane),
+coverage, full mutation, native packaging, signing, notarization, and disposable-runner
+install/uninstall verification before one aggregate job can publish.
+
+Required repository secrets are:
+
+- Windows: `WIN_CSC_LINK_B64`, `WIN_CSC_KEY_PASSWORD`
+- macOS certificate: `MAC_CSC_LINK_B64`, `MAC_CSC_KEY_PASSWORD`
+- Apple notarization: `APPLE_API_KEY_B64`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`,
+  `APPLE_TEAM_ID`
+
+`WIN_CSC_LINK_B64` and `MAC_CSC_LINK_B64` contain base64-encoded PFX files;
+`APPLE_API_KEY_B64` contains the base64-encoded App Store Connect `.p8` key. Missing,
+invalid, wrongly signed, unstapled, or untimestamped inputs fail their platform job. The
+release aggregate alone receives publication permissions. Release workflow grants
+`contents: write`, `id-token: write`, and `attestations: write` only in that final job.
+
+Create and push a signed annotated tag only after every prerequisite is configured:
+
+```bash
+git tag -s -a v1.0.0 -m "BP MD RTL Reader 1.0.0"
+git push origin v1.0.0
+```
 
 ## Project structure
 

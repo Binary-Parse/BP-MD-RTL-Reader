@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generator": "scripts/dependency-license-inventory.js@1",
   "source": "package-lock.json",
-  "sourceSha256": "6a0c6a0cc0208383ce526bfc13b7995c6de9cd8e8a1fa62f21c71cee2ddd67e0",
+  "sourceSha256": "e5ee80d9f349d9dc071db2aacc8f6b987c20bd307bd80d2fffa5b846d95f6023",
   "lockfileVersion": 3,
   "packageEntries": 855,
   "uniquePackageNames": 753,

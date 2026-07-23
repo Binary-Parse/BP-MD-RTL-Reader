@@ -198,7 +198,7 @@
     "@codemirror/search": "6.7.1",
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.6",
-    "@electron/asar": "3.4.1",
+    "@electron/asar": "4.2.1",
     "@lezer/highlight": "1.2.3",
     "@playwright/test": "1.61.1",
     "@stryker-mutator/core": "9.6.1",

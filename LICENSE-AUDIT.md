@@ -14,6 +14,10 @@ _Generated: 2026-07-23_
 
 ## Summary
 
+`license-checker` scans the `node_modules` **installed on this host** (Windows/x64). npm installs only the platform-matching `optionalDependencies`, so 56 cross-platform native binaries (esbuild / rolldown / lightningcss / fsevents / emnapi for mac, Linux, other arches) were present in the lockfile but not on disk. Those are audited separately in [Cross-platform optional binaries](#cross-platform-optional-native-binaries-not-installed-on-this-host) using the npm registry. Both scopes are shown below.
+
+**Installed on this host (766 packages — scanned on-disk by license-checker):**
+
 | Bucket | Count |
 |---|---:|
 | OK | 760 |
@@ -22,7 +26,17 @@ _Generated: 2026-07-23_
 | UNKNOWN | 0 |
 | **Total** | **766** |
 
-Direct: **35** · Transitive: **731**.
+**Full lockfile, all platforms (822 packages — installed 766 + 56 cross-platform optionals):**
+
+| Bucket | Count |
+|---|---:|
+| OK | 806 |
+| REVIEW | 16 |
+| BLOCKED | **0** |
+| UNKNOWN | **0** |
+| **Total** | **822** |
+
+Direct: **35** · Transitive: **787** (731 installed + 56 cross-platform). **Under every target platform, zero BLOCKED and zero UNKNOWN — everything is open source.**
 
 ### License distribution
 
@@ -866,7 +880,85 @@ Notes:
 - **SIL OFL-1.1** is a libre / open font license (FSF-free). Its redistribution conditions — ship the license + copyright notice, respect the Reserved Font Names, and don't sell the fonts on their own — are **satisfied**: `LICENSES.md` carries the attribution/copyright per family and `OFL-1.1.txt` carries the full text, both bundled next to the fonts; the fonts are used unmodified (Fontsource latin/arabic subsets) with no renamed derivative; and they are shipped as part of an application, not sold standalone.
 - The **KaTeX** math fonts carry no separate license — they are part of the MIT-licensed `katex` distribution, so they inherit MIT (already covered by the `katex` rows in the dependency table).
 
+## Cross-platform optional native binaries (not installed on this host)
+
+These 56 packages are `optionalDependencies` gated by `os`/`cpu`. npm installed only the Windows/x64 variants, so `license-checker` (which scans installed `node_modules`) did not see the others. They **would** install on a macOS or Linux build (this project targets mac + linux), so they belong in a complete audit. Licenses below come from the **npm registry** (`npm view <pkg> license`), not local disk — an independent source. All are dev/build tooling; none ship in the app.
+
+**46 MIT (OK) + 10 MPL-2.0 (REVIEW) = 56. No BLOCKED, no UNKNOWN.** The 10 MPL-2.0 items are additional `lightningcss-<platform>` binaries; identical assessment to the installed `lightningcss-win32-x64-msvc` (build-only, not distributed -> no action).
+
+| Package | Version | License | Direct/Transitive | Runtime/Dev | Bucket |
+|---|---|---|---|---|---|
+| @emnapi/core | 1.11.1 | MIT | transitive | dev | OK |
+| @emnapi/runtime | 1.11.1 | MIT | transitive | dev | OK |
+| @emnapi/wasi-threads | 1.2.2 | MIT | transitive | dev | OK |
+| @esbuild/aix-ppc64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/android-arm | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/android-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/android-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/darwin-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/darwin-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/freebsd-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/freebsd-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-arm | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-ia32 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-loong64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-mips64el | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-ppc64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-riscv64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-s390x | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/linux-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/netbsd-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/netbsd-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/openbsd-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/openbsd-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/openharmony-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/sunos-x64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/win32-arm64 | 0.28.1 | MIT | transitive | dev | OK |
+| @esbuild/win32-ia32 | 0.28.1 | MIT | transitive | dev | OK |
+| @napi-rs/wasm-runtime | 1.1.6 | MIT | transitive | dev | OK |
+| @rolldown/binding-android-arm64 | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-darwin-arm64 | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-darwin-x64 | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-freebsd-x64 | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-arm-gnueabihf | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-arm64-gnu | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-arm64-musl | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-ppc64-gnu | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-s390x-gnu | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-x64-gnu | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-linux-x64-musl | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-openharmony-arm64 | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-wasm32-wasi | 1.1.5 | MIT | transitive | dev | OK |
+| @rolldown/binding-win32-arm64-msvc | 1.1.5 | MIT | transitive | dev | OK |
+| @tybys/wasm-util | 0.10.3 | MIT | transitive | dev | OK |
+| fsevents | 2.3.2 | MIT | transitive | dev | OK |
+| fsevents | 2.3.3 | MIT | transitive | dev | OK |
+| lightningcss-android-arm64 | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-darwin-arm64 | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-darwin-x64 | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-freebsd-x64 | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-linux-arm-gnueabihf | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-linux-arm64-gnu | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-linux-arm64-musl | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-linux-x64-gnu | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-linux-x64-musl | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+| lightningcss-win32-arm64-msvc | 1.33.0 | MPL-2.0 | transitive | dev | REVIEW |
+
+## Independent verification (second method)
+
+The findings above were cross-checked a second way, not relying on `license-checker`:
+
+1. **Enumeration (completeness).** The dependency set was rebuilt independently from `package-lock.json` paths and from `npm ls --all --json` (npm's own resolver).
+   - `license-checker` = **766**, `npm ls` = **766** — identical sets, zero difference.
+   - Lockfile-path walk = **822** = the same 766 **+ 56** `os`/`cpu`-gated optionals absent on this host. This is what surfaced the 56 cross-platform binaries that a single installed-only scan misses.
+2. **Independent extraction (accuracy).** A custom reader parsed each installed package's `license` field directly (not via license-checker) and re-bucketed. Per-package bucket agreement with license-checker: **766 / 766, 0 mismatches.**
+3. **Independent source (no local disk).** The 56 uninstalled optionals were resolved against the **npm registry** — 46 MIT, 10 MPL-2.0, 0 missing.
+
+Conclusion: the audit is stable across two enumeration methods, two extraction methods, and an off-disk source. **No dependency is BLOCKED or UNKNOWN on any target platform.**
+
 ## Method / reproducibility
+
 
 ```
 npx --yes license-checker --json                # all 766 packages

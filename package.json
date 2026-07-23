@@ -223,7 +223,7 @@
     "katex": "0.17.0",
     "lucide-static": "1.25.0",
     "marked": "18.0.6",
-    "mermaid": "11.15.0",
+    "mermaid": "11.16.0",
     "v8-to-istanbul": "9.3.0",
     "vitest": "4.1.10"
   },

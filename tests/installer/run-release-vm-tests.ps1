@@ -44,6 +44,8 @@ $CertificateSha1 = $CertificateSha1.ToUpperInvariant()
 
 $installRoot = Join-Path $env:SystemDrive ("bpmd-release-vm-{0}" -f $Kind.ToLowerInvariant())
 $appExe = Join-Path $installRoot 'BP MD RTL Reader.exe'
+$fileIcon = Join-Path $installRoot 'resources\markdown-file-icon.ico'
+$sourceFileIcon = Join-Path $repoRoot 'assets\markdown-file-icon.ico'
 $dataTargets = @(
     (Join-Path $env:APPDATA, 'bpmdrtlreader')
     (Join-Path $env:APPDATA, 'BP MD RTL Reader')
@@ -60,6 +62,15 @@ $associationKey = if ($Kind -eq 'Inno') {
 } else {
     'Registry::HKEY_LOCAL_MACHINE\Software\Classes\Markdown Document\shell\open\command'
 }
+$defaultIconKey = if ($Kind -eq 'Inno') {
+    'Registry::HKEY_LOCAL_MACHINE\Software\Classes\BP.MD.RTLReader.Markdown\DefaultIcon'
+} else {
+    'Registry::HKEY_LOCAL_MACHINE\Software\Classes\Markdown Document\DefaultIcon'
+}
+$innoOpenWithKeys = @(
+    'Registry::HKEY_LOCAL_MACHINE\Software\Classes\.md\OpenWithProgids'
+    'Registry::HKEY_LOCAL_MACHINE\Software\Classes\.markdown\OpenWithProgids'
+)
 $sentinelRoot = Join-Path $env:RUNNER_TEMP ("bpmd-release-vm-sentinel-{0}" -f [Guid]::NewGuid().ToString('N'))
 $sentinel = Join-Path $sentinelRoot 'external.md'
 
@@ -98,10 +109,24 @@ function Get-UninstallerPath {
     return $candidate.FullName
 }
 
+function Test-RegistryValue {
+    param([Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][string]$ValueName)
+    $item = Get-ItemProperty -LiteralPath $Key -ErrorAction SilentlyContinue
+    return $null -ne $item -and $null -ne $item.PSObject.Properties[$ValueName]
+}
+
 function Assert-CleanInitialState {
     if (Test-Path -LiteralPath $installRoot) { throw "Refusing to reuse existing install path: $installRoot" }
     if (Test-Path -LiteralPath $arpKey) { throw "Refusing to overwrite existing ARP key: $arpKey" }
     if (Test-Path -LiteralPath $associationKey) { throw "Refusing to overwrite existing association: $associationKey" }
+    if (Test-Path -LiteralPath $defaultIconKey) { throw "Refusing to overwrite existing document icon registration: $defaultIconKey" }
+    if ($Kind -eq 'Inno') {
+        foreach ($key in $innoOpenWithKeys) {
+            if (Test-RegistryValue -Key $key -ValueName 'BP.MD.RTLReader.Markdown') {
+                throw "Refusing to overwrite existing OpenWithProgids value: $key"
+            }
+        }
+    }
     if (Get-ShortcutPaths) { throw 'Refusing to overwrite existing BP MD RTL Reader shortcuts.' }
     foreach ($target in $dataTargets) {
         if (Test-Path -LiteralPath $target) { throw "Refusing to overwrite existing app data: $target" }
@@ -147,8 +172,29 @@ function Remove-SeededAppData {
 
 function Assert-InstalledState {
     if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) { throw "Installed app is missing: $appExe" }
+    if (-not (Test-Path -LiteralPath $fileIcon -PathType Leaf)) { throw "Installed Markdown icon is missing: $fileIcon" }
     if (-not (Test-Path -LiteralPath $arpKey)) { throw "ARP key is missing: $arpKey" }
     if (-not (Test-Path -LiteralPath $associationKey)) { throw "Markdown association is missing: $associationKey" }
+    if (-not (Test-Path -LiteralPath $defaultIconKey)) { throw "Markdown DefaultIcon key is missing: $defaultIconKey" }
+
+    $registeredIcon = [string](Get-ItemPropertyValue -LiteralPath $defaultIconKey -Name '(default)')
+    $registeredIconPath = ($registeredIcon -replace ',\d+\s*$', '').Trim().Trim([char]'"')
+    $expectedIconPath = [IO.Path]::GetFullPath($fileIcon)
+    if (-not [IO.Path]::IsPathFullyQualified($registeredIconPath) -or
+        -not [IO.Path]::GetFullPath($registeredIconPath).Equals($expectedIconPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Markdown icon registry value does not resolve to the installed file icon: $registeredIcon"
+    }
+    if ((Get-FileHash -LiteralPath $fileIcon -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $sourceFileIcon -Algorithm SHA256).Hash) {
+        throw 'Installed Markdown icon differs from the verified source asset.'
+    }
+    if ($Kind -eq 'Inno') {
+        foreach ($key in $innoOpenWithKeys) {
+            if (-not (Test-RegistryValue -Key $key -ValueName 'BP.MD.RTLReader.Markdown')) {
+                throw "Inno OpenWithProgids value is missing: $key"
+            }
+        }
+    }
     if (-not (Get-ShortcutPaths)) { throw 'Expected installed shortcuts were not found.' }
 }
 
@@ -156,12 +202,19 @@ function Assert-UninstalledState {
     if (Test-Path -LiteralPath $installRoot) { throw "Program directory remains: $installRoot" }
     if (Test-Path -LiteralPath $arpKey) { throw "ARP key remains: $arpKey" }
     if (Test-Path -LiteralPath $associationKey) { throw "Markdown association remains: $associationKey" }
+    if (Test-Path -LiteralPath $defaultIconKey) { throw "Markdown DefaultIcon key remains: $defaultIconKey" }
+    if ($Kind -eq 'Inno') {
+        foreach ($key in $innoOpenWithKeys) {
+            if (Test-RegistryValue -Key $key -ValueName 'BP.MD.RTLReader.Markdown') {
+                throw "Inno OpenWithProgids value remains after uninstall: $key"
+            }
+        }
+    }
     if (Get-ShortcutPaths) { throw 'BP MD RTL Reader shortcuts remain after uninstall.' }
     if ((Get-FileHash -LiteralPath $sentinel -Algorithm SHA256).Hash -ne $script:sentinelHash) {
         throw 'External Markdown sentinel changed during uninstall.'
     }
 }
-
 function Assert-AppDataState {
     param([Parameter(Mandatory)][bool]$Deleted)
     foreach ($target in $dataTargets) {

@@ -81,6 +81,7 @@ WizardSmallImageFile=assets\wizard-small.bmp
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
+ChangesAssociations=yes
 #ifdef ReleaseSigning
 SignTool=bpmd
 SignedUninstaller=yes
@@ -105,17 +106,24 @@ Name: "{group}\Uninstall {#MyAppName}";    Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}";        Filename: "{app}\{#MyAppExe}"; IconFilename: "{app}\{#MyAppExe}"; Tasks: desktopicon
 
 [Registry]
-; --- Optional, non-destructive .md / .markdown context-menu verb -------------
-; Adds a labelled "Open with BP MD RTL Reader" verb WITHOUT hijacking the default handler.
-; HKA = auto hive (HKLM per-machine / HKCU per-user). uninsdeletekey removes the
-; whole verb subtree on uninstall.
+; --- Optional, non-destructive .md / .markdown registration -----------------
+; The app-owned ProgID supplies the dedicated document icon and Open-with entry.
+; The extension defaults are deliberately left unchanged.
+Root: HKA; Subkey: "Software\Classes\BP.MD.RTLReader.Markdown"; ValueType: string; ValueName: ""; ValueData: "Markdown Document"; Flags: uninsdeletekey; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\BP.MD.RTLReader.Markdown\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\resources\markdown-file-icon.ico,0"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\BP.MD.RTLReader.Markdown\shell"; ValueType: string; ValueName: ""; ValueData: "open"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\BP.MD.RTLReader.Markdown\shell\open"; ValueType: string; ValueName: ""; ValueData: "Open with BP MD RTL Reader"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\BP.MD.RTLReader.Markdown\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.md\OpenWithProgids"; ValueType: string; ValueName: "BP.MD.RTLReader.Markdown"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.markdown\OpenWithProgids"; ValueType: string; ValueName: "BP.MD.RTLReader.Markdown"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associatemd
+
+; Retain the explicit context-menu verbs for classic and current Explorer menus.
 Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: ""; ValueData: "Open with BP MD RTL Reader"; Flags: uninsdeletekey; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExe},0"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\resources\markdown-file-icon.ico,0"; Tasks: associatemd
 Root: HKA; Subkey: "Software\Classes\.md\shell\Open with BP MD RTL Reader\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
 Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: ""; ValueData: "Open with BP MD RTL Reader"; Flags: uninsdeletekey; Tasks: associatemd
-Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExe},0"; Tasks: associatemd
+Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\resources\markdown-file-icon.ico,0"; Tasks: associatemd
 Root: HKA; Subkey: "Software\Classes\.markdown\shell\Open with BP MD RTL Reader\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: associatemd
-
 [UninstallDelete]
 ; Leftovers the app may write INTO its own program directory (logs, caches).
 ; User-data folders are removed conditionally in [Code] (app-data choice),

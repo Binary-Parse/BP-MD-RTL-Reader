@@ -77,6 +77,7 @@
     "locales/zh-TW.pak",
     "resources.pak",
     "resources/app.asar",
+    "resources/markdown-file-icon.ico",
     "snapshot_blob.bin",
     "v8_context_snapshot.bin",
     "vk_swiftshader_icd.json",

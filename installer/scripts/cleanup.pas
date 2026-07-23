@@ -99,4 +99,12 @@ begin
   RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.md\shell\Open with BP MD RTL Reader');
   RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\.markdown\shell\Open with BP MD RTL Reader');
   RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.markdown\shell\Open with BP MD RTL Reader');
+
+  { App-owned ProgID and named OpenWithProgids values; extension defaults stay untouched. }
+  RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\BP.MD.RTLReader.Markdown');
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\BP.MD.RTLReader.Markdown');
+  RegDeleteValue(HKLM, 'Software\Classes\.md\OpenWithProgids', 'BP.MD.RTLReader.Markdown');
+  RegDeleteValue(HKCU, 'Software\Classes\.md\OpenWithProgids', 'BP.MD.RTLReader.Markdown');
+  RegDeleteValue(HKLM, 'Software\Classes\.markdown\OpenWithProgids', 'BP.MD.RTLReader.Markdown');
+  RegDeleteValue(HKCU, 'Software\Classes\.markdown\OpenWithProgids', 'BP.MD.RTLReader.Markdown');
 end;

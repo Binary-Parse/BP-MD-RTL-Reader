@@ -14,6 +14,7 @@ BeforeAll {
     $script:Build = Get-Content -Raw (Join-Path $RepoRoot 'installer\build-installer.ps1')
     $script:PascalSelfTest = Get-Content -Raw (Join-Path $RepoRoot 'tests\installer\run-pascal-self-test.ps1')
     $script:ReleaseVm = Get-Content -Raw (Join-Path $RepoRoot 'tests\installer\run-release-vm-tests.ps1')
+    $script:Package = Get-Content -Raw (Join-Path $RepoRoot 'package.json') | ConvertFrom-Json
     $script:ToolPolicy = Get-Content -Raw (Join-Path $RepoRoot 'installer\toolchain-policy.json') | ConvertFrom-Json
     $script:SourcePolicy = Get-Content -Raw (Join-Path $RepoRoot 'installer\source-manifest-policy.json') | ConvertFrom-Json
     . (Join-Path $RepoRoot 'installer\build-policy.ps1')
@@ -48,9 +49,10 @@ Describe 'Verified installer build chain' {
 
     It 'commits an exact Electron payload inventory and blocks direct Inno compilation' {
         $SourcePolicy.electronVersion | Should -Be '42.7.0'
-        $SourcePolicy.files.Count | Should -Be 74
-        @($SourcePolicy.files | Select-Object -Unique).Count | Should -Be 74
+        $SourcePolicy.files.Count | Should -Be 75
+        @($SourcePolicy.files | Select-Object -Unique).Count | Should -Be 75
         $SourcePolicy.files | Should -Contain 'resources/app.asar'
+        $SourcePolicy.files | Should -Contain 'resources/markdown-file-icon.ico'
         $Inno | Should -Match '#ifndef VerifiedStaging'
         $Build | Should -Match '/DVerifiedStaging=1'
     }
@@ -211,6 +213,59 @@ Describe 'Modern uninstall choices and complete current-account cleanup' {
     }
 }
 
+Describe 'Markdown file association icon' {
+    It 'keeps the document icon separate from all application and installer branding' {
+        $Package.build.win.icon | Should -Be 'assets/icon.ico'
+        $Package.build.nsis.installerIcon | Should -Be 'assets/icon.ico'
+        $Package.build.nsis.uninstallerIcon | Should -Be 'assets/icon.ico'
+        $Package.build.nsis.installerHeaderIcon | Should -Be 'assets/icon.ico'
+        @($Package.build.fileAssociations).Count | Should -Be 2
+        @($Package.build.fileAssociations | ForEach-Object icon | Select-Object -Unique) | Should -Be @('assets/markdown-file-icon.ico')
+        $extra = @($Package.build.win.extraResources | Where-Object {
+            $_.from -eq 'assets/markdown-file-icon.ico' -and $_.to -eq 'markdown-file-icon.ico'
+        })
+        $extra.Count | Should -Be 1
+    }
+
+    It 'registers an opt-in Inno ProgID and icon without replacing either extension default' {
+        $Inno | Should -Match '(?m)^ChangesAssociations=yes\s*$'
+        $Inno | Should -Match 'Software\\Classes\\BP\.MD\.RTLReader\.Markdown\\DefaultIcon'
+        $Inno | Should -Match '\{app\}\\resources\\markdown-file-icon\.ico,0'
+        $Inno | Should -Match 'Software\\Classes\\BP\.MD\.RTLReader\.Markdown\\shell\\open\\command'
+        $Inno | Should -Match 'Software\\Classes\\\.md\\OpenWithProgids'
+        $Inno | Should -Match 'Software\\Classes\\\.markdown\\OpenWithProgids'
+        $Inno | Should -Match 'ValueName: "BP\.MD\.RTLReader\.Markdown"'
+        $Inno | Should -Match 'Flags: uninsdeletevalue'
+        $Inno | Should -Not -Match 'Subkey: "Software\\Classes\\\.(?:md|markdown)"; ValueType: string; ValueName: ""'
+    }
+
+    It 'removes only app-owned ProgID and OpenWithProgids entries on uninstall' {
+        $Cleanup.Contains("RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Classes\BP.MD.RTLReader.Markdown');") | Should -BeTrue
+        $Cleanup.Contains("RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\BP.MD.RTLReader.Markdown');") | Should -BeTrue
+        foreach ($hive in @('HKLM', 'HKCU')) {
+            foreach ($extension in @('.md', '.markdown')) {
+                $line = "RegDeleteValue($hive, 'Software\Classes\$extension\OpenWithProgids', 'BP.MD.RTLReader.Markdown');"
+                $Cleanup.Contains($line) | Should -BeTrue
+            }
+        }
+        $Cleanup | Should -Not -Match "RegDeleteKeyIncludingSubkeys\(HK(?:LM|CU), 'Software\\Classes\\\.(?:md|markdown)'\)"
+    }
+    It 'makes the existing Inno context-menu verb use the document icon' {
+        $matches = [regex]::Matches(
+            $Inno,
+            'Subkey: "Software\\Classes\\\.(?:md|markdown)\\shell\\Open with BP MD RTL Reader"; ValueType: string; ValueName: "Icon"; ValueData: "\{app\}\\resources\\markdown-file-icon\.ico,0"'
+        )
+        $matches.Count | Should -Be 2
+    }
+
+    It 'checks the installed icon and app-owned ProgID in the guarded release VM' {
+        $ReleaseVm | Should -Match '\$fileIcon\s*=\s*Join-Path \$installRoot ''resources\\markdown-file-icon\.ico'''
+        $ReleaseVm | Should -Match '\$defaultIconKey\s*=\s*if \(\$Kind -eq ''Inno''\)'
+        $ReleaseVm | Should -Match 'BP\.MD\.RTLReader\.Markdown\\DefaultIcon'
+        $ReleaseVm | Should -Match 'Get-ItemPropertyValue -LiteralPath \$defaultIconKey'
+        $ReleaseVm | Should -Match 'Markdown icon registry value does not resolve to the installed file icon'
+    }
+}
 Describe 'Disposable-runner release uninstall gate' {
     It 'is hard-guarded to GitHub-hosted Windows CI and absolute installer inputs' {
         $ReleaseVm | Should -Match '\$env:CI\s*-ne\s*''true'''

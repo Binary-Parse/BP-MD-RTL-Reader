@@ -241,7 +241,15 @@ function Get-UninstallTargets {
             'HKLM\Software\Classes\.md\shell\Open with BP MD RTL Reader',
             'HKCU\Software\Classes\.md\shell\Open with BP MD RTL Reader',
             'HKLM\Software\Classes\.markdown\shell\Open with BP MD RTL Reader',
-            'HKCU\Software\Classes\.markdown\shell\Open with BP MD RTL Reader'
+            'HKCU\Software\Classes\.markdown\shell\Open with BP MD RTL Reader',
+            'HKLM\Software\Classes\BP.MD.RTLReader.Markdown',
+            'HKCU\Software\Classes\BP.MD.RTLReader.Markdown'
+        )
+        RegValues = @(
+            'HKLM\Software\Classes\.md\OpenWithProgids|BP.MD.RTLReader.Markdown',
+            'HKCU\Software\Classes\.md\OpenWithProgids|BP.MD.RTLReader.Markdown',
+            'HKLM\Software\Classes\.markdown\OpenWithProgids|BP.MD.RTLReader.Markdown',
+            'HKCU\Software\Classes\.markdown\OpenWithProgids|BP.MD.RTLReader.Markdown'
         )
     }
 }

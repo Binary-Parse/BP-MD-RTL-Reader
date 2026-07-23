@@ -64,10 +64,20 @@ Describe 'Cleanup target set (Get-UninstallTargets)' {
             'HKCU\Software\Classes\.md\shell\Open with BP MD RTL Reader'
             'HKLM\Software\Classes\.markdown\shell\Open with BP MD RTL Reader'
             'HKCU\Software\Classes\.markdown\shell\Open with BP MD RTL Reader'
+            'HKLM\Software\Classes\BP.MD.RTLReader.Markdown'
+            'HKCU\Software\Classes\BP.MD.RTLReader.Markdown'
+        ) -join "`n")
+    }
+    It 'registry-value set is exactly the app-owned OpenWithProgids entries' {
+        ($t.RegValues -join "`n") | Should -Be (@(
+            'HKLM\Software\Classes\.md\OpenWithProgids|BP.MD.RTLReader.Markdown'
+            'HKCU\Software\Classes\.md\OpenWithProgids|BP.MD.RTLReader.Markdown'
+            'HKLM\Software\Classes\.markdown\OpenWithProgids|BP.MD.RTLReader.Markdown'
+            'HKCU\Software\Classes\.markdown\OpenWithProgids|BP.MD.RTLReader.Markdown'
         ) -join "`n")
     }
     It 'no longer references the old product name "Marqam" (rename is complete)' {
-        (($t.RegKeys + $t.Dirs + $t.Files) -join '|') | Should -Not -Match 'Marqam'
+        (($t.RegKeys + $t.RegValues + $t.Dirs + $t.Files) -join '|') | Should -Not -Match 'Marqam'
     }
     It 'contains no user-authored Markdown cleanup target' {
         (($t.Dirs + $t.Files) -join '|') | Should -Not -Match '\.(?:md|markdown)(?:$|[|\\])'

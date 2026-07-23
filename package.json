@@ -81,6 +81,12 @@
           ]
         }
       ],
+      "extraResources": [
+        {
+          "from": "assets/markdown-file-icon.ico",
+          "to": "markdown-file-icon.ico"
+        }
+      ],
       "icon": "assets/icon.ico",
       "signtoolOptions": {
         "publisherName": "Binary Parse"
@@ -115,14 +121,14 @@
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "assets/icon.ico"
+        "icon": "assets/markdown-file-icon.ico"
       },
       {
         "ext": "markdown",
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "assets/icon.ico"
+        "icon": "assets/markdown-file-icon.ico"
       }
     ],
     "mac": {

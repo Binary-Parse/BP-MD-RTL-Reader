@@ -106,4 +106,8 @@ describe('public v1 release artifact contract', () => {
     expect(pkg.build.mac.artifactName).toBe('BP-MD-RTL-Reader-${version}-macOS-${arch}.${ext}');
     expect(pkg.build.linux.artifactName).toBe('BP-MD-RTL-Reader-${version}-Linux-${arch}.${ext}');
   });
+
+  test('NSIS Installed Apps name omits the version number', () => {
+    expect(pkg.build.nsis.uninstallDisplayName).toBe('${productName}');
+  });
 });

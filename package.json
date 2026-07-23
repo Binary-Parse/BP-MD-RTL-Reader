@@ -94,6 +94,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "BP MD RTL Reader",
+      "uninstallDisplayName": "${productName}",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
       "menuCategory": false,

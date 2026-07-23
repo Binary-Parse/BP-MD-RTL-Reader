@@ -1,13 +1,42 @@
-# ── Build / packaging ──────────────────────────────────────────────
+# Dependencies
 node_modules/
+jspm_packages/
+web_modules/
+
+# Node.js logs, diagnostics, and process state
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+*.pid
+*.pid.lock
+*.seed
+
+# Build and packaging output
 dist/
-*.exe
+out/
+release/
+Output/
+*.asar
 *.AppImage
 
-# ── Test outputs (regenerated on every run) ────────────────────────
+# Coverage, reports, and mutation output
 coverage/
+.nyc_output/
 reports/
+.stryker-tmp/
+lib-cov/
+*.lcov
+
+# Playwright output and browser caches
+playwright-report/
 test-results/
+blob-report/
+playwright/.cache/
+ms-playwright/
 test-results.json
 test-output*.txt
 test-run-output.txt
@@ -17,29 +46,96 @@ test_output_full.txt
 act-output.txt
 CI test result.txt
 
-# ── Installer build/test scratch ───────────────────────────────────
-installer/Output/
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.p8
+*.key
+*.cer
+*.mobileprovision
+
+# Tool caches
+.cache/
+.tmp/
+tmp/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+.npm/
+.yarn-integrity
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+.parcel-cache/
+.next/
+.nuxt/
+.vuepress/dist/
+.serverless/
+.fusebox/
+.dynamodb/
+.vercel/
+*.tgz
+.node_repl_history
+
+# Installer build/test scratch
 tests/installer/*.out.txt
 tests/installer/BP-MD-RTL-Reader-SelfTest.exe
 tests/installer/selftest.log
 tests/installer/selftest-result.txt
 
-# ── Logs ───────────────────────────────────────────────────────────
-logs/
-*.log
+# Local release manifests and checksums
+SHA256SUMS.txt
+*.source-manifest.json
+release-manifest.*
+artifact-manifest*.json
 
-# ── Per-machine virtualenv / tool scratch ──────────────────────────
+# Virtual environments and local tool scratch
 .venv/
 .audit-tmp/
 .binary-parse-backup/
 .playwright-mcp/
 
-# ── Local screenshot scratch (not tracked assets) ──────────────────
+# IDE and editor files
+.vscode/
+.idea/
+.vs/
+*.suo
+*.njsproj
+*.sln
+*.swp
+*~
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Local screenshot scratch (not tracked documentation assets)
 bpmd-ink.png
 bpmd-live.png
 bpmd-ref.png
 
-# ── Local-only workspace files ─────────────────────────────────────
+# Local-only workspace files
 /AUDIT_REPORT.md
 /docs/AUDIT_REPORT.md
 /LICENSE-AUDIT.md
@@ -47,16 +143,8 @@ bpmd-ref.png
 /assets/d7c23e25-0dd9-48a0-a08a-e1867b047600.png
 /tsconfig.json
 
-# ── Agent / assistant scratch (never published) ───────────────────
+# Agent / assistant scratch (never published)
 .claudedoc/
 .claude/
 .codex/
 .superpowers/
-
-# ── OS / editor noise ──────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-desktop.ini
-.vscode/
-.idea/
-.vs/

@@ -1,6 +1,5 @@
 # Code owners — automatically requested for review on matching pull requests.
 # Owners must be a GitHub username or an @org/team with write access to this repo.
-# Replace the placeholder below with the real owner before relying on this file.
 # Docs: https://docs.github.com/articles/about-code-owners
 
 * @Binary-Parse

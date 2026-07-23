@@ -2,11 +2,11 @@
 
 _Generated: 2026-07-23_
 
-**Scope:** all dependencies (direct + transitive) resolved from `package-lock.json` (lockfileVersion 3).
+**Scope:** all dependencies (direct + transitive) resolved from `package-lock.json` (lockfileVersion 3), **plus** the vendored fonts shipped in `assets/vendor/**` (binary assets that `license-checker` does not see — audited separately in [Vendored fonts](#vendored-fonts-shipped-assets--not-npm-packages)).
 
 **Ecosystem:** Node.js / npm only. No Python, Rust, Go, Ruby, PHP, or Java manifests exist in this repo.
 
-**Tooling:** `npx license-checker --json` run against the installed `node_modules` (766 third-party packages).
+**Tooling:** `npx license-checker --json` run against the installed `node_modules` (766 third-party packages); vendored fonts reviewed by hand against the license notices shipped with them.
 
 **Runtime vs dev:** the project declares **no** runtime `dependencies` — every direct dependency is a `devDependency`, so npm classifies all 766 packages as `dev`. A subset (marked `dev (vendored->shipped)`) is bundled by esbuild into `assets/vendor/**` and ships inside the packaged app, so their (all permissive) licenses still carry redistribution obligations.
 
@@ -849,6 +849,22 @@ Each license was confirmed twice: the package `license` SPDX field **and** the o
 | lightningcss | 1.33.0 | MPL-2.0 | transitive | vitest → vite | Build-time CSS transform; not distributed → MPL obligations never attach. No action. |
 | lightningcss-win32-x64-msvc | 1.33.0 | MPL-2.0 | transitive | lightningcss (native binary) | Build-time native binary; not distributed → MPL obligations never attach. No action. |
 | caniuse-lite | 1.0.30001793 | CC-BY-4.0 | transitive | stryker → babel → browserslist | Build-time data; not redistributed → CC-BY attribution duty never arises. No action. |
+
+## Vendored fonts (shipped assets — not npm packages)
+
+Fonts ship inside the packaged app via the `assets/vendor/**` glob, but they are **binary assets, not npm dependencies**, so `license-checker` never inspected them. Reviewed here by hand against the license notices that ship beside them (`assets/vendor/fonts/LICENSES.md` + `assets/vendor/fonts/OFL-1.1.txt`). **All open source.**
+
+| Font family | Files | License | Bucket | Basis |
+|---|---|---|---|---|
+| Fraunces | 2 (`fraunces-latin-opsz-{normal,italic}`) | OFL-1.1 | OK | Documented in `assets/vendor/fonts/LICENSES.md`; full OFL text shipped |
+| Inter | 2 (`inter-latin-wght-{normal,italic}`) | OFL-1.1 | OK | Documented; full OFL text shipped |
+| JetBrains Mono | 2 (`jetbrains-mono-latin-wght-{normal,italic}`) | OFL-1.1 | OK | Documented; full OFL text shipped |
+| IBM Plex Sans Arabic | 4 (`400/500/600/700`) | OFL-1.1 | OK | Documented; full OFL text shipped |
+| KaTeX math fonts (`KaTeX_*`) | 20 | MIT | OK | Ship inside the MIT-licensed `katex` package (katex@0.17.0, already in the table above) |
+
+Notes:
+- **SIL OFL-1.1** is a libre / open font license (FSF-free). Its redistribution conditions — ship the license + copyright notice, respect the Reserved Font Names, and don't sell the fonts on their own — are **satisfied**: `LICENSES.md` carries the attribution/copyright per family and `OFL-1.1.txt` carries the full text, both bundled next to the fonts; the fonts are used unmodified (Fontsource latin/arabic subsets) with no renamed derivative; and they are shipped as part of an application, not sold standalone.
+- The **KaTeX** math fonts carry no separate license — they are part of the MIT-licensed `katex` distribution, so they inherit MIT (already covered by the `katex` rows in the dependency table).
 
 ## Method / reproducibility
 

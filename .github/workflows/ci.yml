@@ -42,7 +42,7 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -90,7 +90,7 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # no browser tests here
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -130,7 +130,7 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -168,7 +168,7 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # only merges reports — no browser
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -207,7 +207,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -244,7 +244,7 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -323,7 +323,7 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # Stryker drives Vitest, not browsers
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout
@@ -437,7 +437,7 @@ jobs:
       pull-requests: write # post the summary comment
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Checkout

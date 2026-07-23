@@ -19,7 +19,7 @@ export default [
   // First-party runtime, executed build/report tooling, configs, and extracted HTML scripts.
   {
     files: [
-      'main.js', 'preload.js', 'src/**/*.js', 'scripts/**/*.{js,mjs}',
+      'src/**/*.js', 'scripts/**/*.{js,mjs}',
       '*.config.{js,mjs}', '**/*.html',
     ],
     plugins: {
@@ -39,7 +39,7 @@ export default [
   // Electron/main-side modules, Node scripts, and CJS configs use CommonJS.
   {
     files: [
-      'main.js', 'preload.js', 'src/main-logic.js', 'src/main/**/*.js',
+      'src/main/**/*.js', 'src/preload/**/*.js',
       'scripts/**/*.js', 'playwright.config.js', 'playwright.electron.config.js',
     ],
     languageOptions: {

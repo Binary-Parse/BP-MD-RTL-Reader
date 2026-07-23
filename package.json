@@ -4,7 +4,7 @@
   "description": "BP MD RTL Reader — markdown reader with RTL support",
   "author": "Binary Parse",
   "license": "MIT",
-  "main": "main.js",
+  "main": "src/main/index.js",
   "private": true,
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
-    "build:cm": "esbuild scripts/codemirror-entry.mjs --bundle --format=iife --global-name=CM6 --minify --outfile=assets/vendor/codemirror/codemirror.min.js",
+    "build:cm": "esbuild scripts/codemirror-entry.mjs --bundle --format=iife --global-name=CM6 --minify --outfile=resources/vendor/codemirror/codemirror.min.js",
     "vendor:sync": "node scripts/sync-vendor.js",
     "vendor:check": "node scripts/sync-vendor.js --check",
     "license:inventory": "node scripts/dependency-license-inventory.js --check",
@@ -35,7 +35,7 @@
     "test:electron": "playwright test --config playwright.electron.config.js",
     "test:e2e:coverage": "node scripts/generate-renderer-coverage.js --run",
     "test:smoke": "playwright test tests/e2e/smoke.spec.js",
-    "test:integration": "playwright test tests/integration",
+    "test:integration": "playwright test tests/e2e/integration",
     "test:update-snapshots": "playwright test --update-snapshots",
     "test:mutation": "stryker run && node scripts/check-mutation-tiers.js",
     "test:mutation:release": "stryker run --concurrency 2 && node scripts/check-mutation-tiers.js",
@@ -49,15 +49,19 @@
   "build": {
     "appId": "com.binaryparse.bpmdrtlreader",
     "productName": "BP MD RTL Reader",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
     "files": [
-      "index.html",
-      "main.js",
-      "preload.js",
+      "src/renderer/index.html",
+      "src/main/index.js",
+      "src/preload/index.js",
       "src/**/*.js",
       "src/**/*.css",
-      "assets/icon.ico",
-      "assets/icon.png",
-      "assets/vendor/**",
+      "build/icons/icon.ico",
+      "build/icons/icon.png",
+      "resources/vendor/**",
       "LICENSE",
       "THIRD-PARTY-NOTICES.md",
       "package.json"
@@ -83,11 +87,11 @@
       ],
       "extraResources": [
         {
-          "from": "assets/markdown-file-icon.ico",
+          "from": "build/icons/markdown-file-icon.ico",
           "to": "markdown-file-icon.ico"
         }
       ],
-      "icon": "assets/icon.ico",
+      "icon": "build/icons/icon.ico",
       "signtoolOptions": {
         "publisherName": "Binary Parse"
       }
@@ -104,10 +108,10 @@
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
       "menuCategory": false,
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico",
-      "include": "installer/installer.nsh",
+      "installerIcon": "build/icons/icon.ico",
+      "uninstallerIcon": "build/icons/icon.ico",
+      "installerHeaderIcon": "build/icons/icon.ico",
+      "include": "build/installer/installer.nsh",
       "artifactName": "BP-MD-RTL-Reader-${version}-Windows-NSIS-multiarch.${ext}",
       "warningsAsErrors": false,
       "differentialPackage": false
@@ -121,14 +125,14 @@
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "assets/markdown-file-icon.ico"
+        "icon": "build/icons/markdown-file-icon.ico"
       },
       {
         "ext": "markdown",
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "assets/markdown-file-icon.ico"
+        "icon": "build/icons/markdown-file-icon.ico"
       }
     ],
     "mac": {
@@ -149,7 +153,7 @@
         }
       ],
       "category": "public.app-category.productivity",
-      "icon": "assets/icon.png",
+      "icon": "build/icons/icon.png",
       "artifactName": "BP-MD-RTL-Reader-${version}-macOS-${arch}.${ext}",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -178,7 +182,7 @@
         }
       ],
       "category": "Office",
-      "icon": "assets/icon.png",
+      "icon": "build/icons/icon.png",
       "artifactName": "BP-MD-RTL-Reader-${version}-Linux-${arch}.${ext}",
       "maintainer": "Binary Parse <noreply@binaryparse.example>",
       "synopsis": "A markdown reader for RTL/Arabic prose",

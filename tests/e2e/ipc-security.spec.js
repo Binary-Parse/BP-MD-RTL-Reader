@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { bootstrap } = require('../../main.js');
+const { bootstrap } = require('../../src/main/index.js');
 
 function createHarness(tempRoot) {
   const handlers = new Map();
@@ -53,7 +53,7 @@ function createHarness(tempRoot) {
   };
   const injectedFs = Object.create(fs);
   injectedFs.watch = () => ({ close() {} });
-  const proc = { argv: ['electron', 'main.js'], platform: process.platform, on() {} };
+  const proc = { argv: ['electron', 'src/main/index.js'], platform: process.platform, on() {} };
   bootstrap({ electron, fs: injectedFs, proc });
   return {
     handlers,

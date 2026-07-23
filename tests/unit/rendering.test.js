@@ -4,8 +4,8 @@
  */
 import { describe, test, expect } from 'vitest';
 import { marked } from 'marked';
-import { parseCalloutHeader, CALLOUT_TYPES, parseMarkdown, configureMarked } from '../../src/renderer/markdown.js';
-import { extractHeadings, activeHeading } from '../../src/renderer/outline.js';
+import { parseCalloutHeader, CALLOUT_TYPES, parseMarkdown, configureMarked } from '../../src/renderer/markdown/markdown.js';
+import { extractHeadings, activeHeading } from '../../src/renderer/components/outline.js';
 
 describe('callouts (T-F14)', () => {
   test('parses [!TYPE] with and without title', () => {

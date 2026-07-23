@@ -9,7 +9,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const INDEX_URL = `file:///${path.resolve(__dirname, '../../index.html').replace(/\\/g, '/')}`;
+const INDEX_URL = `file:///${path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/')}`;
 
 // Heading + an English-led ~42% Arabic paragraph (Auto → ltr) + an Arabic-heavy paragraph (Auto → rtl).
 const FIXTURE = '# Project Roadmap خطة\n\nName قيمة one واحد here\n\nمرحباً بالعالم هذا نص عربي طويل جداً للقراءة والفهم\n';

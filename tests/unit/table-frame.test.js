@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, test, vi } from 'vitest';
-import { tableFrameLabel, updateTableFrameOverflow, wrapTablesInFrames } from '../../src/renderer/table-frame.js';
+import { tableFrameLabel, updateTableFrameOverflow, wrapTablesInFrames } from '../../src/renderer/components/table-frame.js';
 
 function rootWithTable(dir = 'ltr') {
   const root = document.createElement('div');

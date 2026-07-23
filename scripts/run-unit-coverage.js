@@ -32,7 +32,7 @@ function runVitest(arguments_) {
 
 // Run the complete suite first. Thresholds are enforced after the isolated
 // CommonJS shard is merged, not disabled: Vitest 4 otherwise overwrites direct
-// module coverage with the lower-hit instance loaded transitively by main.js.
+// module coverage with the lower-hit instance loaded transitively by src/main/index.js.
 runVitest([
   'run', '--config', 'vitest.config.js', '--coverage', '--no-file-parallelism',
   ...thresholdOverrides,
@@ -59,7 +59,7 @@ const directCoverage = JSON.parse(fs.readFileSync(directCoveragePath, 'utf8'));
 if (Object.keys(coverage).length === 0) throw new Error('Vitest produced an empty coverage map');
 
 const directSources = [
-  'src/main-logic.js', 'src/main/capabilities.js', 'src/main/context-menu.js',
+  'src/main/main-logic.js', 'src/main/capabilities.js', 'src/main/context-menu.js',
   'src/main/document-store.js', 'src/main/navigation.js', 'src/main/protocol.js',
   'src/main/settings.js', 'src/main/version.js',
 ];

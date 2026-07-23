@@ -9,7 +9,7 @@
  * Drives the real bootstrap({ electron, fs, proc }) via the shared harness seam.
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 const getHandle = (electron, name) => electron.ipcMain.handle.mock.calls.find((c) => c[0] === name)?.[1];
@@ -20,7 +20,7 @@ describe('export:pdf (T-B6)', () => {
   beforeEach(async () => {
     electron = buildMockElectron();
     fs = buildMockFs();
-    bootstrap({ electron, fs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 50));
     handler = getHandle(electron, 'export:pdf');
   });

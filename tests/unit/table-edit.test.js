@@ -2,7 +2,7 @@
  * table-edit.test.js — the pure GFM-table editing engine (interactive table controls).
  */
 import { describe, test, expect } from 'vitest';
-import { tableAt, serializeTable, tableEdit } from '../../src/renderer/table-edit.js';
+import { tableAt, serializeTable, tableEdit } from '../../src/renderer/components/table-edit.js';
 
 const T = '| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |';
 // offsets: header line 0..8, delim 9..., body1, body2

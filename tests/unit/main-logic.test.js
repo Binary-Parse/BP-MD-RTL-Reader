@@ -1,5 +1,5 @@
 /**
- * Unit tests for src/main-logic.js — pure business logic extracted from main.js.
+ * Unit tests for src/main/main-logic.js — pure business logic extracted from src/main/index.js.
  * These tests exercise EVERY branch to survive mutation testing.
  */
 
@@ -7,7 +7,7 @@ import { describe, test, expect, vi } from 'vitest';
 import pathModule from 'path';
 
 // Static import so v8 coverage instruments main-logic.js correctly.
-// (Previously: `const mainLogic = await import('../../src/main-logic.js')`
+// (Previously: `const mainLogic = await import('../../src/main/main-logic.js')`
 //  caused v8 to under-count statement/branch coverage by ~10 pp even
 //  though mutation score on this file is 100 %.)
 import {
@@ -28,7 +28,7 @@ import {
   MAX_FILES_PER_DIR,
   MAX_FILE_BYTES,
   MAX_CUMULATIVE_BYTES,
-} from '../../src/main-logic.js';
+} from '../../src/main/main-logic.js';
 
 // T-B10 file-type predicates. Statically imported here (not via createRequire as the old
 // file-predicates.test.js did) so Stryker's per-test coverage actually instruments them —
@@ -63,12 +63,12 @@ describe('parseFileArg()', () => {
     expect(fs.realpathSync).not.toHaveBeenCalled();
   });
   test('returns null for empty argv', () => {
-    expect(parseFileArg(['node', 'main.js'], {})).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js'], {})).toBeNull();
   });
 
   test('skips flags starting with -', () => {
     const fs = { realpathSync: vi.fn(), statSync: vi.fn() };
-    expect(parseFileArg(['node', 'main.js', '--inspect', 'file.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', '--inspect', 'file.md'], fs)).toBeNull();
   });
 
   test('kills mutant: flag check removed → -file.md would be incorrectly processed', () => {
@@ -91,12 +91,12 @@ describe('parseFileArg()', () => {
 
   test('skips non-markdown extensions', () => {
     const fs = { realpathSync: vi.fn(), statSync: vi.fn() };
-    expect(parseFileArg(['node', 'main.js', 'file.exe'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 'file.exe'], fs)).toBeNull();
   });
 
   test('skips non-string argv entries', () => {
     const fs = { realpathSync: vi.fn(), statSync: vi.fn() };
-    expect(parseFileArg(['node', 'main.js', 123, null], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 123, null], fs)).toBeNull();
   });
 
   test('returns resolved path for valid .md file', () => {
@@ -104,7 +104,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/file.md'),
       statSync: vi.fn(() => ({ isFile: () => true, size: 100 }))
     };
-    expect(parseFileArg(['node', 'main.js', 'file.md'], fs)).toBe('/abs/file.md');
+    expect(parseFileArg(['node', 'src/main/index.js', 'file.md'], fs)).toBe('/abs/file.md');
     expect(fs.realpathSync).toHaveBeenCalledWith('file.md');
   });
 
@@ -113,7 +113,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/file.markdown'),
       statSync: vi.fn(() => ({ isFile: () => true, size: 100 }))
     };
-    expect(parseFileArg(['node', 'main.js', 'file.markdown'], fs)).toBe('/abs/file.markdown');
+    expect(parseFileArg(['node', 'src/main/index.js', 'file.markdown'], fs)).toBe('/abs/file.markdown');
   });
 
   test('returns resolved path for .txt file', () => {
@@ -121,7 +121,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/file.txt'),
       statSync: vi.fn(() => ({ isFile: () => true, size: 100 }))
     };
-    expect(parseFileArg(['node', 'main.js', 'file.txt'], fs)).toBe('/abs/file.txt');
+    expect(parseFileArg(['node', 'src/main/index.js', 'file.txt'], fs)).toBe('/abs/file.txt');
   });
 
   test('skips directories', () => {
@@ -129,7 +129,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/dir.md'),
       statSync: vi.fn(() => ({ isFile: () => false, size: 100 }))
     };
-    expect(parseFileArg(['node', 'main.js', 'dir.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 'dir.md'], fs)).toBeNull();
   });
 
   test('skips oversized files', () => {
@@ -137,7 +137,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/huge.md'),
       statSync: vi.fn(() => ({ isFile: () => true, size: MAX_OPEN_FILE_BYTES + 1 }))
     };
-    expect(parseFileArg(['node', 'main.js', 'huge.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 'huge.md'], fs)).toBeNull();
   });
 
   test('exactly at size limit is allowed', () => {
@@ -145,7 +145,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/exact.md'),
       statSync: vi.fn(() => ({ isFile: () => true, size: MAX_OPEN_FILE_BYTES }))
     };
-    expect(parseFileArg(['node', 'main.js', 'exact.md'], fs)).toBe('/abs/exact.md');
+    expect(parseFileArg(['node', 'src/main/index.js', 'exact.md'], fs)).toBe('/abs/exact.md');
   });
 
   test('handles realpathSync throwing', () => {
@@ -153,7 +153,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => { throw new Error('ENOENT'); }),
       statSync: vi.fn()
     };
-    expect(parseFileArg(['node', 'main.js', 'missing.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 'missing.md'], fs)).toBeNull();
   });
 
   test('handles statSync throwing', () => {
@@ -161,7 +161,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/file.md'),
       statSync: vi.fn(() => { throw new Error('EACCES'); })
     };
-    expect(parseFileArg(['node', 'main.js', 'file.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 'file.md'], fs)).toBeNull();
   });
 
   test('returns first valid file among multiple args', () => {
@@ -172,7 +172,7 @@ describe('parseFileArg()', () => {
         size: p.includes('huge') ? MAX_OPEN_FILE_BYTES + 1 : 100
       }))
     };
-    const result = parseFileArg(['node', 'main.js', '--flag', 'dir.md', 'valid.md'], fs);
+    const result = parseFileArg(['node', 'src/main/index.js', '--flag', 'dir.md', 'valid.md'], fs);
     expect(result).toBe('/abs/valid.md');
   });
 
@@ -181,7 +181,7 @@ describe('parseFileArg()', () => {
       realpathSync: vi.fn(() => '/abs/file.MD'),
       statSync: vi.fn(() => ({ isFile: () => true, size: 100 }))
     };
-    expect(parseFileArg(['node', 'main.js', 'file.MD'], fs)).toBe('/abs/file.MD');
+    expect(parseFileArg(['node', 'src/main/index.js', 'file.MD'], fs)).toBe('/abs/file.MD');
   });
 });
 
@@ -466,8 +466,8 @@ describe('parseFileArg() mutant killers', () => {
       statSync: vi.fn(() => ({ isFile: () => true, size: 100 }))
     };
     // Array-like object with length=2 but element 3 exists
-    const argv = { 0: 'node', 1: 'main.js', 2: 'file.md', length: 2 };
-    // With i < 2: only checks index 1 ('main.js') → null
+    const argv = { 0: 'node', 1: 'src/main/index.js', 2: 'file.md', length: 2 };
+    // With i < 2: only checks index 1 ('src/main/index.js') → null
     // With i <= 2: checks index 2 ('file.md') → returns path
     expect(parseFileArg(argv, fs)).toBeNull();
     expect(fs.realpathSync).not.toHaveBeenCalledWith('file.md');

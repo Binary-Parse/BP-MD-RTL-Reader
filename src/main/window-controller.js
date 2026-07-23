@@ -64,7 +64,7 @@ function createWindowController({
       minWidth: 800,
       minHeight: 600,
       title: 'BP MD RTL Reader',
-      icon: path.join(rootDir, 'assets', 'icon.ico'),
+      icon: path.join(rootDir, 'build', 'icons', 'icon.ico'),
       backgroundColor: '#1A1713',
       frame: false,
       transparent: false,
@@ -72,7 +72,7 @@ function createWindowController({
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
-        preload: path.join(rootDir, 'preload.js'),
+        preload: path.join(rootDir, 'src', 'preload', 'index.js'),
       },
     });
 
@@ -88,8 +88,9 @@ function createWindowController({
       closeVaultWatcher();
     });
 
-    win.loadFile('index.html');
-    const appUrl = pathToFileURL(path.join(rootDir, 'index.html')).href;
+    const rendererEntry = path.join(rootDir, 'src', 'renderer', 'index.html');
+    win.loadFile(rendererEntry);
+    const appUrl = pathToFileURL(rendererEntry).href;
     win.webContents.on('did-finish-load', () => deliverPendingFile(win));
 
     win.webContents.setWindowOpenHandler(({ url }) => {

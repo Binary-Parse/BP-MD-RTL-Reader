@@ -1,7 +1,7 @@
 /**
- * main-window-contextmenu.test.js — MUTATION-STRENGTHENING tests for main.js.
+ * main-window-contextmenu.test.js — MUTATION-STRENGTHENING tests for src/main/index.js.
  *
- * Cluster: createWindow() BrowserWindow options (main.js ~215-230) and the
+ * Cluster: createWindow() BrowserWindow options (src/main/index.js ~215-230) and the
  * webContents `context-menu` handler (~249-268).
  *
  * These tests do NOT just execute the code — they pin the EXACT observable
@@ -10,18 +10,18 @@
  * injectable `bootstrap({ electron, fs, proc })` seam (audit #3) using the
  * shared harness mocks (no Module hijack).
  *
- * Surviving mutants targeted (current main.js line numbers):
+ * Surviving mutants targeted (current src/main/index.js line numbers):
  *   - L221 icon (StringLiteral)            → assert icon ENDS WITH "icon.ico"
  *   - L222 backgroundColor (StringLiteral) → assert === "#1A1713"
  *   - L224 transparent (BooleanLiteral)    → assert === false
- *   - L228 preload path (StringLiteral)    → assert ENDS WITH "preload.js"
+ *   - L228 preload path (StringLiteral)    → assert ENDS WITH "src/preload/index.js"
  *   - L253-L264 context-menu enabled flags + role objects
  *     (BooleanLiteral / ObjectLiteral / StringLiteral) → assert exact role
  *     order, separators, popup, and each item.enabled === its editFlag.
  */
 
 import { describe, test, expect, beforeAll, vi } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import {
   buildMockElectron,
   buildMockFs,
@@ -29,7 +29,7 @@ import {
 } from './main-harness.js';
 
 // ── WINDOW OPTIONS ──────────────────────────────────────────────────────────
-describe('main.js — createWindow() BrowserWindow options', () => {
+describe('src/main/index.js — createWindow() BrowserWindow options', () => {
   let mockElectron;
   let opts;
 
@@ -38,7 +38,7 @@ describe('main.js — createWindow() BrowserWindow options', () => {
     bootstrap({
       electron: mockElectron,
       fs: buildMockFs(),
-      proc: buildMockProc(['node', 'main.js']),
+      proc: buildMockProc(['node', 'src/main/index.js']),
     });
     await new Promise((r) => setTimeout(r, 50));
     opts = mockElectron.BrowserWindow.mock.calls[0][0];
@@ -94,15 +94,15 @@ describe('main.js — createWindow() BrowserWindow options', () => {
     expect(opts.backgroundColor).not.toBe('');
   });
 
-  // ─ icon path (L438 StringLiteral) — assert the FULL "assets/icon.ico" tail ─
-  test('icon is an absolute path ending with "assets/icon.ico"', () => {
+  // ─ icon path (L438 StringLiteral) — assert the FULL "build/icons/icon.ico" tail ─
+  test('icon is an absolute path ending with "build/icons/icon.ico"', () => {
     expect(typeof opts.icon).toBe('string');
-    expect(opts.icon.length).toBeGreaterThan('assets/icon.ico'.length);
+    expect(opts.icon.length).toBeGreaterThan('build/icons/icon.ico'.length);
     // Tolerate either path separator; pin BOTH segments so the 'assets'→"" and
     // 'icon.ico'→"" StringLiteral mutants both die (a bare '/icon.ico' endsWith
     // check would miss the 'assets' mutant since path.join collapses the empty seg).
     const normalized = opts.icon.replace(/\\/g, '/');
-    expect(normalized.endsWith('/assets/icon.ico')).toBe(true);
+    expect(normalized.endsWith('/build/icons/icon.ico')).toBe(true);
     expect(opts.icon).not.toBe('');
   });
 
@@ -124,17 +124,17 @@ describe('main.js — createWindow() BrowserWindow options', () => {
     expect(typeof opts.webPreferences.contextIsolation).toBe('boolean');
   });
 
-  test('webPreferences.preload is an absolute path ending with "preload.js"', () => {
+  test('webPreferences.preload is an absolute path ending with "src/preload/index.js"', () => {
     expect(typeof opts.webPreferences.preload).toBe('string');
-    expect(opts.webPreferences.preload.length).toBeGreaterThan('preload.js'.length);
+    expect(opts.webPreferences.preload.length).toBeGreaterThan('src/preload/index.js'.length);
     const normalized = opts.webPreferences.preload.replace(/\\/g, '/');
-    expect(normalized.endsWith('/preload.js')).toBe(true);
+    expect(normalized.endsWith('/src/preload/index.js')).toBe(true);
     expect(opts.webPreferences.preload).not.toBe('');
   });
 });
 
 // ── RIGHT-CLICK CONTEXT MENU ─────────────────────────────────────────────────
-describe('main.js — webContents "context-menu" handler', () => {
+describe('src/main/index.js — webContents "context-menu" handler', () => {
   let mockElectron;
   let ctxHandler;
 
@@ -147,7 +147,7 @@ describe('main.js — webContents "context-menu" handler', () => {
     bootstrap({
       electron: mockElectron,
       fs: buildMockFs(),
-      proc: buildMockProc(['node', 'main.js']),
+      proc: buildMockProc(['node', 'src/main/index.js']),
     });
     await new Promise((r) => setTimeout(r, 50));
   });
@@ -367,7 +367,7 @@ describe('main.js — webContents "context-menu" handler', () => {
 // These click the action items the template wires (click → runContextAction(d, params, win))
 // and pin the EXACT side-effect, so the per-case guards (L55/L59/L62/L71) can't be
 // forced-true or have their && weakened without an assertion failing.
-describe('main.js — runContextAction (context-menu clicks)', () => {
+describe('src/main/index.js — runContextAction (context-menu clicks)', () => {
   let mockElectron;
   let ctxHandler;
 
@@ -376,7 +376,7 @@ describe('main.js — runContextAction (context-menu clicks)', () => {
     mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
       if (event === 'context-menu') ctxHandler = fn;
     });
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 50));
   });
 
@@ -503,7 +503,7 @@ describe('main.js — runContextAction (context-menu clicks)', () => {
 });
 
 // ── NAVIGATION GUARD (T-B11) ───────────────────────────────────────────────
-describe('main.js — navigation guard', () => {
+describe('src/main/index.js — navigation guard', () => {
   let mockElectron;
   let navHandler;
   let redirectHandler;
@@ -513,7 +513,7 @@ describe('main.js — navigation guard', () => {
       if (event === 'will-navigate') navHandler = fn;
       if (event === 'will-redirect') redirectHandler = fn;
     });
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 50));
   });
   test('will-navigate and will-redirect registered', () => {
@@ -552,7 +552,7 @@ describe('main.js — navigation guard', () => {
     mockElectron.shell.openExternal.mockClear();
     const e = { preventDefault: vi.fn() };
     // index.html in the app dir → classifyNavigation returns 'allow'.
-    const appHref = require('url').pathToFileURL(require('path').join(process.cwd(), 'index.html')).href;
+    const appHref = require('url').pathToFileURL(require('path').join(process.cwd(), 'src', 'renderer', 'index.html')).href;
     navHandler(e, appHref);
     expect(e.preventDefault).not.toHaveBeenCalled();
     expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
@@ -569,11 +569,11 @@ describe('main.js — navigation guard', () => {
 });
 
 // ── createWindow: screen-absent fallback (L427) ──────────────────────────────
-describe('main.js — createWindow display fallback (L427)', () => {
+describe('src/main/index.js — createWindow display fallback (L427)', () => {
   test('no screen.getAllDisplays → falls back to [] displays and DEFAULT bounds (no x/y, no crash)', async () => {
     const mockElectron = buildMockElectron();
     mockElectron.screen = {}; // screen present but getAllDisplays NOT a function
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 50));
     const opts = mockElectron.BrowserWindow.mock.calls[0][0];
     // With [] displays and no saved window, clampWindowBounds returns default size
@@ -586,10 +586,10 @@ describe('main.js — createWindow display fallback (L427)', () => {
 });
 
 // ── SANDBOX (T-B13) ────────────────────────────────────────────────────────
-describe('main.js — renderer sandbox', () => {
+describe('src/main/index.js — renderer sandbox', () => {
   test('sandbox:true on BrowserWindow', async () => {
     const mockElectron = buildMockElectron();
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 50));
     const opts = mockElectron.BrowserWindow.mock.calls[0][0];
     expect(opts.webPreferences.sandbox).toBe(true);

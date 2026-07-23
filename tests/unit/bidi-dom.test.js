@@ -134,7 +134,7 @@ describe('applyBlockDirection (T-R1)', () => {
 
 describe('isolateInlineRuns (T-R2)', () => {
   test('English inline code inside an RTL block is wrapped in <bdi>', () => {
-    const root = frag('<p>شغّل الأمر <code>main.js</code> الآن</p>');
+    const root = frag('<p>شغّل الأمر <code>src/main/index.js</code> الآن</p>');
     applyBidi(root, { escape: escapeHtml });
     const code = root.querySelector('code');
     expect(code.parentNode.nodeName).toBe('BDI');
@@ -181,7 +181,7 @@ describe('isolateInlineRuns (T-R2)', () => {
   });
 
   test('LTR blocks are left clean (no bdi noise around numbers/code)', () => {
-    const root = frag('<p>Chapter 3 see <code>main.js</code></p>');
+    const root = frag('<p>Chapter 3 see <code>src/main/index.js</code></p>');
     applyBidi(root, { escape: escapeHtml });
     expect(root.querySelectorAll('bdi').length).toBe(0);
     expect(root.querySelector('code').parentNode.nodeName).toBe('P');
@@ -244,7 +244,7 @@ describe('applyBidi (combined)', () => {
   test('mixed AR/EN document: each block gets its own direction', () => {
     const root = frag(`
       <h1>مرحبا</h1>
-      <p>فقرة عربية مع 42 و <code>main.js</code></p>
+      <p>فقرة عربية مع 42 و <code>src/main/index.js</code></p>
       <p>An English paragraph</p>
     `);
     applyBidi(root, { baseDir: 'rtl', escape: escapeHtml });

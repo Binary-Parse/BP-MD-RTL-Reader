@@ -12,7 +12,7 @@ import path from 'node:path';
 import { convertChromeFontSizes, toRem, FLOOR_PX } from '../../scripts/rem-convert.mjs';
 
 const html = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'index.html'),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'index.html'),
   'utf8',
 );
 
@@ -46,8 +46,8 @@ describe('chrome typography sizing (T-T4 / T-T5)', () => {
   });
 
   test('the HTML-export template is left fully in px (a standalone doc — no rem leaked in)', () => {
-    // The export template lives in buildExportDoc, extracted to src/renderer/export.js (T-F12).
-    const exportJs = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'export.js'), 'utf8');
+    // The export template lives in buildExportDoc, extracted to src/renderer/markdown/export.js (T-F12).
+    const exportJs = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'markdown', 'export.js'), 'utf8');
     const exportCss = exportJs.slice(exportJs.lastIndexOf('<style>') + '<style>'.length, exportJs.lastIndexOf('</style>'));
     expect(exportCss).toMatch(/font-size:\s*18px/);          // body of the exported doc stays px
     expect(exportCss).not.toMatch(/font-size:\s*[\d.]+rem/); // converter never reached the export template

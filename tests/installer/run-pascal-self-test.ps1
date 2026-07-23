@@ -1,6 +1,6 @@
 <#
   run-pascal-self-test.ps1 — compile selftest.iss and run the compiled harness,
-  which executes the REAL Pascal units (version_check.pas + dir_validate.pas)
+  which executes the REAL Pascal units (version-check.pas + dir-validate.pas)
   via their *.test.pas assertions. Parses the log for the pass/fail summary.
 
   Usage:  pwsh -File tests/installer/run-pascal-self-test.ps1
@@ -10,8 +10,8 @@ param([string]$IsccPath)
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-. (Join-Path $repoRoot 'installer\build-policy.ps1')
-$toolPolicy = Get-Content (Join-Path $repoRoot 'installer\toolchain-policy.json') -Raw | ConvertFrom-Json
+. (Join-Path $repoRoot 'build\installer\build-policy.ps1')
+$toolPolicy = Get-Content (Join-Path $repoRoot 'build\installer\toolchain-policy.json') -Raw | ConvertFrom-Json
 $compiler = Get-TrustedIscc -ExplicitPath $IsccPath -Policy $toolPolicy
 $iscc = $compiler.Path
 

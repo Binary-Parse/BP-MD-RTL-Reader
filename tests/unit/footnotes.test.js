@@ -7,8 +7,8 @@
  */
 
 import { describe, test, expect, beforeAll } from 'vitest';
-import { footnoteExtension } from '../../src/renderer/footnotes.js';
-import { configureMarked } from '../../src/renderer/markdown.js';
+import { footnoteExtension } from '../../src/renderer/markdown/footnotes.js';
+import { configureMarked } from '../../src/renderer/markdown/markdown.js';
 
 describe('footnoteExtension via real marked', () => {
   let MarkedClass;

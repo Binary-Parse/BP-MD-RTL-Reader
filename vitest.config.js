@@ -21,7 +21,7 @@ export default defineConfig({
     ],
     server: {
       deps: {
-        inline: [/src[\\/]main-logic\.js/],
+        inline: [/src[\\/]main[\\/]main-logic\.js/],
       },
     },
     coverage: {
@@ -31,7 +31,7 @@ export default defineConfig({
       // Measure PRODUCT code only — never test files or test-support helpers
       // (e.g. tests/unit/main-harness.js), whose unused mock closures would
       // otherwise drag the function/line totals below the gate.
-      include: ['main.js', 'preload.js', 'src/**/*.js'],
+      include: ['src/**/*.js'],
       // src/renderer/app.js + theme-boot.js are the renderer ENTRY/glue (DOM wiring, DI
       // seams) externalized from index.html for the strict CSP (T-B4). Like the inline
       // <script> they replaced, they are exercised by the Playwright e2e suite, not unit

@@ -1,6 +1,6 @@
 /**
  * main-observability.test.js — STRONG mutation-killing assertions for the
- * Observability cluster of main.js (audit follow-up):
+ * Observability cluster of src/main/index.js (audit follow-up):
  *
  *   - crashReporter.start options                       (L32)
  *   - ensureLogPath / log file path + mkdir recursive   (L38-42)
@@ -15,11 +15,11 @@
  *
  * Drives the real bootstrap() with injected mocks from the shared harness; no
  * Module hijack. STRICT: this file imports the harness + bootstrap only and
- * does not touch main.js / preload.js / harness / other test files.
+ * does not touch src/main/index.js / src/preload/index.js / harness / other test files.
  */
 
 import { describe, test, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 // Pull a captured ipcMain.on listener by channel name.
@@ -41,7 +41,7 @@ describe('observability — crashReporter.start options (L32)', () => {
 
   beforeAll(async () => {
     mockElectron = buildMockElectron();
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
   });
 
@@ -71,7 +71,7 @@ describe('observability — writeLog path + JSON line shape (L38-72)', () => {
     mockElectron = buildMockElectron();
     // app.getPath('userData') returns '/mock/userData/userData' in the harness.
     mockFs = buildMockFs();
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
   });
@@ -160,7 +160,7 @@ describe('observability — log rotation guard + rename chain (L34,L46-55)', () 
   beforeAll(async () => {
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
   });
@@ -256,7 +256,7 @@ describe('observability — process error handlers (L74-81)', () => {
   beforeAll(async () => {
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
   });
@@ -361,7 +361,7 @@ describe('observability — log:error rate-limiter + rollover (L189-211)', () =>
 
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
 
@@ -498,7 +498,7 @@ describe('observability — rate-limit window boundary is exclusive (L405 `>` no
     try {
       const electron = buildMockElectron();
       const fs = buildMockFs();
-      const proc = buildMockProc(['node', 'main.js']);
+      const proc = buildMockProc(['node', 'src/main/index.js']);
       bootstrap({ electron, fs, proc });
       await new Promise(r => setTimeout(r, 50));
       const logError = getOn(electron, 'log:error');

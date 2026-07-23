@@ -1,7 +1,7 @@
 /**
  * protocol.js — pure resolver for the bpmd:// asset scheme (T-AI2).
  * Maps `bpmd://vault/<relPath>` to an absolute path that MUST resolve inside an
- * allow-listed vault root. No Electron; the registration glue lives in main.js.
+ * allow-listed vault root. No Electron; the registration glue lives in src/main/index.js.
  */
 
 /** Extract the vault-relative path from a bpmd:// URL, or null. */

@@ -2,9 +2,9 @@
   logic-sim.ps1 — PowerShell mirror of the Inno Setup Pascal installer logic.
 
   Mirrors:
-    installer/scripts/version_check.pas  -> Compare-VersionInt / CompareVersion / Get-InstallAction / Get-InstalledVersion
-    installer/scripts/dir_validate.pas   -> IsValidPath / Test-InstallDir
-    installer/scripts/cleanup.pas        -> Get-CleanupPlan / Get-UninstallTargets
+    build/installer/scripts/version-check.pas  -> Compare-VersionInt / CompareVersion / Get-InstallAction / Get-InstalledVersion
+    build/installer/scripts/dir-validate.pas   -> IsValidPath / Test-InstallDir
+    build/installer/scripts/cleanup.pas        -> Get-CleanupPlan / Get-UninstallTargets
 
   Dot-source this file (it defines functions only; no side effects). It powers:
     - the Pester unit tests (*.test.ps1)
@@ -15,7 +15,7 @@
 
 Set-StrictMode -Version Latest
 
-# ----- version_check.pas mirror ---------------------------------------------
+# ----- version-check.pas mirror ---------------------------------------------
 
 function ConvertTo-NormalizedVersion {
     param([string]$V)
@@ -137,7 +137,7 @@ function Get-InstalledVersion {
     return ''
 }
 
-# ----- dir_validate.pas mirror ----------------------------------------------
+# ----- dir-validate.pas mirror ----------------------------------------------
 
 $script:DV_MIN_FREE_MB  = 250
 $script:DV_MAX_PATH_LEN = 200

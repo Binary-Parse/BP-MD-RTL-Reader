@@ -2,10 +2,10 @@
  * coverage-gaps.test.js — pins remaining edge branches across new modules.
  */
 import { describe, test, expect } from 'vitest';
-import { sanitizeHtml, sanitizeSvg, renderTrusted } from '../../src/renderer/trusted.js';
-import { parseFrontMatter } from '../../src/renderer/frontmatter.js';
+import { sanitizeHtml, sanitizeSvg, renderTrusted } from '../../src/renderer/markdown/trusted.js';
+import { parseFrontMatter } from '../../src/renderer/markdown/frontmatter.js';
 import { t } from '../../src/renderer/locale.js';
-import { extractHeadings, activeHeading } from '../../src/renderer/outline.js';
+import { extractHeadings, activeHeading } from '../../src/renderer/components/outline.js';
 import { resolveDirection, stepCaret } from '../../src/renderer/bidi.js';
 import { migrate, createSettingsStore, defaultSettings } from '../../src/main/settings.js';
 import path from 'node:path';

@@ -11,7 +11,7 @@ const fs = require('fs');
 // tests/e2e/coverage-collector.spec.js (~63 % stmt / ~33 % func) because that was
 // the single spec wired into `test:e2e:coverage`. Every other spec imports the
 // stock `test` from '@playwright/test' and never calls page.coverage, so their
-// exercise of index.html never reached the Istanbul report.
+// exercise of src/renderer/index.html never reached the Istanbul report.
 //
 // To capture the WHOLE e2e suite without editing 25+ spec files, we install an
 // `auto: true` coverage fixture and graft it onto the cached '@playwright/test'
@@ -52,7 +52,7 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
         return;
       }
       // Keep first-party renderer scripts (src/renderer/*.js — app.js + its ES-module imports).
-      // The strict CSP externalised all JS out of index.html, so filtering on 'index.html'
+      // The strict CSP externalised all JS out of index.html, so filtering on 'src/renderer/index.html'
       // captured nothing; the report script maps each entry back to its real source file.
       const entries = (coverage || []).filter(
         (e) => e && typeof e.url === 'string' && e.url.includes('/src/renderer/')
@@ -80,11 +80,11 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
 }
 
 module.exports = defineConfig({
-  testDir: './tests',
-  // Only Vitest unit tests are excluded — Playwright integration tests
-  // (tests/integration/*.test.js) target index.html via file:// like the
-  // rest of the E2E sweep, so they belong in test:e2e.
-  testIgnore: ['**/unit/**', '**/electron/**'],
+  testDir: './tests/e2e',
+  // Browser and integration specs share this tree; the real-Electron lane is
+  // isolated below so it runs only through playwright.electron.config.js.
+
+  testIgnore: ['**/electron/**'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

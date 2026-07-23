@@ -24,7 +24,7 @@ describe('ARCH-001 main-process controller boundaries', () => {
   });
 
   test('keeps bootstrap composition narrow and privileged wiring in its controllers', () => {
-    const main = readFileSync('main.js', 'utf8');
+    const main = readFileSync('src/main/index.js', 'utf8');
     const ipc = readFileSync('src/main/ipc-controller.js', 'utf8');
     const window = readFileSync('src/main/window-controller.js', 'utf8');
     expect(main.split(/\r?\n/).length).toBeLessThan(350);

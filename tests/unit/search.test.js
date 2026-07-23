@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from 'vitest';
-import { vaultSearch } from '../../src/renderer/search.js';
+import { vaultSearch } from '../../src/renderer/components/search.js';
 
 function escapeHtml(s) {
   return String(s)

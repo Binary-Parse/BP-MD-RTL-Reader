@@ -1,6 +1,6 @@
 /**
  * context-menu.js — pure builder for the right-click menu (T-B12).
- * Returns ordered descriptors; main.js maps them to an Electron template and
+ * Returns ordered descriptors; src/main/index.js maps them to an Electron template and
  * attaches click handlers (shell/clipboard/webContents). No Electron here.
  *
  * Descriptor kinds:

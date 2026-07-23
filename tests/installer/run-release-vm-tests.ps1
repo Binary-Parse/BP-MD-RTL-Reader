@@ -38,7 +38,7 @@ function Assert-DisposableRunner {
 Assert-DisposableRunner
 $InstallerPath = (Resolve-Path -LiteralPath $InstallerPath).Path
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-. (Join-Path $repoRoot 'installer\build-policy.ps1')
+. (Join-Path $repoRoot 'build\installer\build-policy.ps1')
 $signTool = Get-TrustedSignTool -ExplicitPath $SignToolPath
 $CertificateSha1 = $CertificateSha1.ToUpperInvariant()
 
@@ -252,7 +252,7 @@ $previousInstallDir = $env:BPMDRTL_INSTALL_DIR
 try {
     $env:BPMDRTL_UNINSTALL_TEST = '1'
     $env:BPMDRTL_INSTALL_DIR = $installRoot
-    $postUninstallResult = Invoke-Pester -Path (Join-Path $repoRoot 'tests\installer\uninstall_check.test.ps1') -PassThru -Output Detailed
+    $postUninstallResult = Invoke-Pester -Path (Join-Path $repoRoot 'tests\installer\uninstall-check.test.ps1') -PassThru -Output Detailed
     if ($postUninstallResult.FailedCount -ne 0 -or $postUninstallResult.SkippedCount -ne 0) {
         throw "Post-uninstall Pester gate failed: $($postUninstallResult.FailedCount) failed, $($postUninstallResult.SkippedCount) skipped."
     }

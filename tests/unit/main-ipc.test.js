@@ -1,12 +1,12 @@
 /**
- * main-ipc.test.js — mutation-kill assertions for main.js file/IPC handlers.
+ * main-ipc.test.js — mutation-kill assertions for src/main/index.js file/IPC handlers.
  *
  * Cluster: deliverPendingFile, dialog:openFolder, fs:readVault, edit:command.
  *
  * These tests EXIST to KILL surviving mutants: every assertion pins an EXACT
  * observable value (the precise argument passed, the precise return object,
  * the precise method invoked) so that flipping an operator, swapping a literal,
- * dropping an argument, or negating a guard in main.js makes a test FAIL.
+ * dropping an argument, or negating a guard in src/main/index.js makes a test FAIL.
  *
  * Drives the real bootstrap({ electron, fs, proc }) with the shared harness
  * mocks (audit #3 seam — no Module hijack). Handlers are captured via the
@@ -15,7 +15,7 @@
  */
 
 import { describe, test, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import {
   buildMockElectron,
   buildMockFs,
@@ -50,7 +50,7 @@ describe('dialog:openFolder', () => {
   beforeAll(async () => {
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
     openFolder = getHandle(mockElectron, 'dialog:openFolder');
     readVault = getHandle(mockElectron, 'fs:readVault');
@@ -121,7 +121,7 @@ describe('dialog:openFile', () => {
   beforeAll(async () => {
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
     openFile = getHandle(mockElectron, 'dialog:openFile');
   });
@@ -192,7 +192,7 @@ describe('fs:readFile (reopen a recent single file)', () => {
   beforeAll(async () => {
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
     openFile = getHandle(mockElectron, 'dialog:openFile');
     readFile = getHandle(mockElectron, 'fs:readFile');
@@ -261,7 +261,7 @@ describe('fs:readVault', () => {
   beforeAll(async () => {
     mockElectron = buildMockElectron();
     mockFs = buildMockFs();
-    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
     openFolder = getHandle(mockElectron, 'dialog:openFolder');
     const invokeReadVault = getHandle(mockElectron, 'fs:readVault');
@@ -574,7 +574,7 @@ describe('edit:command', () => {
 
   beforeAll(async () => {
     mockElectron = buildMockElectron();
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
     editCmd = getOn(mockElectron, 'edit:command');
   });
@@ -655,7 +655,7 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     });
     mockFs = buildMockFs({ readFileSync: vi.fn(() => '# default') });
     // argv has NO .md file → pendingFileToOpen starts null after whenReady.
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
     openFile = appListeners['open-file'];

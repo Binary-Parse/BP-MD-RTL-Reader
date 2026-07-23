@@ -118,7 +118,7 @@ function parseICO(buf) {
 
 describe('Markdown file-association icon', () => {
   test('prepared PNG has transparent corners and visible BP MD artwork', () => {
-    const image = decodePNG(read('assets/markdown-file-icon.png'));
+    const image = decodePNG(read('build/icons/markdown-file-icon.png'));
     expect([image.width, image.height]).toEqual([256, 256]);
     for (const [x, y] of [[0, 0], [255, 0], [0, 255], [255, 255]]) {
       expect(image.px(x, y).a, `corner ${x},${y} should be transparent`).toBe(0);
@@ -144,33 +144,33 @@ describe('Markdown file-association icon', () => {
   });
 
   test('ICO contains PNG-compressed 16, 32, 48, and 256 pixel entries', () => {
-    const entries = parseICO(read('assets/markdown-file-icon.ico'));
+    const entries = parseICO(read('build/icons/markdown-file-icon.ico'));
     expect(entries.map(({ width }) => width).sort((a, b) => a - b)).toEqual([16, 32, 48, 256]);
     expect(entries.every(({ width, height, format }) => width === height && format === 'PNG')).toBe(true);
-    expect(entries.find(({ width }) => width === 256).blob.equals(read('assets/markdown-file-icon.png'))).toBe(true);
+    expect(entries.find(({ width }) => width === 256).blob.equals(read('build/icons/markdown-file-icon.png'))).toBe(true);
   });
 
   test('both Markdown extensions use the dedicated Windows icon resource', () => {
     const pkg = json('package.json');
     expect(pkg.build.fileAssociations).toEqual([
-      expect.objectContaining({ ext: 'md', icon: 'assets/markdown-file-icon.ico' }),
-      expect.objectContaining({ ext: 'markdown', icon: 'assets/markdown-file-icon.ico' }),
+      expect.objectContaining({ ext: 'md', icon: 'build/icons/markdown-file-icon.ico' }),
+      expect.objectContaining({ ext: 'markdown', icon: 'build/icons/markdown-file-icon.ico' }),
     ]);
     expect(pkg.build.win.extraResources).toContainEqual({
-      from: 'assets/markdown-file-icon.ico',
+      from: 'build/icons/markdown-file-icon.ico',
       to: 'markdown-file-icon.ico',
     });
 
-    const policy = json('installer/source-manifest-policy.json');
+    const policy = json('build/installer/source-manifest-policy.json');
     expect(policy.files).toContain('resources/markdown-file-icon.ico');
     expect(policy.files).toHaveLength(75);
   });
 
   test('the dedicated generator is present and existing app icons are unchanged', () => {
     expect(read('scripts/generate-markdown-file-icon.ps1').length).toBeGreaterThan(0);
-    expect(sha256('assets/icon-source.png')).toBe('5842FF32AE83E715461DD3AB2FC29931B234A5992E98EB969A7283E28351B697');
-    expect(sha256('assets/icon.png')).toBe('F4E7C6CBAF7A6DA73534CDB059E7C6CDE036C45548EEC655452C6A352B4128D3');
-    expect(sha256('assets/icon.ico')).toBe('4B51D7326E0564C016EC305EEE59A7EB2DE937915BE984E3A0C0B5B9A48DC421');
-    expect(sha256('installer/assets/icon.ico')).toBe('4B51D7326E0564C016EC305EEE59A7EB2DE937915BE984E3A0C0B5B9A48DC421');
+    expect(sha256('build/icons/icon-source.png')).toBe('5842FF32AE83E715461DD3AB2FC29931B234A5992E98EB969A7283E28351B697');
+    expect(sha256('build/icons/icon.png')).toBe('F4E7C6CBAF7A6DA73534CDB059E7C6CDE036C45548EEC655452C6A352B4128D3');
+    expect(sha256('build/icons/icon.ico')).toBe('4B51D7326E0564C016EC305EEE59A7EB2DE937915BE984E3A0C0B5B9A48DC421');
+    expect(sha256('build/installer/assets/icon.ico')).toBe('4B51D7326E0564C016EC305EEE59A7EB2DE937915BE984E3A0C0B5B9A48DC421');
   });
 });

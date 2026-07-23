@@ -7,8 +7,8 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(ROOT, 'config', 'security-lint-baseline.json');
 const PATTERNS = [
-  'main.js', 'preload.js', 'src/**/*.js', 'scripts/**/*.{js,mjs}',
-  '*.config.js', '*.config.mjs', 'index.html',
+  'src/**/*.js', 'scripts/**/*.{js,mjs}',
+  '*.config.js', '*.config.mjs', 'src/renderer/index.html',
 ];
 
 function normalizeFile(filePath) {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 describe('window close protocol and global control listeners', () => {
@@ -9,7 +9,7 @@ describe('window close protocol and global control listeners', () => {
   beforeEach(async () => {
     electron = buildMockElectron();
     electron.BrowserWindow.fromWebContents = vi.fn(() => electron._mockWin);
-    boot = bootstrap({ electron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    boot = bootstrap({ electron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(resolve => setTimeout(resolve, 20));
   });
 

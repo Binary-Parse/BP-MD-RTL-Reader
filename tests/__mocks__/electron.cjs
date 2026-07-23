@@ -1,6 +1,6 @@
 /**
  * Vitest mock for the 'electron' module.
- * Provides enough surface for main.js and preload.js to load and be instrumented.
+ * Provides enough surface for src/main/index.js and src/preload/index.js to load and be instrumented.
  */
 
 const { vi } = require('vitest');

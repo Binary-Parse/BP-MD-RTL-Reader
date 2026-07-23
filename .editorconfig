@@ -19,6 +19,6 @@ end_of_line = crlf
 trim_trailing_whitespace = false
 
 # Vendored / generated bundles — leave upstream formatting untouched
-[assets/vendor/**]
+[resources/vendor/**]
 trim_trailing_whitespace = false
 insert_final_newline = false

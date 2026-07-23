@@ -30,11 +30,11 @@ Key traits you should keep in mind when editing code:
 | Property-based tests | fast-check | 4 |
 | Code bundling (editor) | esbuild | 0.28 |
 | Markdown parser | marked | 18 |
-| HTML sanitiser | DOMPurify | 3 (bundled in `assets/vendor/`) |
+| HTML sanitiser | DOMPurify | 3 (bundled in `resources/vendor/`) |
 | Math rendering | KaTeX | bundled locally |
 | Code highlighting | highlight.js | bundled locally |
 | Diagrams | Mermaid | bundled locally |
-| Editor | CodeMirror 6 | bundled into `assets/vendor/codemirror/` |
+| Editor | CodeMirror 6 | bundled into `resources/vendor/codemirror/` |
 | Linting / SAST | ESLint 10 + `eslint-plugin-security`, `eslint-plugin-no-unsanitized`, `eslint-plugin-html` | — |
 | Fonts | Self-hosted woff2 (Inter, Fraunces, JetBrains Mono, IBM Plex Sans Arabic) | — |
 
@@ -45,85 +45,42 @@ Node.js **24+** is required (`.nvmrc` pins the version; CI builds on Node 24).
 ## Project Structure
 
 ```
-├── index.html                    Renderer — UI markup + ordered external stylesheet links
-├── main.js                       Electron bootstrap and application lifecycle composition
-├── preload.js                    contextBridge — the renderer's ONLY door to the main process
+├── build/                         electron-builder inputs (icons, entitlements, installers)
+│   ├── icons/                     Application/file-association icons and source masters
+│   └── installer/                 Inno/NSIS scripts, policies, and installer artwork
+├── docs/
+│   └── assets/                    README and guide screenshots
+├── resources/
+│   └── vendor/                    Bundled libraries, fonts, and license manifests (0 runtime network)
+├── scripts/                       Build, coverage, release, and asset tooling
 ├── src/
-│   ├── main-logic.js             Pure, Electron-free file/security helpers (unit-testable in Node)
 │   ├── main/
-│   │   ├── context-menu.js       Pure context-menu template builder
-│   │   ├── document-store.js     File read/write/atomic-save helpers
-│   │   ├── ipc-controller.js     Privileged IPC registration and owned watcher/export state
-│   │   ├── navigation.js         Link-classification helpers (internal vs external)
-│   │   ├── protocol.js           `bpmd://` custom scheme asset resolver
-│   │   ├── settings.js           Persistent settings (JSON on disk) + migration
-│   │   ├── version.js            Semver comparison utility
-│   │   └── window-controller.js  BrowserWindow security/lifecycle/menu/navigation adapter
+│   │   ├── index.js               Electron bootstrap and application lifecycle composition
+│   │   ├── main-logic.js          Pure, Electron-free file/security helpers
+│   │   ├── ipc-controller.js      Privileged IPC registration and watcher/export state
+│   │   └── window-controller.js   BrowserWindow security, lifecycle, menus, and navigation
+│   ├── preload/
+│   │   └── index.js               contextBridge — the renderer's ONLY door to the main process
 │   └── renderer/
-│       ├── app.js                Main renderer application (~3K lines of state + UI glue)
-│       ├── theme-boot.js         Theme bootstrap (runs before app.js)
-│       ├── styles/                Base, theme, component, and responsive CSS boundaries
-│       ├── bidi.js               RTL/LTR direction resolution logic
-│       ├── bidi-dom.js           DOM-level bidi application
-│       ├── callouts.js           Markdown callout transformation
-│       ├── dates.js              Daily-note filename generation
-│       ├── edit-commands.js      Clipboard / undo / redo / select-all helpers
-│       ├── export.js             HTML export document builder
-│       ├── file-predicates.js    File-type checks (droppable, etc.)
-│       ├── focus.js              Focus-trap and roving-tab-index utilities
-│       ├── footnotes.js          Footnote ID extraction
-│       ├── frontmatter.js        YAML front-matter parsing
-│       ├── highlight.js          Syntax-highlighting wrapper
-│       ├── i18n.js               Arabic-heavy detection, HTML escaping
-│       ├── locale.js             UI strings and locale direction
-│       ├── markdown.js           marked configuration + custom extensions
-│       ├── math.js               KaTeX math parsing / rendering
-│       ├── mermaid.js            Mermaid diagram rendering wrapper
-│       ├── outline.js            Table-of-contents / active-heading tracking
-│       ├── search.js             Vault-wide search
-│       ├── session.js            Session restore logic
-│       ├── state.js              Proxy-based observable state store
-│       ├── table-edit.js         Interactive table editing
-│       ├── tags.js               Tag extraction from file set
-│       ├── theme.js              Theme definitions + zoom clamping
-│       ├── tree.js               File-tree building / flattening
-│       ├── trusted.js            DOMPurify sanitisation configuration
-│       └── editor/
-│           ├── codemirror-adapter.js   CM6 editor surface (e2e-only, excluded from unit coverage gate)
-│           ├── live-preview.js         Hide markdown syntax on non-active lines
-│           ├── block-preview.js        Block-level live preview
-│           ├── inline-marks-preview.js Inline formatting preview
-│           ├── math-preview.js         Math rendering inside CM6
-│           ├── wikilink-preview.js     Wiki-link hover cards
-│           ├── line-direction.js       Per-line RTL/LTR inside CM6
-│           └── list-continuation.js    Smart list item continuation
+│       ├── index.html             Renderer UI markup and ordered external assets
+│       ├── app.js                 Main renderer application state and UI glue
+│       ├── components/            File tree, outline, search, tables, settings, and workspace helpers
+│       ├── editor/                CodeMirror 6 editor and live-preview extensions
+│       ├── markdown/              marked, DOMPurify, KaTeX, highlighting, Mermaid, and export pipeline
+│       └── styles/                Base, theme, component, and responsive CSS boundaries
 ├── tests/
-│   ├── unit/                     Vitest unit tests (counts come from completed runs)
-│   ├── *.spec.js                 Playwright e2e specs — smoke, rtl, visual, a11y, perf, fuzz, …
-│   ├── integration/              Playwright integration tests
-│   ├── installer/                Pester + Inno Setup self-tests
-│   └── __mocks__/                Test mocks (electron.cjs, etc.)
-├── assets/
-│   ├── vendor/                   Bundled libraries + fonts (0 runtime network)
-│   ├── icon-source.png
-│   ├── icon.png
-│   └── icon.ico
-├── installer/
-│   ├── setup.iss                 Inno Setup script
-│   ├── build-installer.ps1       PowerScript to compile Inno installer
-│   └── scripts/*.pas             Pascal installer logic
-├── scripts/
-│   ├── codemirror-entry.mjs      CM6 bundle entry point
-│   ├── capture-screenshots.mjs   Regenerate docs screenshots
-│   ├── generate-icons.ps1        Regenerate icon assets
-│   └── merge-coverage.js         Merge unit + e2e coverage reports
-├── docs/                         User guides, build docs, privacy policy
-├── .github/workflows/            CI automation (`ci.yml`, `claude.yml`, `release.yml`)
-├── vitest.config.js              Unit test + V8 coverage configuration
-├── playwright.config.js          E2E test configuration (auto-coverage fixture)
-├── eslint.config.mjs             Security-focused ESLint flat config
-├── stryker.config.json           Mutation test scope + thresholds
-└── package.json                  Dependencies, scripts, electron-builder config
+│   ├── unit/                      Vitest unit tests
+│   ├── e2e/                       Playwright browser, integration, visual, a11y, and Electron lanes
+│   ├── fixtures/                  Markdown and renderer fixtures
+│   ├── installer/                 Pester + Inno Setup self-tests
+│   └── __mocks__/                 Test mocks (electron.cjs, etc.)
+├── .github/                       Workflows, issue forms, PR template, and dependency updates
+├── vitest.config.js               Unit test + V8 coverage configuration
+├── playwright.config.js           Browser E2E configuration
+├── playwright.electron.config.js  Production Electron boundary configuration
+├── eslint.config.mjs              Security-focused ESLint flat config
+├── stryker.config.json            Mutation test scope + thresholds
+└── package.json                   Dependencies, scripts, and electron-builder config
 ```
 
 ---
@@ -146,7 +103,7 @@ npm run dist                 # electron-builder — Windows NSIS + portable (x64
 # macOS / Linux targets are defined in package.json but not built in routine dev.
 
 # Local Inno Setup installer (x64) — requires the pinned ISCC.exe:
-pwsh -File installer/build-installer.ps1
+pwsh -File build/installer/build-installer.ps1
 ```
 
 ### Asset regeneration
@@ -195,14 +152,14 @@ npm run package:checksums:verify # Recheck exact names and every canonical hash
 ## Code Style and Conventions
 
 ### Module system split
-- **CommonJS**: `main.js`, `preload.js`, `src/main-logic.js`, and `src/main/*.js` (Node / Electron main side).
+- **CommonJS**: `src/main/index.js`, `src/preload/index.js`, `src/main/main-logic.js`, and `src/main/*.js` (Node / Electron main side).
 - **ES modules**: everything under `src/renderer/` (browser / renderer side).
 
 ### Injectable entry points (testability)
-Both `main.js` and `preload.js` use an **injectable bootstrap pattern** so they can be imported by unit tests without running Electron or hijacking `require`:
+Both `src/main/index.js` and `src/preload/index.js` use an **injectable bootstrap pattern** so they can be imported by unit tests without running Electron or hijacking `require`:
 
-- `main.js` exports `bootstrap({ electron, fs, proc, fetchFn })`. The real app calls it at the bottom guarded by `require.main === module`.
-- `preload.js` exports `setupBridge({ contextBridge, ipcRenderer })`. The real preload calls it at the bottom guarded by `typeof globalThis.__vitest_worker__ === 'undefined'`.
+- `src/main/index.js` exports `bootstrap({ electron, fs, proc, fetchFn })`. The real app calls it at the bottom guarded by `require.main === module`.
+- `src/preload/index.js` exports `setupBridge({ contextBridge, ipcRenderer })`. The real preload calls it at the bottom guarded by `typeof globalThis.__vitest_worker__ === 'undefined'`.
 
 When you add new IPC channels or main-process logic, keep the pure/testable parts separate from Electron side-effects so they can be exercised by Vitest.
 
@@ -211,7 +168,7 @@ When you add new IPC channels or main-process logic, keep the pure/testable part
 - Some comments include Arabic text (e.g., in `vitest.config.js`). Preserve bilingual comments when they exist.
 
 ### Security annotations
-Security checks in `src/main-logic.js` are explicitly labeled:
+Security checks in `src/main/main-logic.js` are explicitly labeled:
 - `JB1` — path allowlist check
 - `JB2` — reject UNC / network paths
 - `JB3` — reject symlinks that escape the vault
@@ -222,7 +179,7 @@ When modifying file-system access, keep these guards in place and update the cor
 ### ESLint
 - Flat config (`eslint.config.mjs`) targeting ESLint 10.
 - Plugins: `eslint-plugin-security`, `eslint-plugin-no-unsanitized`, `eslint-plugin-html`.
-- `eslint-plugin-html` monkey-patches the linter at load time to extract `<script>` blocks from `index.html` so SAST rules apply to them.
+- `eslint-plugin-html` monkey-patches the linter at load time to extract `<script>` blocks from `src/renderer/index.html` so SAST rules apply to them.
 - Run with `npm run lint:security`.
 
 ---
@@ -233,11 +190,11 @@ When modifying file-system access, keep these guards in place and update the cor
 - Located in `tests/unit/`.
 - Entry files are auto-discovered: `*.test.js` and `*.spec.js`.
 - The Vitest alias resolves `electron` to `tests/__mocks__/electron.cjs` so main-process code can be tested without the real Electron binary.
-- `src/main-logic.js` is inlined (`deps.inline`) so coverage is correctly attributed.
+- `src/main/main-logic.js` is inlined (`deps.inline`) so coverage is correctly attributed.
 - `--no-file-parallelism` is used when collecting coverage to avoid under-reporting.
 
 ### E2E tests (Playwright)
-- Located in `tests/e2e/*.spec.js` and `tests/integration/`.
+- Located in `tests/e2e/*.spec.js` and `tests/e2e/integration/`.
 - Uses Chromium only. The effective `Desktop Chrome` default is 1280×720; visual specs
   explicitly set 1440×900 before snapshots.
 - Visual-regression tests (`@visual` tag) run inside `mcr.microsoft.com/playwright:v1.61.1-jammy` so font rendering matches the committed Linux baselines.
@@ -245,7 +202,7 @@ When modifying file-system access, keep these guards in place and update the cor
 - The `playwright.config.js` installs an **auto-coverage fixture** when `COLLECT_RENDERER_COVERAGE=1` — it starts V8 JSCoverage before each test and writes per-test JSON into `coverage/renderer/`.
 
 ### Mutation tests (Stryker)
-- Scope is intentionally broad: includes `main.js`, `preload.js`, `src/main-logic.js`, all `src/main/` modules, and most `src/renderer/` modules.
+- Scope is intentionally broad: includes `src/main/index.js`, `src/preload/index.js`, `src/main/main-logic.js`, all `src/main/` modules, and most `src/renderer/` modules.
 - Excluded from mutation: `src/renderer/app.js`, `theme-boot.js`, `editor/codemirror-adapter.js` (e2e-only, no unit tests) and `src/renderer/locale.js` (translation string table).
 - Full run on nightly CI; `--incremental` on PRs (cached baseline).
 
@@ -269,10 +226,10 @@ This project takes a defence-in-depth approach. Do not weaken any of the followi
 - `contextIsolation: true`
 - `nodeIntegration: false`
 - `sandbox: true` (Electron default)
-- Renderer has no direct access to Node.js, `fs`, or `shell`. All access goes through the narrow `preload.js` bridge.
+- Renderer has no direct access to Node.js, `fs`, or `shell`. All access goes through the narrow `src/preload/index.js` bridge.
 
 ### Content Security Policy (CSP)
-A strict CSP is declared in `index.html`:
+A strict CSP is declared in `src/renderer/index.html`:
 ```
 default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: bpmd: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'
 ```
@@ -280,10 +237,10 @@ default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
 - `connect-src 'self'` means the renderer makes **zero outbound network requests**.
 
 ### Output sanitisation
-- All rendered Markdown HTML passes through **DOMPurify** (`src/renderer/trusted.js`).
+- All rendered Markdown HTML passes through **DOMPurify** (`src/renderer/markdown/trusted.js`).
 - DOMPurify strips `<script>`, event handlers, and other active content.
 
-### File-system guards (`src/main-logic.js`)
+### File-system guards (`src/main/main-logic.js`)
 - **Path allow-listing** (`isAuthorizedPath`) — only folders the user explicitly opened are readable.
 - **Network path rejection** (`isNetworkPath`) — rejects `\\` and `//` paths.
 - **Symlink escape detection** (`isSymlinkEscape`) — prevents reading outside the authorised vault.
@@ -346,25 +303,25 @@ are no committed CodeQL or Scorecard workflows.
 ## Entry Points and Module Boundaries
 
 ### Runtime entry points
-- **`main.js`** — Node process entry (`"main": "main.js"` in `package.json`). Calls `bootstrap()` with live `electron`/`fs`/`process`.
-- **`preload.js`** — Electron preload script declared in `main.js` (`preload: path.join(__dirname, 'preload.js')`).
-- **`index.html`** — Renderer window loadURL. Loads `theme-boot.js`, vendored libraries, then `src/renderer/app.js`.
+- **`src/main/index.js`** — Node process entry (`"main": "src/main/index.js"` in `package.json`). Calls `bootstrap()` with live `electron`/`fs`/`process`.
+- **`src/preload/index.js`** — Electron preload script declared in `src/main/index.js` (`preload: path.join(__dirname, 'src/preload/index.js')`).
+- **`src/renderer/index.html`** — Renderer window loadURL. Loads `theme-boot.js`, vendored libraries, then `src/renderer/app.js`.
 
 ### What belongs where
 | Concern | Location |
 |---------|----------|
-| Electron bootstrap, protocol, logging, and application lifecycle composition | `main.js` |
+| Electron bootstrap, protocol, logging, and application lifecycle composition | `src/main/index.js` |
 | Privileged dialog/file/settings/export IPC and vault watcher ownership | `src/main/ipc-controller.js` |
 | BrowserWindow security options, close protocol, navigation, and native menus | `src/main/window-controller.js` |
-| Pure file / path / security logic | `src/main-logic.js` |
-| IPC bridge exposure | `preload.js` |
+| Pure file / path / security logic | `src/main/main-logic.js` |
+| IPC bridge exposure | `src/preload/index.js` |
 | Renderer state, DOM manipulation, event handling | `src/renderer/app.js` |
 | Pure renderer helpers (markdown, bidi, search, etc.) | `src/renderer/*.js` |
 | Editor-specific CM6 plugins | `src/renderer/editor/*.js` |
 
 ### When adding a feature
 1. Decide whether it lives in **main**, **preload**, or **renderer**.
-2. If it touches the filesystem or shell, put the policy in `src/main-logic.js` or `src/main/` and wire it through an IPC channel in `preload.js`.
+2. If it touches the filesystem or shell, put the policy in `src/main/main-logic.js` or `src/main/` and wire it through an IPC channel in `src/preload/index.js`.
 3. Add or update **unit tests** in `tests/unit/` for pure logic.
 4. Add or update **e2e tests** in `tests/*.spec.js` for user-visible behaviour.
 5. Run `npm run lint:security` and `npm run test:unit` before committing.

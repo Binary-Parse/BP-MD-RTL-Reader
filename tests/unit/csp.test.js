@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const html = readFileSync(path.join(root, 'index.html'), 'utf8');
+const html = readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8');
 
 function cspContent() {
   const m = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/);
@@ -59,8 +59,8 @@ describe('strict CSP (T-B4)', () => {
   });
 
   test('the externalized scripts exist on disk (theme-boot + app module)', () => {
-    expect(html).toMatch(/<script src="src\/renderer\/theme-boot\.js"><\/script>/);
-    expect(html).toMatch(/<script type="module" src="src\/renderer\/app\.js"><\/script>/);
+    expect(html).toMatch(/<script src="theme-boot\.js"><\/script>/);
+    expect(html).toMatch(/<script type="module" src="app\.js"><\/script>/);
     expect(existsSync(path.join(root, 'src/renderer/theme-boot.js'))).toBe(true);
     expect(existsSync(path.join(root, 'src/renderer/app.js'))).toBe(true);
   });

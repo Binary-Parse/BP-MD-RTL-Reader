@@ -13,7 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/');
 
 // T-F13: CM6 is the sole editor. Load text into it, then drive selections via the exposed
 // adapter (window.getActiveCmAdapter) so the menu commands act on the real editor surface.

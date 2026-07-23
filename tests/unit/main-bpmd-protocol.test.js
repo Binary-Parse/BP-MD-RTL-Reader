@@ -2,7 +2,7 @@
  * main-bpmd-protocol.test.js — wiring tests for the bpmd:// asset scheme (T-AI2).
  *
  * The pure resolver (src/main/protocol.js) is unit-tested separately; THIS file
- * proves the previously-missing GLUE in main.js: the scheme is registered as
+ * proves the previously-missing GLUE in src/main/index.js: the scheme is registered as
  * privileged before ready, a handler is attached on ready, the active vault root
  * is tracked from fs:readVault, and the handler serves bytes for an in-vault
  * asset while rejecting traversal / unauthorized roots.
@@ -11,7 +11,7 @@
  */
 
 import { describe, test, expect, beforeAll } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 function getHandle(mockElectron, name) {
@@ -24,7 +24,7 @@ describe('bpmd:// protocol wiring (T-AI2)', () => {
   beforeAll(async () => {
     electron = buildMockElectron();
     fs = buildMockFs();
-    bootstrap({ electron, fs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50)); // let whenReady().then() run
     openFolder = getHandle(electron, 'dialog:openFolder');
     readVault = getHandle(electron, 'fs:readVault');

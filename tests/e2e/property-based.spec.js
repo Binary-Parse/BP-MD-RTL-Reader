@@ -3,7 +3,7 @@ const fc = require('fast-check');
 
 test.describe('Property-based renderer contracts', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.locator('#app').waitFor({ state: 'visible' });
     await expect.poll(() => page.evaluate(() => ({
       arabic: typeof window.isArabicHeavy,

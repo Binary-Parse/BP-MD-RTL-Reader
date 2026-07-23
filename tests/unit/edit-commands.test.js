@@ -1,5 +1,5 @@
 /**
- * Unit tests for src/renderer/edit-commands.js
+ * Unit tests for src/renderer/editor/edit-commands.js
  *
  * Coverage goal: 100 % line on the module.
  * Mutation goal: ≥ 90 % via Stryker (already in mutate scope).
@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { execEditCmd, _internal } from '../../src/renderer/edit-commands.js';
+import { execEditCmd, _internal } from '../../src/renderer/editor/edit-commands.js';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function makeTextarea(value = 'hello world', start = 0, end = 0) {

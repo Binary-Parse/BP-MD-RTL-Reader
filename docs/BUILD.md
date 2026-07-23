@@ -34,14 +34,14 @@ npm start        # launch the app (electron .)
 | Markdown / sanitise | **marked 18** + **DOMPurify 3** |
 | Linting / SAST | **ESLint 10** + `eslint-plugin-security`, `eslint-plugin-no-unsanitized` |
 
-The renderer is **`index.html`** (UI markup) with ordered external stylesheets under
+The renderer is **`src/renderer/index.html`** (UI markup) with ordered external stylesheets under
 **`src/renderer/styles/`**. Its JavaScript is externalized into **`src/renderer/app.js`**
 and **`src/renderer/theme-boot.js`**, loaded via external `<script>` tags to satisfy the
 strict CSP (`script-src 'self'`). Those modules import pure helpers from the rest of
-**`src/renderer/`**. The main entry is **`main.js`** + **`preload.js`**;
+**`src/renderer/`**. The main entry is **`src/main/index.js`** + **`src/preload/index.js`**;
 privileged IPC/vault-watcher state and BrowserWindow lifecycle live behind injected
 controllers in **`src/main/`**, with pure file/security policy in
-**`src/main-logic.js`** so each boundary can be unit-tested without launching Electron.
+**`src/main/main-logic.js`** so each boundary can be unit-tested without launching Electron.
 
 ## npm scripts
 
@@ -80,13 +80,13 @@ npm run dist
 **Inno Setup** standalone installer (x64):
 
 ```powershell
-pwsh -File installer/build-installer.ps1
+pwsh -File build/installer/build-installer.ps1
 ```
 
 This is the only supported Inno entry point. It does not use PATH or a pre-existing
 `dist/win-unpacked`: it verifies the pinned compiler's Program Files path, exact version,
 Authenticode publisher, and SHA-256; produces a fresh x64 electron-builder directory;
-checks it against `installer/source-manifest-policy.json`; hashes/copies the exact files
+checks it against `build/installer/source-manifest-policy.json`; hashes/copies the exact files
 to clean staging; then writes
 `dist/BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.exe` and
 `dist/BP-MD-RTL-Reader-1.0.0-Windows-Inno-x64.source-manifest.json`.
@@ -98,7 +98,7 @@ trusted Windows SDK `signtool.exe`, and the certificate PFX/password environment
 ```powershell
 $env:WIN_CSC_LINK = 'C:\secure\binary-parse-code-signing.pfx'
 $env:WIN_CSC_KEY_PASSWORD = '<secret>'
-pwsh -File installer/build-installer.ps1 -RequireSigned `
+pwsh -File build/installer/build-installer.ps1 -RequireSigned `
   -CertificateSha1 '<40-hex-thumbprint>' `
   -SignToolPath 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe'
 ```
@@ -135,13 +135,13 @@ are attached to the GitHub Release; GitHub attestations cover the assembled bund
 ## Regenerating assets
 
 ```powershell
-# App icon (icon.png + icon.ico + installer/assets/icon.ico) from icon-source.png
+# App icons in build/icons/ plus build/installer/assets/icon.ico from icon-source.png
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1
 
 # Documentation screenshots in docs/assets/
 node scripts/capture-screenshots.mjs
 
-# CodeMirror 6 editor bundle (assets/vendor/codemirror/codemirror.min.js) from
+# CodeMirror 6 editor bundle (resources/vendor/codemirror/codemirror.min.js) from
 # scripts/codemirror-entry.mjs — requires the @codemirror/* + @lezer/highlight + esbuild
 # devDependencies (run `npm install` first).
 npm run build:cm
@@ -213,35 +213,33 @@ git push origin v1.0.0
 ## Project structure
 
 ```
-index.html              Renderer — UI markup + ordered external CSS/JS links (CSP)
-main.js                 Electron bootstrap — logging, protocol, app lifecycle composition
-preload.js              contextBridge — the renderer's only door to the main process
+build/
+  icons/                  electron-builder icon inputs and source masters
+  installer/              Inno/NSIS scripts, policies, and installer artwork
+docs/
+  assets/                 README and guide screenshots
+resources/
+  vendor/                 offline runtime libraries, fonts, and license manifests
+scripts/                  build, coverage, release, and asset tooling
 src/
-  main-logic.js         Pure file/security helpers (allow-list, size caps, BOM, symlinks)
-  main/                 Main-process boundaries — IPC/window controllers plus pure stores, policy, navigation, protocol, version
-  renderer/             Renderer modules — app.js, theme-boot.js, styles/, i18n, markdown, search, state, theme, edit-commands, editor/
+  main/                   Electron entry point, IPC, window, storage, and security policy
+  preload/                minimal context-isolated renderer bridge
+  renderer/
+    components/           file tree, outline, search, settings, tables, and workspace helpers
+    editor/               CodeMirror 6 editor and live-preview extensions
+    markdown/             parse, sanitize, math, highlight, diagram, and export pipeline
+    styles/               base, theme, component, and responsive styles
+    index.html             renderer document
 tests/
-  unit/                 Vitest unit tests
-  e2e/                  Playwright e2e specs (smoke, rtl, visual, a11y, performance, fuzz, …)
-  integration/          Playwright integration tests
-  installer/            Pester + Inno self-test for the installer logic
-installer/
-  setup.iss             Inno Setup script
-  build-installer.ps1   Compile the Inno installer
-  scripts/*.pas         Installer logic (version check, dir validation, cleanup)
-  assets/               Installer icon + wizard images
-scripts/
-  generate-icons.ps1    Regenerate icon.png / icon.ico from icon-source.png
-  capture-screenshots.mjs  Regenerate docs/assets screenshots
-  codemirror-entry.mjs  CodeMirror 6 bundle entry (built by `npm run build:cm`)
-assets/
-  icon.ico · icon.png · icon-source.png   App icon + its source master
-  vendor/               Bundled libs & fonts (CodeMirror, marked, DOMPurify, KaTeX, highlight.js, Mermaid, woff2)
+  unit/                   Vitest
+  e2e/                    Playwright browser, integration, visual, a11y, and Electron lanes
+  fixtures/               Markdown and renderer fixtures
+  installer/              Pester and Inno self-tests
 ```
 
 ## Contributing
 
-1. Branch from `master` (`feat/…` or `fix/…`).
+1. Branch from `main` using `feat/…`, `fix/…`, or `chore/…`.
 2. **Write a test first.** This codebase is test-driven; new behaviour should come with
    a failing test that your change turns green.
 3. Keep `npm run test:unit`, `npm run lint:security`, and the relevant e2e specs green.

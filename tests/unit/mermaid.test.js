@@ -5,7 +5,7 @@
  * fake mermaid + sanitize (the real mermaid/SVG-sanitize are exercised by the e2e).
  */
 import { describe, test, expect } from 'vitest';
-import { renderMermaid } from '../../src/renderer/mermaid.js';
+import { renderMermaid } from '../../src/renderer/markdown/mermaid.js';
 
 const fakeMermaid = { render: async (id, src) => ({ svg: `<svg data-id="${id}"><text>${src}</text></svg>` }) };
 function frag(html) { const d = document.createElement('div'); d.innerHTML = html; return d; }

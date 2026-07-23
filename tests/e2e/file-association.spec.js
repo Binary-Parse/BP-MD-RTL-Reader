@@ -7,13 +7,13 @@
  *
  * We can't drive a real OS file association in Playwright, so we simulate the
  * IPC delivery by calling window.openExternalFile() directly with the same
- * payload shape that main.js sends.
+ * payload shape that src/main/index.js sends.
  */
 
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/');
 
 async function goto(page) {
   await page.goto(FILE_URL);

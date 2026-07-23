@@ -2,7 +2,7 @@
  * rtl-moats.test.js — T-R6 front-matter direction, T-R8 Hijri dates, T-R7 locale.
  */
 import { describe, test, expect } from 'vitest';
-import { parseFrontMatter, frontMatterDirection } from '../../src/renderer/frontmatter.js';
+import { parseFrontMatter, frontMatterDirection } from '../../src/renderer/markdown/frontmatter.js';
 import { gregorianYMD, hijriParts, dailyNoteName } from '../../src/renderer/dates.js';
 import { t, localeDirection, MESSAGES } from '../../src/renderer/locale.js';
 

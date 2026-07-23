@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-const INDEX_PATH = path.resolve(process.cwd(), 'index.html');
+const INDEX_PATH = path.resolve(process.cwd(), 'src', 'renderer', 'index.html');
 const INDEX_URL = 'file:///' + INDEX_PATH.replace(/\\/g, '/');
 const COVERAGE_DIR = path.join(process.cwd(), 'coverage', 'renderer');
 

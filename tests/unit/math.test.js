@@ -8,8 +8,8 @@
  */
 import { describe, test, expect } from 'vitest';
 import { Marked } from 'marked';
-import { mathExtension, mathPlaceholder, restoreMath } from '../../src/renderer/math.js';
-import { configureMarked } from '../../src/renderer/markdown.js';
+import { mathExtension, mathPlaceholder, restoreMath } from '../../src/renderer/markdown/math.js';
+import { configureMarked } from '../../src/renderer/markdown/markdown.js';
 
 // A katex that records the TeX it receives, so we can assert it was uncorrupted.
 function recordingKatex() {

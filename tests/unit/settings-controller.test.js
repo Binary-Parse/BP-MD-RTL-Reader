@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   createSettingsController,
   PERSISTED_KEYS,
-} from '../../src/renderer/settings-controller.js';
+} from '../../src/renderer/components/settings-controller.js';
 
 afterEach(() => vi.useRealTimers());
 

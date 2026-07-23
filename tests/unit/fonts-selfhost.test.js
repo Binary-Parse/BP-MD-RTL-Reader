@@ -1,6 +1,6 @@
 /**
  * fonts-selfhost.test.js — T-B3/T1/T3 self-hosted fonts. Static assertions on app CSS:
- * no Google Fonts CDN, every @font-face resolves from assets/vendor/fonts/*.woff2 (which
+ * no Google Fonts CDN, every @font-face resolves from resources/vendor/fonts/*.woff2 (which
  * must exist on disk), the weights T1 needs are declared, and font-synthesis:none (T2) is
  * set so the browser ships real weights rather than faking bold/italic.
  */
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const html = readFileSync(path.join(root, 'index.html'), 'utf8');
+const html = readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8');
 const basePath = path.join(root, 'src', 'renderer', 'styles', 'base.css');
 const appCss = ['base.css', 'themes.css', 'components.css', 'responsive.css']
   .map((file) => readFileSync(path.join(root, 'src', 'renderer', 'styles', file), 'utf8'))
@@ -30,12 +30,12 @@ describe('self-hosted fonts (T-B3 / T1 / T3)', () => {
     }
   });
 
-  test('every @font-face src is a local assets/vendor/fonts/*.woff2 that exists on disk', () => {
+  test('every @font-face src is a local resources/vendor/fonts/*.woff2 that exists on disk', () => {
     const srcs = [...appCss.matchAll(/@font-face\s*\{[^}]*\}/gs)]
       .flatMap((b) => [...b[0].matchAll(/url\(['"]?([^'")]+)['"]?\)/g)].map((m) => m[1]));
     expect(srcs.length).toBeGreaterThanOrEqual(8);
     for (const src of srcs) {
-      expect(src, `non-local font src: ${src}`).toMatch(/^\.\.\/\.\.\/\.\.\/assets\/vendor\/fonts\/[^/]+\.woff2$/);
+      expect(src, `non-local font src: ${src}`).toMatch(/^\.\.\/\.\.\/\.\.\/resources\/vendor\/fonts\/[^/]+\.woff2$/);
       expect(existsSync(path.resolve(path.dirname(basePath), src)), `missing file: ${src}`).toBe(true);
     }
   });

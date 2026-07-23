@@ -3,7 +3,7 @@
  */
 import { describe, test, expect, beforeEach } from 'vitest';
 import path from 'node:path';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 function getHandle(mockElectron, name) {
@@ -27,7 +27,7 @@ describe('fs:writeFile (T-B1)', () => {
     });
     fsMock._files = files;
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
-    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 30));
     writeFile = getHandle(el, 'fs:writeFile');
     openFolder = getHandle(el, 'dialog:openFolder');
@@ -112,7 +112,7 @@ describe('fs:readVault recursion (T-B2) + writeFile invalid folder', () => {
     fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, size: 10 }));
     fsMock.promises.readFile = (async () => 'content');
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
-    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 30));
     const picked = await handlers['dialog:openFolder']();
     const res = await handlers['fs:readVault']({}, picked.vault.id);
@@ -123,7 +123,7 @@ describe('fs:readVault recursion (T-B2) + writeFile invalid folder', () => {
     const el = buildMockElectron();
     const handlers = {};
     el.ipcMain.handle.mockImplementation((n, fn) => { handlers[n] = fn; });
-    bootstrap({ electron: el, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: el, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 30));
     expect(await handlers['fs:writeFile']({}, { documentId: '', content: 'x' }))
       .toEqual({ error: 'unauthorized-capability' });
@@ -151,7 +151,7 @@ describe('fs:readVault recursion guard branches (mutation kills)', () => {
     fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, size: lstatSize }));
     fsMock.promises.readFile = (async () => 'content');
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
-    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 30));
     const picked = await handlers['dialog:openFolder']();
     const invokeReadVault = handlers['fs:readVault'];

@@ -11,7 +11,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const INDEX_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
+const INDEX_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/');
 
 const BUILD_BUDGET_MS = 100;
 const KEYSTROKE_BUDGET_MS = 16;

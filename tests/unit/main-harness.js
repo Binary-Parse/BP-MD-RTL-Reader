@@ -1,8 +1,8 @@
 /**
- * main-harness.js — shared mock builders for main.js/preload.js unit + mutation
+ * main-harness.js — shared mock builders for src/main/index.js/src/preload/index.js unit + mutation
  * tests. NOT a test file (no `.test.` suffix) so vitest does not collect it.
  *
- * main.js exposes bootstrap({ electron, fs, proc }) and preload.js exposes
+ * src/main/index.js exposes bootstrap({ electron, fs, proc }) and src/preload/index.js exposes
  * setupBridge({ contextBridge, ipcRenderer }) (audit #3 seam), so tests drive
  * the real code with these plain mocks — no Module._cache hijack.
  */

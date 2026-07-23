@@ -4,7 +4,7 @@
 import { describe, test, expect } from 'vitest';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { isVaultFile, isDroppableFile } = require('../../src/main-logic.js');
+const { isVaultFile, isDroppableFile } = require('../../src/main/main-logic.js');
 
 describe('isVaultFile', () => {
   test('accepts .md/.markdown (case-insensitive), rejects .txt/others', () => {

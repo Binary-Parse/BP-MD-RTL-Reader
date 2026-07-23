@@ -4,8 +4,8 @@
   Produces (overwrites):
     icon.png                     — 256x256 PNG (app/window icon, Linux + fallback)
     icon.ico                     — multi-size PNG-in-ICO (256,48,32,16) used by
-                                   main.js BrowserWindow + electron-builder + fileAssociations
-    installer/assets/icon.ico  — byte-identical copy used by Inno SetupIconFile
+                                   src/main/index.js BrowserWindow + electron-builder + fileAssociations
+    build/installer/assets/icon.ico  — byte-identical copy used by Inno SetupIconFile
 
   All ICO entries are PNG-compressed, matching the format the build chain already
   accepts (verified against the previous icon.ico). Pure .NET System.Drawing — no
@@ -23,7 +23,7 @@ Add-Type -AssemblyName System.Drawing
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path   # scripts/
 $repo = (Resolve-Path (Join-Path $here '..')).Path
-if (-not $Source) { $Source = Join-Path $repo 'assets\icon-source.png' }
+if (-not $Source) { $Source = Join-Path $repo 'build\icons\icon-source.png' }
 $src  = (Resolve-Path $Source).Path
 $img  = [System.Drawing.Image]::FromFile($src)
 
@@ -48,7 +48,7 @@ try {
   foreach ($s in $Sizes) { $pngs[$s] = Render-PngBytes $img $s }
 
   # --- icon.png (256) ---
-  [System.IO.File]::WriteAllBytes((Join-Path $repo 'assets\icon.png'), $pngs[256])
+  [System.IO.File]::WriteAllBytes((Join-Path $repo 'build\icons\icon.png'), $pngs[256])
 
   # --- assemble the .ico (all entries PNG-compressed) ---
   $count  = $Sizes.Count
@@ -79,8 +79,8 @@ try {
   foreach ($b in $blobs) { $out.Write($b, 0, $b.Length) }
   $icoBytes = $out.ToArray()
 
-  [System.IO.File]::WriteAllBytes((Join-Path $repo 'assets\icon.ico'), $icoBytes)
-  [System.IO.File]::WriteAllBytes((Join-Path $repo 'installer\assets\icon.ico'), $icoBytes)
+  [System.IO.File]::WriteAllBytes((Join-Path $repo 'build\icons\icon.ico'), $icoBytes)
+  [System.IO.File]::WriteAllBytes((Join-Path $repo 'build\installer\assets\icon.ico'), $icoBytes)
 
   Write-Host ("icon.png = {0} bytes; icon.ico = {1} bytes; sizes = {2}" -f `
     $pngs[256].Length, $icoBytes.Length, ($Sizes -join ','))

@@ -11,7 +11,7 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Performance budgets', () => {
   test('Render 10k-word document within 1 second', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const content = '# Title\n\n' + 'word '.repeat(10000);
     const result = await page.evaluate(async (md) => {
@@ -33,7 +33,7 @@ test.describe('Performance budgets', () => {
   });
 
   test('Render 100-heading document within 500ms', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const content = Array.from({ length: 100 }, (_, i) => `## Heading ${i}\n\nparagraph ${i}\n`).join('\n');
     const result = await page.evaluate(async (md) => {
@@ -50,7 +50,7 @@ test.describe('Performance budgets', () => {
   });
 
   test('Zoom toggle does not cause layout thrash (>16ms/frame budget)', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     await page.evaluate(() => window.loadDemo());
     await expect(page.locator('.cm-mount .cm-editor')).toBeVisible();
@@ -69,7 +69,7 @@ test.describe('Performance budgets', () => {
   });
 
   test('Memory: repeated file open/close keeps heap, DOM nodes, and listeners bounded', async ({ page }) => {
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const cdp = await page.context().newCDPSession(page);
 

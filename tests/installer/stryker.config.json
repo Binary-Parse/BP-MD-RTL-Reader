@@ -12,15 +12,15 @@
     "Remove-Item/DeleteFile/DelTree), so a RemoveStatement mutator would be inert.",
     "The cleanup DECISION is mutated via the boolean/string mutators (Get-CleanupPlan);",
     "actual destructive deletion is covered by the Pascal self-test and the",
-    "real-machine uninstall checks in uninstall_check.test.ps1."
+    "real-machine uninstall checks in uninstall-check.test.ps1."
   ],
   "mutate": ["logic-sim.ps1"],
   "testRunner": "pester",
   "testFiles": [
-    "version_compare.test.ps1",
-    "path_validate.test.ps1",
-    "registry_mock.test.ps1",
-    "uninstall_check.test.ps1"
+    "version-compare.test.ps1",
+    "path-validate.test.ps1",
+    "registry-mock.test.ps1",
+    "uninstall-check.test.ps1"
   ],
   "thresholds": { "high": 95, "low": 90, "break": 90 },
   "mutators": [

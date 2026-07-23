@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 function handler(electron, name) {
@@ -20,7 +20,7 @@ describe('opaque filesystem IPC capabilities', () => {
       readFileSync: vi.fn(p => p.endsWith('a.md') ? 'a\r\n' : '# note'),
       existsSync: vi.fn(p => p.endsWith('.md')),
     });
-    bootstrap({ electron, fs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(resolve => setTimeout(resolve, 20));
   });
 

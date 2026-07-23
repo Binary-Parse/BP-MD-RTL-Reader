@@ -102,7 +102,7 @@ describe('resolveBlockDirection (T-R1 dominant-script — fixes mixed Arabic/Eng
 
 describe('needsIsolation / isolate (T-R2)', () => {
   test('LTR run inside RTL context needs isolation', () => {
-    expect(needsIsolation('main.js', 'rtl')).toBe(true);
+    expect(needsIsolation('src/main/index.js', 'rtl')).toBe(true);
     expect(needsIsolation('مرحبا', 'rtl')).toBe(false);
   });
   test('isolate wraps in <bdi> and escapes via injected fn', () => {

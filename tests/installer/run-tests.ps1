@@ -31,11 +31,11 @@ if (-not (Ensure-Pester)) { exit 2 }
 Import-Module Pester -MinimumVersion 5.0
 
 $testFiles = @(
-    'version_compare.test.ps1'
-    'path_validate.test.ps1'
-    'registry_mock.test.ps1'
-    'uninstall_check.test.ps1'
-    'installer_security.test.ps1'
+    'version-compare.test.ps1'
+    'path-validate.test.ps1'
+    'registry-mock.test.ps1'
+    'uninstall-check.test.ps1'
+    'installer-security.test.ps1'
 ) | ForEach-Object { Join-Path $PSScriptRoot $_ }
 
 Write-Host '== Unit tests ==' -ForegroundColor Cyan

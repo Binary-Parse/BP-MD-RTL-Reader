@@ -54,4 +54,4 @@ package-lock.json  text eol=lf linguist-generated=true -diff
 
 # Generated from exact package-lock sources by scripts/sync-vendor.js. Some
 # upstream template literals intentionally contain trailing spaces.
-assets/vendor/**/*.min.js text eol=lf linguist-generated=true whitespace=-trailing-space
+resources/vendor/**/*.min.js text eol=lf linguist-generated=true whitespace=-trailing-space

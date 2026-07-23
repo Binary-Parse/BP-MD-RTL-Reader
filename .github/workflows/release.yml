@@ -238,7 +238,7 @@ jobs:
             Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $tool) { throw 'Windows SDK signtool.exe was not found.' }
-          . ./installer/build-policy.ps1
+          . ./build/installer/build-policy.ps1
           Get-TrustedSignTool -ExplicitPath $tool.FullName | Out-Null
           "path=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Install immutable Inno Setup 6.3.3
@@ -267,7 +267,7 @@ jobs:
         env:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: >-
-          ./installer/build-installer.ps1 -RequireSigned
+          ./build/installer/build-installer.ps1 -RequireSigned
           -CertificateSha1 '${{ steps.certificate.outputs.thumbprint }}'
           -SignToolPath '${{ steps.signtool.outputs.path }}'
       - name: Inspect every packaged app archive
@@ -275,7 +275,7 @@ jobs:
       - name: Verify all public Windows signatures and timestamps
         shell: pwsh
         run: |
-          . ./installer/build-policy.ps1
+          . ./build/installer/build-policy.ps1
           $files = @(
             'dist\BP-MD-RTL-Reader-1.0.0-Windows-NSIS-multiarch.exe',
             'dist\BP-MD-RTL-Reader-1.0.0-Windows-Portable-multiarch.exe',

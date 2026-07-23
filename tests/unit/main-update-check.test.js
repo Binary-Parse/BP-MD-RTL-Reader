@@ -4,7 +4,7 @@
  * Drives the real bootstrap with an injected fetch.
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 const getHandle = (electron, name) => electron.ipcMain.handle.mock.calls.find((c) => c[0] === name)?.[1];
@@ -13,7 +13,7 @@ const okJson = (body) => ({ ok: true, json: () => Promise.resolve(body) });
 function boot(fetchFn) {
   const electron = buildMockElectron();
   electron.app.getVersion.mockReturnValue('1.0.0');
-  bootstrap({ electron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']), fetchFn });
+  bootstrap({ electron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']), fetchFn });
   return electron;
 }
 

@@ -1,11 +1,11 @@
 /**
- * context-actions.test.js — exercises runContextAction branches in main.js
+ * context-actions.test.js — exercises runContextAction branches in src/main/index.js
  * by driving the registered context-menu handler and invoking item clicks.
  */
 import { describe, test, expect, beforeAll, vi } from 'vitest';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { bootstrap } from '../../main.js';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 describe('runContextAction (T-B12 side-effects)', () => {
@@ -16,7 +16,7 @@ describe('runContextAction (T-B12 side-effects)', () => {
       if (evt === 'context-menu') ctx = fn;
       if (evt === 'will-navigate') nav = fn;
     });
-    bootstrap({ electron: el, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: el, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 30));
     wc = el._mockWin.webContents;
   });
@@ -38,7 +38,7 @@ describe('runContextAction (T-B12 side-effects)', () => {
   });
 
   test('navigation guard allows the app index.html (no preventDefault)', () => {
-    const appUrl = pathToFileURL(path.join(process.cwd(), 'index.html')).href;
+    const appUrl = pathToFileURL(path.join(process.cwd(), 'src', 'renderer', 'index.html')).href;
     const e = { preventDefault: vi.fn() };
     nav(e, appUrl);
     expect(e.preventDefault).not.toHaveBeenCalled();

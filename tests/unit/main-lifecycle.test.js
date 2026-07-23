@@ -1,6 +1,6 @@
 /**
  * main-lifecycle.test.js — mutation-killing assertions for the App-lifecycle
- * cluster of main.js (audit follow-up): the single-instance lock branch
+ * cluster of src/main/index.js (audit follow-up): the single-instance lock branch
  * (~L274-307), the app.on lifecycle listeners (second-instance, activate,
  * open-file, window-all-closed), and the bootstrap return object (~L313).
  *
@@ -17,13 +17,14 @@
  */
 
 import { describe, test, expect, vi, beforeAll } from 'vitest';
-import { bootstrap } from '../../main.js';
+import path from 'node:path';
+import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
 // Wire bootstrap with a fresh harness, recording app.on listeners into a map.
 // Returns { electron, fs, proc, listeners, ret } so each test can drive a
 // lifecycle handler in isolation. `lockResult` toggles requestSingleInstanceLock.
-async function drive({ argv = ['node', 'main.js'], lockResult = true, platform } = {}) {
+async function drive({ argv = ['node', 'src/main/index.js'], lockResult = true, platform } = {}) {
   const electron = buildMockElectron();
   electron.app.requestSingleInstanceLock = vi.fn(() => lockResult);
 
@@ -41,7 +42,7 @@ async function drive({ argv = ['node', 'main.js'], lockResult = true, platform }
 }
 
 // ── SINGLE-INSTANCE LOCK (L274-307) ─────────────────────────────────────────
-describe('main.js lifecycle — single-instance lock', () => {
+describe('src/main/index.js lifecycle — single-instance lock', () => {
   test('lock granted (true): app.quit NOT called; whenReady ran createWindow', async () => {
     const { electron } = await drive({ lockResult: true });
     expect(electron.app.requestSingleInstanceLock).toHaveBeenCalledTimes(1);
@@ -49,7 +50,7 @@ describe('main.js lifecycle — single-instance lock', () => {
     expect(electron.app.quit).not.toHaveBeenCalled();
     // whenReady().then() continuation ran createWindow → BrowserWindow built once.
     expect(electron.BrowserWindow).toHaveBeenCalledTimes(1);
-    expect(electron._mockWin.loadFile).toHaveBeenCalledWith('index.html');
+    expect(electron._mockWin.loadFile).toHaveBeenCalledWith(path.join(process.cwd(), 'src', 'renderer', 'index.html'));
   });
 
   test('lock granted (true): second-instance, window-all-closed, activate are wired', async () => {
@@ -83,7 +84,7 @@ describe('main.js lifecycle — single-instance lock', () => {
 });
 
 // ── second-instance (L278-289): focus + restore + deliver ────────────────────
-describe('main.js lifecycle — second-instance', () => {
+describe('src/main/index.js lifecycle — second-instance', () => {
   test('zero windows → returns early: no focus, no restore, no send', async () => {
     const { electron, listeners } = await drive();
     const win = electron._mockWin;
@@ -92,7 +93,7 @@ describe('main.js lifecycle — second-instance', () => {
     win.webContents.send.mockClear();
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([]);
 
-    listeners['second-instance']({}, ['node', 'main.js', 'ignored.md']);
+    listeners['second-instance']({}, ['node', 'src/main/index.js', 'ignored.md']);
 
     expect(win.focus).not.toHaveBeenCalled();
     expect(win.restore).not.toHaveBeenCalled();
@@ -107,7 +108,7 @@ describe('main.js lifecycle — second-instance', () => {
     win.isMinimized.mockReturnValueOnce(true);
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
 
-    listeners['second-instance']({}, ['node', 'main.js']);
+    listeners['second-instance']({}, ['node', 'src/main/index.js']);
 
     expect(win.restore).toHaveBeenCalledTimes(1);
     expect(win.focus).toHaveBeenCalledTimes(1);
@@ -121,7 +122,7 @@ describe('main.js lifecycle — second-instance', () => {
     win.isMinimized.mockReturnValueOnce(false);
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
 
-    listeners['second-instance']({}, ['node', 'main.js']);
+    listeners['second-instance']({}, ['node', 'src/main/index.js']);
 
     // L283: isMinimized() false → restore must NOT fire (kills the
     // "always restore" / negated-condition mutant).
@@ -140,7 +141,7 @@ describe('main.js lifecycle — second-instance', () => {
     win.webContents.send.mockClear();
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
 
-    listeners['second-instance']({}, ['node', 'main.js', 'second.md']);
+    listeners['second-instance']({}, ['node', 'src/main/index.js', 'second.md']);
 
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
     expect(win.webContents.send).toHaveBeenCalledWith(
@@ -158,7 +159,7 @@ describe('main.js lifecycle — second-instance', () => {
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
 
     // argv has no .md/.markdown/.txt candidate → parseFileArg returns null.
-    listeners['second-instance']({}, ['node', 'main.js', '--flag', 'notafile']);
+    listeners['second-instance']({}, ['node', 'src/main/index.js', '--flag', 'notafile']);
 
     expect(win.focus).toHaveBeenCalledTimes(1);
     // L285 `if (file)` false → no delivery (kills the "always deliver" mutant).
@@ -174,14 +175,14 @@ describe('main.js lifecycle — second-instance', () => {
     fs.statSync.mockImplementationOnce(() => { throw new Error('ENOENT'); });
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
 
-    listeners['second-instance']({}, ['node', 'main.js', 'ghost.md']);
+    listeners['second-instance']({}, ['node', 'src/main/index.js', 'ghost.md']);
 
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
 });
 
 // ── activate (L295-297) ──────────────────────────────────────────────────────
-describe('main.js lifecycle — activate', () => {
+describe('src/main/index.js lifecycle — activate', () => {
   test('getAllWindows() empty → a NEW BrowserWindow is created', async () => {
     const { electron, listeners } = await drive();
     electron.BrowserWindow.getAllWindows.mockReturnValueOnce([]);
@@ -206,7 +207,7 @@ describe('main.js lifecycle — activate', () => {
 });
 
 // ── open-file (L300-306) ─────────────────────────────────────────────────────
-describe('main.js lifecycle — open-file', () => {
+describe('src/main/index.js lifecycle — open-file', () => {
   test('preventDefault is ALWAYS called (even for empty path)', async () => {
     const { listeners } = await drive();
     const ev = { preventDefault: vi.fn() };
@@ -262,7 +263,7 @@ describe('main.js lifecycle — open-file', () => {
 });
 
 // ── window-all-closed (L309-311) ─────────────────────────────────────────────
-describe('main.js lifecycle — window-all-closed', () => {
+describe('src/main/index.js lifecycle — window-all-closed', () => {
   test('platform !== "darwin" (win32) → app.quit() called', async () => {
     const { electron, listeners } = await drive({ platform: 'win32' });
     electron.app.quit.mockClear();
@@ -294,7 +295,7 @@ describe('main.js lifecycle — window-all-closed', () => {
 });
 
 // ── bootstrap return object (L313) ───────────────────────────────────────────
-describe('main.js lifecycle — bootstrap return object', () => {
+describe('src/main/index.js lifecycle — bootstrap return object', () => {
   test('returns an object exposing createWindow and registerIpcHandlers functions', async () => {
     const { ret } = await drive();
     expect(ret).toBeTruthy();

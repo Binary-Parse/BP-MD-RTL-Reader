@@ -1,12 +1,12 @@
 /**
  * Unit tests for extractHeadings() — the real document-outline logic in
- * src/renderer/outline.js. Uses the real `marked` lexer (devDependency) for
+ * src/renderer/components/outline.js. Uses the real `marked` lexer (devDependency) for
  * integration-level confidence, matching tests/unit/rendering.test.js.
  */
 
 import { describe, test, expect } from 'vitest';
 import { marked } from 'marked';
-import { extractHeadings, sourceHeadingPositions } from '../../src/renderer/outline.js';
+import { extractHeadings, sourceHeadingPositions } from '../../src/renderer/components/outline.js';
 
 describe('extractHeadings() heading extraction', () => {
   test('source positions include Setext headings and keep duplicate text identities', () => {

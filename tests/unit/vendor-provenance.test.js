@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative) => readFileSync(path.join(root, relative));
 const pkg = JSON.parse(read('package.json'));
-const manifest = JSON.parse(read('assets/vendor/vendor-manifest.json'));
+const manifest = JSON.parse(read('resources/vendor/vendor-manifest.json'));
 
 describe('vendored runtime provenance (DEP-001, DEP-002)', () => {
   test('records exact direct source versions and content hashes', () => {
@@ -22,10 +22,10 @@ describe('vendored runtime provenance (DEP-001, DEP-002)', () => {
 
   test('ships the project, runtime dependency, and font license texts', () => {
     expect(pkg.build.files).toEqual(expect.arrayContaining([
-      'LICENSE', 'THIRD-PARTY-NOTICES.md', 'assets/vendor/**',
+      'LICENSE', 'THIRD-PARTY-NOTICES.md', 'resources/vendor/**',
     ]));
-    expect(read('assets/vendor/THIRD-PARTY-LICENSES.txt').toString()).toContain('mermaid@11.15.0');
-    expect(read('assets/vendor/fonts/OFL-1.1.txt').toString()).toContain(
+    expect(read('resources/vendor/THIRD-PARTY-LICENSES.txt').toString()).toContain('mermaid@11.15.0');
+    expect(read('resources/vendor/fonts/OFL-1.1.txt').toString()).toContain(
       'SIL OPEN FONT LICENSE Version 1.1',
     );
   });

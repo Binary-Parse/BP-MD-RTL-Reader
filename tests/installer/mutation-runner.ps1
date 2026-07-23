@@ -7,7 +7,7 @@
   records the mutant as KILLED (some test failed) or SURVIVED (all tests passed).
 
   A surviving mutant means the tests cannot tell the mutated logic from the real
-  logic -> the same blind spot exists in version_check.pas / dir_validate.pas /
+  logic -> the same blind spot exists in version-check.pas / dir-validate.pas /
   cleanup.pas, so fix BOTH the test and (if needed) the Pascal.
 
   Usage:  pwsh -File mutation-runner.ps1            (uses stryker.config.json)

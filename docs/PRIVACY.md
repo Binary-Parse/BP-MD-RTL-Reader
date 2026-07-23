@@ -87,7 +87,7 @@ app and loads from local files:
   ([DOMPurify](https://github.com/cure53/DOMPurify)),
 - math, syntax highlighting, and diagrams (KaTeX, highlight.js, Mermaid), and
 - all four font families (Inter, Fraunces, JetBrains Mono, IBM Plex Sans Arabic), vendored
-  as local `woff2` files under `assets/vendor/fonts/`.
+  as local `woff2` files under `resources/vendor/fonts/`.
 
 Rendering works fully offline: no font, library, image, or note content is fetched from a
 CDN or remote server.

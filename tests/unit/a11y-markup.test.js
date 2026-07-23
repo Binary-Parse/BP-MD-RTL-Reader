@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const html = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'index.html'),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'index.html'),
   'utf8',
 );
 

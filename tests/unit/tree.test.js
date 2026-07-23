@@ -2,7 +2,7 @@
  * tree.test.js — T-F1 pure folder-tree builder.
  */
 import { describe, test, expect } from 'vitest';
-import { buildFileTree, flattenTree } from '../../src/renderer/tree.js';
+import { buildFileTree, flattenTree } from '../../src/renderer/components/tree.js';
 
 describe('buildFileTree', () => {
   test('flat files → root children', () => {

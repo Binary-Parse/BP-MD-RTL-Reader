@@ -6,8 +6,8 @@
  * markdown.parseCalloutHeader core. jsdom-tested like bidi-dom.js.
  */
 import { describe, test, expect } from 'vitest';
-import { transformCallouts, CALLOUT_ICONS } from '../../src/renderer/callouts.js';
-import { parseCalloutHeader } from '../../src/renderer/markdown.js';
+import { transformCallouts, CALLOUT_ICONS } from '../../src/renderer/markdown/callouts.js';
+import { parseCalloutHeader } from '../../src/renderer/markdown/markdown.js';
 import { resolveDirection } from '../../src/renderer/bidi.js';
 
 const opts = { parseCalloutHeader, resolveDirection };

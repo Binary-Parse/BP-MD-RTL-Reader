@@ -3,30 +3,30 @@
 import { isArabicHeavy, escapeHtml, escapeReg } from './i18n.js';
 import { THEMES, getNextTheme, clampZoom } from './theme.js';
 import { createState } from './state.js';
-import { vaultSearch as _vaultSearch } from './search.js';
-import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader } from './markdown.js';
-import { execEditCmd as _execEditCmdImpl } from './edit-commands.js';
+import { vaultSearch as _vaultSearch } from './components/search.js';
+import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader } from './markdown/markdown.js';
+import { execEditCmd as _execEditCmdImpl } from './editor/edit-commands.js';
 import { applyBidi } from './bidi-dom.js';
 import { resolveDirection, resolveBlockDirection, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
-import { transformCallouts } from './callouts.js';
-import { activeHeading, sourceHeadingPositions } from './outline.js';
-import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
+import { transformCallouts } from './markdown/callouts.js';
+import { activeHeading, sourceHeadingPositions } from './components/outline.js';
+import { parseFrontMatter, frontMatterDirection } from './markdown/frontmatter.js';
 import { dailyNoteName } from './dates.js';
-import { highlightCode } from './highlight.js';
-import { mathExtension, restoreMath, renderTex } from './math.js';
-import { sanitizeHtml, sanitizeSvg } from './trusted.js';
-import { renderMermaid } from './mermaid.js';
-import { tableEdit } from './table-edit.js';
-import { wrapTablesInFrames } from './table-frame.js';
-import { getFocusable, trapTab, rovingNext } from './focus.js';
+import { highlightCode } from './markdown/highlight.js';
+import { mathExtension, restoreMath, renderTex } from './markdown/math.js';
+import { sanitizeHtml, sanitizeSvg } from './markdown/trusted.js';
+import { renderMermaid } from './markdown/mermaid.js';
+import { tableEdit } from './components/table-edit.js';
+import { wrapTablesInFrames } from './components/table-frame.js';
+import { getFocusable, trapTab, rovingNext } from './components/focus.js';
 import { t as tr, localeDirection } from './locale.js';
-import { buildExportDocAsync as buildExportDocImpl } from './export.js';
+import { buildExportDocAsync as buildExportDocImpl } from './markdown/export.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
 import { isDroppableFile } from './file-predicates.js';
-import { buildFileTree, flattenTree } from './tree.js';
-import { extractTagsFromFiles } from './tags.js';
-import { createWorkspaceController } from './workspace-controller.js';
-import { createSettingsController } from './settings-controller.js';
+import { buildFileTree, flattenTree } from './components/tree.js';
+import { extractTagsFromFiles } from './components/tags.js';
+import { createWorkspaceController } from './components/workspace-controller.js';
+import { createSettingsController } from './components/settings-controller.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -151,7 +151,7 @@ function parseMarkdown(md) {
 // ── Vault image resolution (R10) ────────────────────────────────────────────
 // A note-relative image `![](pic.png)` must load from the note's neighbour on
 // disk, not from the app's index.html origin. We rewrite such srcs to
-// `bpmd://vault/<relPath>`, served by the registered bpmd:// protocol (main.js)
+// `bpmd://vault/<relPath>`, served by the registered bpmd:// protocol (src/main/index.js)
 // against the allow-listed vault root. No-op for absolute/scheme/data: srcs and
 // for non-vault notes (browser/dev, new notes — they have no on-disk neighbour).
 // Collapse a path to a clean vault-relative form; null if it escapes the vault.
@@ -319,7 +319,7 @@ function loadMermaid() {
     const existing = window.mermaidNS || window.mermaid;
     if (existing) return init(existing);
     const s = document.createElement('script');
-    s.src = 'assets/vendor/mermaid/mermaid.min.js';
+    s.src = '../../resources/vendor/mermaid/mermaid.min.js';
     s.onload = () => init(window.mermaidNS || window.mermaid);
     s.onerror = () => { s.remove(); reject(new Error('mermaid script failed to load')); };
     document.head.appendChild(s);
@@ -1066,7 +1066,7 @@ document.addEventListener('focusin', (e) => {
 }, true);
 
 function execEditCmd(cmd) {
-  // All logic lives in src/renderer/edit-commands.js (testable + mutatable).
+  // All logic lives in src/renderer/editor/edit-commands.js (testable + mutatable).
   // This shim builds the deps object and forwards. Critically: selectAll is
   // NEVER routed through electronAPI.editCommand because webContents.selectAll
   // would select the entire renderer DOM (titlebar/sidebar/statusbar).
@@ -1994,7 +1994,7 @@ function loadCM6() {
   _cmPromise = new Promise((resolve, reject) => {
     if (typeof window.CM6 !== 'undefined') return resolve(window.CM6);
     const s = document.createElement('script');
-    s.src = 'assets/vendor/codemirror/codemirror.min.js';
+    s.src = '../../resources/vendor/codemirror/codemirror.min.js';
     s.onload = () => (window.CM6 ? resolve(window.CM6) : reject(new Error('CM6 unavailable')));
     s.onerror = () => { s.remove(); reject(new Error('CM6 failed to load')); };
     document.head.appendChild(s);

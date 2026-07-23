@@ -9,10 +9,10 @@ const DIST = path.join(ROOT, 'dist');
 const REQUIRED = [
   'LICENSE',
   'THIRD-PARTY-NOTICES.md',
-  'assets/vendor/THIRD-PARTY-LICENSES.txt',
-  'assets/vendor/vendor-manifest.json',
-  'assets/vendor/fonts/LICENSES.md',
-  'assets/vendor/fonts/OFL-1.1.txt',
+  'resources/vendor/THIRD-PARTY-LICENSES.txt',
+  'resources/vendor/vendor-manifest.json',
+  'resources/vendor/fonts/LICENSES.md',
+  'resources/vendor/fonts/OFL-1.1.txt',
 ];
 const FORBIDDEN_PREFIXES = ['.git/', 'coverage/', 'reports/', 'tests/', 'AUDIT_REPORT.md'];
 

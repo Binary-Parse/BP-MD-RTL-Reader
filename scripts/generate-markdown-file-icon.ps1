@@ -2,8 +2,8 @@
   generate-markdown-file-icon.ps1 — regenerate the Markdown document icon.
 
   Produces (overwrites only these dedicated file-association artifacts):
-    assets/markdown-file-icon.png  — 256x256 transparent PNG
-    assets/markdown-file-icon.ico  — PNG-in-ICO entries at 256, 48, 32, 16
+    build/icons/markdown-file-icon.png  — 256x256 transparent PNG
+    build/icons/markdown-file-icon.ico  — PNG-in-ICO entries at 256, 48, 32, 16
 
   The application/window/installer icon artifacts are intentionally untouched.
   Run with Windows PowerShell:
@@ -21,7 +21,7 @@ Add-Type -AssemblyName System.Drawing
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = (Resolve-Path (Join-Path $here '..')).Path
 if (-not $Source) {
-  $Source = Join-Path $repo 'assets\markdown-file-icon-source.png'
+  $Source = Join-Path $repo 'build\icons\markdown-file-icon-source.png'
 }
 $src = (Resolve-Path $Source).Path
 $img = [System.Drawing.Image]::FromFile($src)
@@ -54,7 +54,7 @@ try {
   }
 
   [System.IO.File]::WriteAllBytes(
-    (Join-Path $repo 'assets\markdown-file-icon.png'),
+    (Join-Path $repo 'build\icons\markdown-file-icon.png'),
     $pngs[256]
   )
 
@@ -90,7 +90,7 @@ try {
   }
   $icoBytes = $output.ToArray()
   [System.IO.File]::WriteAllBytes(
-    (Join-Path $repo 'assets\markdown-file-icon.ico'),
+    (Join-Path $repo 'build\icons\markdown-file-icon.ico'),
     $icoBytes
   )
 

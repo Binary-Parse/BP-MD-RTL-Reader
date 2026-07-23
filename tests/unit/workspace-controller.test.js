@@ -3,7 +3,7 @@ import {
   createWorkspaceController,
   fileFromSnapshot,
   normalizeVaultRead,
-} from '../../src/renderer/workspace-controller.js';
+} from '../../src/renderer/components/workspace-controller.js';
 
 function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard } = {}) {
   const activeState = state || { files: [], activeFile: null, vaultName: null, recents: [] };

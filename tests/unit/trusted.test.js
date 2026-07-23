@@ -3,7 +3,7 @@
  * Uses a recording fake DOMPurify to assert configs and a tiny real strip for SVG.
  */
 import { describe, test, expect } from 'vitest';
-import { sanitizeHtml, sanitizeSvg, sanitizeMath, katexOptions, isSafeHref, renderTrusted } from '../../src/renderer/trusted.js';
+import { sanitizeHtml, sanitizeSvg, sanitizeMath, katexOptions, isSafeHref, renderTrusted } from '../../src/renderer/markdown/trusted.js';
 
 function fakeDOMPurify(records) {
   return {

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "reviewedAtCommit": "a66f98c",
   "expectedTotal": 174,
-  "fingerprintSha256": "6c65a173a28ea7d86fce4d03b5c2b9d3726bbcef9a116d03ccdc6b4793a30433",
+  "fingerprintSha256": "d2a2a3e9bfb4a807ca23022e4c8b8ce701b38b540b7193836f436f652057dfab",
   "countsByRule": {
     "no-unsanitized/property": 19,
     "security/detect-non-literal-fs-filename": 66,

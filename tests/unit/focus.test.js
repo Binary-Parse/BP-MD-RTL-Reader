@@ -6,7 +6,7 @@
  * so visibility is filtered by attributes only — real visibility is e2e-covered).
  */
 import { describe, test, expect } from 'vitest';
-import { getFocusable, trapTab, rovingNext } from '../../src/renderer/focus.js';
+import { getFocusable, trapTab, rovingNext } from '../../src/renderer/components/focus.js';
 
 function frag(html) { const d = document.createElement('div'); d.innerHTML = html; return d; }
 

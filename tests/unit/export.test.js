@@ -6,7 +6,7 @@
  * real configured marked + DOMPurify are exercised by the e2e).
  */
 import { describe, test, expect } from 'vitest';
-import { buildExportDoc, buildExportDocAsync } from '../../src/renderer/export.js';
+import { buildExportDoc, buildExportDocAsync } from '../../src/renderer/markdown/export.js';
 
 const md = (s) => `<p>${s}</p>`; // a trivial fake parseMarkdown
 

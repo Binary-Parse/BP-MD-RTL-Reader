@@ -1,10 +1,10 @@
 /**
- * Unit tests for tag extraction — the real logic in src/renderer/tags.js
+ * Unit tests for tag extraction — the real logic in src/renderer/components/tags.js
  * (used by renderTags() in app.js).
  */
 
 import { describe, test, expect } from 'vitest';
-import { extractTags, extractTagsFromFiles } from '../../src/renderer/tags.js';
+import { extractTags, extractTagsFromFiles } from '../../src/renderer/components/tags.js';
 
 describe('Tag extraction', () => {
   test('extracts single tag from text', () => {

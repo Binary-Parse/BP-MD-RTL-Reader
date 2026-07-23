@@ -11,7 +11,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/');
 
 async function openHelpMenu(page) {
   await page.goto(FILE_URL);

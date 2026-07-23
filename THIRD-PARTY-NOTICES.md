@@ -6,7 +6,7 @@ redistribution notices are recorded below; this inventory is not legal advice.
 
 ## Bundled with the application
 
-Every rendering asset below is **vendored** under `assets/vendor/` and shipped inside
+Every rendering asset below is **vendored** under `resources/vendor/` and shipped inside
 the build. The application declares **no production npm dependencies**.
 
 ### Runtime (the Electron shell)
@@ -17,7 +17,7 @@ the build. The application declares **no production npm dependencies**.
 | [Chromium](https://www.chromium.org/) (via Electron) | BSD-3-Clause and others | Full notices ship as `LICENSES.chromium.html` alongside the installed app. |
 | [Node.js](https://nodejs.org/) (via Electron) | MIT | Bundled inside the Electron runtime. |
 
-### Vendored libraries (`assets/vendor/`)
+### Vendored libraries (`resources/vendor/`)
 
 | Component | License | Used for |
 | --------- | ------- | -------- |
@@ -27,19 +27,19 @@ the build. The application declares **no production npm dependencies**.
 | [KaTeX 0.17.0](https://katex.org/) | MIT | Math rendering |
 | [highlight.js 11.11.1](https://highlightjs.org/) | BSD-3-Clause | Code syntax highlighting |
 | [Mermaid 11.15.0](https://mermaid.js.org/) | MIT | Diagrams |
-| [Lucide Static 1.25.0](https://lucide.dev/) | ISC | SVG symbols generated into `index.html` |
+| [Lucide Static 1.25.0](https://lucide.dev/) | ISC | SVG symbols generated into `src/renderer/index.html` |
 
 The machine-readable source versions and SHA-256 hashes are in
-`assets/vendor/vendor-manifest.json`. Complete license texts for these libraries
+`resources/vendor/vendor-manifest.json`. Complete license texts for these libraries
 and the runtime dependency closure incorporated into their browser bundles are in
-`assets/vendor/THIRD-PARTY-LICENSES.txt`. Run `npm run vendor:check` to verify
+`resources/vendor/THIRD-PARTY-LICENSES.txt`. Run `npm run vendor:check` to verify
 that committed assets still match the exact lockfile sources.
 
 These assets are never fetched at application runtime. The unrelated, explicit
 **Check for Updates…** command requests only GitHub public release metadata and does not
 load a library or font.
 
-### Vendored fonts (`assets/vendor/fonts/`)
+### Vendored fonts (`resources/vendor/fonts/`)
 
 | Component | License |
 | --------- | ------- |
@@ -48,8 +48,8 @@ load a library or font.
 | [JetBrains Mono](https://www.jetbrains.com/lp/mono/) | SIL Open Font License 1.1 |
 | [IBM Plex Sans Arabic](https://www.ibm.com/plex/) | SIL Open Font License 1.1 |
 
-See [`assets/vendor/fonts/LICENSES.md`](assets/vendor/fonts/LICENSES.md) for the
-font copyright notices and `assets/vendor/fonts/OFL-1.1.txt` for the complete
+See [`resources/vendor/fonts/LICENSES.md`](resources/vendor/fonts/LICENSES.md) for the
+font copyright notices and `resources/vendor/fonts/OFL-1.1.txt` for the complete
 license text. Both are included in packaged applications.
 
 ## Development & build tools (not distributed)

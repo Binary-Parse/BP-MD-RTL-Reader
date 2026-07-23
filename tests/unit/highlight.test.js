@@ -5,7 +5,7 @@
  * an injected fake hljs + sanitize (like trusted.test.js / callouts.test.js).
  */
 import { describe, test, expect, vi } from 'vitest';
-import { highlightCode } from '../../src/renderer/highlight.js';
+import { highlightCode } from '../../src/renderer/markdown/highlight.js';
 
 const fakeHljs = {
   getLanguage: (l) => (['js', 'python'].includes(l) ? {} : undefined),

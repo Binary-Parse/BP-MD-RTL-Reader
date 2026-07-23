@@ -1,9 +1,9 @@
 /**
- * Vitest tests for main.js and preload.js with V8 coverage.
+ * Vitest tests for src/main/index.js and src/preload/index.js with V8 coverage.
  *
  * Both files now expose an INJECTABLE SEAM (audit #3):
- *   - main.js     exports `bootstrap({ electron, fs, path, proc })`
- *   - preload.js  exports `setupBridge({ contextBridge, ipcRenderer })`
+ *   - src/main/index.js     exports `bootstrap({ electron, fs, path, proc })`
+ *   - src/preload/index.js  exports `setupBridge({ contextBridge, ipcRenderer })`
  * and only auto-run their real Electron bootstrap when loaded as the
  * Electron entry / preload (guarded inside each file). That lets these tests
  * drive the real code with plain mock objects — no Module._resolveFilename
@@ -12,8 +12,9 @@
  */
 
 import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
-import { bootstrap } from '../../main.js';
-import { setupBridge } from '../../preload.js';
+import path from 'node:path';
+import { bootstrap } from '../../src/main/index.js';
+import { setupBridge } from '../../src/preload/index.js';
 
 // ── CJS MOCK FACTORY ───────────────────────────────────────────────────────
 function buildMockElectron() {
@@ -134,19 +135,19 @@ function buildMockProc(argv) {
 
 // ── TESTS ──────────────────────────────────────────────────────────────────
 
-describe('main.js — seam exposes bootstrap', () => {
+describe('src/main/index.js — seam exposes bootstrap', () => {
   test('bootstrap is an exported function', () => {
     expect(typeof bootstrap).toBe('function');
   });
 });
 
-describe('main.js', () => {
+describe('src/main/index.js', () => {
   let mockElectron;
   let mockProc;
 
   beforeAll(async () => {
     mockElectron = buildMockElectron();
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
   });
@@ -175,7 +176,7 @@ describe('main.js', () => {
   });
 
   test('loads index.html', () => {
-    expect(mockElectron._mockWin.loadFile).toHaveBeenCalledWith('index.html');
+    expect(mockElectron._mockWin.loadFile).toHaveBeenCalledWith(path.join(process.cwd(), 'src', 'renderer', 'index.html'));
   });
 
   test('window-close-confirmed calls win.close', () => {
@@ -188,11 +189,11 @@ describe('main.js', () => {
   });
 });
 
-describe('main.js — standalone Save As boundary', () => {
+describe('src/main/index.js — standalone Save As boundary', () => {
   test('validates input, preserves text metadata, and grants the saved Markdown file', async () => {
     const electron = buildMockElectron();
     const fs = buildMockFs();
-    bootstrap({ electron, fs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(resolve => setTimeout(resolve, 0));
     const save = electron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
 
@@ -233,7 +234,7 @@ describe('main.js — standalone Save As boundary', () => {
     const writeFailureElectron = buildMockElectron();
     const writeFailureFs = buildMockFs({ writeFileSync: vi.fn(() => { throw new Error('disk'); }) });
     writeFailureElectron.dialog.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/notes/fail.md' });
-    bootstrap({ electron: writeFailureElectron, fs: writeFailureFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: writeFailureElectron, fs: writeFailureFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(resolve => setTimeout(resolve, 0));
     const saveWriteFailure = writeFailureElectron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
     await expect(saveWriteFailure({}, { content: 'x', suggestedName: 42, eol: '\n', finalNewline: true }))
@@ -245,14 +246,14 @@ describe('main.js — standalone Save As boundary', () => {
       statSync: vi.fn(() => ({ isFile: () => false, isDirectory: () => false, size: 1, mtimeMs: 1 })),
     });
     grantFailureElectron.dialog.showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/notes/grant.md' });
-    bootstrap({ electron: grantFailureElectron, fs: grantFailureFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: grantFailureElectron, fs: grantFailureFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(resolve => setTimeout(resolve, 0));
     const saveGrantFailure = grantFailureElectron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
     await expect(saveGrantFailure({}, { content: 'x' })).resolves.toEqual({ error: 'write-failed' });
   });
 });
 
-describe('preload.js', () => {
+describe('src/preload/index.js', () => {
   let mockElectron;
 
   beforeAll(() => {
@@ -307,7 +308,7 @@ describe('preload.js', () => {
     expect(mockElectron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
   });
 
-  // ─ window controls (kills NoCoverage on preload.js L4-L6) ──────────
+  // ─ window controls (kills NoCoverage on src/preload/index.js L4-L6) ──────────
   test('closeWindow sends window-close-confirmed IPC', () => {
     mockElectron.ipcRenderer.send.mockClear();
     getApi().closeWindow();
@@ -472,7 +473,7 @@ describe('preload.js', () => {
 });
 
 // ── IPC CONCURRENCY (audit #9) ─────────────────────────────────────────────
-// main.js holds `allowedFolders` as a Set mutated by dialog:openFolder and read
+// src/main/index.js holds `allowedFolders` as a Set mutated by dialog:openFolder and read
 // by fs:readVault. These tests exercise the handlers under parallel invocations
 // to verify that:
 //   - concurrent openFolder calls don't lose paths (Set.add is atomic in JS)
@@ -484,7 +485,7 @@ describe('preload.js', () => {
 // tests are the regression net for any future change that adds a remove
 // path or makes openFolder's await-then-Set.add no longer atomic.
 
-describe('main.js — IPC concurrency (audit #9)', () => {
+describe('src/main/index.js — IPC concurrency (audit #9)', () => {
   let mockElectron;
   let openFolderHandler;
   let readVaultHandler;
@@ -493,7 +494,7 @@ describe('main.js — IPC concurrency (audit #9)', () => {
     mockElectron = buildMockElectron();
     const mockFs = buildMockFs();
 
-    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: mockFs, proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
 
     openFolderHandler = mockElectron.ipcMain.handle.mock.calls
@@ -582,7 +583,7 @@ describe('main.js — IPC concurrency (audit #9)', () => {
 });
 
 // ── HANDLER BEHAVIOUR (audit #1) ───────────────────────────────────────────
-// Covers the previously-uncovered branches of main.js handlers and
+// Covers the previously-uncovered branches of src/main/index.js handlers and
 // observability code.
 //
 // Scope:
@@ -596,7 +597,7 @@ describe('main.js — IPC concurrency (audit #9)', () => {
 //   - log:error IPC + rate limit + invalid-payload guard
 //   - setWindowOpenHandler: http -> shell.openExternal, deny non-http
 
-describe('main.js — handler behaviour (audit #1)', () => {
+describe('src/main/index.js — handler behaviour (audit #1)', () => {
   let mockElectron;
   let mockFs;
   let mockProc;
@@ -622,7 +623,7 @@ describe('main.js — handler behaviour (audit #1)', () => {
       readFileSync: vi.fn(() => '﻿# Hello'), // includes BOM
     });
 
-    mockProc = buildMockProc(['node', 'main.js']);
+    mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
 
@@ -910,7 +911,7 @@ describe('main.js — handler behaviour (audit #1)', () => {
 });
 
 // ── APP LIFECYCLE + FILE ASSOCIATION + LOG ROTATION (audit #1, follow-up) ─
-// Covers the remaining uncovered branches in main.js:
+// Covers the remaining uncovered branches in src/main/index.js:
 //   - deliverPendingFile (guard, happy path, fs throws)
 //   - did-finish-load handler invocation
 //   - app.whenReady().then() — pendingFileToOpen seed from argv, createWindow,
@@ -922,7 +923,7 @@ describe('main.js — handler behaviour (audit #1)', () => {
 //   - rotateIfNeeded — actually fires its rename loop when size >= 1 MiB
 //   - log:error — minute-window rollover with logDropped > 0 emits summary
 
-describe('main.js — lifecycle + file-association + log rotation (audit #1)', () => {
+describe('src/main/index.js — lifecycle + file-association + log rotation (audit #1)', () => {
   let mockElectron;
   let mockFs;
   let mockProc;
@@ -948,7 +949,7 @@ describe('main.js — lifecycle + file-association + log rotation (audit #1)', (
     // Seed argv with a recognised .md path so app.whenReady continuation
     // sets pendingFileToOpen and the did-finish-load + deliverPendingFile path
     // is exercised end-to-end.
-    mockProc = buildMockProc(['node', 'main.js', 'pending.md']);
+    mockProc = buildMockProc(['node', 'src/main/index.js', 'pending.md']);
 
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
@@ -1029,7 +1030,7 @@ describe('main.js — lifecycle + file-association + log rotation (audit #1)', (
     win.restore.mockClear();
     win.isMinimized.mockReturnValueOnce(true);
     mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
-    mockAppListeners['second-instance']({}, ['node', 'main.js']);
+    mockAppListeners['second-instance']({}, ['node', 'src/main/index.js']);
     expect(win.restore).toHaveBeenCalled();
     expect(win.focus).toHaveBeenCalled();
   });
@@ -1040,7 +1041,7 @@ describe('main.js — lifecycle + file-association + log rotation (audit #1)', (
     win.isMinimized.mockReturnValueOnce(false);
     mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
     // realpathSync returns the path as-is; statSync says it's a 100-byte file.
-    mockAppListeners['second-instance']({}, ['node', 'main.js', 'second.md']);
+    mockAppListeners['second-instance']({}, ['node', 'src/main/index.js', 'second.md']);
     expect(win.webContents.send).toHaveBeenCalledWith(
       'open-external-file',
       expect.objectContaining({ name: 'second.md' })
@@ -1049,7 +1050,7 @@ describe('main.js — lifecycle + file-association + log rotation (audit #1)', (
 
   test('app.on("second-instance") with no windows is a no-op', () => {
     mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([]);
-    expect(() => mockAppListeners['second-instance']({}, ['node', 'main.js'])).not.toThrow();
+    expect(() => mockAppListeners['second-instance']({}, ['node', 'src/main/index.js'])).not.toThrow();
   });
 
   // ─ app.on('window-all-closed') ─────────────────────────────────────
@@ -1116,9 +1117,9 @@ describe('main.js — lifecycle + file-association + log rotation (audit #1)', (
 });
 
 // ── RIGHT-CLICK CONTEXT MENU (Edit-menu fix) ───────────────────────────────
-// main.js registers webContents.on('context-menu', …) and pops up a native
+// src/main/index.js registers webContents.on('context-menu', …) and pops up a native
 // role-based menu (undo/redo/cut/copy/paste/selectAll) gated by params.
-describe('main.js — right-click context menu', () => {
+describe('src/main/index.js — right-click context menu', () => {
   let mockElectron;
   let ctxHandler;
 
@@ -1129,7 +1130,7 @@ describe('main.js — right-click context menu', () => {
       if (event === 'context-menu') ctxHandler = fn;
     });
 
-    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'main.js']) });
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise(r => setTimeout(r, 50));
   });
 

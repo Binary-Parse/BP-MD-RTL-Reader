@@ -16,7 +16,7 @@ const AXE_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../node_modules/a
 test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript({ content: AXE_SOURCE }); // inject axe before navigation (CSP-exempt)
-    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/index.html');
+    await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
   });
 

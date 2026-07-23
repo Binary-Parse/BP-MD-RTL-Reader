@@ -1,7 +1,7 @@
 ; ============================================================================
 ;  selftest.iss — Pascal unit-test harness for the BP MD RTL Reader installer logic.
 ;
-;  Compiles the REAL production units (version_check.pas + dir_validate.pas)
+;  Compiles the REAL production units (version-check.pas + dir-validate.pas)
 ;  together with the *.test.pas assertion files and runs every assertion inside
 ;  InitializeSetup, then cancels (installs nothing). Results go to the setup log
 ;  and (when not silent) a summary message box.
@@ -28,8 +28,8 @@ DisableFinishedPage=yes
 
 [Code]
 { --- Production units under test (the actual installer code) --- }
-#include "..\..\installer\scripts\version_check.pas"
-#include "..\..\installer\scripts\dir_validate.pas"
+#include "..\..\build\installer\scripts\version-check.pas"
+#include "..\..\build\installer\scripts\dir-validate.pas"
 
 { --- Assertion harness --- }
 var
@@ -81,8 +81,8 @@ begin
 end;
 
 { --- Test cases --- }
-#include "version_compare.test.pas"
-#include "registry_mock.test.pas"
+#include "version-compare.test.pas"
+#include "registry-mock.test.pas"
 
 function InitializeSetup: Boolean;
 begin

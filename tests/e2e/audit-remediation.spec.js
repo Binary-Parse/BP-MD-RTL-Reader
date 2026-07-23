@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const INDEX_URL = 'file:///' + path.resolve(__dirname, '..', '..', 'index.html').replace(/\\/g, '/');
+const INDEX_URL = 'file:///' + path.resolve(__dirname, '..', '..', 'src', 'renderer', 'index.html').replace(/\\/g, '/');
 
 test.describe('audit remediation UI contracts', () => {
   test.beforeEach(async ({ page }) => {

@@ -6,7 +6,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 
-const INDEX_PATH = path.resolve(process.cwd(), 'index.html');
+const INDEX_PATH = path.resolve(process.cwd(), 'src', 'renderer', 'index.html');
 const INDEX_URL = 'file:///' + INDEX_PATH.replace(/\\/g, '/');
 
 test.describe('index.html — ALL exported functions', () => {

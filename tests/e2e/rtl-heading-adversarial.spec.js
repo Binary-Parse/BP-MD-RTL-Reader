@@ -20,7 +20,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const INDEX_PATH = path.resolve(__dirname, '../../index.html');
+const INDEX_PATH = path.resolve(__dirname, '../../src/renderer/index.html');
 const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 // ---------------------------------------------------------------------------

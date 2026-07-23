@@ -1,5 +1,5 @@
 /**
- * main-settings-ipc.test.js — T-F8 / B5 persistent settings wired into main.js.
+ * main-settings-ipc.test.js — T-F8 / B5 persistent settings wired into src/main/index.js.
  *
  * Drives the REAL code through the injectable bootstrap({ electron, fs, proc })
  * seam (same pattern as main-writefile.test.js): mock electron/fs, capture the
@@ -8,8 +8,8 @@
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import path from 'node:path';
-import { bootstrap } from '../../main.js';
-import { setupBridge } from '../../preload.js';
+import { bootstrap } from '../../src/main/index.js';
+import { setupBridge } from '../../src/preload/index.js';
 import { defaultSettings } from '../../src/main/settings.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
@@ -35,7 +35,7 @@ function memFs(seed = {}) {
 }
 
 async function boot(fs, electron = buildMockElectron()) {
-  bootstrap({ electron, fs, proc: buildMockProc(['node', 'main.js']) });
+  bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js']) });
   await new Promise((r) => setTimeout(r, 30));
   return electron;
 }

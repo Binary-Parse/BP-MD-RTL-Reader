@@ -15,7 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const fileUrl = 'file:///' + path.join(root, 'index.html').replace(/\\/g, '/');
+const fileUrl = 'file:///' + path.join(root, 'src', 'renderer', 'index.html').replace(/\\/g, '/');
 const outDir = path.join(root, 'docs', 'assets');
 mkdirSync(outDir, { recursive: true });
 

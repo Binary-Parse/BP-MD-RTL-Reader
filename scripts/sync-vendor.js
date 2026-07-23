@@ -12,11 +12,11 @@ const TEMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'bpmd-vendor-'));
 const mismatches = [];
 
 const directCopies = [
-  ['dompurify', 'dist/purify.min.js', 'assets/vendor/dompurify/purify.min.js'],
-  ['katex', 'dist/katex.min.js', 'assets/vendor/katex/katex.min.js'],
-  ['katex', 'dist/katex.min.css', 'assets/vendor/katex/katex.min.css'],
-  ['marked', 'lib/marked.umd.js', 'assets/vendor/marked/marked.umd.js'],
-  ['mermaid', 'dist/mermaid.min.js', 'assets/vendor/mermaid/mermaid.min.js'],
+  ['dompurify', 'dist/purify.min.js', 'resources/vendor/dompurify/purify.min.js'],
+  ['katex', 'dist/katex.min.js', 'resources/vendor/katex/katex.min.js'],
+  ['katex', 'dist/katex.min.css', 'resources/vendor/katex/katex.min.css'],
+  ['marked', 'lib/marked.umd.js', 'resources/vendor/marked/marked.umd.js'],
+  ['mermaid', 'dist/mermaid.min.js', 'resources/vendor/mermaid/mermaid.min.js'],
 ];
 
 const iconMap = {
@@ -72,8 +72,8 @@ function put(targetRelative, content) {
 }
 
 function buildBundles() {
-  const cmOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'assets/vendor/codemirror/codemirror.min.js');
-  const highlightOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'assets/vendor/highlight/highlight.min.js');
+  const cmOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'resources/vendor/codemirror/codemirror.min.js');
+  const highlightOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'resources/vendor/highlight/highlight.min.js');
   fs.mkdirSync(path.dirname(cmOutput), { recursive: true });
   fs.mkdirSync(path.dirname(highlightOutput), { recursive: true });
 
@@ -87,8 +87,8 @@ function buildBundles() {
   });
 
   if (CHECK) {
-    put('assets/vendor/codemirror/codemirror.min.js', fs.readFileSync(cmOutput));
-    put('assets/vendor/highlight/highlight.min.js', fs.readFileSync(highlightOutput));
+    put('resources/vendor/codemirror/codemirror.min.js', fs.readFileSync(cmOutput));
+    put('resources/vendor/highlight/highlight.min.js', fs.readFileSync(highlightOutput));
   }
 }
 
@@ -99,7 +99,7 @@ function syncDirectAssets() {
 
   const katexFonts = path.join(packageDir('katex'), 'dist/fonts');
   for (const name of fs.readdirSync(katexFonts).filter((file) => file.endsWith('.woff2')).sort()) {
-    put('assets/vendor/katex/fonts/' + name, fs.readFileSync(path.join(katexFonts, name)));
+    put('resources/vendor/katex/fonts/' + name, fs.readFileSync(path.join(katexFonts, name)));
   }
 }
 
@@ -118,13 +118,13 @@ function renderLucideSymbols() {
 }
 
 function syncLucide() {
-  const indexPath = path.join(ROOT, 'index.html');
+  const indexPath = path.join(ROOT, 'src', 'renderer', 'index.html');
   const current = fs.readFileSync(indexPath, 'utf8');
   const replacement = '<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">\n  <defs>\n'
     + renderLucideSymbols() + '\n  </defs>\n</svg>';
   const next = current.replace(/<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">[\s\S]*?<\/svg>/, replacement);
   if (next === current && !current.includes(replacement)) throw new Error('Could not locate inline Lucide sprite');
-  put('index.html', next);
+  put('src/renderer/index.html', next);
 }
 
 function collectRuntimeLicenses() {
@@ -162,10 +162,10 @@ function generateManifest() {
   const assets = [];
   const targets = [
     ...directCopies.map(([, , target]) => target),
-    'assets/vendor/codemirror/codemirror.min.js',
-    'assets/vendor/highlight/highlight.min.js',
+    'resources/vendor/codemirror/codemirror.min.js',
+    'resources/vendor/highlight/highlight.min.js',
     ...fs.readdirSync(path.join(packageDir('katex'), 'dist/fonts')).filter((file) => file.endsWith('.woff2'))
-      .sort().map((file) => 'assets/vendor/katex/fonts/' + file),
+      .sort().map((file) => 'resources/vendor/katex/fonts/' + file),
   ];
   for (const target of targets.sort()) {
     const file = path.join(ROOT, target);
@@ -187,8 +187,8 @@ try {
   buildBundles();
   syncDirectAssets();
   syncLucide();
-  put('assets/vendor/THIRD-PARTY-LICENSES.txt', collectRuntimeLicenses());
-  put('assets/vendor/vendor-manifest.json', generateManifest());
+  put('resources/vendor/THIRD-PARTY-LICENSES.txt', collectRuntimeLicenses());
+  put('resources/vendor/vendor-manifest.json', generateManifest());
 
   if (mismatches.length) {
     console.error('Vendored assets are out of sync:\n' + mismatches.map((file) => ' - ' + file).join('\n'));

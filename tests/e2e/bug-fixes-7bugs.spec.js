@@ -10,13 +10,13 @@
  *   Phase 4 — Mutation-detection catch tests.
  *
  * Framework: Playwright (@playwright/test)
- * Target file: index.html (renderer), main.js, preload.js (Electron main/preload)
+ * Target file: index.html (renderer), src/main/index.js, src/preload/index.js (Electron main/preload)
  */
 
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const FILE_URL = 'file:///' + path.resolve(__dirname, '../../index.html').replace(/\\/g, '/');
+const FILE_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/');
 
 // ---------------------------------------------------------------------------
 // Shared helpers

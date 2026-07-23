@@ -8,7 +8,7 @@ import {
   wikilinkRenderer,
   parseMarkdown,
   configureMarked,
-} from '../../src/renderer/markdown.js';
+} from '../../src/renderer/markdown/markdown.js';
 import { escapeHtml } from '../../src/renderer/i18n.js';
 
 describe('parseMarkdown pipeline', () => {
@@ -132,7 +132,7 @@ describe('configureMarked — integration with real marked (audit #29)', () => {
   // Exercises the wikilink extension's inner start/tokenizer/renderer that
   // only run when an actual marked instance parses input. Mock-based tests
   // can verify marked.use was called with the right config object, but the
-  // 24 NoCoverage mutants in src/renderer/markdown.js L32-L40 only die when
+  // 24 NoCoverage mutants in src/renderer/markdown/markdown.js L32-L40 only die when
   // a real marked instance walks through those inner functions.
   //
   // Uses marked@^18.0.4 (matches the CDN version loaded by index.html).

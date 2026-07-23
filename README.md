@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/icon.png" width="128" height="128" alt="BP MD RTL Reader icon">
+<img src="docs/build/icons/icon.png" width="128" height="128" alt="BP MD RTL Reader icon">
 
 # BP MD RTL Reader
 
@@ -138,6 +138,26 @@ documented in **[docs/BUILD.md](docs/BUILD.md)**.
 
 ---
 
+## Project structure
+
+```text
+build/                 Packaging inputs: icons, entitlements, NSIS, and Inno Setup
+resources/vendor/      Offline runtime libraries, fonts, and license manifests
+src/main/              Electron entry point, privileged IPC, storage, and window lifecycle
+src/preload/           Minimal context-isolated renderer bridge
+src/renderer/          UI, components, editor extensions, Markdown pipeline, and styles
+tests/unit/            Vitest unit suite
+tests/e2e/             Playwright browser, integration, visual, a11y, and Electron lanes
+tests/installer/       Pester and Inno Setup installer tests
+docs/                  Build, usage, keyboard, privacy, and screenshot documentation
+scripts/               Build, verification, coverage, release, and asset tooling
+```
+
+The renderer and its dependencies remain entirely local: shipped libraries and fonts live
+under `resources/vendor/`, while `build/` contains packaging inputs and `dist/` is generated
+packaging output.
+
+---
 ## Quality
 
 The project includes:

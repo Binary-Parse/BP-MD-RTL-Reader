@@ -1,0 +1,238 @@
+{
+  "name": "bpmdrtlreader",
+  "version": "1.0.0",
+  "description": "BP MD RTL Reader — markdown reader with RTL support",
+  "author": "Binary Parse",
+  "license": "MIT",
+  "main": "src/main/index.js",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Binary-Parse/BP-MD-RTL-Reader.git"
+  },
+  "homepage": "https://github.com/Binary-Parse/BP-MD-RTL-Reader#readme",
+  "bugs": {
+    "url": "https://github.com/Binary-Parse/BP-MD-RTL-Reader/issues"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "build:cm": "esbuild scripts/codemirror-entry.mjs --bundle --format=iife --global-name=CM6 --minify --outfile=resources/vendor/codemirror/codemirror.min.js",
+    "vendor:sync": "node scripts/sync-vendor.js",
+    "vendor:check": "node scripts/sync-vendor.js --check",
+    "license:inventory": "node scripts/dependency-license-inventory.js --check",
+    "license:inventory:update": "node scripts/dependency-license-inventory.js --write",
+    "package:verify": "node scripts/verify-package-contents.js",
+    "package:checksums": "node scripts/write-artifact-checksums.js",
+    "package:checksums:verify": "node scripts/write-artifact-checksums.js --check",
+    "test": "npm run test:unit && npm run test:e2e && npm run test:electron",
+    "test:unit": "vitest run --config vitest.config.js",
+    "test:unit:coverage": "node scripts/run-unit-coverage.js",
+    "test:e2e": "playwright test --config playwright.config.js",
+    "test:electron": "playwright test --config playwright.electron.config.js",
+    "test:e2e:coverage": "node scripts/generate-renderer-coverage.js --run",
+    "test:smoke": "playwright test tests/e2e/smoke.spec.js",
+    "test:integration": "playwright test tests/e2e/integration",
+    "test:update-snapshots": "playwright test --update-snapshots",
+    "test:mutation": "stryker run && node scripts/check-mutation-tiers.js",
+    "test:mutation:release": "stryker run --concurrency 2 && node scripts/check-mutation-tiers.js",
+    "test:mutation:check": "node scripts/check-mutation-tiers.js",
+    "test:watch": "vitest --config vitest.config.js",
+    "coverage": "npm run test:unit:coverage && npm run test:e2e:coverage && npm run report:merge",
+    "report:merge": "node scripts/merge-coverage.js",
+    "lint:security": "node scripts/run-security-lint.js",
+    "postinstall": "playwright install chromium"
+  },
+  "build": {
+    "appId": "com.binaryparse.bpmdrtlreader",
+    "productName": "BP MD RTL Reader",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/renderer/index.html",
+      "src/main/index.js",
+      "src/preload/index.js",
+      "src/**/*.js",
+      "src/**/*.css",
+      "build/icons/icon.ico",
+      "build/icons/icon.png",
+      "resources/vendor/**",
+      "LICENSE",
+      "THIRD-PARTY-NOTICES.md",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "ia32",
+            "arm64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "build/icons/markdown-file-icon.ico",
+          "to": "markdown-file-icon.ico"
+        }
+      ],
+      "icon": "build/icons/icon.ico",
+      "signtoolOptions": {
+        "publisherName": "Binary Parse"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BP MD RTL Reader",
+      "uninstallDisplayName": "${productName}",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "menuCategory": false,
+      "installerIcon": "build/icons/icon.ico",
+      "uninstallerIcon": "build/icons/icon.ico",
+      "installerHeaderIcon": "build/icons/icon.ico",
+      "include": "build/installer/installer.nsh",
+      "artifactName": "BP-MD-RTL-Reader-${version}-Windows-NSIS-multiarch.${ext}",
+      "warningsAsErrors": false,
+      "differentialPackage": false
+    },
+    "portable": {
+      "artifactName": "BP-MD-RTL-Reader-${version}-Windows-Portable-multiarch.${ext}"
+    },
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown Document",
+        "description": "Markdown Document",
+        "role": "Editor",
+        "icon": "build/icons/markdown-file-icon.ico"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown Document",
+        "description": "Markdown Document",
+        "role": "Editor",
+        "icon": "build/icons/markdown-file-icon.ico"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icons/icon.png",
+      "artifactName": "BP-MD-RTL-Reader-${version}-macOS-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
+    },
+    "dmg": {
+      "title": "BP MD RTL Reader"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "Office",
+      "icon": "build/icons/icon.png",
+      "artifactName": "BP-MD-RTL-Reader-${version}-Linux-${arch}.${ext}",
+      "maintainer": "Binary Parse <noreply@binaryparse.example>",
+      "synopsis": "A markdown reader for RTL/Arabic prose",
+      "desktop": {
+        "entry": {
+          "Name": "BP MD RTL Reader",
+          "Comment": "A markdown reader that treats prose like a literary object"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@codemirror/commands": "6.10.4",
+    "@codemirror/lang-markdown": "6.5.1",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/search": "6.7.1",
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.6",
+    "@electron/asar": "3.4.1",
+    "@lezer/highlight": "1.2.3",
+    "@playwright/test": "1.61.1",
+    "@stryker-mutator/core": "9.6.1",
+    "@stryker-mutator/vitest-runner": "9.6.1",
+    "@vitest/coverage-v8": "4.1.10",
+    "axe-core": "4.12.1",
+    "dompurify": "3.4.12",
+    "electron": "42.7.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.1",
+    "eslint": "10.7.0",
+    "eslint-plugin-html": "8.1.4",
+    "eslint-plugin-no-unsanitized": "4.1.5",
+    "eslint-plugin-security": "4.0.1",
+    "fast-check": "4.9.0",
+    "highlight.js": "11.11.1",
+    "istanbul-lib-coverage": "3.2.2",
+    "istanbul-lib-report": "3.0.1",
+    "istanbul-reports": "3.2.0",
+    "jscpd": "4.2.5",
+    "jsdom": "29.1.1",
+    "katex": "0.17.0",
+    "lucide-static": "1.25.0",
+    "marked": "18.0.6",
+    "mermaid": "11.15.0",
+    "v8-to-istanbul": "9.3.0",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "fast-uri": "3.1.4",
+    "qs": "^6.15.2"
+  }
+}

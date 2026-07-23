@@ -1,0 +1,38 @@
+
+[data-theme="ink"] {
+  color-scheme: dark; /* dark native scrollbars/overscroll — fixes the white scrollbar track on scroll */
+  --paper: #16181C;
+  --paper-deep: #1E2126;
+  --paper-edge: #2A2F36;
+  --ink: #E8E2D5;
+  --ink-soft: #C4BCAB;
+  --ink-mute: #A9A08F;
+  --rule: #2F343C;
+  --accent: #D9885F;
+  --accent-fill: #984326;
+  --accent-soft: #3A2A22;
+  --hl-bg: rgba(217, 136, 95, 0.28); /* visible warm highlight on the dark canvas */
+  --gold: #D9B85C;
+  --teal: #6FB594;
+  --plum: #B582A0;
+  --statusbar-bg: var(--paper-deep);
+  --statusbar-fg: var(--ink);
+}
+
+[data-theme="sepia"] {
+  color-scheme: light;
+  --paper: #F4E8D0;
+  --paper-deep: #ECDFC0;
+  --paper-edge: #DCC9A0;
+  --ink: #3D2B14;
+  --ink-soft: #5C4424;
+  --ink-mute: #705936;
+  --rule: #C9B284;
+  --accent: #8B3F20;
+  --accent-fill: #8B3F20;
+  --accent-soft: #E8C4A0;
+  --hl-bg: rgba(168, 81, 43, 0.18);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }

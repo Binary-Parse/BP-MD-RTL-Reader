@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Strict CSP (T-B4): no inline/remote script (script-src 'self') — the XSS-relevant
+     lock for an app that renders untrusted markdown. style-src keeps 'unsafe-inline'
+     because KaTeX emits inline style= attributes in its math HTML (unavoidable). No
+     remote anything (local-first, SC2): img/font are local + data:/bpmd: only. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: bpmd: file:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>BP MD RTL Reader</title>
+<script src="theme-boot.js"></script>
+<!-- Vendored locally (T-B3): no CDN, no runtime network for the engine/sanitizer. Fonts
+     are self-hosted via @font-face in src/renderer/styles/base.css (T-B3/T1/T3). -->
+<script src="../../resources/vendor/marked/marked.umd.js"></script>
+<script src="../../resources/vendor/dompurify/purify.min.js"></script>
+<!-- Math (KaTeX) + code highlighting (highlight.js), vendored locally (T-F9): no CDN. -->
+<link rel="stylesheet" href="../../resources/vendor/katex/katex.min.css">
+<script src="../../resources/vendor/katex/katex.min.js"></script>
+<script src="../../resources/vendor/highlight/highlight.min.js"></script>
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/themes.css">
+<link rel="stylesheet" href="styles/components.css">
+<link rel="stylesheet" href="styles/responsive.css">
+</head>
+<body>
+
+<!-- Vendored Lucide icon sprite (T-F2 icon overhaul). ISC, generated from lucide-static 1.25.0 and
+     inlined as <symbol>s so the app stays 0-network + CSP-safe (no <img>/remote). Use via
+     <svg class="ic"><use href="#ic-NAME"/></svg>; stroke=currentColor inherits the button colour. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="ic-folder" viewBox="0 0 24 24">
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+    </symbol>
+    <symbol id="ic-file" viewBox="0 0 24 24">
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+    <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+    <path d="M10 9H8" />
+    <path d="M16 13H8" />
+    <path d="M16 17H8" />
+    </symbol>
+    <symbol id="ic-file-plus" viewBox="0 0 24 24">
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+    <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+    <path d="M9 15h6" />
+    <path d="M12 18v-6" />
+    </symbol>
+    <symbol id="ic-sparkles" viewBox="0 0 24 24">
+    <path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
+    <path d="M20 2v4" />
+    <path d="M22 4h-4" />
+    <circle cx="4" cy="20" r="2" />
+    </symbol>
+    <symbol id="ic-flip" viewBox="0 0 24 24">
+    <path d="M8 3 4 7l4 4" />
+    <path d="M4 7h16" />
+    <path d="m16 21 4-4-4-4" />
+    <path d="M20 17H4" />
+    </symbol>
+    <symbol id="ic-theme" viewBox="0 0 24 24">
+    <circle cx="12" cy="19" r="2" />
+    <circle cx="12" cy="5" r="2" />
+    <circle cx="16" cy="12" r="2" />
+    <circle cx="20" cy="19" r="2" />
+    <circle cx="4" cy="19" r="2" />
+    <circle cx="8" cy="12" r="2" />
+    </symbol>
+    <symbol id="ic-bold" viewBox="0 0 24 24">
+    <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />
+    </symbol>
+    <symbol id="ic-italic" viewBox="0 0 24 24">
+    <line x1="19" x2="10" y1="4" y2="4" />
+    <line x1="14" x2="5" y1="20" y2="20" />
+    <line x1="15" x2="9" y1="4" y2="20" />
+    </symbol>
+    <symbol id="ic-strike" viewBox="0 0 24 24">
+    <path d="M16 4H9a3 3 0 0 0-2.83 4" />
+    <path d="M14 12a4 4 0 0 1 0 8H6" />
+    <line x1="4" x2="20" y1="12" y2="12" />
+    </symbol>
+    <symbol id="ic-underline" viewBox="0 0 24 24">
+    <path d="M6 4v6a6 6 0 0 0 12 0V4" />
+    <line x1="4" x2="20" y1="20" y2="20" />
+    </symbol>
+    <symbol id="ic-highlighter" viewBox="0 0 24 24">
+    <path d="m9 11-6 6v3h9l3-3" />
+    <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
+    </symbol>
+    <symbol id="ic-subscript" viewBox="0 0 24 24">
+    <path d="m4 5 8 8" />
+    <path d="m12 5-8 8" />
+    <path d="M20 19h-4c0-1.5.44-2 1.5-2.5S20 15.33 20 14c0-.47-.17-.93-.48-1.29a2.11 2.11 0 0 0-2.62-.44c-.42.24-.74.62-.9 1.07" />
+    </symbol>
+    <symbol id="ic-superscript" viewBox="0 0 24 24">
+    <path d="m4 19 8-8" />
+    <path d="m12 19-8-8" />
+    <path d="M20 12h-4c0-1.5.442-2 1.5-2.5S20 8.334 20 7.002c0-.472-.17-.93-.484-1.29a2.105 2.105 0 0 0-2.617-.436c-.42.239-.738.614-.899 1.06" />
+    </symbol>
+    <symbol id="ic-eraser" viewBox="0 0 24 24">
+    <path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21" />
+    <path d="m5.082 11.09 8.828 8.828" />
+    </symbol>
+    <symbol id="ic-asterisk" viewBox="0 0 24 24">
+    <path d="M12 6v12" />
+    <path d="M17.196 9 6.804 15" />
+    <path d="m6.804 9 10.392 6" />
+    </symbol>
+    <symbol id="ic-indent-increase" viewBox="0 0 24 24">
+    <path d="M21 5H11" />
+    <path d="M21 12H11" />
+    <path d="M21 19H11" />
+    <path d="m3 8 4 4-4 4" />
+    </symbol>
+    <symbol id="ic-indent-decrease" viewBox="0 0 24 24">
+    <path d="M21 5H11" />
+    <path d="M21 12H11" />
+    <path d="M21 19H11" />
+    <path d="m7 8-4 4 4 4" />
+    </symbol>
+    <symbol id="ic-code" viewBox="0 0 24 24">
+    <path d="m16 18 6-6-6-6" />
+    <path d="m8 6-6 6 6 6" />
+    </symbol>
+    <symbol id="ic-code-block" viewBox="0 0 24 24">
+    <path d="m10 9-3 3 3 3" />
+    <path d="m14 15 3-3-3-3" />
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    </symbol>
+    <symbol id="ic-link" viewBox="0 0 24 24">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </symbol>
+    <symbol id="ic-wikilink" viewBox="0 0 24 24">
+    <path d="M16 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-3" />
+    <path d="M8 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3" />
+    </symbol>
+    <symbol id="ic-heading" viewBox="0 0 24 24">
+    <path d="M6 12h12" />
+    <path d="M6 20V4" />
+    <path d="M18 20V4" />
+    </symbol>
+    <symbol id="ic-quote" viewBox="0 0 24 24">
+    <path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z" />
+    <path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z" />
+    </symbol>
+    <symbol id="ic-callout" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+    </symbol>
+    <symbol id="ic-list" viewBox="0 0 24 24">
+    <path d="M3 5h.01" />
+    <path d="M3 12h.01" />
+    <path d="M3 19h.01" />
+    <path d="M8 5h13" />
+    <path d="M8 12h13" />
+    <path d="M8 19h13" />
+    </symbol>
+    <symbol id="ic-list-ordered" viewBox="0 0 24 24">
+    <path d="M11 5h10" />
+    <path d="M11 12h10" />
+    <path d="M11 19h10" />
+    <path d="M4 4h1v5" />
+    <path d="M4 9h2" />
+    <path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02" />
+    </symbol>
+    <symbol id="ic-list-checks" viewBox="0 0 24 24">
+    <path d="M13 5h8" />
+    <path d="M13 12h8" />
+    <path d="M13 19h8" />
+    <path d="m3 17 2 2 4-4" />
+    <path d="m3 7 2 2 4-4" />
+    </symbol>
+    <symbol id="ic-table" viewBox="0 0 24 24">
+    <path d="M12 3v18" />
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M3 15h18" />
+    </symbol>
+    <symbol id="ic-rule" viewBox="0 0 24 24">
+    <path d="M5 12h14" />
+    </symbol>
+    <symbol id="ic-image" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </symbol>
+    <symbol id="ic-math" viewBox="0 0 24 24">
+    <path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2" />
+    </symbol>
+    <symbol id="ic-chevron-down" viewBox="0 0 24 24">
+    <path d="m6 9 6 6 6-6" />
+    </symbol>
+    <symbol id="ic-calendar-plus" viewBox="0 0 24 24">
+    <path d="M16 19h6" />
+    <path d="M16 2v4" />
+    <path d="M19 16v6" />
+    <path d="M21 12.598V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8.5" />
+    <path d="M3 10h18" />
+    <path d="M8 2v4" />
+    </symbol>
+    <symbol id="ic-save" viewBox="0 0 24 24">
+    <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+    <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
+    <path d="M7 3v4a1 1 0 0 0 1 1h7" />
+    </symbol>
+    <symbol id="ic-file-code" viewBox="0 0 24 24">
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+    <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+    <path d="M10 12.5 8 15l2 2.5" />
+    <path d="m14 12.5 2 2.5-2 2.5" />
+    </symbol>
+    <symbol id="ic-printer" viewBox="0 0 24 24">
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
+    <rect x="6" y="14" width="12" height="8" rx="1" />
+    </symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24">
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+    </symbol>
+    <symbol id="ic-undo-2" viewBox="0 0 24 24">
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </symbol>
+    <symbol id="ic-redo-2" viewBox="0 0 24 24">
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
+    </symbol>
+    <symbol id="ic-scissors" viewBox="0 0 24 24">
+    <circle cx="6" cy="6" r="3" />
+    <path d="M8.12 8.12 12 12" />
+    <path d="M20 4 8.12 15.88" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M14.8 14.8 20 20" />
+    </symbol>
+    <symbol id="ic-copy" viewBox="0 0 24 24">
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </symbol>
+    <symbol id="ic-clipboard-paste" viewBox="0 0 24 24">
+    <path d="M11 14h10" />
+    <path d="M16 4h2a2 2 0 0 1 2 2v1.344" />
+    <path d="m17 18 4-4-4-4" />
+    <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" />
+    <rect x="8" y="2" width="8" height="4" rx="1" />
+    </symbol>
+    <symbol id="ic-text-select" viewBox="0 0 24 24">
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    <path d="M7 8h8" />
+    <path d="M7 12h10" />
+    <path d="M7 16h6" />
+    </symbol>
+    <symbol id="ic-search" viewBox="0 0 24 24">
+    <path d="m21 21-4.34-4.34" />
+    <circle cx="11" cy="11" r="8" />
+    </symbol>
+    <symbol id="ic-zoom-in" viewBox="0 0 24 24">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" x2="16.65" y1="21" y2="16.65" />
+    <line x1="11" x2="11" y1="8" y2="14" />
+    <line x1="8" x2="14" y1="11" y2="11" />
+    </symbol>
+    <symbol id="ic-zoom-out" viewBox="0 0 24 24">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" x2="16.65" y1="21" y2="16.65" />
+    <line x1="8" x2="14" y1="11" y2="11" />
+    </symbol>
+    <symbol id="ic-command" viewBox="0 0 24 24">
+    <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
+    </symbol>
+    <symbol id="ic-keyboard" viewBox="0 0 24 24">
+    <path d="M10 8h.01" />
+    <path d="M12 12h.01" />
+    <path d="M14 8h.01" />
+    <path d="M16 12h.01" />
+    <path d="M18 8h.01" />
+    <path d="M6 8h.01" />
+    <path d="M7 16h10" />
+    <path d="M8 12h.01" />
+    <rect width="20" height="16" x="2" y="4" rx="2" />
+    </symbol>
+    <symbol id="ic-refresh-cw" viewBox="0 0 24 24">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <path d="M8 16H3v5" />
+    </symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+    </symbol>
+    <symbol id="ic-panel-left" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M9 3v18" />
+    </symbol>
+    <symbol id="ic-panel-right" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M15 3v18" />
+    </symbol>
+    <symbol id="ic-languages" viewBox="0 0 24 24">
+    <path d="m5 8 6 6" />
+    <path d="m4 14 6-6 2-3" />
+    <path d="M2 5h12" />
+    <path d="M7 2h1" />
+    <path d="m22 22-5-10-5 10" />
+    <path d="M14 18h6" />
+    </symbol>
+    <symbol id="ic-align-justify" viewBox="0 0 24 24">
+    <path d="M3 5h18" />
+    <path d="M3 12h18" />
+    <path d="M3 19h18" />
+    </symbol>
+    <symbol id="ic-sun" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2" />
+    <path d="M12 20v2" />
+    <path d="m4.93 4.93 1.41 1.41" />
+    <path d="m17.66 17.66 1.41 1.41" />
+    <path d="M2 12h2" />
+    <path d="M20 12h2" />
+    <path d="m6.34 17.66-1.41 1.41" />
+    <path d="m19.07 4.93-1.41 1.41" />
+    </symbol>
+    <symbol id="ic-moon" viewBox="0 0 24 24">
+    <path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
+    </symbol>
+    <symbol id="ic-book-open" viewBox="0 0 24 24">
+    <path d="M12 7v14" />
+    <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+    </symbol>
+    <symbol id="ic-rotate-ccw" viewBox="0 0 24 24">
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+    </symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+
+  <!-- TITLEBAR -->
+  <div class="titlebar">
+    <div class="tb-brand">
+      <!-- Diamond drawn by .tb-brand-name::before; no duplicate glyph here (T-F10). -->
+      <span class="tb-brand-name">BP MD RTL Reader</span>
+    </div>
+
+    <div class="tb-menubar">
+      <button class="tb-menu-item" data-menu="file" data-i18n="menu.file"><u>F</u>ile</button>
+      <button class="tb-menu-item" data-menu="edit" data-i18n="menu.edit"><u>E</u>dit</button>
+      <button class="tb-menu-item" data-menu="view" data-i18n="menu.view"><u>V</u>iew</button>
+      <button class="tb-menu-item" data-menu="help" data-i18n="menu.help"><u>H</u>elp</button>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <div class="tab-list" id="tabList" role="tablist" aria-label="Open documents"></div>
+      <button class="tab-add" id="tabAddBtn" title="New tab (Ctrl+N)" aria-label="New tab">+</button>
+    </div>
+
+    <div class="tb-actions">
+      <button type="button" class="tb-search" id="searchBtn" aria-label="Search files">
+        <span style="font-family: var(--serif); font-style: italic;">⌘</span>
+        <span data-i18n="titlebar.search">Search files…</span>
+        <span class="kbd-inline">Ctrl+K</span>
+      </button>
+      <button class="tb-btn" id="viewModeBtn" title="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="true"><svg class="ic"><use href="#ic-book-open"/></svg></button>
+      <button class="tb-btn" id="rtlBtn" title="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
+      <button class="tb-btn" id="themeBtn" title="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-sun"/></svg></button>
+    </div>
+
+    <div class="win-controls">
+      <button class="win-btn" id="winMinBtn" title="Minimize" aria-label="Minimize window">
+        <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
+      </button>
+      <button class="win-btn" id="winMaxBtn" title="Maximize" aria-label="Maximize window">
+        <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+      </button>
+      <button class="win-btn close" id="winCloseBtn" title="Close" aria-label="Close window">
+        <svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- DROPDOWN MENU -->
+  <div class="dropdown" id="dropdown"></div>
+
+  <input type="file" id="fileInput" accept=".md,.markdown,text/markdown" style="display:none;" multiple>
+
+  <!-- APP BODY -->
+  <!-- Start with both side panels collapsed → clean editor-first view on first paint (no flash).
+       The renderer opens them per the persisted/default settings (browser/dev defaults to open). -->
+  <div class="app-body no-sidebar no-inspector" id="appBody">
+
+    <!-- Floating reveal strips: only visible when the matching panel is hidden -->
+    <button class="reveal-strip reveal-sidebar" id="showSidebarStrip" title="Show sidebar (Ctrl+\)">›</button>
+    <button class="reveal-strip reveal-inspector" id="showInspectorStrip" title="Show inspector (Ctrl+Shift+I)">‹</button>
+
+    <aside class="sidebar">
+      <div class="sb-header">
+        <button class="sb-icon-btn sb-toggle" id="sidebarToggleBtn" title="Hide sidebar (Ctrl+\)" aria-label="Toggle sidebar">‹</button>
+        <div class="sb-vault-name empty" id="vaultName">No folder opened</div>
+        <div class="sb-actions">
+          <button class="sb-icon-btn" id="sbOpenVaultBtn" title="Open folder…" aria-label="Open folder"><svg class="ic"><use href="#ic-folder"/></svg></button>
+          <button class="sb-icon-btn" id="sbOpenFileBtn" title="Open file…" aria-label="Open file"><svg class="ic"><use href="#ic-file"/></svg></button>
+          <button class="sb-icon-btn" id="sbNewNoteBtn" title="New note" aria-label="New note"><svg class="ic"><use href="#ic-file-plus"/></svg></button>
+        </div>
+      </div>
+
+      <div class="sb-tabs">
+        <button class="sb-tab active" data-pane="files" data-i18n="panel.files">Files</button>
+        <button class="sb-tab" data-pane="tags" data-i18n="panel.tags">Tags</button>
+        <button class="sb-tab" data-pane="search" data-i18n="panel.search">Search</button>
+      </div>
+
+      <div class="sb-content">
+        <div class="sb-pane active" data-pane="files">
+          <div class="sb-empty" id="sbEmpty">
+            <div class="ico">⌂</div>
+            <div class="ttl">No folder opened</div>
+            <p>Open a folder of <code style="font-family: var(--mono); font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px;">.md</code> files, or open a single file.</p>
+            <div class="actions">
+              <button id="emptyOpenVault"><svg class="ic"><use href="#ic-folder"/></svg> Open Folder…</button>
+              <button id="emptyOpenFile"><svg class="ic"><use href="#ic-file"/></svg> Open File…</button>
+              <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> Try Demo Notes</button>
+            </div>
+          </div>
+          <div class="tree" id="tree" role="tree" aria-label="Files" style="display: none;"></div>
+        </div>
+
+        <div class="sb-pane" data-pane="tags">
+          <div class="tags-pane" id="tagsPane">
+            <div class="search-empty">No tags yet. Open a folder to see tags.</div>
+          </div>
+        </div>
+
+        <div class="sb-pane" data-pane="search">
+          <div class="search-pane">
+            <div class="search-input-wrap">
+              <label class="visually-hidden" for="sbSearchInput">Search in all files</label>
+              <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…" data-i18n-placeholder="search.placeholder">
+            </div>
+            <div class="search-results" id="searchResults">
+              <div class="search-empty" data-i18n="search.empty">Type to search.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="editor-wrap">
+      <div class="toolbar-strip" id="toolbarStrip" style="display:none;">
+        <!-- Heading level (H1–H6) pop-down -->
+        <button class="tool-btn tool-combo" id="tbHeading" title="Heading level" aria-label="Heading level" aria-haspopup="true" aria-expanded="false">
+          <svg class="ic"><use href="#ic-heading"/></svg><svg class="ic ic-caret"><use href="#ic-chevron-down"/></svg>
+        </button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" id="tbBold" title="Bold (Ctrl+B)" aria-label="Bold"><svg class="ic"><use href="#ic-bold"/></svg></button>
+        <button class="tool-btn" id="tbItalic" title="Italic (Ctrl+I)" aria-label="Italic"><svg class="ic"><use href="#ic-italic"/></svg></button>
+        <button class="tool-btn" id="tbStrike" title="Strikethrough" aria-label="Strikethrough"><svg class="ic"><use href="#ic-strike"/></svg></button>
+        <button class="tool-btn" id="tbUnderline" title="Underline" aria-label="Underline"><svg class="ic"><use href="#ic-underline"/></svg></button>
+        <button class="tool-btn" id="tbCode" title="Inline code" aria-label="Inline code"><svg class="ic"><use href="#ic-code"/></svg></button>
+        <button class="tool-btn" id="tbHighlight" title="Highlight (==)" aria-label="Highlight"><svg class="ic"><use href="#ic-highlighter"/></svg></button>
+        <button class="tool-btn" id="tbSub" title="Subscript (~x~)" aria-label="Subscript"><svg class="ic"><use href="#ic-subscript"/></svg></button>
+        <button class="tool-btn" id="tbSup" title="Superscript (^x^)" aria-label="Superscript"><svg class="ic"><use href="#ic-superscript"/></svg></button>
+        <button class="tool-btn" id="tbClear" title="Clear formatting" aria-label="Clear formatting"><svg class="ic"><use href="#ic-eraser"/></svg></button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" id="tbLink" title="Link" aria-label="Insert link"><svg class="ic"><use href="#ic-link"/></svg></button>
+        <button class="tool-btn" id="tbWikilink" title="Wikilink" aria-label="Insert wikilink"><svg class="ic"><use href="#ic-wikilink"/></svg></button>
+        <button class="tool-btn" id="tbMath" title="Inline math (KaTeX)" aria-label="Insert inline math"><svg class="ic"><use href="#ic-math"/></svg></button>
+        <button class="tool-btn" id="tbFootnote" title="Footnote" aria-label="Insert footnote"><svg class="ic"><use href="#ic-asterisk"/></svg></button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" id="tbQuote" title="Blockquote" aria-label="Blockquote"><svg class="ic"><use href="#ic-quote"/></svg></button>
+        <button class="tool-btn" id="tbCallout" title="Callout (> [!NOTE])" aria-label="Insert callout"><svg class="ic"><use href="#ic-callout"/></svg></button>
+        <button class="tool-btn" id="tbList" title="Bulleted list" aria-label="Bulleted list"><svg class="ic"><use href="#ic-list"/></svg></button>
+        <button class="tool-btn" id="tbListOrdered" title="Numbered list" aria-label="Numbered list"><svg class="ic"><use href="#ic-list-ordered"/></svg></button>
+        <button class="tool-btn" id="tbTaskList" title="Task list" aria-label="Task list"><svg class="ic"><use href="#ic-list-checks"/></svg></button>
+        <button class="tool-btn" id="tbOutdent" title="Outdent (Shift+Tab)" aria-label="Outdent"><svg class="ic"><use href="#ic-indent-decrease"/></svg></button>
+        <button class="tool-btn" id="tbIndent" title="Indent (Tab)" aria-label="Indent"><svg class="ic"><use href="#ic-indent-increase"/></svg></button>
+        <span class="tool-divider"></span>
+        <button class="tool-btn" id="tbCodeBlock" title="Code block" aria-label="Insert code block"><svg class="ic"><use href="#ic-code-block"/></svg></button>
+        <button class="tool-btn" id="tbTable" title="Table" aria-label="Insert table"><svg class="ic"><use href="#ic-table"/></svg></button>
+        <button class="tool-btn" id="tbImage" title="Image" aria-label="Insert image"><svg class="ic"><use href="#ic-image"/></svg></button>
+        <button class="tool-btn" id="tbRule" title="Horizontal rule" aria-label="Insert horizontal rule"><svg class="ic"><use href="#ic-rule"/></svg></button>
+        <span class="tool-spacer"></span>
+        <span class="read-time" id="readTime">— min read</span>
+        <!-- Heading-level pop-down (H1–H6); toggled by #tbHeading. Fixed positioning lets it
+             escape the toolbar's horizontal-scroll clipping without changing the toolbar layout. -->
+        <div class="tool-dropdown" id="headingMenu" role="menu" aria-label="Heading level">
+          <button type="button" class="td-item" role="menuitem" data-level="1"><span class="td-h td-h1">H</span>Heading 1</button>
+          <button type="button" class="td-item" role="menuitem" data-level="2"><span class="td-h td-h2">H</span>Heading 2</button>
+          <button type="button" class="td-item" role="menuitem" data-level="3"><span class="td-h td-h3">H</span>Heading 3</button>
+          <button type="button" class="td-item" role="menuitem" data-level="4"><span class="td-h td-h4">H</span>Heading 4</button>
+          <button type="button" class="td-item" role="menuitem" data-level="5"><span class="td-h td-h5">H</span>Heading 5</button>
+          <button type="button" class="td-item" role="menuitem" data-level="6"><span class="td-h td-h6">H</span>Heading 6</button>
+        </div>
+      </div>
+      <!-- Table row/column controls — shown only while the caret is inside a table (E). -->
+      <div class="table-controls" id="tableControls" role="toolbar" aria-label="Table controls">
+        <span class="tc-label">Table</span>
+        <button class="tc-btn" id="tcRowAfter" title="Insert row below">+ Row</button>
+        <button class="tc-btn" id="tcRowDelete" title="Delete row">− Row</button>
+        <button class="tc-btn" id="tcColAfter" title="Insert column right">+ Col</button>
+        <button class="tc-btn" id="tcColDelete" title="Delete column">− Col</button>
+      </div>
+
+      <!-- EC-A2 (T-B9): disk-conflict resolve banner — lives ABOVE the editor so it stays
+           visible (the rendered #noteContent is hidden behind the CM6 surface, T-F13). -->
+      <div id="conflictBar"></div>
+
+      <div class="reader-controls" id="readerControls" hidden>
+        <button type="button" class="reader-controls-trigger" id="readerControlsButton"
+          title="Reader settings" data-i18n-title="readerControls.toggle"
+          aria-label="Reader settings" data-i18n-aria-label="readerControls.toggle"
+          aria-haspopup="dialog" aria-controls="readerControlsPopover" aria-expanded="false">Aa</button>
+        <div class="reader-controls-popover" id="readerControlsPopover" role="dialog" aria-modal="false" aria-labelledby="readerControlsTitle" hidden>
+          <div class="reader-controls-title" id="readerControlsTitle" data-i18n="readerControls.title">Reader settings</div>
+          <div class="reader-control-row">
+            <span class="reader-control-label" data-i18n="readerControls.textSize">Text size</span>
+            <div class="reader-scale-actions">
+              <button type="button" id="readerTextScaleDecrease" title="Decrease text size" data-i18n-title="readerControls.decreaseText" aria-label="Decrease text size" data-i18n-aria-label="readerControls.decreaseText">A−</button>
+              <button type="button" id="readerTextScaleReset" title="Reset text size" data-i18n-title="readerControls.resetText" aria-label="Reset text size" data-i18n-aria-label="readerControls.resetText">100%</button>
+              <button type="button" id="readerTextScaleIncrease" title="Increase text size" data-i18n-title="readerControls.increaseText" aria-label="Increase text size" data-i18n-aria-label="readerControls.increaseText">A+</button>
+            </div>
+          </div>
+          <div class="reader-control-row reader-width-row">
+            <label class="reader-control-label" id="readerWidthLabel" for="readerWidthSlider" data-i18n="readerControls.contentWidth">Content width</label>
+            <output id="readerWidthValue" for="readerWidthSlider" aria-live="polite">72ch</output>
+            <input id="readerWidthSlider" type="range" min="48" max="120" step="2" value="72" aria-labelledby="readerWidthLabel readerWidthValue">
+          </div>
+        </div>
+      </div>
+      <div class="editor-area" id="editorArea">
+        <div class="source-pane">
+          <label class="visually-hidden" for="srcTextarea">Markdown source</label>
+          <textarea class="source-textarea" id="srcTextarea" placeholder="# Start writing…"></textarea>
+        </div>
+        <div class="preview-pane">
+          <article class="editor" id="editor">
+            <div class="editor-welcome" id="welcome">
+              <div class="welcome-card">
+                <div class="logo">BP</div>
+                <h1 data-i18n-html="welcome.title">Welcome to <em>BP MD RTL Reader</em></h1>
+                <p class="lede" data-i18n-html="welcome.lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
+                <div class="welcome-actions">
+                  <button class="welcome-btn" id="wbOpenVault">
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-folder"/></svg></span><span data-i18n="welcome.openFolder">Open Folder</span><span class="wb-shortcut">Ctrl+Shift+O</span></div>
+                    <div class="wb-sub" data-i18n="welcome.openFolderSub">Pick a folder containing your markdown files.</div>
+                  </button>
+                  <button class="welcome-btn" id="wbOpenFile">
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-file"/></svg></span><span data-i18n="welcome.openFile">Open File</span><span class="wb-shortcut">Ctrl+O</span></div>
+                    <div class="wb-sub" data-i18n-html="welcome.openFileSub">Open a single <code style="font-family: var(--mono); font-size: 11px;">.md</code> file.</div>
+                  </button>
+                  <button class="welcome-btn" id="wbNewNote">
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-file-plus"/></svg></span><span data-i18n="welcome.newNote">New Note</span><span class="wb-shortcut">Ctrl+N</span></div>
+                    <div class="wb-sub" data-i18n="welcome.newNoteSub">Start a fresh note in a new tab.</div>
+                  </button>
+                  <button class="welcome-btn" id="wbLoadDemo">
+                    <div class="wb-title"><span class="wb-icon"><svg class="ic"><use href="#ic-sparkles"/></svg></span><span data-i18n="welcome.tryDemo">Try Demo</span></div>
+                    <div class="wb-sub" data-i18n="welcome.tryDemoSub">Sample notes in English and Arabic.</div>
+                  </button>
+                </div>
+                <div class="recent-list">
+                  <div class="recent-label" data-i18n="welcome.recent">Recent</div>
+                  <div class="recent-empty" id="recentEmpty" data-i18n="welcome.recentEmpty">No recent files yet.</div>
+                  <div id="recentList"></div>
+                </div>
+              </div>
+            </div>
+            <div id="noteContent" tabindex="0" aria-label="Reading view" style="display: none;"></div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Find bar -->
+      <div class="find-bar" id="findBar">
+        <label class="visually-hidden" for="findInput">Find in note</label>
+        <input type="text" id="findInput" placeholder="Find in note…" data-i18n-placeholder="find.placeholder">
+        <span class="find-info" id="findInfo">0/0</span>
+        <button class="find-btn" id="findPrevBtn" title="Previous" aria-label="Previous match" data-i18n-title="find.prev">↑</button>
+        <button class="find-btn" id="findNextBtn" title="Next" aria-label="Next match" data-i18n-title="find.next">↓</button>
+        <button class="find-btn" id="findCloseBtn" title="Close" aria-label="Close find" data-i18n-title="find.close">×</button>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <div class="insp-header">
+        <button class="sb-icon-btn insp-toggle" id="inspectorToggleBtn" title="Hide inspector (Ctrl+Shift+I)" aria-label="Toggle inspector">›</button>
+        <span class="insp-title" data-i18n="panel.inspector">Inspector</span>
+      </div>
+      <div class="insp-content">
+        <div class="insp-section">
+          <h4 data-i18n="panel.outline">Outline</h4>
+          <div id="tocList" class="toc-empty">No document opened.</div>
+        </div>
+        <div class="insp-section">
+          <h4 data-i18n="panel.properties">Properties</h4>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.file">File</span><span class="prop-val" id="propFile">—</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.words">Words</span><span class="prop-val" id="propWords">0</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.read">Read</span><span class="prop-val" id="propRead">—</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.direction">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.mode">Mode</span><span class="prop-val" id="propMode">Live</span></div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <div class="statusbar">
+    <span class="sb-stat ok" id="sbVault">no folder</span>
+    <span class="sb-stat">utf-8</span>
+    <span class="sb-stat" data-i18n="status.markdown">markdown</span>
+    <span class="sb-stat dir" id="dirIndicator">LTR</span>
+    <span class="sb-spacer"></span>
+    <span class="sb-stat" id="cursorPos">— · —</span>
+    <span class="sb-stat" id="wordCount">0 words</span>
+    <span class="sb-stat ok" id="sbSync">ready</span>
+    <span class="sb-stat" id="themeLabel">paper</span>
+  </div>
+
+  <!-- COMMAND PALETTE -->
+  <div class="palette-overlay" id="palOverlay">
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="pal-input-wrap">
+        <label class="visually-hidden" for="palInput">Command or file</label>
+        <input class="pal-input" id="palInput" role="combobox" aria-autocomplete="list" aria-controls="palResults" aria-expanded="true" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">
+      </div>
+      <div class="pal-results" id="palResults" role="listbox" aria-label="Commands and files"></div>
+      <div class="pal-footer">
+        <span><span class="kbd">↑↓</span> <span data-i18n="palette.navigate">navigate</span></span>
+        <span><span class="kbd">↵</span> <span data-i18n="palette.openHint">open</span></span>
+        <span><span class="kbd">esc</span> <span data-i18n="palette.close">close</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header">
+        <span class="modal-title" id="modalTitle">Modal</span>
+        <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
+      </div>
+      <div class="modal-body" id="modalBody" tabindex="0"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

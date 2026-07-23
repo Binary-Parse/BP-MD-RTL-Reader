@@ -210,7 +210,7 @@
     "@vitest/coverage-v8": "4.1.10",
     "axe-core": "4.12.1",
     "dompurify": "3.4.12",
-    "electron": "42.7.0",
+    "electron": "43.2.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.1",
     "eslint": "10.7.0",

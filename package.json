@@ -34,7 +34,7 @@
     "test:e2e": "playwright test --config playwright.config.js",
     "test:electron": "playwright test --config playwright.electron.config.js",
     "test:e2e:coverage": "node scripts/generate-renderer-coverage.js --run",
-    "test:smoke": "playwright test tests/smoke.spec.js",
+    "test:smoke": "playwright test tests/e2e/smoke.spec.js",
     "test:integration": "playwright test tests/integration",
     "test:update-snapshots": "playwright test --update-snapshots",
     "test:mutation": "stryker run && node scripts/check-mutation-tiers.js",

@@ -1,16 +1,16 @@
 # Privacy & Security
 
-BP MD RTL Reader is **local-first**. It is designed so your reading and writing stay
-on your own machine — and so that opening an untrusted Markdown file is safe.
+BP MD RTL Reader is **local-first**: reading and writing stay on the local machine, and
+untrusted Markdown is sanitized before it is rendered.
 
-## The short version
+## Summary
 
-- ❌ **No telemetry.** No analytics, no usage tracking, no product metrics.
-- ❌ **No accounts, no sync, no cloud.** There is nothing to sign in to.
-- ❌ **No crash upload.** Crash reporting to any remote server is explicitly disabled.
-- ❌ **No automatic update check or download.** Network access occurs only if you choose
-  **Help → Check for Updates…**; that one request is described below.
-- ✅ **Your data is yours.** Notes and settings live only on your computer.
+- **No telemetry.** No analytics, usage tracking, or product metrics.
+- **No accounts, sync, or cloud.** There is nothing to sign in to.
+- **No crash upload.** Crash reporting to any remote server is disabled.
+- **No automatic update check or download.** Network access occurs only when you choose
+  **Help → Check for Updates…**; that request is described below.
+- **Local data.** Notes and settings are stored only on the local machine.
 
 ## Where your data lives
 
@@ -23,14 +23,14 @@ on your own machine — and so that opening an untrusted Markdown file is safe.
 Both Windows installer families offer three actions before an interactive uninstall:
 
 - **Remove app only** preserves app settings and data so they are available after a
-  future reinstall. This is the safe default.
+  future reinstall. It is the default selection.
 - **Remove app and all app data** removes `%APPDATA%\bpmdrtlreader`,
   `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and
   `%LOCALAPPDATA%\BP MD RTL Reader` for the current Windows account.
 - **Cancel** exits before the uninstaller changes anything.
 
 The primary button is labeled **Uninstall** for both choices; the selected option controls
-whether app data is preserved or deleted. Silent uninstall is equally conservative:
+whether app data is preserved or deleted. Silent uninstall follows the same rule:
 `/S` preserves app data, while `/S /DELETEUSERDATA` explicitly
 requests full app-data cleanup. The electron-builder compatibility switch
 `--delete-app-data` requests the same comprehensive cleanup. Neither installer derives
@@ -54,16 +54,16 @@ holds:
   reopen them; their absolute path mapping is stored separately in `capabilities.json`.
 - **Window geometry** — the window's last size, position, and maximised state, restored
   on the next launch (clamped to a currently-visible display).
-- **Last session** — an opaque grant for the last vault plus its active relative note
-  path. On launch the app re-reads the vault from disk; it does not persist note content,
-  unsaved edits, standalone tabs, or each vault tab's open/closed state.
+- **Last session** — an opaque grant for the last folder plus its active relative note
+  path. On launch the app re-reads the folder from disk; it does not persist note content,
+  unsaved edits, standalone tabs, or each folder tab's open/closed state.
 
 The settings schema reserves a `numerals` field, but the current UI does not expose or
 apply a digit-style setting. It should not be treated as a user-visible persisted option.
 
-If this file is missing or corrupt, the app silently falls back to safe defaults — it
-never crashes and never loses your notes (your notes are separate `.md` files, untouched
-by settings). You can delete `settings.json` at any time to reset every preference.
+If this file is missing or corrupt, the app falls back to default settings. Notes are
+separate `.md` files and are not affected by settings. You can delete `settings.json` at
+any time to reset every preference.
 
 ## Diagnostic logs (local only)
 
@@ -98,8 +98,8 @@ Updates…**, the app sends an HTTPS `GET` to
 GitHub's JSON `Accept` header and a `BP-MD-RTL-Reader` User-Agent. It sends no note content,
 stored path, account identifier, or telemetry; ordinary network metadata such as IP
 address and request headers is visible to GitHub. The command reads public release
-metadata only: it neither downloads nor installs an update. On an offline machine it
-fails harmlessly and the rest of the app continues to work.
+metadata only: it neither downloads nor installs an update. On an offline machine the
+request fails and the rest of the app continues to work.
 
 ## Security model
 
@@ -114,7 +114,7 @@ BP MD RTL Reader follows current Electron hardening guidance:
 - **Sanitised output** — all rendered Markdown passes through DOMPurify, which strips
   `<script>`, event handlers, and other active content. Opening a hostile `.md` file
   cannot run code.
-- **Guarded folder reads** — when you open a vault, reads are restricted to the folder
+- **Guarded folder reads** — when you open a folder, reads are restricted to the folder
   you picked, reject UNC/network paths, reject symlinks that escape the folder, and are
   size-bounded (per-file, file-count, and cumulative caps).
 

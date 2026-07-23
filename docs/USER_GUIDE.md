@@ -1,6 +1,6 @@
 # User Guide
 
-A tour of everything **BP MD RTL Reader** can do. For the full key list see
+This guide describes the features of **BP MD RTL Reader**. For the full key list see
 [Keyboard Shortcuts](KEYBOARD_SHORTCUTS.md); for privacy details see
 [Privacy & Security](PRIVACY.md).
 
@@ -44,7 +44,7 @@ There are three ways in:
 
 - **Open a file** — `Ctrl+O`, or the **¶** button. Each file opens in its own tab;
   open as many as you like.
-- **Open a folder ("vault")** — `Ctrl+Shift+O`, or the **⌂** button. Every `.md` and
+- **Open a folder** — `Ctrl+Shift+O`, or the **⌂** button. Every `.md` and
   `.markdown` file appears in the **Files** tree, sorted alphabetically. Click any
   entry to read it.
 - **Drag & drop** — drop `.md`, `.markdown`, or `.txt` files (up to 10 MB each) onto
@@ -63,8 +63,8 @@ association during install — it opens in a new tab.
 There is a single, unified **live-preview** editor. Your text renders as you read it —
 headings, bold/italic, links, callouts, tables, math, and images all appear formatted —
 while the line your cursor is on shows the raw Markdown so you can edit it. Move the
-cursor away and that line renders too. There are no separate "source" or "split" modes
-to juggle: writing and reading are the same surface.
+cursor away and that line renders too. There are no separate source or split modes;
+writing and reading share the same surface.
 
 Use the book button or `Ctrl+E` to switch between two roles: **Reading mode** is a
 clean, read-only render with the writing toolbar hidden; **Edit mode** shows the unified
@@ -80,9 +80,9 @@ CodeMirror live-preview surface. This Reading/Edit choice is remembered globally
 
 ## Writing & formatting
 
-A formatting toolbar sits above the editor. The tools are **toggles**, not blunt inserts —
-applying a style again removes it, and switching heading level or list type *replaces*
-rather than stacks markers. With nothing selected, an inline style wraps the word under
+A formatting toolbar sits above the editor. The tools are **toggles**: applying a style
+again removes it, and switching heading level or list type *replaces* markers rather than
+stacking them. With nothing selected, an inline style wraps the word under
 the cursor; with a selection, the selection stays selected afterward. A button lights up
 when the cursor is inside that construct.
 
@@ -117,7 +117,7 @@ Sepia). Your choice is saved and restored on the next launch.
 
 ## Arabic & right-to-left
 
-BP MD RTL Reader is bilingual at its core.
+BP MD RTL Reader supports Arabic and right-to-left documents throughout.
 
 - **Automatic detection.** When you open a document whose text is predominantly
   Arabic, the layout flips to right-to-left automatically, with Arabic-aware fonts,
@@ -142,14 +142,14 @@ BP MD RTL Reader is bilingual at its core.
 - **Find in document** — `Ctrl+F` opens a find bar with a hit counter and next/previous
   navigation. Matches are highlighted in Reading mode; in Edit mode the matching text
   is selected in the live-preview editor.
-- **Command palette** — `Ctrl+K` searches every menu command *and* your open files.
-  Arrow keys to move, `Enter` to run, `Esc` to dismiss.
+- **Command palette** — `Ctrl+K` (or `Ctrl+P`) searches every menu command *and* your
+  open files. Arrow keys to move, `Enter` to run, `Esc` to dismiss.
 
 <div align="center">
 <img src="assets/command-palette.png" width="700" alt="Command palette">
 </div>
 
-- **Vault search** — the **Search** tab in the sidebar searches filenames and contents
+- **Folder search** — the **Search** tab in the sidebar searches filenames and contents
   across the open folder, showing context snippets. Click a result to open it.
 
 ---
@@ -157,7 +157,7 @@ BP MD RTL Reader is bilingual at its core.
 ## Tags & wiki-links
 
 - **Tags** — write `#tag` anywhere in a note. The **Tags** sidebar tab shows every tag
-  across the vault as a frequency-sorted cloud; click one to search for it. Tags are
+  across the open folder as a frequency-sorted cloud; click one to search for it. Tags are
   Unicode-aware, so Arabic tags like `#تأمل` work too.
 - **Wiki-links** — link between notes with `[[Note Title]]`, or use an alias with
   `[[Note Title|display text]]`. Click a link to jump to that note.
@@ -190,7 +190,7 @@ Toggle the right-hand inspector with `Ctrl+Shift+I`. It has two parts:
   isolated renderer (no network).
 
 Tabs with unsaved edits show a `●`. Closing a dirty tab, closing the native window, or
-replacing the workspace with a folder/demo/recent vault asks before discarding changes.
+replacing the workspace with another folder, the demo notes, or a recent item asks before discarding changes.
 Unsaved content is memory-only and is not part of session restore.
 
 ---
@@ -202,8 +202,8 @@ BP MD RTL Reader remembers how you left it in its local application profile:
 - **Saved across launches:** theme, editor zoom, Reading/Edit mode, sidebar/inspector
   visibility, UI language/direction, calendar, Arabic kashida and italic-color choices;
   recent files (up to five, paths and opaque grants only); and window geometry.
-- **Session restore:** for a disk-backed vault, the app remembers the vault grant and
-  active note. On launch it re-reads the current vault from disk and opens that active
+- **Session restore:** for a disk-backed folder, the app remembers the folder grant and
+  active note. On launch it re-reads the current folder from disk and opens that active
   note. Standalone files and individual tab-open/closed state are not restored.
 - **Per session only:** unsaved edits stay in memory until saved or deliberately
   discarded. They are never written into the settings profile.

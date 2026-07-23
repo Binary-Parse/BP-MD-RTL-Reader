@@ -3,7 +3,7 @@
  *
  * Reads every *.json under coverage/renderer/ (recursively). Each file is a
  * V8 coverage array as produced by page.coverage.stopJSCoverage(). Sources:
- *   - tests/coverage-collector.spec.js (the original targeted collector), and
+ *   - tests/e2e/coverage-collector.spec.js (the original targeted collector), and
  *   - the full e2e suite when run with COLLECT_RENDERER_COVERAGE=1, via the
  *     auto coverage fixture wired up in playwright.config.js (audit #11).
  *

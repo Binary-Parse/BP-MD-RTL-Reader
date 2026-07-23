@@ -6,10 +6,10 @@ This file is written for AI coding agents. It assumes you know nothing about the
 
 ## Project Overview
 
-**BP MD RTL Reader** is a local-first, bilingual Markdown reader built with Electron. It treats prose as a literary object and gives first-class support to both English (LTR) and Arabic (RTL). It opens plain `.md` files on disk — no database, no proprietary format, no cloud sync, and no telemetry.
+**BP MD RTL Reader** is a local-first, bilingual Markdown reader built with Electron. It gives first-class support to both English (LTR) and Arabic (RTL). It opens plain `.md` files on disk — no database, no proprietary format, no cloud sync, and no telemetry.
 
 Key traits you should keep in mind when editing code:
-- **Privacy-first**: no analytics, no crash upload, no auto-update phone-home.
+- **Privacy-first**: no analytics, no crash upload, no automatic update requests.
 - **Sandboxed renderer**: `contextIsolation: true`, `nodeIntegration: false`, minimal preload bridge.
 - **Bilingual by design**: automatic Arabic detection, manual direction flip, per-line bidi isolation, Arabic-aware fonts.
 - **Test-driven**: new behaviour should come with a failing test that your change turns green.
@@ -237,7 +237,7 @@ When modifying file-system access, keep these guards in place and update the cor
 - `--no-file-parallelism` is used when collecting coverage to avoid under-reporting.
 
 ### E2E tests (Playwright)
-- Located in `tests/*.spec.js` and `tests/integration/`.
+- Located in `tests/e2e/*.spec.js` and `tests/integration/`.
 - Uses Chromium only. The effective `Desktop Chrome` default is 1280×720; visual specs
   explicitly set 1440×900 before snapshots.
 - Visual-regression tests (`@visual` tag) run inside `mcr.microsoft.com/playwright:v1.61.1-jammy` so font rendering matches the committed Linux baselines.

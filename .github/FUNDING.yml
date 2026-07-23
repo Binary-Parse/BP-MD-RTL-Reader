@@ -1,0 +1,8 @@
+# Adds a "Sponsor" button to the repository.
+# Uncomment and fill in the platform(s) you use, then delete the rest.
+# Docs: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# github: [your-github-username]
+# ko_fi: your-handle
+# open_collective: your-project
+# custom: ["https://example.com/donate"]

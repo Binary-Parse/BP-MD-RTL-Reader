@@ -25,12 +25,12 @@ First public release.
 - Interactive table row/column controls and keyboard navigation between cells.
 - Callouts, KaTeX math, Mermaid diagrams, syntax-highlighted code, task lists,
   footnotes, wiki-links, tags, daily notes, demo notes, and HTML/PDF export.
-- File and vault opening with a searchable/collapsible file tree, tabs, tags,
+- File and folder opening with a searchable/collapsible file tree, tabs, tags,
   recent files, session restore, document outline, and properties inspector.
-- Command palette, find-in-document, vault search, zoom, and Live Preview, Split,
-  Source, and Reading modes.
-- Paper, Ink, Sepia, Nord, Solarized, and Midnight themes, each represented by its
-  own theme icon and remembered between sessions.
+- Command palette, find-in-document, folder search, zoom, and Reading and Edit modes for
+  the unified live-preview editor.
+- Paper, Ink, and Sepia themes, each with its own theme icon and remembered between
+  sessions.
 - Windows NSIS multi-architecture, Windows portable multi-architecture, Windows
   Inno x64, macOS x64/arm64 DMG and ZIP, and Linux x64/arm64 AppImage and DEB
   release targets.
@@ -40,8 +40,8 @@ First public release.
 ### Changed
 
 - Save writes atomically back to the original file, preserves encoding, and detects
-  conflicts instead of downloading a copy.
-- Vault images load from disk through the sandboxed `bpmd://` protocol.
+  conflicts instead of overwriting external changes.
+- Images referenced in notes load from disk through the sandboxed `bpmd://` protocol.
 - The outline navigates the editor, places the caret, and follows scrolling.
 - All renderer libraries and fonts are bundled locally. The explicit **Check for
   Updates...** action is the only opt-in network request and reads GitHub release
@@ -66,7 +66,7 @@ First public release.
   sandboxing, a minimal preload bridge, and a strict Content Security Policy.
 - Rendered Markdown is sanitized with DOMPurify; inline styles, iframes, scripts,
   event handlers, and other active content are removed.
-- Vault access is allow-listed, size-bounded, rejects network paths and symlink
+- Folder access is allow-listed, size-bounded, rejects network paths and symlink
   escapes, and uses atomic writes.
 - Release publication is gated by locked dependencies, vendored-byte and license
   verification, security lint, secret scanning, dependency audit, full unit/browser/

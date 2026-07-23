@@ -222,7 +222,7 @@ src/
   renderer/             Renderer modules — app.js, theme-boot.js, styles/, i18n, markdown, search, state, theme, edit-commands, editor/
 tests/
   unit/                 Vitest unit tests
-  *.spec.js             Playwright e2e (smoke, rtl, visual, a11y, performance, fuzz, …)
+  e2e/                  Playwright e2e specs (smoke, rtl, visual, a11y, performance, fuzz, …)
   integration/          Playwright integration tests
   installer/            Pester + Inno self-test for the installer logic
 installer/

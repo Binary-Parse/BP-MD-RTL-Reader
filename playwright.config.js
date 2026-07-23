@@ -8,7 +8,7 @@ const fs = require('fs');
 // Full-suite renderer coverage collection (audit finding #11).
 //
 // Previously the renderer V8 coverage report reflected ONLY
-// tests/coverage-collector.spec.js (~63 % stmt / ~33 % func) because that was
+// tests/e2e/coverage-collector.spec.js (~63 % stmt / ~33 % func) because that was
 // the single spec wired into `test:e2e:coverage`. Every other spec imports the
 // stock `test` from '@playwright/test' and never calls page.coverage, so their
 // exercise of index.html never reached the Istanbul report.

@@ -9,7 +9,7 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 
 | Shortcut | Action |
 | -------- | ------ |
-| `Ctrl+K` | Open the command palette (commands + open files) |
+| `Ctrl+K` / `Ctrl+P` | Open the command palette (commands + open files) |
 | `Ctrl+/` | Show the keyboard-shortcuts panel |
 | `Esc`    | Close the palette, a menu, a dialog, or the find bar |
 
@@ -18,7 +18,7 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 | Shortcut | Action |
 | -------- | ------ |
 | `Ctrl+O` | Open a single file |
-| `Ctrl+Shift+O` | Open a folder ("vault") |
+| `Ctrl+Shift+O` | Open a folder |
 | `Ctrl+N` | New note |
 | `Ctrl+Shift+N` | New daily note (`YYYY-MM-DD`) |
 | `Ctrl+S` | Save |

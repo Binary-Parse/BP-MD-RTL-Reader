@@ -1,0 +1,59 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please **do not** report security
+        vulnerabilities here — use the Security tab (private advisories) instead.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: See Help → About, or the release you downloaded.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 10/11
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If it involves a specific Markdown file, attach a minimal sample.
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I'm on the latest release
+          required: true
+        - label: I searched existing issues for a duplicate
+          required: true

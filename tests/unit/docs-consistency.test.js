@@ -46,7 +46,7 @@ describe('documentation follows executable repository truth', () => {
     const pkg = JSON.parse(read('package.json'));
     const readme = read('README.md');
     const build = read('docs/BUILD.md');
-    const contributing = read('CONTRIBUTING.md');
+    const contributing = read('.github/CONTRIBUTING.md');
     const { expectedArtifactNames } = require('../../scripts/release-artifacts.js');
     const repository = 'https://github.com/Binary-Parse/BP-MD-RTL-Reader';
 
@@ -65,7 +65,7 @@ describe('documentation follows executable repository truth', () => {
   test('documents update traffic, persistence, runner ownership, and reproducible licenses', () => {
     const privacy = read('docs/PRIVACY.md');
     const guide = read('docs/USER_GUIDE.md');
-    const contributing = read('CONTRIBUTING.md');
+    const contributing = read('.github/CONTRIBUTING.md');
     expect(privacy).toContain('api.github.com');
     expect(privacy).toContain('no note content');
     expect(privacy).toContain('Remove app only');

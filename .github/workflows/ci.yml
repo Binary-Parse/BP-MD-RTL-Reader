@@ -448,7 +448,7 @@ jobs:
         # Requires Dependency graph + GitHub Advanced Security; not available on this repo yet,
         # so don't block the PR. Re-enable enforcement (drop continue-on-error) once GHAS is on.
         continue-on-error: true
-        uses: actions/dependency-review-action@3b139cfc5fae8b618d3eae3675e383bb1769c019 # v4.5.0
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: on-failure

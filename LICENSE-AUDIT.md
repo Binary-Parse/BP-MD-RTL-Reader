@@ -8,7 +8,7 @@ _Generated: 2026-07-23_
 
 **Tooling:** `npx license-checker --json` run against the installed `node_modules` (766 third-party packages); vendored fonts reviewed by hand against the license notices shipped with them.
 
-**Runtime vs dev:** the project declares **no** runtime `dependencies` — every direct dependency is a `devDependency`, so npm classifies all 766 packages as `dev`. A subset (marked `dev (vendored->shipped)`) is bundled by esbuild into `assets/vendor/**` and ships inside the packaged app, so their (all permissive) licenses still carry redistribution obligations.
+**Runtime vs dev:** the project declares **no** runtime `dependencies` — every direct dependency is a `devDependency`, so npm classifies every dependency — all 766 installed here plus the 56 cross-platform optionals — as `dev`. A subset (marked `dev (vendored->shipped)`) is bundled by esbuild into `assets/vendor/**` and ships inside the packaged app, so their (all permissive) licenses still carry redistribution obligations.
 
 > The root project package `bpmdrtlreader@1.0.0` is the audit **subject**, not a dependency, and is excluded from the table. Its manifest declares `"license": "MIT"` and `"private": true` (never published); license-checker's default heuristic labels the private root `UNLICENSED`, which does not reflect the declared license.
 
@@ -844,7 +844,7 @@ Notes on license strings:
 
 ## Review notes (REVIEW bucket — reviewed, no replacement required)
 
-All six REVIEW items are weak / file-level copyleft (MPL-2.0) or attribution (CC-BY-4.0) licenses used purely as **dev / build / test tooling or data**. They are all open source.
+These are the **six REVIEW items installed on this host**. The full REVIEW count is 16 — the other 10 are cross-platform `lightningcss-<platform>` native binaries (same MPL-2.0, same assessment), listed under [Cross-platform optional binaries](#cross-platform-optional-native-binaries-not-installed-on-this-host). All 16 are weak / file-level copyleft (MPL-2.0) or attribution (CC-BY-4.0) licenses used purely as **dev / build / test tooling or data**. They are all open source.
 
 **Why none of their obligations trigger — verified, not assumed.** Every "no action" below rests on a single verified fact: **none of these packages are distributed.**
 

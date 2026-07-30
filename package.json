@@ -225,7 +225,7 @@
     "jscpd": "4.2.5",
     "jsdom": "29.1.1",
     "katex": "0.17.0",
-    "lucide-static": "1.25.0",
+    "lucide-static": "1.28.0",
     "marked": "18.0.6",
     "mermaid": "11.15.0",
     "v8-to-istanbul": "9.3.0",

@@ -1,0 +1,17 @@
+# Canonical author identity for local Git tooling (log, shortlog, blame).
+#
+# History carries six human-looking identities across three domains, two of
+# which are unroutable: `noreply@binaryparse.example` (RFC 2606 reserves
+# `.example`) and `codex@local`. This file unifies the human ones for display
+# only — it rewrites nothing, and it does NOT affect GitHub's contribution
+# graph, which reads the raw commit headers.
+#
+# Deliberately NOT mapped:
+#   Codex <codex@local>            — tool identity; folding it into a human
+#   Claude <noreply@anthropic.com>   author would misattribute authorship.
+#   dependabot[bot]                — bot identity.
+
+Binary-Parse <273296528+Binary-Parse@users.noreply.github.com> Ali <ali@binary-parse.com>
+Binary-Parse <273296528+Binary-Parse@users.noreply.github.com> Binary Parse Co. <ali@binary-parse.com>
+Binary-Parse <273296528+Binary-Parse@users.noreply.github.com> Info <info@binary-parse.com>
+Binary-Parse <273296528+Binary-Parse@users.noreply.github.com> Binary Parse <noreply@binaryparse.example>

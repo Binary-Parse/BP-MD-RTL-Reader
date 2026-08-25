@@ -1,0 +1,2125 @@
+/* Paint the root canvas in the theme colour and kill the white overscroll/rubber-band
+   reveal, so scrolling never flashes white behind themed surfaces (research topic 3). */
+html { background: var(--paper); overscroll-behavior: none; }
+body {
+  font-family: var(--sans);
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: #2A2620;
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none; /* T2: ship real weights/italics — never fake bold or oblique */
+  font-optical-sizing: auto; /* T6: Literata (variable opsz) adapts its cut to the font-size */
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.app {
+  width: 100%;
+  max-width: 1480px;
+  height: calc(100vh - 48px);
+  max-height: 920px;
+  background: var(--paper);
+  border-radius: 8px;
+  box-shadow: 0 40px 100px -30px rgba(0,0,0,0.5), 0 20px 40px -20px rgba(0,0,0,0.3);
+  overflow: hidden;
+  display: grid;
+  /* T-F19: both bar heights are tokens now — see base.css :root. */
+  grid-template-rows: var(--titlebar-h) 1fr var(--statusbar-h);
+  position: relative;
+}
+/* v10 redesign (2026-08-25): a themed selection wash, not the browser default. */
+.app ::selection { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+/* v10 redesign (2026-08-25): fullscreen toggle. Strips the card framing (radius,
+   size caps) that only exists for the non-Electron demo card look; a real Electron
+   window already fills its frame via html.electron .app in responsive.css, so this
+   mainly matters for the browser-lane test and any future non-Electron host. */
+.app:fullscreen {
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+.app::backdrop { background: #0F1116; }
+
+/* ============ TITLEBAR ============ */
+.titlebar {
+  background: var(--paper-deep);
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  /* v10 redesign (2026-08-25): .tb-brand is gone, so the track count drops from 6 to
+     5: lead · menubar · tabs · actions · window-controls. The <=800px override in
+     responsive.css now matches this exact count -- see its comment for why it still
+     differs on the tabs track's sizing (minmax(0, 1fr) vs 1fr here). */
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: stretch;
+  height: var(--titlebar-h);
+}
+/* T-F18: extreme-start slot for the sidebar toggle (Cursor/VS Code placement). The
+   accessible-name span for the app (v10 redesign: no painted brand mark) also lives
+   here now, invisible via .visually-hidden -- see index.html's tb-lead comment. */
+.tb-lead { display: flex; align-items: center; padding-block: 0; padding-inline: 8px 0; }
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}
+.tb-menu-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent; border: none; cursor: pointer;
+  border-radius: 3px; color: var(--ink-soft);
+  font-size: 1rem; line-height: 1;
+}
+.tb-menu-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.tb-menu-btn.open { background: var(--accent-fill); color: white; }
+
+/* v10 redesign (2026-08-25): .tb-brand and its painted diamond mark are removed --
+   .tb-brand-name now wraps only a .visually-hidden span (see index.html), so it needs
+   no visual styling of its own. */
+
+/* v10 redesign (2026-08-25): min-inline-size holds the first TAB's left edge (not
+   just the .tabs container's) at the 240px sidebar boundary -- see chrome-geometry
+   .spec.js's [v10] zoning test. Derived empirically from this app's own measured
+   .tb-lead width (35px), not copied from the reference: 240 - tbLead(35) -
+   .tabs' own padding-inline-start(4px) = 201px. */
+.tb-menubar { display: flex; align-items: stretch; padding-inline-start: 0; min-inline-size: calc(var(--sidebar-w) - var(--tb-lead-w) - 4px); }
+.tb-menu-item {
+  padding-block: 0;
+  padding-inline: 10px;
+  display: flex;
+  align-items: center;
+  font-size: var(--titlebar-font);
+  color: var(--ink-soft);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: var(--sans);
+  height: 100%;
+  /* v10: without this, RTL UI reorders "File" into "ileF" -- the menu label is Latin
+     text and must stay LTR-shaped regardless of the surrounding UI direction. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.tb-menu-item:hover, .tb-menu-item.active { background: var(--paper-edge); color: var(--ink); }
+.tb-menu-item.open-menu { background: var(--accent-fill); color: white; }
+.tb-menu-item u { text-decoration: underline; text-underline-offset: 2px; }
+
+.tabs {
+  display: flex;
+  align-items: end;
+  height: 100%;
+  /* T-F19: 35px bar - 4px = a 31px content box; .tab below is 29px. */
+  padding-block: 4px 0;
+  padding-inline-start: 4px;
+  gap: 1px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab-list { display: flex; align-items: end; gap: 1px; min-width: 0; }
+.tab {
+  padding: 6px 14px 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 200px;
+  min-width: 0;
+  position: relative;
+}
+.tab:hover { color: var(--ink); background: var(--paper-edge); }
+.tab.active {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--rule);
+  border-bottom: 1px solid var(--paper);
+  margin-bottom: -1px;
+  z-index: 1;
+  /* v10: gold top edge marks the active tab. */
+  box-shadow: inset 0 2px 0 var(--gold);
+}
+.tab-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tab .close {
+  width: 16px; height: 16px;
+  display: grid; place-items: center;
+  border-radius: 3px;
+  font-size: 0.875rem;
+  color: var(--ink-mute);
+  flex: 0 0 auto;
+}
+.tab .close:hover { background: var(--rule); color: var(--ink); }
+.tab.dirty .close { color: var(--accent); }
+.tab-add {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  background: transparent; border: none;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 1rem;
+  margin-bottom: 4px;
+  margin-inline-start: 3px;
+  flex-shrink: 0;
+}
+.tab-add:hover { background: var(--paper-edge); color: var(--ink); }
+
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-block: 0;
+  /* Trailing padding lands the first icon on the inspector's edge: --inspector-w minus
+     the window-controls and icon-cluster widths it must contain. */
+  padding-inline: 12px calc(var(--inspector-w) - var(--win-controls-w) - var(--tb-icons-w));
+}
+.tb-btn {
+  width: 27px; height: 27px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+.tb-btn:hover { background: var(--paper-edge); border-color: var(--rule); color: var(--ink); }
+.tb-btn.active { background: var(--accent-fill); color: white; border-color: var(--accent-fill); }
+/* T-F18: a collapsed panel dims its toggle. Deliberately NOT .active (accent-fill +
+   white) — panels are open most of the time, so the loud treatment would shout on the
+   default state. --ink-mute clears WCAG 1.4.11 (3:1) on --paper-deep in all three
+   themes: paper 4.82:1, ink 6.24:1, sepia 5.01:1. */
+.tb-btn[aria-expanded="false"] { color: var(--ink-mute); }
+
+.tb-search {
+  height: 28px;
+  background: color-mix(in srgb, var(--paper-edge) 42%, var(--paper));
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding-block: 0;
+  padding-inline: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  cursor: pointer;
+  width: 230px;
+}
+.tb-search:hover {
+  background: var(--paper);
+  border-color: var(--rule);
+  color: var(--ink-soft);
+  box-shadow: 0 2px 8px -3px rgba(0,0,0,.12);
+}
+.tb-search .kbd-inline {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  padding: 1px 5px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+}
+.tb-search:hover .kbd-inline { background: var(--paper-deep); }
+
+.win-controls { display: flex; height: var(--titlebar-h); }
+.win-btn {
+  width: 46px; height: var(--titlebar-h);
+  display: grid; place-items: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.win-btn svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1; }
+.win-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.win-btn.close:hover { background: var(--close-red); color: white; }
+
+/* ============ T-F19: CHROME VISIBILITY ============
+   Two independent, persisted modes carried on <html data-chrome="...">, selected with
+   ~= so they compose. The value is mirrored into localStorage and re-applied by
+   theme-boot.js before first paint -- the same split the theme already uses, with
+   settings.json remaining authoritative.
+
+   Track counts are the trap. Per CSS Grid Level 1 s6, only IN-FLOW children become grid
+   items, so `position:absolute` takes .titlebar out of the grid and the row count must
+   DROP. Zeroing the first track instead drops .app-body into a 0px row and the window
+   paints empty. `display:none` on .statusbar removes its box the same way. */
+html[data-chrome~="nostatus"] .app       { grid-template-rows: var(--titlebar-h) 1fr; }
+html[data-chrome~="nostatus"] .statusbar { display: none; }
+/* --statusbar-h still resolves to 22px with no bar left to clear, so re-derive it. */
+html[data-chrome~="nostatus"] .toast     { bottom: 24px; }
+
+html[data-chrome~="autohide"] .app { grid-template-rows: 1fr var(--statusbar-h); }
+html[data-chrome~="autohide"] .titlebar {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  /* Below .palette-overlay (100) and .modal-overlay (110): a revealed bar must never
+     paint over a dialog that owns the screen. .dropdown (200) still sits above it, so
+     an open menu keeps rendering on top of its own bar. */
+  z-index: 90;
+  transform: translateY(-100%);
+  transition: transform 0.16s ease; /* neutralised by the prefers-reduced-motion block */
+  box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.45);
+}
+/* Revealed by the hot edge, and by keyboard focus so Tab never lands on an off-screen
+   control. */
+html[data-chrome~="autohide"][data-chrome-peek] .titlebar,
+html[data-chrome~="autohide"] .titlebar:focus-within { transform: none; }
+html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows: 1fr; }
+
+/* The reveal is a pointer-POSITION check in app.js (CHROME_REVEAL_Y), not an element.
+   A strip cannot work here: it would have to out-stack the bar to escape the bar's drag
+   region, and a no-drag element permanently over the top of the bar would stop the bar
+   dragging the window. A threshold in the mousemove listener that already runs costs
+   nothing and intercepts no clicks. */
+
+/* ============ DROPDOWN MENU ============ */
+/* v10 redesign (2026-08-25): radius 6->12px, softer/deeper shadow, more breathing
+   room, and a soft --accent-soft hover instead of a solid accent-fill block. */
+.dropdown {
+  position: absolute;
+  top: var(--titlebar-h);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 28px 70px -18px rgba(0,0,0,.4), 0 4px 14px -6px rgba(0,0,0,.2);
+  min-width: 280px;
+  padding: 7px;
+  z-index: 200;
+  display: none;
+  /* At high app-wide zoom (T-T4) a tall menu must scroll inside itself, not clip
+     items past the viewport bottom. */
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+.dropdown.open { display: block; }
+
+/* v10 redesign (2026-08-25, D1): the right-click menu, drawn from main's descriptors over
+   an IPC bridge. Reuses .dd-item/.dd-icon/.dd-name/.dd-shortcut/.dd-divider so it inherits
+   the same theme tokens as the titlebar dropdowns — position: fixed (JS-set, clamped to the
+   viewport) is the only real difference from .dropdown. */
+.ctx {
+  position: fixed;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 28px 70px -18px rgba(0,0,0,.4), 0 4px 14px -6px rgba(0,0,0,.2);
+  min-width: 220px;
+  padding: 7px;
+  z-index: 500;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+.ctx[hidden] { display: none; }
+
+.dd-item {
+  display: flex;
+  align-items: center;
+  padding-block: 8px;
+  padding-inline: 32px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--ink);
+  position: relative;
+  white-space: nowrap;
+  gap: 12px;
+}
+.dd-item:hover { background: var(--accent-soft); color: var(--ink); }
+.dd-item:hover .dd-shortcut { color: var(--ink-mute); }
+.dd-item:hover .dd-icon, .dd-item:hover .dd-check { color: var(--accent); }
+.dd-item .dd-icon {
+  position: absolute;
+  inset-inline-start: 10px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.875rem;
+  color: var(--ink-mute);
+}
+/* T-F2: dropdown items now carry a vendored Lucide line-icon, not a glyph. */
+.dd-item .dd-icon .ic { width: 14px; height: 14px; display: block; }
+.dd-item .dd-check {
+  position: absolute;
+  inset-inline-start: 12px;
+  font-size: 0.75rem;
+  color: var(--accent);
+  display: none;
+}
+.dd-item.checked .dd-check { display: block; }
+.dd-item.checked .dd-icon { display: none; }
+.dd-item.disabled { color: var(--ink-mute); cursor: not-allowed; }
+.dd-item.disabled:hover { background: transparent; color: var(--ink-mute); }
+.dd-item.disabled:hover .dd-icon { color: var(--ink-mute); }
+.dd-name { flex: 1; }
+.dd-shortcut { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); }
+.dd-divider { height: 1px; background: var(--rule); margin: 6px 8px; }
+.dd-section-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: 8px 12px 4px;
+}
+
+/* ============ APP BODY ============ */
+.app-body {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr var(--inspector-w);
+  overflow: hidden;
+  background: var(--paper);
+  position: relative;
+  /* T-R7: no hard LTR lock — the chrome follows the UI direction (html[dir]). In RTL UI the
+     grid's inline axis reverses, so the sidebar's track lands on the right and the
+     inspector's track on the left (mirrored, original widths). Content/math keep dir:ltr. */
+}
+/* CSS Grid with display:none children leaves the remaining items to flow into
+   the first available columns. So the column tracks must match the count of
+   *visible* children, not the count of declared columns. */
+.app-body.no-sidebar { grid-template-columns: 1fr var(--inspector-w); }
+.app-body.no-inspector { grid-template-columns: var(--sidebar-w) 1fr; }
+.app-body.no-sidebar.no-inspector { grid-template-columns: 1fr; }
+
+/* T-F18: the floating .reveal-strip affordances were removed here — the titlebar panel
+   toggles stay visible while their panel is collapsed, so a second reveal control on the
+   editor edge was redundant. (Their rule also referenced a non-existent --ink-muted; the
+   token is --ink-mute, so the colour never applied.) */
+
+/* T-F11 / T-F18: the panel toggles point toward the panel edge. When the UI itself is RTL
+   (html[dir="rtl"] — set by R7) the .app-body grid reverses and the sidebar lands on the
+   right, so mirror the buttons to keep them pointing the right way. scaleX(-1) on the
+   button turns the panel-left icon into a panel-right shape — no second symbol needed.
+   Keep this keyed to the IDs, not the position: the buttons moved to the titlebar in
+   T-F18 and this rule survived the move untouched. */
+html[dir="rtl"] #sidebarToggleBtn,
+html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
+
+.sidebar {
+  background: var(--paper-deep);
+  border-inline-end: 1px solid var(--rule);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* v10 redesign (2026-08-25): the panel opens directly with the pane tabs now that
+     .sb-header (the vault name row) is removed. */
+  padding-top: 12px;
+}
+.app-body.no-sidebar .sidebar { display: none; }
+
+/* v10 redesign (2026-08-25): pill segments, not an underlined tab strip. JetBrains
+   Mono is reserved for code/kbd chips (never UI labels), so this moves to --sans. */
+.sb-tabs {
+  display: flex;
+  padding-block: 0;
+  padding-inline: 10px;
+  gap: 4px;
+}
+.sb-tab {
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 0.6875rem;
+  font-family: var(--sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-mute);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.sb-tab:hover { background: var(--paper-edge); color: var(--ink-soft); }
+.sb-tab.active { background: var(--accent-soft); color: var(--accent); }
+
+.sb-content { flex: 1; overflow-y: auto; padding: 6px 0; scrollbar-color: var(--rule) transparent; }
+.sb-content::-webkit-scrollbar { width: 6px; }
+.sb-content::-webkit-scrollbar-track { background: transparent; } /* else a light track renders on the dark ink surface */
+/* v10: floating-bar thumb (border + background-clip), width unchanged. */
+.sb-content::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+.sb-pane { display: none; }
+.sb-pane.active { display: block; }
+
+.sb-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--ink-mute);
+}
+.sb-empty .ico {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 2.25rem;
+  color: var(--accent);
+  opacity: 0.5;
+  margin-bottom: 12px;
+}
+.sb-empty .ttl {
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.sb-empty p { font-size: 0.75rem; line-height: 1.5; margin-bottom: 16px; }
+.sb-empty .actions { display: flex; flex-direction: column; gap: 6px; }
+.sb-empty button {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 8px 14px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+.sb-empty button:hover { background: var(--accent-fill); color: white; border-color: var(--accent-fill); }
+.sb-empty button .ic { font-family: var(--serif); font-style: italic; font-size: 0.875rem; }
+
+.tree { padding: 0 6px; }
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 5px;
+  /* v10 redesign (2026-08-25): depth comes from a custom property JS sets per row
+     (arbitrary nesting; the reference's fixed single-level 32px indent does not fit a
+     vault that can nest deeper than one level), not a literal inline pixel value. */
+  padding-inline: calc(8px + var(--tree-depth, 0) * 14px) 9px;
+  border-radius: 7px;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+.tree-node:hover { background: var(--paper-edge); color: var(--ink); }
+/* v10: a soft accent pill, not a solid accent-fill block -- the active document reads
+   as "selected", not as a loud call to action, which panels are open most of the time. */
+.tree-node.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.tree-node.active .tree-icon { color: var(--accent); opacity: 1; }
+.tree-icon {
+  font-family: var(--serif);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  width: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-name.arabic { font-family: var(--arabic); font-size: 0.8125rem; direction: rtl; text-align: end; }
+/* v10: professional-tree elbow connectors. Each indented row draws an elbow curling
+   into its own text; a row immediately followed by another indented row also draws a
+   trunk continuing the vertical line, so the guide never dangles past the last child.
+   Positioned one indent-step (14px) inside this row's own indent band, so it decorates
+   the immediate parent connection -- at depth 2+ it does not draw a full multi-level
+   rail per ancestor, matching the reference's own single-level design. All logical
+   properties, so the whole assembly mirrors under RTL for free. */
+.tree-node.tree-indent { position: relative; }
+.tree-node.tree-indent::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(8px + (var(--tree-depth, 1) - 1) * 14px + 7px);
+  top: -3px;
+  width: 7px;
+  height: calc(50% + 3px);
+  border-inline-start: 1.5px solid var(--rule);
+  border-bottom: 1.5px solid var(--rule);
+  border-end-start-radius: 6px;
+  pointer-events: none;
+}
+.tree-node.tree-indent:has(+ .tree-node.tree-indent)::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(8px + (var(--tree-depth, 1) - 1) * 14px + 7px);
+  top: 50%;
+  bottom: -2px;
+  border-inline-start: 1.5px solid var(--rule);
+  pointer-events: none;
+}
+.tree-node.tree-indent.active::after { border-color: var(--accent); }
+/* Collapsible folders (T-F1/M3): a twisty for dir rows; depth indent is set via
+   --tree-depth (see .tree-node above). */
+.tree-twisty {
+  width: 14px; flex-shrink: 0; display: grid; place-items: center;
+  font-size: 0.6875rem; color: var(--ink-mute);
+  transition: rotate 130ms ease;
+}
+/* v10: the glyph is a single unconditional down-chevron (see renderTree); rotation
+   alone encodes collapsed vs expanded, off the same aria-expanded the row already
+   sets. RTL rotates the opposite way so the twisty still points "into" the row. */
+.tree-dir[aria-expanded="false"] .tree-twisty,
+.tree-root[aria-expanded="false"] .tree-twisty { rotate: -90deg; }
+html[dir="rtl"] .tree-dir[aria-expanded="false"] .tree-twisty,
+html[dir="rtl"] .tree-root[aria-expanded="false"] .tree-twisty { rotate: 90deg; }
+.tree-dir, .tree-root { font-weight: 500; color: var(--ink); margin-top: 6px; }
+.tree-dir:hover .tree-twisty, .tree-dir:focus .tree-twisty,
+.tree-root:hover .tree-twisty, .tree-root:focus .tree-twisty { color: var(--ink); }
+/* B4 (multi-folder workspaces): a folder root reads slightly heavier than a plain
+   subfolder -- it is the thing a close button closes, so it should look like a header
+   for its subtree, not just another row. The close button mirrors .tab .close exactly. */
+.tree-root { font-weight: 600; }
+.tree-root-close {
+  width: 16px; height: 16px;
+  display: grid; place-items: center;
+  border-radius: 3px;
+  font-size: 0.875rem;
+  color: var(--ink-mute);
+  flex: 0 0 auto;
+}
+.tree-root-close:hover { background: var(--rule); color: var(--ink); }
+
+/* Tags pane */
+.tags-pane { padding: 12px 14px; }
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
+.tag {
+  font-family: var(--sans);
+  /* v10 design calls for 0.75rem (12px); kept at 0.8125rem (13px) instead — this app's
+     own AC4 acceptance criterion (adversarial-9bugs.spec.js, Issues #4/#9) requires every
+     side-panel label to stay >= 13px for readability, and that predates and overrides the
+     design's literal value. Family (mono -> Inter) is still the v10 change that matters. */
+  font-size: 0.8125rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 3px 8px;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-style: solid;
+}
+.tag:hover { border-color: var(--accent); color: var(--accent); }
+.tag.active { background: var(--accent-fill); color: white; border-color: var(--accent-fill); }
+.tag .count { opacity: 0.6; font-size: 0.6875rem; }
+
+/* Search pane */
+.search-pane { padding: 10px 12px; }
+.search-input-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+.search-input {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 7px 12px 7px 28px;
+  font-size: 0.8125rem;
+  font-family: var(--sans);
+  color: var(--ink);
+  outline: none;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.search-input::placeholder { color: var(--ink-mute); }
+.search-input-wrap::before {
+  content: '⌕';
+  position: absolute;
+  inset-inline-start: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-mute);
+  font-size: 0.875rem;
+}
+.search-results { font-size: 0.75rem; overflow-wrap: anywhere; }
+.search-result {
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--rule);
+  cursor: pointer;
+  border-radius: 4px;
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  font: inherit;
+  border-inline: 0;
+  border-top: 0;
+}
+.search-result:hover { background: var(--paper); }
+.sr-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+.sr-snip {
+  color: var(--ink-mute);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.sr-snip mark {
+  background: var(--paper-edge); /* accent text on a neutral surface → AA-compliant in dark */
+  color: var(--accent);
+  padding: 0 2px;
+  border-radius: 2px;
+  unicode-bidi: isolate;
+}
+.search-empty {
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+  font-style: italic;
+  padding: 16px 10px;
+  text-align: center;
+}
+
+/* Find bar */
+/* v10: bar radius 6->12px, input radius 4->8px. */
+.find-bar {
+  position: absolute;
+  top: 78px;
+  inset-inline-end: 290px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px -4px rgba(0,0,0,0.2);
+  padding: 8px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  z-index: 50;
+}
+.find-bar.open { display: flex; }
+.find-bar input {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  font-family: var(--sans);
+  outline: none;
+  width: 200px;
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.find-bar input:focus { border-color: var(--accent); }
+.find-bar input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.find-info { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); padding: 0 6px; }
+.find-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.6875rem;
+}
+.find-btn:hover { background: var(--paper-edge); color: var(--ink); }
+
+mark.find-hit {
+  background: #FFE082;
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.find-hit.current { background: var(--accent-fill); color: white; }
+
+/* ============ EDITOR ============ */
+/* v10 redesign (2026-08-25): a subtle tiling paper-grain texture (feTurbulence,
+   160x160) behind the reading surface -- black grain at low alpha on the light
+   themes (paper, sepia), white grain on ink so it still reads against a dark
+   ground. img-src 'self' data: already admits this (no CSP change needed). */
+.editor-wrap {
+  background-color: var(--paper);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--rule) transparent; /* standard themed scrollbar (Firefox + Chromium) */
+  display: flex;
+  flex-direction: column;
+}
+[data-theme="ink"] .editor-wrap {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.025 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* v10: 11px floating-bar scrollbars (a 3px transparent border + background-clip so
+   the thumb reads as a slim inset bar, not a flush 8px rail). */
+.editor-wrap::-webkit-scrollbar { width: 11px; }
+.editor-wrap::-webkit-scrollbar-track { background: transparent; }
+.editor-wrap::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 8px;
+}
+
+/* v10: strip 34->38px, buttons 26x26 -> 28x28, radius 4->7px. */
+.toolbar-strip {
+  height: 38px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-deep);
+  display: flex;
+  align-items: center;
+  padding-block: 0;
+  padding-inline: 18px;
+  gap: 3px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-shrink: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.toolbar-strip > * { flex-shrink: 0; }
+.tool-btn {
+  min-width: 28px; height: 28px;
+  padding: 0 6px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+}
+.tool-btn:hover { background: var(--paper-edge); color: var(--ink); }
+.tool-btn.active { background: var(--accent-fill); color: white; }
+/* Active-state: the caret is inside this construct (bold/heading/list/quote/code). Tinted, not
+   solid, so it reads as "currently applied" without looking like a pressed/disabled control. */
+.tool-btn.is-active { background: var(--accent-soft); color: var(--accent); }
+.tool-btn.is-active:hover { background: var(--accent-fill); color: white; }
+/* Table controls — a slim secondary strip revealed only when the caret is in a table. */
+.table-controls { display: none; align-items: center; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--paper-edge); background: var(--paper); }
+.table-controls.show { display: flex; }
+.table-controls .tc-label { font-size: 0.6875rem; text-transform: uppercase; color: var(--ink-mute); margin-inline-end: 4px; }
+.tc-btn { font: inherit; font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--paper-edge); border-radius: 5px; background: var(--paper-deep); color: var(--ink); cursor: pointer; }
+.tc-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 5px; }
+.tool-spacer { flex: 1; }
+
+/* ── Vendored Lucide line-icons (T-F2 icon overhaul). One base rule; size per context.
+   stroke=currentColor so each icon takes its button's text colour (incl. hover/active). */
+.ic { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.tool-btn .ic { width: 16px; height: 16px; }
+.tb-btn .ic { width: var(--titlebar-icon); height: var(--titlebar-icon); }
+.wb-icon .ic { width: 18px; height: 18px; }
+.sb-empty button .ic { width: 15px; height: 15px; }
+/* Heading button shows the heading glyph + a small caret. */
+.tool-btn.tool-combo { padding-inline: 5px; gap: 1px; grid-auto-flow: column; }
+.tool-btn.tool-combo .ic-caret { width: 11px; height: 11px; opacity: 0.6; }
+
+/* Toolbar pop-down (heading levels) — small menu anchored under its button. */
+/* v10: radius 6->10px, and a soft --accent-soft hover instead of a solid fill. */
+.tool-dropdown {
+  position: fixed;
+  top: 0;
+  inset-inline-start: 0;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px -8px rgba(0,0,0,0.25);
+  padding: 5px;
+  z-index: 60;
+  display: none;
+  min-width: 150px;
+}
+.tool-dropdown.open { display: block; }
+.tool-dropdown .td-item {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  font-family: var(--sans); font-size: 0.8125rem; color: var(--ink); white-space: nowrap;
+  width: 100%; background: transparent; border: 0; text-align: start;
+}
+.tool-dropdown .td-item:hover { background: var(--accent-soft); color: var(--ink); }
+.tool-dropdown .td-item .td-h { font-family: var(--serif); font-weight: 600; color: var(--ink-mute); width: 1.6em; }
+.tool-dropdown .td-item:hover .td-h { color: var(--accent); }
+.tool-dropdown .td-item .td-h1 { font-size: 1.35rem; }
+.tool-dropdown .td-item .td-h2 { font-size: 1.2rem; }
+.tool-dropdown .td-item .td-h3 { font-size: 1.05rem; }
+.tool-dropdown .td-item .td-h4 { font-size: 0.95rem; }
+.tool-dropdown .td-item .td-h5 { font-size: 0.875rem; }
+.tool-dropdown .td-item .td-h6 { font-size: 0.8125rem; }
+.read-time {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Editor split */
+.editor-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+/* Zoom baseline — JS overrides inline; scoped to editor+preview only */
+#editorArea { zoom: 1; }
+.source-pane, .preview-pane {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--rule) transparent;
+  min-width: 0;
+}
+.source-pane::-webkit-scrollbar, .preview-pane::-webkit-scrollbar { width: 11px; } /* v10 */
+.source-pane::-webkit-scrollbar-track, .preview-pane::-webkit-scrollbar-track { background: transparent; }
+.source-pane::-webkit-scrollbar-thumb, .preview-pane::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 8px;
+}
+.source-pane { display: none; }
+/* T-F13: CodeMirror 6 mount fills the source pane; inherit the app's mono type/colours. */
+.cm-mount { height: 100%; }
+/* T-F13 live-preview: the single CM6 surface IS the rendered reading view. So it inherits
+   the prose look of the old preview pane — paper background, sans body at reading size, a
+   centred ~800px measure — NOT a monospace source look. Headings (serif), bold/italic and
+   inline code get their type from the prose HighlightStyle in codemirror-adapter.js; only
+   the few rules below set the BASE surface. */
+.cm-mount .cm-editor { height: 100%; background: var(--paper); }
+.cm-mount .cm-scroller { font-family: var(--sans); font-size: 1.0625rem; line-height: 1.7; padding: 56px 0 120px; overscroll-behavior: contain; scrollbar-color: var(--rule) transparent; }
+.cm-mount .cm-scroller::-webkit-scrollbar { width: 11px; } /* v10 */
+.cm-mount .cm-scroller::-webkit-scrollbar-track { background: transparent; }
+.cm-mount .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 8px;
+}
+.cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
+/* Arabic lines (per-line dir from line-direction.js) take the Arabic face + looser leading. */
+.cm-mount .cm-line[dir="rtl"] { font-family: var(--arabic); line-height: 1.95; }
+.cm-mount .cm-editor.cm-focused { outline: none; }
+.cm-mount .cm-activeLine { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.cm-mount .cm-selectionBackground, .cm-mount .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* T-F13 parity: live-preview BLOCK widgets (rendered tables/math/… inline in the single CM6 surface) */
+.cm-mount .cm-lp-block { margin: 12px 0; }
+/* v10: same ledger treatment as .editor table -- no vertical borders. */
+.cm-mount .cm-lp-block table { border-collapse: collapse; width: 100%; font-size: 0.9375rem; margin: 0; }
+.cm-mount .cm-lp-block th, .cm-mount .cm-lp-block td { padding: 10px 14px; text-align: start; }
+.cm-mount .cm-lp-block th {
+  background: transparent;
+  border-bottom: 2px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-soft);
+}
+.cm-mount .cm-lp-block td { border-bottom: 1px solid var(--paper-edge); }
+.cm-mount .cm-lp-block tr:last-child td { border-bottom: none; }
+.cm-mount .cm-lp-block table[dir="rtl"] { direction: rtl; }
+/* Images must never exceed the editor column — a wide image (e.g. a chart) was overflowing the
+   pane and forcing a horizontal scrollbar. Constrain to the content width, keep aspect ratio. */
+/* v10: same rounded corners + soft shadow as #noteContent img. */
+.cm-mount .cm-content img, .cm-mount .cm-lp-block img { max-width: 100%; height: auto; border-radius: 10px; box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
+.editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
+.editor-area.source .source-pane { display: block; }
+.editor-area.source .preview-pane { display: none; }
+.editor-area.split .source-pane { flex: 1; }
+.editor-area.split .preview-pane { flex: 1; }
+/* T-F13 single live-preview mode (behind ?cm=1): the CM6 source pane IS the rendered
+   surface (its own live-preview decorations), so show it and hide the redundant markdown
+   preview. :not(.split) keeps Split View reachable via the palette/View menu. */
+.editor-area.cm-single .source-pane { display: block; flex: 1; }
+.editor-area.cm-single:not(.split) .preview-pane { display: none; }
+/* T-F13: the welcome card lives in the preview pane, which cm-single hides. When no file is
+   open, show the preview pane (welcome) and hide the empty CM6 surface instead. */
+.editor-area.cm-single.welcome .preview-pane { display: block; flex: 1; }
+.editor-area.cm-single.welcome .source-pane { display: none; }
+/* Reading (display) mode: show the clean rendered prose (#noteContent in the preview pane)
+   and hide the CM6 editor surface. Read-only, copy-clean, no markdown-on-click. */
+.editor-area.cm-single.reading .preview-pane { display: block; flex: 1; }
+.editor-area.cm-single.reading .source-pane { display: none; }
+/* A document open in ANY mode owns its measure via --reader-width (#noteContent) or
+   .cm-mount .cm-content, so the 800px document shell must not re-cap it — that throttled
+   "increase content width" past ~75ch in Reading, and left Split View and the
+   CM6-failed-to-load two-pane fallback hard-capped at 640px regardless of window size
+   (A7, v10 redesign follow-up; was scoped to .reading only). Excludes the welcome shell,
+   which keeps its own 800px measure (a view-mode class can linger while no file is open). */
+.editor-area:not(.welcome) .editor { max-width: none; }
+
+.source-textarea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+}
+.source-textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.source-textarea {
+  padding: 56px 60px 120px;
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  background: var(--paper-deep);
+  color: var(--ink);
+  display: block;
+  min-height: 100%;
+}
+
+.editor {
+  /* A7 (v10 redesign follow-up): fixed 80px inline padding taxed a fixed 160px off the
+     pane at every width, so at realistic sizes (packaged default 1280x820 with both panels
+     open: a 740px pane) it alone ate the reader's usable space before --reader-width ever
+     got a say. cqi resolves against .preview-pane / .source-pane (container-type:
+     inline-size, below), so this shrinks toward 24px on a narrow pane and caps at the old
+     80px on a wide one instead of taxing every pane equally. */
+  padding-block: 56px 120px;
+  padding-inline: clamp(24px, 6cqi, 80px);
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  font-family: var(--sans);
+  /* v10 redesign (2026-08-25): 1.0625->1.125rem / 1.7->1.8 line-height. */
+  font-size: 1.125rem;
+  line-height: 1.8;
+  color: var(--ink);
+  /* T-R7: anchor the note CONTENT to LTR independent of the UI chrome direction — so an
+     English note stays LTR even when the Arabic UI sets html[dir="rtl"]. Arabic docs flip
+     via the #editor[dir="rtl"] attribute below (set per-doc by applyBidiToNote). */
+  direction: ltr;
+}
+#editor[dir="rtl"] {
+  direction: rtl;
+  font-family: var(--arabic);
+  /* v10: 1.1875->1.25rem; line-height was already 1.95. */
+  font-size: 1.25rem;
+  line-height: 1.95;
+}
+
+/* T-R10: Arabic justification. OFF by default → RTL blocks stay RAGGED (the safe Arabic
+   default). When `.kashida` is set (View ▸ Arabic ▸ Kashida Justification, persisted),
+   RTL note blocks fill the measure via inter-character distribution — the closest CSS gets
+   to OpenType kashida in Chromium — while the last line stays ragged (text-align-last). */
+.kashida #noteContent :is(p, li)[dir="rtl"] {
+  text-align: justify;
+  text-justify: inter-character;
+  text-align-last: start;
+}
+
+.editor h1 {
+  font-family: var(--serif);
+  font-size: 2.625rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+  text-wrap: balance; /* v10 */
+}
+/* v10: the illumination rule -- a gold bar with a lapis cap, logical so it mirrors
+   under RTL for free. Never on the welcome card's h1 (a defensive rule: .welcome-card
+   sits outside .editor entirely, so this selector can never reach it today, but the
+   spec calls the exclusion out explicitly). */
+.editor h1::after {
+  content: '';
+  display: block;
+  inline-size: 60px;
+  block-size: 3px;
+  margin-block-start: 16px;
+  border-radius: 99px;
+  background: var(--gold);
+  border-inline-start: 12px solid var(--accent);
+}
+.welcome-card h1::after { content: none; }
+#editor[dir="rtl"] h1 { font-family: var(--arabic); font-weight: 700; font-size: 2.375rem; letter-spacing: 0; text-align: right; }
+
+/* v10 redesign (2026-08-25): the reference stacks three conflicting .doc-meta
+   definitions across cascade layers (font-family drifts --mono -> --sans across
+   them); this app only ever had one, so there is no conflict to resolve, but the
+   winning values still apply -- --sans w600, not JetBrains Mono (reserved for
+   code/kbd chips), tighter letter-spacing. */
+.editor .doc-meta {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  user-select: none; -webkit-user-select: none; /* T-F17: keep the note-meta chrome out of clean copies in Reading mode */
+  /* v10: no bottom border/rule -- the ◆ prefix carries the "this is metadata" signal
+     instead, margin-bottom 36->40px. */
+  margin-bottom: 40px;
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.editor .doc-meta::before { content: '◆'; color: var(--accent); font-size: 0.5rem; }
+#editor[dir="rtl"] .doc-meta { font-family: var(--arabic); letter-spacing: 0; text-transform: none; font-size: 0.75rem; text-align: right; }
+
+/* T-B9 / EC-A2: disk-conflict resolve banner + background-tab marker. The banner lives in
+   #conflictBar (above the editor); pad it only when it actually holds a banner. */
+#conflictBar:not(:empty) { padding: 16px 18px 0; flex-shrink: 0; }
+.conflict-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 24px; padding: 12px 16px;
+  background: color-mix(in srgb, var(--gold) 16%, var(--paper));
+  border: 1px solid var(--gold); border-radius: 8px;
+  font-family: var(--sans); font-size: 0.875rem; color: var(--ink);
+}
+.conflict-banner .cf-msg { flex: 1; min-width: 200px; }
+.conflict-banner .cf-btn {
+  font-family: var(--sans); font-size: 0.8125rem; padding: 5px 12px; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--paper); color: var(--ink); cursor: pointer;
+}
+.conflict-banner .cf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.conflict-banner .cf-reload { background: var(--accent); border-color: var(--accent); color: #fff; }
+.conflict-banner .cf-reload:hover { color: #fff; opacity: 0.9; }
+.tab.conflict .tab-conflict { color: var(--gold); margin-inline-end: 4px; }
+
+.editor h2 {
+  font-family: var(--serif);
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 36px 0 16px;
+  text-wrap: balance; /* v10 */
+}
+#editor[dir="rtl"] h2 { font-family: var(--arabic); font-weight: 700; font-size: 1.625rem; text-align: right; }
+
+.editor h3 {
+  font-family: var(--serif);
+  font-size: 1.375rem;
+  font-weight: 500;
+  margin: 28px 0 12px;
+  text-wrap: balance; /* v10 */
+}
+#editor[dir="rtl"] h3 { font-family: var(--arabic); font-weight: 600; text-align: right; }
+
+/* v10: 16->18px, plus text-wrap:pretty (avoids orphan words on the last line). */
+.editor p { margin-bottom: 18px; text-wrap: pretty; }
+/* v10: the paragraph immediately after the title reads as a lede, slightly larger.
+   renderReadingContent() emits .doc-meta BEFORE the parsed markdown (so .doc-meta's
+   next sibling is the H1 title, not the lede) -- h1 + p is the one that actually
+   matches a typical note; .doc-meta + p covers the rare headerless document. */
+.editor .doc-meta + p, .editor h1 + p { font-size: 1.08em; }
+.editor p em { color: var(--plum); font-style: italic; }
+/* T-F11: italic recolour is opt-OUT. With `.no-italic-recolor` set, emphasis keeps the
+   body ink colour — only the (real, T2) italic slant distinguishes it. */
+.no-italic-recolor #noteContent em { color: inherit; }
+#editor[dir="rtl"] p { text-align: right; }
+#editor[dir="rtl"] p em { font-style: normal; font-weight: 600; }
+.editor p strong { font-weight: 600; }
+/* v10 redesign (2026-08-25): a soft 45%-alpha underline at rest, full accent + a
+   tinted wash on hover -- was a solid underline and a flat --paper-edge hover fill. */
+.editor a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+/* Hover keeps the link colour and adds a visible highlight + thicker underline (don't drop to
+   body colour, which made hovered links indistinguishable in dark mode). Underline is always
+   present so links never rely on colour alone (WCAG 1.4.1). */
+.editor a:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  text-decoration-color: var(--accent);
+  border-radius: 2px;
+  text-decoration-thickness: 2px;
+}
+.editor a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+.wikilink {
+  color: var(--accent) !important;
+  /* Neutral surface (not the warm --hl-bg) so accent pill text clears WCAG AA 4.5:1 in the
+     dark theme: accent #D9885F on --paper-edge #2A2F36 = 4.9:1 (on --hl-bg it was only 4.0:1). */
+  background: var(--paper-edge);
+  /* v10 redesign (2026-08-25): radius 3->6px, padding 1px 6px -> 1px 8px. */
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none !important;
+}
+.wikilink:hover { background: var(--accent-fill); color: white !important; }
+.wikilink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Footnotes (R11): superscript refs + the end-of-document notes list. */
+.fn-ref { font-size: 0.75em; line-height: 0; }
+.fn-ref a { color: var(--accent); text-decoration: none; padding: 0 1px; }
+.fn-ref a:hover { text-decoration: underline; }
+.footnotes { margin-top: 32px; font-size: 0.9em; color: var(--ink-soft); }
+.footnotes hr { border: none; border-top: 1px solid var(--rule, rgba(0,0,0,.12)); margin: 0 0 12px; }
+.footnotes ol { padding-inline-start: 1.4em; }
+.fn-item { margin: 4px 0; }
+.fn-back { color: var(--accent); text-decoration: none; margin-inline-start: 4px; }
+.fn-back:hover { text-decoration: underline; }
+
+/* Custom inline marks — the rendered preview (#noteContent) and the CM6 editor surface
+   (.cm-* decoration classes from inline-marks-preview.js) share the same look. */
+#noteContent mark, .cm-mount .cm-hl { background: var(--hl-bg); color: inherit; padding: 0 2px; border-radius: 2px; }
+#noteContent sub, .cm-mount .cm-sub { vertical-align: sub; font-size: 0.75em; line-height: 0; }
+#noteContent sup, .cm-mount .cm-sup { vertical-align: super; font-size: 0.75em; line-height: 0; }
+#noteContent u, .cm-mount .cm-u { text-decoration: underline; }
+/* Responsive images in the rendered preview (powers outline/export) — same fix as the editor. */
+/* v10: rounded corners + a soft drop shadow, not a bare flush image. */
+#noteContent img { max-width: 100%; height: auto; border-radius: 10px; box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
+
+/* v10 redesign (2026-08-25): gold instead of accent, a tinted background, generous
+   uniform padding and rounded end corners (border-start/end-end so RTL mirrors). */
+.editor blockquote {
+  border-inline-start: 2px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 7%, transparent);
+  padding: 14px 24px;
+  margin: 26px 0;
+  border-start-end-radius: 10px;
+  border-end-end-radius: 10px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.1875rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+#editor[dir="rtl"] blockquote {
+  /* v10: symmetric padding, not padding-inline-start:0 -- the uniform 14px 24px
+     above already applies, so RTL only needs to override the face/size/leading. */
+  font-family: var(--arabic);
+  font-style: normal;
+  font-size: 1.25rem;
+  line-height: 1.9;
+}
+
+/* Per-block Arabic typography (T-R1/R3): the bidi engine marks individual blocks
+   dir="rtl" even when the editor container stays ltr (mixed AR/EN docs with no
+   manual flip). Mirror the container RTL styling onto those blocks so Arabic
+   prose keeps the Arabic face, looser leading and no letter-spacing — not only
+   when the whole editor is flipped. */
+#editor p[dir="rtl"], #editor li[dir="rtl"], #editor td[dir="rtl"], #editor th[dir="rtl"] {
+  font-family: var(--arabic);
+  line-height: 1.95;
+  letter-spacing: 0;
+}
+/* v10: per-block Arabic paragraphs/list items in a mixed document get the same
+   1.25rem body size as a whole-document RTL note, not just the looser leading --
+   table cells are excluded, since .editor table already sets its own (smaller)
+   font-size and this would have doubled it under RTL. Scaled by --reader-text-scale
+   like every other #noteContent size, so the reader zoom control still reaches it. */
+#noteContent p[dir="rtl"], #noteContent li[dir="rtl"] {
+  font-size: calc(1.25rem * var(--reader-text-scale, 1));
+}
+#editor h1[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 2.375rem; letter-spacing: 0; }
+#editor h2[dir="rtl"] { font-family: var(--arabic); font-weight: 700; font-size: 1.625rem; }
+#editor h3[dir="rtl"] { font-family: var(--arabic); font-weight: 600; }
+/* The Arabic FACE follows CONTENT (script marker), not the dir attribute, so Arabic glyphs keep the
+   Arabic font even when the user FORCES a block LTR (alignment flips; the font must not revert to
+   a Latin serif, which would mis-render Arabic). Language metadata remains author-controlled. */
+#editor [data-script="arabic"] { font-family: var(--arabic); }
+#editor blockquote[dir="rtl"] {
+  /* v10: symmetric padding already applies from the base .editor blockquote rule. */
+  font-family: var(--arabic);
+  font-style: normal;
+  font-size: 1.25rem;
+  line-height: 1.9;
+}
+
+/* Callouts (T-F14): calm, theme-aware admonitions. The tinted background uses a
+   theme var so it adapts to paper/ink/sepia; a per-type accent colours the
+   inline-start border + icon. Logical properties keep it correct in RTL. */
+/* v10 redesign (2026-08-25): radius 6->12px, and the background now tints toward
+   each callout's own colour (8% over --paper) instead of a flat --paper-deep, so
+   different callout types read as visually distinct, not just by their left rule. */
+.callout {
+  margin: 20px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--callout-color, var(--accent)) 8%, var(--paper));
+  border-inline-start: 3px solid var(--callout-color, var(--accent));
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-family: var(--sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.callout-icon { font-size: 0.9375rem; line-height: 1; flex: none; color: var(--callout-color, var(--accent)); }
+.callout-title-text { unicode-bidi: plaintext; }
+.callout-body { color: var(--ink-soft); font-size: 1rem; line-height: 1.7; }
+.callout-body > :first-child { margin-top: 0; }
+.callout-body > :last-child { margin-bottom: 0; }
+/* v10: colours now come from the shared theme tokens (so they shift per theme,
+   like everything else) instead of a fixed hex palette that never adapted to
+   paper/ink/sepia. Caution has no shared token in this app; it keeps its own
+   literal pair, matching the reference exactly. */
+.callout-note      { --callout-color: var(--accent); }
+.callout-tip       { --callout-color: var(--green); }
+.callout-important { --callout-color: var(--plum); }
+.callout-warning   { --callout-color: var(--gold); }
+.callout-caution   { --callout-color: #B25A38; }
+[data-theme="ink"] .callout-caution { --callout-color: #D98F6C; }
+.callout-info      { --callout-color: var(--teal); }
+
+.editor ul, .editor ol { padding-inline-start: 24px; margin-bottom: 16px; }
+.editor li { margin-bottom: 6px; }
+.editor li::marker { color: var(--accent); }
+
+/* v10 redesign (2026-08-25): radius 8->12px, a softened border (--rule at 70%
+   opacity rather than full strength), more generous padding. */
+.editor pre {
+  background: var(--paper-deep);
+  border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 20px 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: start;
+  color: var(--ink-soft);
+}
+.editor pre code { background: transparent; border: none; padding: 0; color: inherit; font-size: 0.8125rem; }
+
+/* Code syntax highlighting (T-F9) — theme-aware token colours (highlight.js).
+   Scoped to #editor so they out-specify `.editor pre code { color: inherit }`. */
+#editor .hljs-comment, #editor .hljs-quote { color: var(--ink-mute); font-style: italic; }
+#editor .hljs-keyword, #editor .hljs-selector-tag, #editor .hljs-type, #editor .hljs-literal { color: var(--plum); }
+#editor .hljs-string, #editor .hljs-regexp, #editor .hljs-addition { color: var(--green); }
+#editor .hljs-number, #editor .hljs-built_in, #editor .hljs-symbol { color: var(--gold); }
+#editor .hljs-title, #editor .hljs-section, #editor .hljs-name { color: var(--accent); }
+#editor .hljs-attr, #editor .hljs-attribute, #editor .hljs-variable, #editor .hljs-property, #editor .hljs-template-variable { color: var(--accent); }
+#editor .hljs-meta, #editor .hljs-tag { color: var(--ink-mute); }
+#editor .hljs-bullet, #editor .hljs-link { color: var(--accent); }
+#editor .hljs-emphasis { font-style: italic; }
+#editor .hljs-strong { font-weight: 600; }
+
+/* KaTeX math (T-F9): block centred; math is always LTR — isolated in RTL prose. */
+.math-block { display: block; text-align: center; margin: 16px 0; direction: ltr; unicode-bidi: isolate; overflow-x: auto; }
+.math-inline { direction: ltr; unicode-bidi: isolate; }
+#editor .katex { direction: ltr; }
+
+/* Mermaid diagrams (T-F16): always LTR, centred, responsive. */
+.mermaid { display: block; direction: ltr; text-align: center; margin: 20px 0; overflow-x: auto; }
+.mermaid svg { max-width: 100%; height: auto; }
+/* v10 redesign (2026-08-25): an accent-tinted chip, no border -- was a neutral
+   --paper-deep/--rule chip. */
+.editor code {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  /* Relative to the surrounding text so inline code inside a heading scales with the
+     heading (0.85em) instead of being pinned to a tiny absolute size. */
+  font-size: 0.85em;
+  color: var(--accent);
+}
+
+/* v10 redesign (2026-08-25): three gold diamonds (en-space separated) replace the
+   asterism, in --gold not --accent, no letter-spacing (the en-spaces already do the
+   job), smaller and further apart. */
+.editor hr {
+  border: none;
+  text-align: center;
+  margin: 44px 0;
+  font-family: var(--serif);
+  color: var(--gold);
+  font-style: normal;
+  font-size: 0.625rem;
+}
+.editor hr::before { content: '◆\2002\2002◆\2002\2002◆'; }
+
+/* v10 redesign (2026-08-25): ledger style -- no vertical borders anywhere, only
+   horizontal rules; font 0.875->0.9375rem. */
+.editor table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.9375rem; }
+.editor table[dir="rtl"] { direction: rtl; } /* T-R9: mirror RTL table column order */
+.editor th, .editor td { padding: 10px 14px; text-align: start; }
+.editor th:focus, .editor td:focus { outline: 2px solid var(--accent); outline-offset: -2px; } /* T-R9 traversal focus ring */
+.editor th {
+  background: transparent;
+  border-bottom: 2px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-soft);
+}
+.editor td { border-bottom: 1px solid var(--paper-edge); }
+.editor tr:last-child td { border-bottom: none; }
+.editor tbody tr:hover { background: color-mix(in srgb, var(--paper-deep) 55%, transparent); }
+/* Task 2 reader measure and text settings. Task 3 may override these without layout rewrites. */
+:root {
+  --reader-width: 72ch;
+  --reader-text-scale: 1;
+}
+
+/* The panes never own a document-wide horizontal scrollbar; breakout stays local. */
+.source-pane, .preview-pane {
+  overflow-x: hidden;
+  container-type: inline-size;
+}
+
+/* Reading text responds to the CSS scale while image and Mermaid geometry remains size-driven.
+   v10 redesign follow-up (A7): matches #noteContent's 1.125rem base (was left at the
+   pre-redesign 1.0625rem) — .cm-content's `ch`-based max-width above resolves against this
+   font, so the stale value alone made Edit measure ~6% narrower than Reading at the same
+   --reader-width setting. */
+.cm-mount .cm-scroller { font-size: calc(1.125rem * var(--reader-text-scale, 1)); }
+.cm-mount .cm-content { max-width: var(--reader-width, 72ch); }
+.cm-mount .cm-lp-block table { font-size: calc(0.9375rem * var(--reader-text-scale, 1)); }
+#noteContent {
+  width: 100%;
+  max-width: var(--reader-width, 72ch);
+  margin-inline: auto;
+  /* v10 redesign (2026-08-25): 1.0625->1.125rem, matching the base .editor above. */
+  font-size: calc(1.125rem * var(--reader-text-scale, 1));
+}
+#editor[dir="rtl"] #noteContent { font-size: calc(1.25rem * var(--reader-text-scale, 1)); }
+#noteContent table { font-size: calc(0.9375rem * var(--reader-text-scale, 1)); }
+
+/* Explicit reader hierarchy uses the same local scale; app chrome remains outside these selectors. */
+#noteContent h1 { font-size: calc(2.625rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent h1 { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
+#noteContent h2 { font-size: calc(1.75rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent h2 { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
+#noteContent h3 { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
+#noteContent .doc-meta { font-size: calc(0.6875rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent .doc-meta { font-size: calc(0.75rem * var(--reader-text-scale, 1)); }
+
+/* Fixed-size reader text keeps the local scale in mixed-direction documents. */
+#noteContent blockquote { font-size: calc(1.1875rem * var(--reader-text-scale, 1)); }
+#editor[dir="rtl"] #noteContent blockquote { font-size: calc(1.25rem * var(--reader-text-scale, 1)); }
+#noteContent h1[dir="rtl"] { font-size: calc(2.375rem * var(--reader-text-scale, 1)); }
+#noteContent h2[dir="rtl"] { font-size: calc(1.625rem * var(--reader-text-scale, 1)); }
+#noteContent h3[dir="rtl"] { font-size: calc(1.375rem * var(--reader-text-scale, 1)); }
+#noteContent blockquote[dir="rtl"] { font-size: calc(1.25rem * var(--reader-text-scale, 1)); }
+
+#noteContent .callout-title { font-size: calc(0.875rem * var(--reader-text-scale, 1)); }
+#noteContent .callout-icon { font-size: calc(0.9375rem * var(--reader-text-scale, 1)); }
+#noteContent .callout-body { font-size: calc(1rem * var(--reader-text-scale, 1)); }
+#noteContent pre { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+#noteContent pre code { font-size: calc(0.8125rem * var(--reader-text-scale, 1)); }
+#noteContent code { font-size: 0.85em; } /* em inherits the already-scaled parent (incl. headings) */
+
+/* Prose, lists, and KaTeX inherit the scaled reader text size; tables scale above. */
+
+/* A rendered table stays within the reading column and scrolls horizontally inside its
+   own frame — it never widens the pane or the window (the earlier 100cqi full-bleed
+   breakout could be positioned past the pane edge and get clipped by the pane's
+   overflow-x:hidden, hiding the table). */
+.table-frame {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 16px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--rule) transparent;
+}
+.table-frame::-webkit-scrollbar { height: 8px; }
+.table-frame::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+.table-frame:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editor .table-frame > table, .cm-mount .table-frame > table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+/* welcome */
+.editor-welcome {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 60px;
+  text-align: center;
+}
+.welcome-card { max-width: 520px; }
+.welcome-card .logo {
+  font-family: var(--serif);
+  font-size: 4rem;
+  color: var(--accent);
+  font-style: italic;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+.welcome-card h1 {
+  font-family: var(--serif);
+  font-size: 2.25rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.welcome-card h1 em { color: var(--accent); font-style: italic; }
+.welcome-card .lede {
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+.welcome-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+/* v10 redesign (2026-08-25): radius 8->12px, and the hover lifts the card with a
+   soft shadow instead of inverting it to a solid accent fill. */
+.welcome-btn {
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  padding: 16px 18px;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--sans);
+  color: var(--ink);
+  transition: transform 130ms ease, box-shadow 130ms ease, border-color 130ms ease;
+}
+.welcome-btn:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px -14px rgba(0,0,0,.3);
+}
+.welcome-btn .wb-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.welcome-btn .wb-icon {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.125rem;
+  color: var(--accent);
+}
+.welcome-btn .wb-shortcut {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+}
+.welcome-btn .wb-sub { font-size: 0.75rem; color: var(--ink-mute); line-height: 1.4; }
+
+.recent-list { border-top: 1px solid var(--rule); padding-top: 20px; text-align: start; }
+.recent-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 10px;
+}
+.recent-empty { font-size: 0.75rem; color: var(--ink-mute); font-style: italic; }
+.recent-item {
+  padding: 6px 0;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-bottom: 1px dashed var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%; background: transparent; border-inline: 0; border-top: 0;
+  text-align: start; font-family: inherit;
+}
+.recent-item:hover { color: var(--accent); }
+.recent-item .r-ic { font-family: var(--serif); font-style: italic; color: var(--accent); }
+.recent-item .r-path {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  margin-inline-start: auto;
+}
+
+/* inspector */
+.inspector {
+  background: var(--paper-deep);
+  border-inline-start: 1px solid var(--rule);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.app-body.no-inspector .inspector { display: none; }
+
+.insp-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  /* T-F18: the toggle moved to the titlebar, leaving one child. space-between with a
+     lone child silently pins it to the start, so state the alignment explicitly. */
+  justify-content: flex-start;
+  gap: 8px;
+  align-items: center;
+}
+.insp-title {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.insp-content { flex: 1; overflow-y: auto; padding: 0 0 20px; min-height: 0; scrollbar-color: var(--rule) transparent; }
+.insp-content::-webkit-scrollbar { width: 6px; }
+.insp-content::-webkit-scrollbar-track { background: transparent; }
+/* v10: floating-bar thumb (border + background-clip), width unchanged. */
+.insp-content::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+.insp-section { padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+.insp-section:last-child { border-bottom: none; }
+.insp-section h4 {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 10px;
+}
+.toc-item {
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  padding: 4px 0;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid transparent;
+  cursor: pointer;
+  line-height: 1.4;
+  display: block; width: 100%; background: transparent; border-block: 0;
+  border-inline-end: 0; text-align: start;
+}
+.toc-item:hover { color: var(--ink); border-inline-start-color: var(--ink-mute); }
+.toc-item.active { color: var(--accent); border-inline-start-color: var(--accent); font-weight: 500; }
+/* Outline depth (T-F7): h1–h6 indentation via logical padding (RTL-aware). */
+.toc-item.h1 { padding-inline-start: 12px; }
+.toc-item.h2 { padding-inline-start: 24px; font-size: 0.8125rem; }
+.toc-item.h3 { padding-inline-start: 36px; font-size: 0.78125rem; }
+.toc-item.h4 { padding-inline-start: 48px; font-size: 0.75rem; }
+.toc-item.h5 { padding-inline-start: 60px; font-size: 0.75rem; }
+.toc-item.h6 { padding-inline-start: 72px; font-size: 0.71875rem; }
+.toc-empty { font-size: 0.75rem; color: var(--ink-mute); font-style: italic; padding: 4px 0; }
+
+.prop-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--rule);
+  font-size: 0.75rem;
+  align-items: center;
+}
+.prop-row:last-child { border-bottom: none; }
+.prop-key {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+.prop-val { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* statusbar */
+/* v10 redesign (2026-08-25): integrated with the theme (--paper-deep/--ink-soft, set
+   in base.css :root) instead of an inverted dark strip regardless of theme. Font is
+   now --sans w500, not --mono -- the status bar reads as chrome text, not data. */
+.statusbar {
+  background: var(--statusbar-bg);
+  color: var(--statusbar-fg);
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  padding-block: 0;
+  padding-inline: 14px;
+  gap: 14px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: var(--statusbar-font);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.sb-spacer { flex: 1; }
+/* status-bar stats are read-only — no cursor:pointer/hover affordance (T-F10) */
+.sb-stat { display: flex; align-items: center; gap: 5px; cursor: default; opacity: 0.85; }
+.sb-stat.ok::before { content: '●'; color: var(--green); font-size: 0.6875rem; }
+/* v10: the LTR/RTL indicator in --accent. Full opacity, NOT the .sb-stat 0.85 above --
+   axe-core caught that the 85% blend against --paper-deep drags accent #35578C down
+   to an effective #516D97, only 4.3:1 (measured 2026-08-25); at full strength it
+   clears WCAG AA in all three themes (paper 5.93:1, ink 7.11:1, sepia 5.24:1). This
+   also corrects a comment that had drifted from the code: it claimed --accent while
+   the rule actually read --statusbar-fg. */
+.sb-stat.dir { color: var(--accent); font-weight: 600; opacity: 1; }
+
+/* palette */
+/* v10 redesign (2026-08-25): radius 10->16px, a deeper shadow with a faint white
+   ring (reads as a lifted glass panel), and a cooler, more neutral overlay tint. */
+.palette-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(12,14,20,.45);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+  z-index: 100;
+}
+.palette-overlay.open { display: flex; }
+.palette {
+  width: 580px;
+  max-width: 90%;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  box-shadow: 0 40px 110px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.05);
+  overflow: hidden;
+}
+.pal-input-wrap {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pal-input-wrap::before {
+  content: '⌘';
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.25rem;
+  color: var(--accent);
+}
+.pal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 1.0625rem; /* v10: 1->1.0625rem */
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.pal-input:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 3px; }
+.pal-input::placeholder { color: var(--ink-mute); }
+.pal-results { padding: 6px; max-height: 360px; overflow-y: auto; }
+.pal-item {
+  display: flex;
+  align-items: center;
+  padding: 9px 13px;
+  gap: 12px;
+  border-radius: 9px; /* v10: 5->9px */
+  cursor: pointer;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+.pal-item:hover, .pal-item.active { background: var(--accent-soft); color: var(--accent); }
+.pi-icon { font-family: var(--serif); font-style: italic; font-size: 0.875rem; color: var(--ink-mute); width: 20px; text-align: center; }
+/* T-F2: palette rows now carry a vendored Lucide line-icon, not a glyph. */
+.pal-item .pi-icon .ic { width: 14px; height: 14px; display: inline-block; vertical-align: middle; }
+.pal-item.active .pi-icon, .pal-item:hover .pi-icon { color: var(--ink); }
+.pi-name { flex: 1; font-size: 0.8125rem; color: var(--ink); }
+.pal-item.active .pi-name, .pal-item:hover .pi-name { color: var(--ink); }
+.pal-item.active .pi-meta, .pal-item:hover .pi-meta { color: var(--ink-soft); }
+/* v10: pi-meta/pal-section-label/pal-footer are UI labels, not code or kbd chips --
+   JetBrains Mono is reserved for those, so this moves to --sans. Only the .kbd
+   chips inside pal-footer keep --mono. */
+.pi-meta { font-family: var(--sans); font-weight: 500; font-size: 0.6875rem; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.06em; }
+.pi-shortcut { display: flex; gap: 3px; }
+.pi-shortcut .kbd {
+  font-family: var(--mono); font-size: 0.6875rem;
+  padding: 1px 5px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 6px; /* v10: 3->6px */
+  color: var(--ink-soft);
+  min-width: 18px;
+  text-align: center;
+}
+.pal-section-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: 8px 14px 4px;
+}
+.pal-footer {
+  padding: 9px 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-deep);
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: flex;
+  gap: 16px;
+}
+.pal-footer .kbd {
+  font-family: var(--mono); font-size: 0.6875rem;
+  padding: 1px 5px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px; /* v10: 3->6px */
+  margin-inline-end: 4px;
+}
+
+/* Modal */
+/* v10 redesign (2026-08-25): same overlay treatment as the command palette. */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(12,14,20,.45);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  box-shadow: 0 40px 110px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.05);
+  width: 600px;
+  max-width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-title {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.modal-close {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px; /* v10: 4->8px */
+  cursor: pointer;
+  color: var(--ink-mute);
+  font-size: 1rem;
+}
+.modal-close:hover { background: var(--paper-edge); color: var(--ink); border-color: var(--rule); }
+.modal-body {
+  padding: 22px;
+  overflow-y: auto;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.modal-body h3 {
+  font-family: var(--serif);
+  font-size: 1rem;
+  margin: 18px 0 10px;
+  color: var(--ink);
+}
+.modal-body h3:first-child { margin-top: 0; }
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--rule);
+  align-items: center;
+}
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-name { font-size: 0.8125rem; color: var(--ink); }
+.shortcut-keys { display: flex; gap: 3px; }
+.shortcut-keys .kbd {
+  font-family: var(--mono); font-size: 0.6875rem;
+  padding: 2px 6px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 6px; /* v10: 3->6px */
+  color: var(--ink-soft);
+  min-width: 22px;
+  text-align: center;
+}
+/* ---- T-F19 Settings dialog rows ----
+   Reuses .modal / .modal-body chrome; only the row layout below is new.
+   Colours are picked for WCAG 2.2 SC 1.4.11 (3:1 for UI-component state) in ALL THREE
+   themes, which the design prototype's choices did not clear on `ink`:
+     off track border  --ink-mute   4.82 / 6.24 / 5.01   (--rule was 1.35 / 1.29 / 1.56)
+     on  track fill    --accent     5.35 / 5.87 / 5.61   (--accent-fill was 2.43 on ink)
+     knob on/off       --paper / --ink-mute  5.84 / 6.46 / 6.11
+   measured paper / ink / sepia against --paper-deep. */
+.set-group { margin-bottom: 20px; }
+.set-group:last-child { margin-bottom: 0; }
+.set-group-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 4px;
+}
+.set-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--rule);
+}
+.set-row:last-child { border-bottom: none; }
+.set-text { flex: 1; min-width: 0; }
+.set-name { font-size: 0.8125rem; color: var(--ink); font-weight: 500; }
+.set-desc { font-size: 0.75rem; color: var(--ink-mute); line-height: 1.55; margin-top: 3px; }
+.set-desc .kbd {
+  font-family: var(--mono); font-size: 0.6875rem;
+  padding: 1px 5px; background: var(--paper-deep);
+  border: 1px solid var(--rule); border-radius: 6px; color: var(--ink-soft); /* v10: 3->6px */
+}
+/* v10: segmented control radius 6->9px, buttons 4->6px. */
+.set-seg {
+  display: flex; flex: none;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  padding: 2px; gap: 2px;
+}
+.set-seg button {
+  font: inherit; font-size: 0.75rem;
+  padding: 4px 10px; border: none; border-radius: 6px;
+  background: transparent; color: var(--ink-mute); cursor: pointer;
+}
+.set-seg button[aria-pressed="true"] { background: var(--accent); color: var(--paper); }
+.set-switch {
+  flex: none; margin-top: 2px;
+  width: 36px; height: 20px; padding: 0;
+  border: 1px solid var(--ink-mute); border-radius: 10px;
+  background: var(--paper-deep); cursor: pointer; position: relative;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.set-switch::after {
+  content: ''; position: absolute; top: 2px; inset-inline-start: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ink-mute);
+  transition: inset-inline-start 0.14s ease, background 0.14s ease;
+}
+.set-switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.set-switch[aria-checked="true"]::after { inset-inline-start: 18px; background: var(--paper); }
+.set-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.about-logo {
+  font-family: var(--serif);
+  font-size: 3.5rem;
+  color: var(--accent);
+  font-style: italic;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.about-name {
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.about-version {
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  text-align: center;
+  margin-bottom: 18px;
+  text-transform: uppercase;
+}
+.about-tagline {
+  text-align: center;
+  font-style: italic;
+  font-family: var(--serif);
+  font-size: 1rem;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+
+/* toast */
+.toast {
+  position: absolute;
+  /* T-F19: clearance is derived, not a magic 50px (= old 26px bar + 24px gap). */
+  bottom: calc(var(--statusbar-h) + 24px);
+  inset-inline-start: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px 18px;
+  border-radius: 10px; /* v10: 6->10px */
+  font-size: 0.8125rem;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 80%;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast::before { content: '✓'; color: var(--green); font-weight: 600; }
+.toast.error::before { content: '!'; color: #E27360; }
+.toast.info::before { content: 'i'; color: var(--gold); font-style: italic; font-family: var(--serif); }
+
+/* Reader controls stay with the shared content pane rather than a mode-specific toolbar. */
+.reader-controls {
+  position: sticky;
+  inset-block-start: 0.625rem;
+  z-index: 8;
+  flex: 0 0 0;
+  align-self: flex-end;
+  margin-inline-end: 1rem;
+  height: 0;
+  overflow: visible;
+}
+.reader-controls.with-toolbar { inset-block-start: 2.75rem; }
+.reader-controls-trigger {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.reader-controls-trigger:hover,
+.reader-controls-trigger[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--paper-deep); }
+.reader-controls-trigger:focus-visible,
+.reader-scale-actions button:focus-visible,
+.reader-width-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* v10: radius 8->12px, deeper/softer shadow. */
+.reader-controls-popover {
+  position: absolute;
+  inset-block-start: 2.5rem;
+  inset-inline-end: 0;
+  width: min(18rem, calc(100vw - 2rem));
+  padding: 0.875rem;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 20px 48px -16px rgba(0,0,0,.3);
+}
+.reader-controls-title { margin-block-end: 0.75rem; font-size: 0.8125rem; font-weight: 700; }
+.reader-control-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.reader-control-row + .reader-control-row { margin-block-start: 0.75rem; }
+.reader-control-label { flex: 1; min-width: 0; font-size: 0.75rem; color: var(--ink-soft); }
+.reader-scale-actions { display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: 0.375rem; overflow: hidden; }
+.reader-scale-actions button {
+  min-width: 2.25rem;
+  min-height: 1.875rem;
+  padding-inline: 0.375rem;
+  border: 0;
+  border-inline-end: 1px solid var(--rule);
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+}
+.reader-scale-actions button:last-child { border-inline-end: 0; }
+.reader-scale-actions button:hover { background: var(--accent-soft); color: var(--accent); }
+.reader-width-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.reader-width-row input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.reader-width-row output { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-mute); }
+
+/* v10 redesign (2026-08-25): a designed tooltip replaces every native title=
+   bubble. Placement: below the element, centered by default; above for the
+   status bar and reader-controls (which sit at the bottom of the app); end-
+   anchored for the window controls (which sit at the far end of the bar);
+   start-anchored in the titlebar's lead slot (which sits at the extreme start). */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  background: #23262D;
+  color: #EFEAE0;
+  font-family: var(--sans);
+  font-size: 0.71875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 5px 10px;
+  border-radius: 7px;
+  box-shadow: 0 8px 22px -6px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.07);
+  opacity: 0;
+  transition: opacity 120ms ease 350ms;
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; }
+.statusbar [data-tip]::after, .reader-controls [data-tip]::after { top: auto; bottom: calc(100% + 8px); }
+.win-controls [data-tip]::after { left: auto; inset-inline-end: 4px; transform: none; }
+.tb-lead [data-tip]::after { left: 0; transform: none; }
+
+/* v10: the tab strip's shared floating tooltip (see index.html's #floatingTip and
+   positionFloatingTip() in app.js) -- same visual language as [data-tip]::after,
+   but positioned in JS so it can escape .tabs' overflow-y: hidden clip. */
+.tab[data-tip]::after, #tabAddBtn[data-tip]::after { content: none; }
+#floatingTip {
+  position: fixed;
+  z-index: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  background: #23262D;
+  color: #EFEAE0;
+  font-family: var(--sans);
+  font-size: 0.71875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 5px 10px;
+  border-radius: 7px;
+  box-shadow: 0 8px 22px -6px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.07);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+#floatingTip.show { opacity: 1; }
+
+/* v10 redesign (2026-08-25): "one chrome voice" (design §12) — Inter for chrome LABELS,
+   JetBrains Mono reserved for keys/code/data. The first v10 pass applied this to only
+   .dd-section-label and .pal-section-label (and at the wrong letter-spacing); this
+   finishes it. Each selector's own font-family/letter-spacing/font-weight moved here so
+   the eight can't drift back apart into eight separate declarations again. */
+.insp-title, .insp-section h4, .recent-label, .pal-section-label,
+.dd-section-label, .set-group-label, .table-controls .tc-label, .about-version {
+  font-family: var(--sans); font-weight: 600; letter-spacing: 0.09em;
+}

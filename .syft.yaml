@@ -1,0 +1,12 @@
+# Syft configuration for local SBOM generation.
+#
+# Syft omits dev-scoped dependencies by default. This project declares no
+# runtime dependencies at all — the libraries that actually ship are vendored
+# into resources/vendor — so every package-lock.json entry is dev-scoped. With
+# the default, syft cataloged 1 npm component out of 855 and grype then reported
+# that near-empty SBOM as clean. Cataloging dev dependencies is what makes the
+# dependency scan mean anything here.
+#
+# Syft discovers this file at the scan root, so it must stay at the repo root.
+javascript:
+  include-dev-dependencies: true

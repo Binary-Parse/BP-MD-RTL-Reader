@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # JavaScript / npm dependencies (package.json at the repo root)
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    # Hold newly published releases back before proposing them: a compromised
+    # version is most dangerous in the window before anyone has reported it.
+    # Patches move fastest because they carry the security fixes.
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+
+  # GitHub Actions used by the workflows in .github/workflows
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - github-actions
+    # github-actions advertises no SemVer support, so it accepts default-days
+    # only; the semver-scoped keys are rejected for this ecosystem.
+    cooldown:
+      default-days: 7

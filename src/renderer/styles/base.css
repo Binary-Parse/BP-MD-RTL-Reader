@@ -1,0 +1,119 @@
+/* ── Self-hosted fonts (T-B3 / T1 / T3) ─────────────────────────────────────────
+   woff2 from @fontsource, served from resources/vendor/fonts/ — 0 runtime network (SC2).
+   Literata/Inter/JetBrains are VARIABLE fonts: one file per family covers the whole
+   weight range T1 needs (and Literata carries the optical-size axis for T6). IBM Plex
+   Sans Arabic ships as four static weights. font-synthesis:none (T2, on body) means
+   the real weights are used — the browser never fakes bold or italic. */
+@font-face {
+  font-family: 'Literata'; font-style: normal; font-weight: 200 900; font-display: swap;
+  src: url('../../../resources/vendor/fonts/literata-latin-opsz-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Literata'; font-style: italic; font-weight: 200 900; font-display: swap;
+  src: url('../../../resources/vendor/fonts/literata-latin-opsz-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url('../../../resources/vendor/fonts/inter-latin-wght-normal.woff2') format('woff2');
+}
+@font-face {
+  /* Real italic — font-synthesis:none means body <em> (Inter --sans) would otherwise
+     render upright. */
+  font-family: 'Inter'; font-style: italic; font-weight: 400 600; font-display: swap;
+  src: url('../../../resources/vendor/fonts/inter-latin-wght-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 500; font-display: swap;
+  src: url('../../../resources/vendor/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+}
+@font-face {
+  /* Real italic for code comments/emphasis (--mono). */
+  font-family: 'JetBrains Mono'; font-style: italic; font-weight: 400 500; font-display: swap;
+  src: url('../../../resources/vendor/fonts/jetbrains-mono-latin-wght-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('../../../resources/vendor/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('../../../resources/vendor/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('../../../resources/vendor/fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('../../../resources/vendor/fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2') format('woff2');
+}
+:root {
+  font-size: 16px; /* rem base for app-wide zoom (T-T4) */
+  color-scheme: light; /* paint native scrollbars/overscroll/controls light to match the theme */
+  /* v10 redesign (2026-08-25): paper palette retuned in full, incl. the accent hue
+     (rust -> lapis blue). The values below ARE the reference now — this block is the
+     single source of truth for the palette, not a copy of one. */
+  --paper: #F6F2E7;
+  --paper-deep: #EEE8D8;
+  --paper-edge: #E1D9C4;
+  --ink: #2B2620;
+  --ink-soft: #544C40;
+  /* v10's #7A7162 fails WCAG AA (3.93:1) against --paper-deep, and only clears
+     --paper at 4.29:1 (needs 4.5) — measured with axe-core 2026-08-25. Darkened to
+     the pre-redesign value, which clears both (5.04 / 4.61). */
+  --ink-mute: #6F665B;
+  --rule: #D9D0BA;
+  --accent: #35578C;
+  --accent-fill: #35578C;
+  --accent-soft: #D4DCEA;
+  /* Highlight surface for marks / wikilink pills — a translucent accent so it stays visible
+     on ANY theme background (the old solid --accent-soft vanished on the dark theme). */
+  --hl-bg: rgba(168, 132, 44, 0.20);
+  --gold: #A8842C;
+  --teal: #2D6A55;
+  --plum: #7C4A6B;
+  --green: #4E8A3F;
+  --close-red: #E81123;
+
+  /* v10 redesign: the status bar is integrated with the theme, not a dark inverted
+     strip — see components.css's .statusbar rule. */
+  --statusbar-bg: var(--paper-deep);
+  --statusbar-fg: var(--ink-soft);
+
+  /* T-F19: compact chrome scale. The title bar and status bar are the ONLY consumers —
+     the sidebar, inspector and reading area keep their own sizes deliberately, so this
+     block retunes the chrome without touching the document.
+     Text is rem so app-wide zoom (T-T4) still scales it and the 11px legibility floor
+     (T-T5) still applies; only box dimensions are px. Declared here inside :root because
+     that is the one block typography-rem.test.js strips before enforcing "no px
+     font-size" — and tests/unit/chrome-tokens.test.js re-applies the floor to the token
+     VALUES, since `font-size: var(…)` is invisible to that file's regexes.
+     v10 redesign: 35->38px / 22->24px / 0.75->0.71875rem. --titlebar-mark is
+     removed -- its sole consumer, .tb-brand-name::before (the painted diamond),
+     is removed in this same commit. */
+  --titlebar-h: 38px;
+  --titlebar-font: 0.8125rem; /* 13px */
+  --titlebar-icon: 16px;
+  --statusbar-h: 24px;
+  --statusbar-font: 0.71875rem; /* 11.5px */
+
+  /* v10 redesign follow-up: title-bar zoning tokens, so the bar's zones and the body
+     grid's panel columns can never drift apart the way a literal 201px min-inline-size
+     and a literal 280px inspector track silently did. --inspector-w is 300px, not the
+     280px .app-body used before this fix — 280px made the action cluster's first icon
+     land 19px short of the inspector's edge: the trailing content is
+     --win-controls-w + --tb-icons-w + padding = 138 + 147 + 15 = 300px, and 46px window
+     buttons (chrome-tokens.test.js pins them, the OS caption-button standard) can't be
+     shrunk to fit 280px the way the reference's assumed 38px buttons could.
+     tests/unit/chrome-zoning.test.js asserts these against the rules that consume them. */
+  --sidebar-w: 240px;
+  --inspector-w: 300px;
+  --tb-lead-w: 35px;       /* .tb-lead's 8px padding-inline-start + one 27px .tb-btn */
+  --win-controls-w: 138px; /* 3 x .win-btn's own pinned 46px width */
+  --tb-icons-w: 147px;     /* 5 x .tb-btn's 27px width + 4 x .tb-actions' 3px gap */
+
+  --serif: 'Literata', Georgia, serif;
+  --sans: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --arabic: 'IBM Plex Sans Arabic', 'Inter', sans-serif;
+}

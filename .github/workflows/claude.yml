@@ -1,0 +1,76 @@
+name: Claude
+
+on:
+  issue_comment: # name must match the event name for the if condition in the job
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+# Read-only default for any job that does not declare its own block. The claude
+# job below overrides this entirely — a job-level block replaces the workflow
+# default rather than merging with it — so this is a floor for future jobs, not
+# a restriction on that one.
+permissions:
+  contents: read
+
+jobs:
+  claude:
+    # The trust gate is repeated per branch on purpose: author_association lives
+    # on a different payload object for each event (comment / review / issue),
+    # so one shared clause would read as null — and therefore false — for the
+    # events that carry no github.event.comment, silently disabling them.
+    if: |
+      github.actor != 'claude[bot]' &&
+      github.actor != 'github-actions[bot]' &&
+      (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+      )
+    runs-on: ubuntu-latest
+    # These stay write: the action is asked to commit a fix and open a pull
+    # request, which cannot be done with read scopes. The mitigation for that
+    # authority is the author_association gate above, which decides who may
+    # invoke the job at all.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            api.anthropic.com:443
+            uploads.github.com:443
+            objects.githubusercontent.com:443
+            registry.npmjs.org:443
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run Claude Code #name: Run Claude Code Action
+        uses: anthropics/claude-code-action@af0559ee4f514d1ef21826982bed13f7edc3c35e # v1.0.178
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Respond to the @claude request in this issue or PR.
+            Investigate the codebase, implement the requested fix, and open a pull request with the change.
+            You MUST post your analysis and a summary of what you did back to the thread yourself,
+            using the gh CLI (do NOT rely on automatic comment posting):
+              - On an issue:  gh issue comment ${{ github.event.issue.number }} --body "<your update>"
+              - On a PR:      gh pr comment ${{ github.event.pull_request.number }} --body "<your update>"
+            Post a first comment acknowledging the request before you start, and a final comment with the result (including the PR link) when done.
+          claude_args: "--model claude-opus-4-8"

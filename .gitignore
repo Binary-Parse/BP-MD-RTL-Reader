@@ -1,0 +1,142 @@
+# Dependencies
+node_modules/
+
+# Node.js logs, diagnostics, and process state
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+*.pid
+*.pid.lock
+*.seed
+.node_repl_history
+
+# Build and packaging output (anchored: only the repo root, never a nested dir)
+/dist/
+/out/
+/release/
+/logs/
+/tmp/
+*.asar
+*.AppImage
+*.tgz
+
+# Coverage, reports, and mutation output
+/coverage/
+/reports/
+.nyc_output/
+.stryker-tmp/
+*.lcov
+
+# Playwright output and browser caches (unanchored: Playwright may nest these)
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+test-results.json
+# Redirected test/CI output, whatever a contributor happens to name it.
+*test-output*.txt
+*test-run*.txt
+*test-verif*.txt
+*test-verify.log
+*test_output*.txt
+act-output.txt
+
+# Local environment and secrets — these are guardrails; they are SUPPOSED to
+# never match anything. Do not prune them for being "unused".
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.p8
+*.key
+*.cer
+*.mobileprovision
+
+# Tool caches
+.cache/
+.tmp/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+.npm/
+.yarn/
+.pnp.*
+.pnpm-store/
+
+# Merge, rebase, and patch debris. The likeliest thing to be committed by
+# accident on a repo that carries several concurrent feature branches.
+*.orig
+*.rej
+*.bak
+
+# VS Code "Local History" extension
+.history/
+
+# Installer build/test scratch
+tests/installer/*.out.txt
+tests/installer/BP-MD-RTL-Reader-SelfTest.exe
+tests/installer/selftest.log
+tests/installer/selftest-result.txt
+
+# Local release manifests and checksums
+SHA256SUMS.txt
+*.source-manifest.json
+release-manifest.*
+artifact-manifest*.json
+
+# Virtual environments and local tool scratch
+.venv/
+.audit-tmp/
+.secreports/
+.binary-parse-backup/
+.playwright-mcp/
+
+# IDE and editor files
+.vscode/
+.idea/
+.vs/
+.cursor/
+*.suo
+*.njsproj
+*.sln
+*.swp
+*~
+
+# Operating-system metadata — kept: release.yml checks this repo out on
+# ubuntu-latest, windows-latest, and macos-latest.
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Local screenshot and preview scratch. Tracked documentation images live in
+# docs/assets/ and are unaffected.
+/preview-*.html
+/assets/
+
+# Local-only workspace files.
+# LICENSE-AUDIT.md is a generated dependency-licence review; the reproducible,
+# published form of it is docs/dependency-license-inventory.json.
+# tsconfig.json is stray `tsc --init` boilerplate (it still carries jsx:
+# react-jsx) — this project is plain JavaScript and no tooling consumes it.
+/LICENSE-AUDIT.md
+/tsconfig.json
+
+# Agent / assistant scratch (never published)
+.claudedoc/
+.claude/
+.superpowers/

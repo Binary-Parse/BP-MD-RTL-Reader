@@ -1,0 +1,46 @@
+
+/* v10 redesign (2026-08-25): both theme blocks retuned in full. --statusbar-bg/-fg
+   are no longer redeclared per theme -- :root's var(--paper-deep)/var(--ink-soft)
+   already resolve correctly under each theme, so a per-theme statusbar override is
+   redundant (the status bar is styled directly off the theme tokens, not off a
+   token set of its own). */
+[data-theme="ink"] {
+  color-scheme: dark; /* dark native scrollbars/overscroll — fixes the white scrollbar track on scroll */
+  --paper: #171A20;
+  --paper-deep: #1E222A;
+  --paper-edge: #2B3039;
+  --ink: #DDD7C9;
+  --ink-soft: #B9B2A1;
+  --ink-mute: #958D7C;
+  --rule: #303540;
+  --accent: #90AFDD;
+  --accent-fill: #3C5C90;
+  --accent-soft: #26334A;
+  --hl-bg: rgba(213, 180, 97, 0.24);
+  --gold: #D5B461;
+  --teal: #7CBBA0;
+  --plum: #C093B0;
+  --green: #8CC17A;
+}
+
+[data-theme="sepia"] {
+  color-scheme: light;
+  --paper: #F2E7CD;
+  --paper-deep: #EADDBB;
+  --paper-edge: #DBC898;
+  --ink: #3E2E16;
+  --ink-soft: #5F482A;
+  /* v10's #7A5F3C clears sepia --paper (4.84) but fails --paper-deep at 4.41
+     (needs 4.5) -- not caught by CI (accessibility.spec.js's full-page axe scan
+     never switches to sepia), found and fixed alongside the paper --ink-mute
+     regression, 2026-08-25. */
+  --ink-mute: #755A38;
+  --rule: #CDB584;
+  --accent: #3E5A7E;
+  --accent-fill: #3E5A7E;
+  --accent-soft: #D3D6C8;
+  --hl-bg: rgba(146, 110, 40, 0.22);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }

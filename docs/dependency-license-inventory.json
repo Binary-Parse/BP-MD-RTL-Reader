@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/dependency-license-inventory.js@1",
+  "source": "package-lock.json",
+  "sourceSha256": "9b4f0981a51fd06404d14bf78d4fa6c2890de78aa7c35356b9bbcd7315518671",
+  "lockfileVersion": 3,
+  "packageEntries": 854,
+  "uniquePackageNames": 752,
+  "missingLicenseEntries": 1,
+  "licenses": {
+    "(MIT OR CC0-1.0)": 1,
+    "(MPL-2.0 OR Apache-2.0)": 1,
+    "(WTFPL OR MIT)": 2,
+    "0BSD": 1,
+    "Apache-2.0": 42,
+    "BSD-2-Clause": 19,
+    "BSD-3-Clause": 24,
+    "BlueOak-1.0.0": 9,
+    "CC-BY-4.0": 1,
+    "CC0-1.0": 1,
+    "ISC": 96,
+    "MISSING": 1,
+    "MIT": 636,
+    "MIT-0": 2,
+    "MPL-2.0": 14,
+    "Python-2.0": 1,
+    "Unlicense": 1,
+    "WTFPL": 1,
+    "WTFPL OR ISC": 1
+  }
+}

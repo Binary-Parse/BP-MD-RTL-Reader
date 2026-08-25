@@ -1,0 +1,89 @@
+
+@media (max-width: 1100px) {
+  /* v10 redesign follow-up: one --sidebar-w override now drives both the body grid
+     below AND .tb-menubar's min-inline-size (components.css), instead of the two
+     silently disagreeing — the title bar previously kept its full-width floor while
+     the sidebar narrowed, leaving the first tab 20px past the sidebar's edge. */
+  :root { --sidebar-w: 220px; }
+  .app-body { grid-template-columns: var(--sidebar-w) 1fr 0; }
+  .app-body.no-sidebar { grid-template-columns: 1fr 0; }
+  .app-body.no-inspector { grid-template-columns: var(--sidebar-w) 1fr; }
+  .app-body.no-sidebar.no-inspector { grid-template-columns: 1fr; }
+  .inspector { display: none; }
+  /* .tb-menubar's min-inline-size floor (calc(--sidebar-w - --tb-lead-w - 4px), 181px
+     here) is a floor, not a cap — File/Edit/View/Help's natural width at the desktop
+     10px item padding exceeds it by a couple of px, leaving the tab strip just past the
+     narrowed sidebar's edge. Trimmed padding brings the natural width back under the
+     floor so it binds again. */
+  .tb-menu-item { padding-inline: 8px; }
+}
+
+@media (max-width: 800px) {
+  /* v10 redesign (2026-08-25): .tb-brand is gone at every width now, so the desktop
+     and narrow titlebars already share the same 5 visible children (T-F18's "tracks
+     must match visible children" invariant holds without a display:none rule here
+     any more). This override still exists for one reason: minmax(0, 1fr) on the
+     tabs track, not the desktop's bare 1fr -- a bare 1fr can still overflow its
+     content at narrow widths, minmax(0, 1fr) explicitly allows the tabs strip to
+     shrink below its content size instead. */
+  .titlebar { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+  .tb-search { width: 32px; justify-content: center; }
+  .tb-search > :not(:first-child) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Electron native window overrides — removes card chrome */
+html.electron body {
+  background: var(--paper);
+  overflow: hidden;
+  padding: 0;
+  display: block;
+}
+html.electron .app {
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+html.electron .titlebar {
+  -webkit-app-region: drag;
+}
+html.electron .win-btn,
+html.electron .tb-menu-item,
+html.electron .tab,
+html.electron .header-actions,
+html.electron .tb-btn,
+html.electron .tb-search,
+html.electron .tb-menu-btn,
+html.electron .tab-add,
+html.electron .ctx {
+  -webkit-app-region: no-drag;
+}
+/* T-F19: release the drag region while the bar is hidden.
+   Electron builds its Win32 drag rectangles from an element's LAYOUT box, and the
+   auto-hidden bar is still laid out across the top 35 rows -- transform only MOVES it.
+   So the band stayed a drag region, a drag region swallows every pointer event, and the
+   reveal could never fire: measured on a live window 2026-08-23, rows 0-4 answered HTTOP
+   and rows 5-10 HTCAPTION, and a real cursor swept over rows 0..30 revealed the bar
+   exactly never. Take the region back the moment the bar is actually on screen, so a
+   revealed bar still drags the window. */
+html.electron[data-chrome~="autohide"] .titlebar {
+  -webkit-app-region: no-drag;
+}
+html.electron[data-chrome~="autohide"][data-chrome-peek] .titlebar,
+html.electron[data-chrome~="autohide"] .titlebar:focus-within {
+  -webkit-app-region: drag;
+}

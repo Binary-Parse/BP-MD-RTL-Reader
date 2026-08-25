@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "reviewedAtCommit": "60278b9",
+  "expectedTotal": 194,
+  "fingerprintSha256": "722853618e4e051dc1f6790ce3f6e81816248d14f7b551ff0d290a6ce9d02b8a",
+  "countsByRule": {
+    "no-unsanitized/property": 20,
+    "security/detect-non-literal-fs-filename": 74,
+    "security/detect-non-literal-regexp": 5,
+    "security/detect-object-injection": 85,
+    "security/detect-unsafe-regex": 10
+  }
+}

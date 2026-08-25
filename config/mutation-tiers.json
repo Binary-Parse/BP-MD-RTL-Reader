@@ -1,0 +1,68 @@
+{
+  "T1": {
+    "minimum": 85,
+    "files": [
+      "src/main/index.js",
+      "src/preload/index.js",
+      "src/main/main-logic.js",
+      "src/main/capabilities.js",
+      "src/main/context-menu.js",
+      "src/main/document-store.js",
+      "src/main/ipc-controller.js",
+      "src/main/navigation.js",
+      "src/main/protocol.js",
+      "src/main/protocol-controller.js",
+      "src/main/settings.js",
+      "src/main/window-controller.js",
+      "src/main/github-tls.js",
+      "src/renderer/markdown/trusted.js",
+      "src/renderer/trusted-types-policy.js"
+    ]
+  },
+  "T2": {
+    "minimum": 75,
+    "files": [
+      "src/main/version.js",
+      "src/renderer/bidi.js",
+      "src/renderer/bidi-dom.js",
+      "src/renderer/markdown/callouts.js",
+      "src/renderer/markdown/export.js",
+      "src/renderer/markdown/frontmatter.js",
+      "src/renderer/markdown/highlight.js",
+      "src/renderer/i18n.js",
+      "src/renderer/locale-logic.js",
+      "src/renderer/limits.js",
+      "src/renderer/markdown/markdown.js",
+      "src/renderer/markdown/math.js",
+      "src/renderer/markdown/mermaid.js",
+      "src/renderer/components/search.js",
+      "src/renderer/components/settings-controller.js",
+      "src/renderer/session.js",
+      "src/renderer/components/table-edit.js",
+      "src/renderer/components/tree.js",
+      "src/renderer/components/workspace-controller.js"
+    ]
+  },
+  "T3": {
+    "minimum": 60,
+    "files": [
+      "src/renderer/dates.js",
+      "src/renderer/editor/edit-commands.js",
+      "src/renderer/file-predicates.js",
+      "src/renderer/components/focus.js",
+      "src/renderer/markdown/footnotes.js",
+      "src/renderer/components/outline.js",
+      "src/renderer/state.js",
+      "src/renderer/components/tags.js",
+      "src/renderer/theme.js",
+      "src/renderer/editor/block-preview.js",
+      "src/renderer/editor/inline-marks-preview.js",
+      "src/renderer/editor/line-direction.js",
+      "src/renderer/editor/list-continuation.js",
+      "src/renderer/editor/live-preview.js",
+      "src/renderer/editor/math-preview.js",
+      "src/renderer/editor/syntax-guards.js",
+      "src/renderer/editor/wikilink-preview.js"
+    ]
+  }
+}

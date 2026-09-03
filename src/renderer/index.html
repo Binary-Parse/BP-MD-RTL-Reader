@@ -672,6 +672,11 @@
             <div id="noteContent" tabindex="0" aria-label="Reading view" style="display: none;"></div>
           </article>
         </div>
+        <!-- v1.2.2: empty-note hint. Pure DOM overlay — the document itself starts empty,
+            so a saved untouched note writes no placeholder text to disk. Lives on
+            #editorArea (toggled via .doc-empty) so it overlays whichever surface is active
+            — classic textarea, Live preview, Reading, or the opt-in CM6 editor. -->
+        <div class="editor-empty-hint" dir="auto" aria-hidden="true" data-i18n="editor.emptyHint">Start writing…</div>
       </div>
 
       <!-- Find bar -->

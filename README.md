@@ -9,7 +9,7 @@ first-class right-to-left support for Arabic.**
 
 Opens plain `.md` files from disk. No proprietary format, no account, no telemetry.
 
-[![Version](https://img.shields.io/badge/version-1.2.1-3ddc4a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.2-3ddc4a)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-47848F)](#download)
 [![License](https://img.shields.io/badge/license-MIT-3ddc4a)](LICENSE)
 [![Built with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)

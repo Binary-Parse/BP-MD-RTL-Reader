@@ -784,11 +784,12 @@ function askSaveChanges({ name, count = 0 } = {}) {
   });
 }
 
-// Word behavior for the close flow: 'save' saves everything (a canceled Save As
-// aborts the close), 'discard' proceeds, 'cancel' stays open.
+// Word behavior for the close flow: 'save' saves everything — untitled notes included,
+// each through its Save As dialog (a canceled Save As aborts the close) — 'discard'
+// proceeds, 'cancel' stays open.
 async function resolveCloseChoice(choice) {
   if (choice === 'cancel') return false;
-  if (choice === 'save') return workspaceController.saveAllDirty();
+  if (choice === 'save') return workspaceController.saveAllDirty({ promptUntitled: true });
   return true;
 }
 window._askSaveChanges = askSaveChanges; // e2e hook
@@ -857,7 +858,7 @@ function showAbout() {
   const html = `
     <div class="about-logo">BP</div>
     <div class="about-name">BP MD RTL Reader</div>
-    <div class="about-version">version 1.2.1 · ${new Date().getFullYear()}</div>
+    <div class="about-version">version 1.2.2 · ${new Date().getFullYear()}</div>
     <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
     <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
       Bilingual to its core — first-class English and Arabic.<br>
@@ -2161,6 +2162,7 @@ function showWelcome() {
   toolbarStrip.style.display = 'none';
   editorArea.classList.add('welcome'); // T-F13: reveal the welcome (preview pane) over the CM6 surface
   editorArea.classList.remove('reading'); // the welcome screen never carries a stale reading class (T-F17)
+  syncEditorEmptyHint(null); // no open file → the empty-note hint must not float over the welcome card
   syncReaderControls();
   $('conflictBar') && ($('conflictBar').innerHTML = ''); // no open file → no conflict banner
   renderTabs();
@@ -2259,6 +2261,7 @@ function renderFile(idx) {
   syncReaderControls();
 
   loadIntoEditor(file.content || ''); // textarea (default) or CodeMirror (flag) — T-F13
+  syncEditorEmptyHint(file.content);
 
   // Strip YAML front matter (T-R6) so it never renders as body text.
   const { body } = parseFrontMatter(file.content || '');
@@ -2809,7 +2812,12 @@ function newNote() {
   markUserIntent();
   const n = State.files.filter(f => f.name.startsWith('Untitled')).length;
   const name = `Untitled${n > 0 ? '-' + n : ''}.md`;
-  addFile({ name, path: name, handle: null, content: `# Untitled\n\nStart writing…\n`, dirty: true, revision: 1 });
+  // v1.2.2: a pristine note starts EMPTY and clean. The old scaffold (`# Untitled\n\n
+  // Start writing…`) was real document content, so saving an untouched note wrote the
+  // placeholder text to disk. The visible "Start writing…" is now a DOM-only hint
+  // (syncEditorEmptyHint), and dirty:false means closing an untouched note needs no
+  // Save prompt — the first keystroke marks it dirty via applyEditorInput.
+  addFile({ name, path: name, handle: null, content: '', dirty: false });
 }
 window.newNote = newNote;
 
@@ -2856,6 +2864,15 @@ async function loadDemo() {
 window.loadDemo = loadDemo;
 
 // =====================================================================
+// v1.2.2: the "Start writing…" affordance is a DOM overlay, never document content.
+// Toggled from the two places the active document's text is known: renderFile (load /
+// switch / create) and applyEditorInput (every keystroke, so deleting all text brings
+// it back). Text comes from the locale catalog (editor.emptyHint), so it follows the
+// UI language — something the old in-document scaffold never could.
+function syncEditorEmptyHint(content) {
+  editorArea.classList.toggle('doc-empty', (content || '') === '');
+}
+
 // SOURCE TEXTAREA INPUT
 // =====================================================================
 let _srcDebounce = null;
@@ -2868,6 +2885,7 @@ function applyEditorInput(val, pos) {
   f.revision = (Number.isInteger(f.revision) ? f.revision : 0) + 1;
   f.dirty = true;
   f._editedAt = Date.now();
+  syncEditorEmptyHint(val);
   updateTabState(State.activeFile);
   // Fast: cursor position update on every keystroke
   const upto = val.slice(0, pos);
@@ -3755,6 +3773,13 @@ async function winClose() {
     const choice = dirtyFiles.length === 1
       ? await askSaveChanges({ name: dirtyFiles[0].name })
       : await askSaveChanges({ count: dirtyFiles.length });
+    // A Save choice over an untitled note opens the native Save As dialog, which stays
+    // open as long as the user needs — well past main's 20s close failsafe. Abort the
+    // failsafe BEFORE the first dialog opens: this close attempt is over, and if every
+    // note comes back clean the sanctioned close tail below re-runs on its own.
+    if (choice === 'save' && dirtyFiles.some((f) => workspaceController.needsSaveAs(f))) {
+      try { window.electronAPI?.abortWindowClose?.(); } catch (_) { /* best-effort */ }
+    }
     proceed = await resolveCloseChoice(choice);
     if (!proceed) {
       // Canceled: main must tear down its force-close failsafe for this window.

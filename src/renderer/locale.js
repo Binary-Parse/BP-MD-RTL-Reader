@@ -163,6 +163,7 @@ export const MESSAGES = {
     'toast.topbarHidden': 'Top bar hidden — move the pointer to the top edge, or press Ctrl+Shift+T. Ctrl+, opens Settings.',
     'toast.statusbarHidden': 'Status bar hidden — press Ctrl+Shift+B to bring it back. Ctrl+, opens Settings.',
     'doc.unsaved': 'unsaved', 'doc.readTime': '≈ {n} min read',
+    'editor.emptyHint': 'Start writing…',
     // v1.2: the writing toolbar strip (previously zero localization — 24 English-only
     // tooltips/labels). Shortcut parentheses are content, not untranslated English.
     'tb.heading': 'Heading level', 'tb.bold': 'Bold (Ctrl+B)', 'tb.boldName': 'Bold',
@@ -336,6 +337,7 @@ export const MESSAGES = {
     'toast.topbarHidden': 'الشريط العلوي مخفي — حرّك المؤشر إلى الحافة العليا أو اضغط Ctrl+Shift+T. وCtrl+, يفتح الإعدادات.',
     'toast.statusbarHidden': 'شريط الحالة مخفي — اضغط Ctrl+Shift+B لإعادته. وCtrl+, يفتح الإعدادات.',
     'doc.unsaved': 'غير محفوظة', 'doc.readTime': '≈ {n} د قراءة',
+    'editor.emptyHint': 'ابدأ الكتابة…',
     // v1.2: شريط أدوات الكتابة (كان بلا أي تعريب — 24 تلميحاً إنجليزياً). أقواس الاختصارات
     // محتوى لا يُترجم.
     'tb.heading': 'مستوى العنوان', 'tb.bold': 'عريض (Ctrl+B)', 'tb.boldName': 'عريض',

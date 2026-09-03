@@ -909,6 +909,36 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   border-radius: 8px;
 }
 .cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
+/* v1.2.2: "Start writing…" hint for an empty document — a DOM overlay, never document
+   content. The old scaffold put the text IN the note, so saving an untouched new note
+   wrote the placeholder to disk; now the file starts empty. Positioned over
+   #editorArea (which becomes the positioning context) so it works in every mode:
+   classic textarea, Live preview, Reading, and the opt-in CM6 single surface. The
+   64px top offset sits the line just under the doc-meta strip / CM6 top padding.
+   Shown only while #editorArea carries .doc-empty (syncEditorEmptyHint). */
+.editor-area { position: relative; }
+.editor-empty-hint {
+  display: none;
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  max-width: 800px;
+  margin: 0 auto;
+  padding-inline: 20px;
+  font-family: var(--sans);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  font-style: italic;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
+.editor-area.doc-empty .editor-empty-hint { display: block; }
+/* The welcome card means no open file — the hint must never float over it, even if a
+   stale .doc-empty survives a session-restore ordering race (crash-restore path). */
+.editor-area.welcome .editor-empty-hint { display: none; }
 /* Arabic lines (per-line dir from line-direction.js) take the Arabic face + looser leading. */
 .cm-mount .cm-line[dir="rtl"] { font-family: var(--arabic); line-height: 1.95; }
 .cm-mount .cm-editor.cm-focused { outline: none; }

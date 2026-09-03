@@ -357,6 +357,16 @@ export function createWorkspaceController({
     fileInput?.click();
   }
 
+  // True when a file has no on-disk identity writeThrough can persist — the exact
+  // complement of its two write branches — so it needs the Save As dialog instead.
+  // One predicate shared by writeThrough's 'nosave' outcome and the close flow's
+  // "this choice will open a native dialog" check, so the two can never drift apart.
+  function needsSaveAs(file) {
+    const electronAPI = api();
+    return !(file.handle && file.handle.createWritable)
+      && !(file.documentId && electronAPI && typeof electronAPI.writeFile === 'function');
+  }
+
   // v1.2: the write-through core, split out of saveCurrent so the auto-save timer and
   // the close flow can persist ANY file (not just the active tab). Returns one of:
   //   'ok'       written in place (handle or documentId path)
@@ -565,12 +575,23 @@ export function createWorkspaceController({
 
   // v1.2: Save-All used by the close flow and the auto-save timer. Saves every dirty
   // file it can (in place); returns false if any file stayed dirty (a Save As dialog
-  // was canceled) so the caller can abort the close — Word's behavior.
-  async function saveAllDirty() {
+  // was canceled) so the caller can abort the close — Word's behavior. With
+  // promptUntitled, untitled notes go through Save As instead of being skipped
+  // (choosing Save in the close prompt and watching nothing happen was v1.2.1's bug);
+  // the auto-save lane must never pop a dialog, so it leaves them alone.
+  async function saveAllDirty({ promptUntitled = false } = {}) {
     const dirty = state.files.filter((file) => file.dirty);
     for (const file of dirty) {
       const outcome = await writeThrough(file);
-      if (outcome === 'nosave') continue; // untitled notes keep their dirty flag; their close prompt stands
+      if (outcome === 'nosave') {
+        if (!promptUntitled) continue;
+        await saveAs(file);
+        // saveAs clears dirty only when the chosen bytes are still on disk; a canceled
+        // or failed Save As keeps the flag, which fails the all-clean check below and
+        // aborts the close.
+        if (file.dirty) return false;
+        continue;
+      }
       if (outcome !== 'ok') return false;
       renderTabs();
     }
@@ -822,6 +843,7 @@ export function createWorkspaceController({
     saveCurrent,
     saveAs,
     saveAllDirty,
+    needsSaveAs,
     writeThrough,
     pushRecent,
     renderRecents,

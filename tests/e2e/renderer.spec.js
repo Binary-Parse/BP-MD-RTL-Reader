@@ -229,6 +229,25 @@ test.describe('index.html — ALL exported functions', () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
+  // v1.2.2: the "Start writing…" scaffold used to be real document content, so saving
+  // an untouched new note wrote the placeholder to disk. A pristine note must now be
+  // EMPTY and CLEAN (closing it needs no Save prompt); the hint lives in the DOM.
+  test('window.newNote starts empty and clean — placeholder is DOM, not document content', async ({ page }) => {
+    await page.evaluate(() => window.newNote());
+    const last = await page.evaluate(() => {
+      const f = window._appState.files[window._appState.files.length - 1];
+      return { content: f.content, dirty: f.dirty };
+    });
+    expect(last.content).toBe('');
+    expect(last.dirty).toBe(false);
+    const hint = await page.evaluate(() => ({
+      visible: document.getElementById('editorArea').classList.contains('doc-empty'),
+      text: document.querySelector('.editor-empty-hint')?.textContent,
+    }));
+    expect(hint.visible).toBe(true);
+    expect(hint.text.length).toBeGreaterThan(0);
+  });
+
   test('window.newDailyNote creates dated file', async ({ page }) => {
     await page.evaluate(() => window.newDailyNote());
     const files = await page.evaluate(() => window._appState.files);

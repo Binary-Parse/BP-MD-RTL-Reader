@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.2] - 2026-09-03
+
+### Fixed
+
+- **Pressing Save in the close prompt did nothing for untitled notes.** Choosing Save / Save All while closing the window (or during a workspace-swap discard check) silently skipped any note that had never been saved: the prompt closed, no Save As dialog appeared, and the window just stayed open. Untitled notes now get their Save As dialog one by one; canceling it keeps the window open with the "still unsaved" toast, and saving every note completes the close — Word's behavior. Main's 20-second force-close failsafe is disengaged before the first native dialog opens, so taking your time browsing for a folder can no longer get the window force-closed mid-save.
+- **New notes shipped with placeholder text baked into the document.** A fresh note contained `# Untitled` + `Start writing…` as real content, so saving an untouched note wrote the placeholder to disk. A pristine note now starts **empty and clean**: closing it needs no save prompt, and the visible "Start writing…" is a DOM-only hint that follows the UI language (Arabic: «ابدأ الكتابة…») and never enters the file. (An explicitly saved empty note contains just the standard trailing newline.) The hint also no longer floats over the welcome card after a crash-restored session.
+
+### Changed
+
+- **A pristine new note is no longer born "dirty".** It starts clean (no ● on the tab, no `•` in the window title) and only marks itself unsaved on the first keystroke, so closing an untouched note closes the window immediately instead of prompting.
+
 ## [1.2.1] - 2026-09-03
 
 ### Added

@@ -616,6 +616,47 @@ describe('workspace controller', () => {
     expect(missing.calls.toasts).toEqual([['No file to save', 'error']]);
   });
 
+  // v1.2.2 regression: choosing Save in the close prompt on an untitled note used to
+  // skip it silently (writeThrough 'nosave' → continue), closing the prompt with no
+  // Save As dialog and no close — it read as "the Save button does nothing".
+  test('close-flow Save-All prompts untitled notes through Save As; auto-save lane never does', async () => {
+    const makeState = () => ({
+      files: [{ name: 'Untitled.md', path: null, content: 'draft', dirty: true, revision: 0 }],
+      activeFile: 0, recents: [],
+    });
+    const writeFile = () => {};
+    expect(harness().controller.needsSaveAs({ name: 'u.md', path: null })).toBe(true);
+    // documentId counts as on-disk identity only when writeFile is actually available —
+    // the same condition writeThrough uses to pick its Electron write branch.
+    expect(harness().controller.needsSaveAs(
+      { documentId: 'doc-1' },
+      )).toBe(true);
+    expect(harness({ electronAPI: { writeFile } }).controller.needsSaveAs({ documentId: 'doc-1' })).toBe(false);
+    expect(harness().controller.needsSaveAs({ handle: { createWritable() {} } })).toBe(false);
+
+    // Auto-save lane (default): skip untitled notes, never open a dialog on a timer.
+    const saveFileAs = vi.fn(async () => ({ ok: true, name: 'saved.md' }));
+    const auto = harness({ state: makeState(), electronAPI: { saveFileAs } });
+    expect(await auto.controller.saveAllDirty()).toBe(false);
+    expect(auto.state.files[0].dirty).toBe(true);
+    expect(saveFileAs).not.toHaveBeenCalled();
+
+    // Close-prompt lane (promptUntitled): the untitled note gets its Save As dialog.
+    const ok = harness({ state: makeState(), electronAPI: {
+      saveFileAs: vi.fn(async () => ({ ok: true, name: 'saved.md', documentId: 'doc-new' })),
+    } });
+    expect(await ok.controller.saveAllDirty({ promptUntitled: true })).toBe(true);
+    expect(ok.state.files[0]).toMatchObject({ name: 'saved.md', documentId: 'doc-new', dirty: false });
+
+    // A canceled Save As keeps the note dirty and fails the close (Word behavior).
+    const canceled = harness({ state: makeState(), electronAPI: {
+      saveFileAs: vi.fn(async () => ({ canceled: true })),
+    } });
+    expect(await canceled.controller.saveAllDirty({ promptUntitled: true })).toBe(false);
+    expect(canceled.state.files[0].dirty).toBe(true);
+    expect(canceled.calls.toasts).toContainEqual(['Save canceled — the note is still unsaved', 'info']);
+  });
+
   test('saves with the browser picker and downloads when no writable API exists', async () => {
     const writable = { write: vi.fn(async () => {}), close: vi.fn(async () => {}) };
     const handle = { name: 'picked.md', createWritable: vi.fn(async () => writable) };

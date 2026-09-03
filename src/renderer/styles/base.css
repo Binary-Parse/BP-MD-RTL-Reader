@@ -75,6 +75,16 @@
   --green: #4E8A3F;
   --close-red: #E81123;
 
+  /* v1.2 design tokens: surfaces that used to be hard-coded literals in
+     components.css, now theme-aware (the ink theme re-declares these below in
+     themes.css). Values here preserve the shipped paper-theme appearance. */
+  --backdrop: #2A2620;      /* browser-lane body + <dialog> ::backdrop */
+  --find-hit: #FFE082;      /* find-bar match highlight */
+  --toast-error: #E27360;   /* toast '!' glyph */
+  --tip-bg: #23262D;        /* floating tooltip surface (deliberately dark in every theme) */
+  --tip-fg: #EFEAE0;
+  --caution: #B25A38;       /* callout [!caution] accent; ink theme lifts it */
+
   /* v10 redesign: the status bar is integrated with the theme, not a dark inverted
      strip — see components.css's .statusbar rule. */
   --statusbar-bg: var(--paper-deep);

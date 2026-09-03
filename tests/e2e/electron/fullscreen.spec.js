@@ -46,26 +46,28 @@ test.describe('fullscreen toggle @electron', () => {
   });
 
   test('clicking #fullscreenBtn actually fullscreens the real BrowserWindow', async () => {
+    // v1.2: the toggle moved from the DOM Fullscreen API to the real OS window
+    // (win.setFullScreen via 'window-set-fullscreen'). document.fullscreenElement
+    // therefore never lights up; the button's own aria-pressed — driven by main's
+    // enter/leave-full-screen echo — is the renderer-side state to wait on.
     const before = await electronApp.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].isFullScreen());
     expect(before).toBe(false);
 
     await page.locator('#fullscreenBtn').click();
-    await page.waitForFunction(() => !!document.fullscreenElement);
+    await expect(page.locator('#fullscreenBtn')).toHaveAttribute('aria-pressed', 'true', { timeout: 10000 });
 
     const after = await electronApp.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].isFullScreen());
     expect(after).toBe(true);
-    await expect(page.locator('#fullscreenBtn')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('#fullscreenBtn use')).toHaveAttribute('href', '#ic-shrink');
 
     await page.locator('#fullscreenBtn').click();
-    await page.waitForFunction(() => !document.fullscreenElement);
+    await expect(page.locator('#fullscreenBtn')).toHaveAttribute('aria-pressed', 'false', { timeout: 10000 });
 
     const restored = await electronApp.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].isFullScreen());
     expect(restored).toBe(false);
-    await expect(page.locator('#fullscreenBtn')).toHaveAttribute('aria-pressed', 'false');
 
     // Windows' exit-fullscreen DWM animation can still be settling after isFullScreen()
     // already reports false; closing the window mid-transition destabilized the very

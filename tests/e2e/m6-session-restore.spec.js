@@ -83,7 +83,8 @@ test.describe('[M6] session restore wiring', () => {
       const w1 = window.__writes.length;
       const afterVault = window.__writes[w1 - 1]?.lastSession;
       // 2) load the ephemeral demo notes → the stale vault path must NOT be paired with demo files
-      window.loadDemo();
+      // v1.2: loadDemo is async (the Word-style discard prompt is async too) — await it.
+      await window.loadDemo();
       await new Promise((res) => setTimeout(res, 260));
       const w2 = window.__writes.length;
       const afterDemo = window.__writes[w2 - 1]?.lastSession;

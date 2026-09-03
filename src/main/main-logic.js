@@ -33,6 +33,37 @@ function parseFileArg(argv, fs) {
   return null;
 }
 
+/**
+ * v1.2: every valid markdown file path from argv, in order (deduplicated). "Open
+ * with" on several selected files used to open exactly the first one. parseFileArg
+ * stays for compatibility (and keeps returning the first match).
+ * @param {string[]} argv
+ * @param {object} fs
+ * @returns {string[]}
+ */
+function parseFileArgs(argv, fs) {
+  const candidates = Array.from(argv).slice(1).filter(a =>
+    typeof a === 'string' &&
+    !a.startsWith('-') &&
+    !isNetworkPath(a) &&
+    /\.(md|markdown)$/i.test(a)
+  );
+  const out = [];
+  const seen = new Set();
+  for (const a of candidates) {
+    try {
+      const real = fs.realpathSync(a);
+      if (seen.has(real)) continue;
+      const stat = fs.statSync(real);
+      if (stat.isFile() && stat.size <= MAX_OPEN_FILE_BYTES) {
+        seen.add(real);
+        out.push(real);
+      }
+    } catch (_) { /* try next candidate */ }
+  }
+  return out;
+}
+
 // ==== SECURITY CHECKS (JB1-JB4) ====
 
 /**
@@ -193,6 +224,7 @@ function shouldResetChrome(argv) {
 
 module.exports = {
   parseFileArg,
+  parseFileArgs,
   shouldResetChrome,
   isVaultFile,
   isDroppableFile,

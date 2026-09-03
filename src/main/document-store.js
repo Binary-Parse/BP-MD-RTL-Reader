@@ -31,6 +31,114 @@ function normalize(raw) {
   return stripBOM(raw).replace(/\r\n/g, '\n');
 }
 
+// ── v1.2: multi-encoding read/write (UTF-8 / UTF-16 / Windows-1256) ────────
+// Previously every file was hard-read as UTF-8: an Arabic Windows-1256 or UTF-16
+// file rendered as mojibake AND a subsequent save wrote that mojibake back to disk,
+// destroying the file. Reads now detect the encoding; writes re-encode faithfully.
+//
+// `utf8Key` is the string the conflict hash is computed over. For UTF-8 files it is
+// byte-identical to what older versions hashed (readFileSync(path,'utf8')), so
+// settings/meta saved by previous releases still conflict-check correctly.
+
+function isValidUtf8(buf) {
+  const text = buf.toString('utf8');
+  return Buffer.from(text, 'utf8').equals(buf);
+}
+
+// char -> byte, built once from the decoder so encode and decode can never drift.
+let _cp1256Map = null;
+function cp1256Map() {
+  if (_cp1256Map) return _cp1256Map;
+  const map = new Map();
+  if (typeof TextDecoder === 'function') {
+    try {
+      const dec = new TextDecoder('windows-1256');
+      for (let b = 0x80; b <= 0xFF; b++) {
+        const ch = dec.decode(Uint8Array.of(b));
+        if (ch.length === 1 && !map.has(ch)) map.set(ch, b);
+      }
+    } catch (_) { /* decoder unavailable → fallback encoder below */ }
+  }
+  _cp1256Map = map;
+  return map;
+}
+
+function encodeWindows1256(text) {
+  const map = cp1256Map();
+  const out = Buffer.alloc(text.length);
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code <= 0x7F) out[i] = code;
+    else {
+      const mapped = map.get(text[i]);
+      out[i] = mapped != null ? mapped : 0x3F; // unmappable → '?'
+    }
+  }
+  return out;
+}
+
+/** Decode raw file bytes (or a legacy string from a mocked fs) into clean text. */
+function decodeBuffer(input) {
+  if (typeof input === 'string') {
+    return { text: input, encoding: 'utf8', bom: hasBOM(input), utf8Key: input };
+  }
+  if (!Buffer.isBuffer(input)) {
+    const s = String(input == null ? '' : input);
+    return { text: s, encoding: 'utf8', bom: hasBOM(s), utf8Key: s };
+  }
+  if (input.length >= 2 && input[0] === 0xFF && input[1] === 0xFE) {
+    return { text: input.toString('utf16le').slice(1), encoding: 'utf16le', bom: true, utf8Key: input.toString('utf8') };
+  }
+  if (input.length >= 2 && input[0] === 0xFE && input[1] === 0xFF) {
+    const swapped = Buffer.from(input);
+    for (let i = 0; i + 1 < swapped.length; i += 2) {
+      const t = swapped[i]; swapped[i] = swapped[i + 1]; swapped[i + 1] = t;
+    }
+    return { text: swapped.toString('utf16le').slice(1), encoding: 'utf16be', bom: true, utf8Key: input.toString('utf8') };
+  }
+  if (input.length >= 3 && input[0] === 0xEF && input[1] === 0xBB && input[2] === 0xBF) {
+    const text = input.slice(3).toString('utf8');
+    return { text, encoding: 'utf8', bom: true, utf8Key: input.toString('utf8') };
+  }
+  const utf8 = input.toString('utf8');
+  if (isValidUtf8(input)) {
+    return { text: utf8, encoding: 'utf8', bom: false, utf8Key: utf8 };
+  }
+  // Not valid UTF-8 → assume Windows-1256 (the legacy Arabic codepage).
+  if (typeof TextDecoder === 'function') {
+    try {
+      const text = new TextDecoder('windows-1256').decode(input);
+      return { text, encoding: 'windows-1256', bom: false, utf8Key: utf8 };
+    } catch (_) { /* fall through */ }
+  }
+  return { text: utf8, encoding: 'utf8', bom: false, utf8Key: utf8 };
+}
+
+/** Encode clean text back to the file's original encoding (BOM re-applied). */
+function encodeBuffer(text, encoding, bom) {
+  switch (encoding) {
+    case 'utf16le': {
+      const body = Buffer.from(text, 'utf16le');
+      return bom ? Buffer.concat([Buffer.from([0xFF, 0xFE]), body]) : body;
+    }
+    case 'utf16be': {
+      const body = Buffer.from(text, 'utf16le');
+      for (let i = 0; i + 1 < body.length; i += 2) {
+        const t = body[i]; body[i] = body[i + 1]; body[i + 1] = t;
+      }
+      return bom ? Buffer.concat([Buffer.from([0xFE, 0xFF]), body]) : body;
+    }
+    case 'windows-1256':
+      // A cp1256 file cannot carry a UTF-8 BOM (a BOM would have classified it as
+      // UTF-8 on read); the flag is deliberately ignored here.
+      return encodeWindows1256(text);
+    default: {
+      const body = Buffer.from(text, 'utf8');
+      return bom ? Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), body]) : body;
+    }
+  }
+}
+
 function hashContent(content, crypto) {
   if (crypto && crypto.createHash) {
     return crypto.createHash('sha1').update(content).digest('hex');
@@ -87,15 +195,19 @@ function atomicWriteFile(fs, absPath, data, encoding) {
 function createDocumentStore({ fs, path, crypto } = {}) {
   /** Read a file; return normalized body + meta needed for a faithful write. */
   function read(absPath) {
-    const raw = fs.readFileSync(absPath, 'utf8');
+    // v1.2: read BYTES so the encoding can be detected (a mocked fs that only serves
+    // strings still works — decodeBuffer treats strings as UTF-8, as before).
+    const raw = fs.readFileSync(absPath);
+    const dec = decodeBuffer(raw);
     const meta = {
-      bom: hasBOM(raw),
-      eol: detectEol(raw),
-      finalNewline: /\n$/.test(raw),
-      hash: hashContent(raw, crypto),
+      bom: dec.bom,
+      eol: detectEol(dec.text),
+      finalNewline: /\n$/.test(dec.text),
+      encoding: dec.encoding,
+      hash: hashContent(dec.utf8Key, crypto),
       mtimeMs: fs.statSync(absPath).mtimeMs,
     };
-    return { content: normalize(raw), meta };
+    return { content: normalize(dec.text), meta };
   }
 
   /**
@@ -104,7 +216,7 @@ function createDocumentStore({ fs, path, crypto } = {}) {
    * @returns {{ok:true, meta}}|{error}
    */
   function write(absPath, content, opts = {}) {
-    const { root, baseHash, bom = false, eol = '\n', finalNewline = true } = opts;
+    const { root, baseHash, bom = false, eol = '\n', finalNewline = true, encoding = 'utf8' } = opts;
     const validated = validateWriteTarget(fs, path, absPath, root);
     if (validated.error) return validated;
 
@@ -117,14 +229,19 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     // Re-apply original encoding (EC-A1).
     let out = applyEol(content, eol);
     if (finalNewline && !out.endsWith(eol)) out += eol;
-    if (bom) out = '﻿' + out;
-
-    // Atomic write (EC-A3): temp in same dir, fsync, rename.
-    const written = atomicWriteFile(fs, absPath, out, 'utf8');
+    let written;
+    if (!encoding || encoding === 'utf8') {
+      // UTF-8 keeps the legacy string-write path (BOM as the U+FEFF character).
+      if (bom) out = '﻿' + out;
+      written = atomicWriteFile(fs, absPath, out, 'utf8');
+    } else {
+      // v1.2: UTF-16 / Windows-1256 go out as real bytes.
+      written = atomicWriteFile(fs, absPath, encodeBuffer(out, encoding, bom));
+    }
     if (written.error) return written;
     let mtimeMs;
     try { mtimeMs = fs.statSync(absPath).mtimeMs; } catch (_) { /* optional metadata */ }
-    return { ok: true, meta: { hash: hashContent(out, crypto), bom, eol, finalNewline, mtimeMs } };
+    return { ok: true, meta: { hash: hashContent(out, crypto), bom, eol, finalNewline, encoding, mtimeMs } };
   }
 
   /**
@@ -193,5 +310,6 @@ module.exports = {
   // pure helpers exported for unit/mutation testing
   hasBOM, stripBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot,
   validateWriteTarget, atomicWriteFile,
+  decodeBuffer, encodeBuffer, encodeWindows1256,
   MAX_FILES, MAX_DEPTH,
 };

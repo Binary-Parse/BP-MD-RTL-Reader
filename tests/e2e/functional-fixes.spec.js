@@ -56,6 +56,10 @@ test.describe('[M08] Save writes vault files in place via IPC', () => {
     const download = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
     await page.evaluate(async () => {
       delete window.electronAPI;
+      // v1.2: browser Save As prefers the File System Access picker when a REAL
+      // function is present; shadowing it with undefined routes to the Blob download
+      // fallback this test pins.
+      Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true });
       window._appState.files = [{ name: 'loose.md', path: 'loose.md', handle: null, content: 'hi', dirty: true }];
       window.renderFile(0);
       await window.saveCurrent();

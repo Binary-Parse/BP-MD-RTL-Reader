@@ -12,8 +12,29 @@
 function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
   contextBridge.exposeInMainWorld('electronAPI', {
     closeWindow:    () => ipcRenderer.send('window-close-confirmed'),
+    // v1.2: the close prompt resolved WITHOUT closing (Cancel, or a Save As declined
+    // mid-save-all). Tells main to cancel the close failsafe for this window.
+    abortWindowClose: () => ipcRenderer.send('window-close-aborted'),
     minimizeWindow: () => ipcRenderer.send('window-minimize'),
     maximizeWindow: () => ipcRenderer.send('window-maximize'),
+    // v1.2: renderer → main count of files with unsaved edits. Main keeps this ledger
+    // as the source of truth for the close failsafe (a hung renderer can no longer
+    // take the window's closability — or the unsaved-work signal — down with it).
+    reportDirtyState: (count) => ipcRenderer.send('doc:dirty-state', count),
+    // v1.2: fullscreen moves to the real OS window (F11 / titlebar toggle); main
+    // echoes enter/leave back over 'window-fullscreen-changed'.
+    setFullscreen: (flag) => ipcRenderer.send('window-set-fullscreen', flag === true),
+    onFullscreenChanged: (cb) => ipcRenderer.on('window-fullscreen-changed', (_e, flag) => cb(flag)),
+    // v1.2: crash-recovery mirror. The renderer periodically snapshots its dirty
+    // in-memory notes; main stores them under <userData>/recovery/. Pop returns the
+    // previous session's snapshots (and clears them); clear drops them without reading.
+    recoverySnapshot: (files) => ipcRenderer.invoke('recovery:snapshot', files),
+    recoveryPop: () => ipcRenderer.invoke('recovery:pop'),
+    recoveryClear: () => ipcRenderer.invoke('recovery:clear'),
+    // v1.2: surface-menu support. Main resolves the documentId back to a real path
+    // server-side — the renderer still never learns filesystem paths.
+    revealFile: (documentId) => ipcRenderer.invoke('fs:reveal', documentId),
+    copyFilePath: (documentId) => ipcRenderer.invoke('fs:copy-path', documentId),
     // Open Folder IPC bridge (Bug 1 / AC1)
     // Renderer-local Chromium zoom; no privileged main-process IPC is needed.
     setAppZoom: (factor) => {

@@ -1,6 +1,6 @@
 {
   "name": "bpmdrtlreader",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "BP MD RTL Reader — markdown reader with RTL support",
   "keywords": [
     "electron",
@@ -29,6 +29,7 @@
   "bugs": {
     "url": "https://github.com/Binary-Parse/BP-MD-RTL-Reader/issues"
   },
+  "packageManager": "npm@12.0.2",
   "engines": {
     "node": ">=24"
   },
@@ -61,8 +62,9 @@
     "coverage": "npm run test:unit:coverage && npm run test:e2e:coverage && npm run report:merge",
     "report:merge": "node scripts/merge-coverage.js",
     "lint:security": "node scripts/run-security-lint.js",
-    "postinstall": "playwright install chromium",
-    "audit:secrets": "node scripts/audit-secrets-fulltree.js"
+    "postinstall": "node scripts/ensure-playwright-browser.js",
+    "audit:secrets": "node scripts/audit-secrets-fulltree.js",
+    "browser:install": "playwright install chromium"
   },
   "build": {
     "appId": "com.binaryparse.bpmdrtlreader",
@@ -128,6 +130,7 @@
       "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
+      "license": "installer/LICENSE-INSTALLER.txt",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "BP MD RTL Reader",
@@ -138,7 +141,7 @@
       "installerIcon": "build/icons/icon.ico",
       "uninstallerIcon": "build/icons/icon.ico",
       "installerHeaderIcon": "build/icons/icon.ico",
-      "include": "build/installer/installer.nsh",
+      "include": "installer/installer.nsh",
       "artifactName": "BP-MD-RTL-Reader-${version}-Windows-NSIS-multiarch.${ext}",
       "warningsAsErrors": true,
       "differentialPackage": false
@@ -211,7 +214,7 @@
       "category": "Office",
       "icon": "build/icons/icon.png",
       "artifactName": "BP-MD-RTL-Reader-${version}-Linux-${arch}.${ext}",
-      "maintainer": "Binary Parse <noreply@binaryparse.example>",
+      "maintainer": "Binary Parse <273296528+Binary-Parse@users.noreply.github.com>",
       "synopsis": "A markdown reader for RTL/Arabic prose",
       "desktop": {
         "entry": {

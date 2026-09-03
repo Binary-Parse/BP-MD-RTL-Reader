@@ -84,6 +84,20 @@ npm run dist
 
 The packaged renderer is served over `app://ui/…`, not `file://` inside `app.asar`. Proof that a build paints is a PrintWindow / live `#app` on `dist/win-unpacked/BP MD RTL Reader.exe` with a fresh `--user-data-dir`, not Playwright `file://` or unpackaged `electron .`.
 
+**Installer UX contract (v1.2.1).** Both installers present a license page before any
+files are copied: NSIS via `nsis.license` (`build/installer/LICENSE-INSTALLER.txt`,
+bilingual MIT text), Inno via `LicenseFile` (the repo-root `LICENSE`). The NSIS
+assisted installer also detects an existing installation — read-only inspection of
+the `DisplayVersion` value under the electron-builder key (APP_GUID) and the Inno
+key, both HKLM and HKCU — and tells the user which of three flows is happening:
+**upgrade** (older → newer, notes and settings preserved), **maintenance** (same
+version: repair in place, or open Windows "Installed apps" to remove), or a loud
+**downgrade warning**. The security boundary is unchanged and enforced by
+`tests/installer/installer-security.test.ps1`: the setup only ever READS those
+registry values and never executes an uninstall command string from the registry;
+the "Remove" choice opens `ms-settings:appsfeatures` instead. Silent installs
+(`/S`) skip the prompts and keep electron-builder's protected in-place upgrade.
+
 **Inno Setup** standalone installer (x64):
 
 ```powershell
@@ -95,8 +109,8 @@ This is the only supported Inno entry point. It does not use PATH or a pre-exist
 Authenticode publisher, and SHA-256; produces a fresh x64 electron-builder directory;
 checks it against `build/installer/source-manifest-policy.json`; hashes/copies the exact files
 to clean staging; then writes
-`dist/BP-MD-RTL-Reader-1.1.0-Windows-Inno-x64.exe` and
-`dist/BP-MD-RTL-Reader-1.1.0-Windows-Inno-x64.source-manifest.json`.
+`dist/BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.exe` and
+`dist/BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.source-manifest.json`.
 
 Local Inno builds may be unsigned. A release build is fail-closed and requires a
 Binary Parse code-signing certificate already imported into `Cert:\CurrentUser\My`, a
@@ -117,21 +131,21 @@ unsigned output.
 
 ### Public artifact contract
 
-Version 1.1.0 publishes exactly these 12 files before the generated checksum manifest:
+Version 1.2.1 publishes exactly these 12 files before the generated checksum manifest:
 
 ```text
-BP-MD-RTL-Reader-1.1.0-Windows-NSIS-multiarch.exe
-BP-MD-RTL-Reader-1.1.0-Windows-Portable-multiarch.exe
-BP-MD-RTL-Reader-1.1.0-Windows-Inno-x64.exe
-BP-MD-RTL-Reader-1.1.0-Windows-Inno-x64.source-manifest.json
-BP-MD-RTL-Reader-1.1.0-macOS-x64.dmg
-BP-MD-RTL-Reader-1.1.0-macOS-arm64.dmg
-BP-MD-RTL-Reader-1.1.0-macOS-x64.zip
-BP-MD-RTL-Reader-1.1.0-macOS-arm64.zip
-BP-MD-RTL-Reader-1.1.0-Linux-x64.AppImage
-BP-MD-RTL-Reader-1.1.0-Linux-arm64.AppImage
-BP-MD-RTL-Reader-1.1.0-Linux-x64.deb
-BP-MD-RTL-Reader-1.1.0-Linux-arm64.deb
+BP-MD-RTL-Reader-1.2.1-Windows-NSIS-multiarch.exe
+BP-MD-RTL-Reader-1.2.1-Windows-Portable-multiarch.exe
+BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.exe
+BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.source-manifest.json
+BP-MD-RTL-Reader-1.2.1-macOS-x64.dmg
+BP-MD-RTL-Reader-1.2.1-macOS-arm64.dmg
+BP-MD-RTL-Reader-1.2.1-macOS-x64.zip
+BP-MD-RTL-Reader-1.2.1-macOS-arm64.zip
+BP-MD-RTL-Reader-1.2.1-Linux-x64.AppImage
+BP-MD-RTL-Reader-1.2.1-Linux-arm64.AppImage
+BP-MD-RTL-Reader-1.2.1-Linux-x64.deb
+BP-MD-RTL-Reader-1.2.1-Linux-arm64.deb
 ```
 
 Copy those 12 files into `dist/release`, then run `npm run package:checksums` (it rejects
@@ -220,8 +234,8 @@ key, applied through electron-builder's own environment variables.
 Tag the release once the artifacts verify:
 
 ```bash
-git tag -a v1.1.0 -m "BP MD RTL Reader 1.1.0"
-git push origin v1.1.0
+git tag -a v1.2.1 -m "BP MD RTL Reader 1.2.1"
+git push origin v1.2.1
 ```
 
 Then attach the installers and `SHA256SUMS.txt` to a GitHub Release manually. Generate the

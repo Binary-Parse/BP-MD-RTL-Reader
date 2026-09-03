@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.2.1] - 2026-09-03
+
+### Added
+
+- **Word-style Save / Don't Save / Cancel prompt.** Closing a tab, a folder, or the window with unsaved edits used to show an English `confirm()` whose default button *discarded* the changes. A themed, Arabic-aware dialog now names the file and actually saves (with Save As for untitled notes) before closing; canceling a Save As aborts the close.
+- **Crash recovery.** Unsaved edits are mirrored to `<userData>/recovery/` every few seconds. After a crash, a force-shutdown, or a hung renderer, the next launch offers to restore them — the Word "recover unsaved documents" model.
+- **Optional auto-save** (Settings ▸ Files). Files opened from disk are written back after you pause typing; untitled notes still ask where to live.
+- **Multi-encoding files.** Files are now read as bytes: UTF-16 (LE/BE, BOM) and legacy Arabic Windows-1256 files open correctly instead of rendering as mojibake — and, critically, saving them no longer writes the mojibake back to disk. The original encoding is preserved on save.
+- **Right-click menus for the surface under the cursor.** File-tree rows (open, reveal in Explorer, copy path), document tabs (close, close others, close all, duplicate, reveal, copy path), and `[[wikilinks]]` (open, copy name) get their own items. The six generic app commands no longer crowd every menu — they only appear on neutral surfaces, never inside text fields.
+- **Reveal in File Explorer / Copy Path** for any file opened from disk, resolved main-side so the renderer still never learns filesystem paths.
+- **F11** now uses the real OS fullscreen (`win.setFullScreen`), in sync with the title-bar toggle.
+- **Enter / Shift+Enter** in the find bar step to the next / previous match.
+- **Installer: license page + explicit upgrade/maintenance flow.** Both Windows installers now show the MIT license (English + Arabic) before installing. The NSIS installer detects an already-installed copy and says which flow is happening — upgrade (notes and settings preserved), repair, or a loud downgrade warning — and guides removal to Windows "Installed apps". Detection is read-only: the setup never executes an uninstall command taken from the registry. (This release also fixes a long-standing packaging bug: the NSIS custom include was resolved against the wrong directory, so none of its uninstall pages had ever shipped.)
+- **Installer: running-app close prompt (Inno).** The Inno installer explicitly engages the Windows Restart Manager when the app is still running.
+
+### Fixed
+
+- **Every keyboard shortcut broke under an Arabic (or any non-Latin) keyboard layout.** Shortcuts matched `e.key` — the layout-dependent character — so on an Arabic layout Ctrl+S produced «س» and matched nothing, silently. They now match the physical key (`e.code`) as well, so Ctrl+S/Ctrl+O/Ctrl+W work on every layout.
+- **Re-opening a note that was already open with unsaved edits destroyed the edits.** Double-clicking an open note in Explorer replaced the in-memory copy with the disk version, no questions asked. The conflict banner (Keep my edits / Reload from disk) now appears instead.
+- **The window could become unclosable.** The close prompt round-trip had no timeout; a hung renderer meant the window ignored every close attempt, including Alt+F4. Main now force-closes after a grace period, with the recovery mirror as the data net.
+- **Ctrl+Y (Redo) was dead everywhere except inside the editor.** It was advertised in the Edit menu, the shortcut sheet, and the right-click menu; now it works globally.
+- **The theme icon duplicated the Reading/Edit toggle in Sepia.** Sepia's theme button borrowed the same open-book glyph as the adjacent view-mode button; it now uses a palette glyph.
+- **A failed "open with" opened nothing, silently.** A CLI/open-with file that could not be read now shows an error instead of launching with no file and no message. Several selected files in Explorer now all open (previously only the first).
+- **Large folders truncated silently on relaunch** — the restore path now says when the 5000-file cap hid anything.
+- **Save As out of an open folder** now tells you the note left the folder's watch/conflict protection, and canceling Save As says the note is still unsaved (previously total silence).
+
+### Changed
+
+- **Full Arabic interface parity for everything users see daily:** the writing toolbar (all 24 tooltips), status bar (folder/word count/cursor position), shortcut sheet, conflict banner, every toast, and the close prompts were English-only; all now follow the Arabic UI. Letter-spacing that breaks the joined Arabic script is neutralized under the RTL chrome, and the search button's ⌘ glyph becomes Ctrl on Windows/Linux.
+- **Themed, centered-icon dialog design.** The Save/Don't-Save/Cancel and recovery prompts use the user-picked centered-icon layout (circular document badge, bolded file name, full-width segmented action row) with a dedicated stylesheet — they previously rendered as unstyled browser buttons.
+- **Theme-aware design tokens** replace the hard-coded colors (find highlight, callout caution, toast error, tooltips, backdrop), plus a uniform keyboard focus ring (previously invisible on several surfaces) and RTL-flipped navigation arrows in the tab strip and file tree.
+- **`npm install` no longer downloads Playwright's Chromium by default** — fetch it explicitly with `npm run browser:install` (CI unchanged).
+
 ## [1.1.0] - 2026-08-25
 
 ### Added

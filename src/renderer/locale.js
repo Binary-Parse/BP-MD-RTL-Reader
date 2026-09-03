@@ -55,6 +55,7 @@ export const MESSAGES = {
     'settings.autoHideTitlebarDesc': 'Hides the top bar and the window controls until the pointer reaches the top edge. Always reachable from View or Ctrl+Shift+T. While it is hidden the window cannot be dragged.',
     'settings.hideStatusBar': 'Hide bottom status bar',
     'settings.hideStatusBarDesc': 'Removes the status bar and gives its row back to the note. Ctrl+Shift+B.',
+    'settings.files': 'Files',
     'menu.commandPalette': 'Command Palette', 'menu.shortcuts': 'Keyboard Shortcuts',
     'menu.checkUpdates': 'Check for Updates…', 'menu.about': 'About BP MD RTL Reader',
     // Welcome screen (T-R7). Title/lede/openFileSub carry inline markup → data-i18n-html.
@@ -93,6 +94,101 @@ export const MESSAGES = {
     'readerControls.toggle': 'Reader settings', 'readerControls.title': 'Reader settings', 'readerControls.textSize': 'Text size',
     'readerControls.decreaseText': 'Decrease text size', 'readerControls.increaseText': 'Increase text size', 'readerControls.resetText': 'Reset text size',
     'readerControls.contentWidth': 'Content width',
+    // v1.2 Word-style close/save dialog: a themed three-way prompt replaces the old
+    // English-only native confirm() (which offered only discard/cancel — the default
+    // button was the data-losing one).
+    'dlg.unsavedTitle': 'Unsaved changes',
+    'dlg.saveOnePre': 'Do you want to save the changes to ',
+    'dlg.saveOnePost': '?',
+    'dlg.saveMany': 'You have {n} unsaved note{s}. Save them before closing?',
+    'dlg.hint': 'Your changes will be lost if you don’t save.',
+    'dlg.save': 'Save', 'dlg.saveAll': 'Save All',
+    'dlg.dontSave': 'Don’t Save', 'dlg.closeWithoutSaving': 'Close without Saving',
+    'dlg.cancel': 'Cancel',
+    // Crash/forced-exit recovery (autorecovery snapshots, Word-style).
+    'recovery.title': 'Recover unsaved notes?',
+    'recovery.body': '{n} note{s} from a previous session were never saved. Restore them?',
+    'recovery.restore': 'Restore', 'recovery.discard': 'Discard',
+    'recovery.hint': 'They reopen as unsaved copies — use Save As to keep them.',
+    'recovery.restored': 'Restored {n} note{s} — save them to keep them',
+    // Settings: optional auto-save (files opened from disk only; untitled notes still
+    // need Save As because their on-disk location is unknown).
+    'settings.autosave': 'Auto-save',
+    'settings.autosaveDesc': 'Automatically saves open files about every 30 seconds. Untitled notes still need Save As.',
+    // Toasts (previously hard-coded English at every call site).
+    'toast.saved': 'Saved {name}', 'toast.savedAs': 'Saved as {name}',
+    'toast.noFileToSave': 'No file to save',
+    'toast.couldNotSave': 'Could not save',
+    'toast.couldNotSaveName': 'Could not save {name} ({reason})',
+    'toast.saveCanceled': 'Save canceled — the note is still unsaved',
+    'toast.downloaded': 'Downloaded {name}',
+    'toast.openedFile': 'Opened {name}', 'toast.couldNotOpenFile': 'Could not open file',
+    'toast.openFileFailed': 'Could not open “{name}”',
+    'toast.folderNoNotes': 'Folder opened — no .md files found',
+    'toast.openedFolder': 'Opened “{name}” — {n} note{s}',
+    'toast.couldNotOpenFolder': 'Could not open folder',
+    'toast.demoLoaded': 'Demo notes loaded',
+    'toast.skippedType': 'Skipped “{name}” — only .md/.markdown/.txt files',
+    'toast.skippedSize': 'Skipped “{name}” — file exceeds 10 MB limit',
+    'toast.couldNotRead': 'Could not read “{name}”',
+    'toast.loadedN': 'Loaded {n} file{s}',
+    'toast.reopenedConflict': '“{name}” is already open with unsaved edits — kept your version',
+    'toast.reloaded': 'Reloaded from disk', 'toast.keptEdits': 'Kept your edits',
+    'toast.vaultTruncated': 'Folder is large — showing the first {n} files',
+    'toast.leftVault': '“{name}” was saved outside the open folder',
+    // Status bar (previously hard-coded English).
+    'status.noFolder': 'no folder', 'status.folder': 'folder: {name}', 'status.folders': 'folders: {n}',
+    'status.lnCol': 'ln {l} · col {c}', 'status.nWords': '{n} words',
+    'sc.cycleTheme': 'Cycle Theme',
+    // Right-click menu, per-surface items (tree rows / tabs / wikilinks). The renderer
+    // builds these locally — main never sees content paths, so Reveal/Copy Path ask
+    // main to resolve the file's own capability server-side.
+    'ctx.reveal': 'Reveal in File Explorer', 'ctx.copyPath': 'Copy Path',
+    'ctx.close': 'Close', 'ctx.closeOthers': 'Close Other Tabs', 'ctx.closeAll': 'Close All Tabs',
+    'ctx.duplicate': 'Duplicate Note', 'ctx.openNote': 'Open Note', 'ctx.copyName': 'Copy Name',
+    'ctxmenu.label': 'Context menu', 'dropdown.label': 'Menu',
+    'toast.theme': 'Theme: {name}', 'toast.direction': 'Direction: {dir}',
+    'toast.sidebar': 'Sidebar: {state}', 'toast.inspector': 'Inspector: {state}',
+    'toast.shown': 'shown', 'toast.hidden': 'hidden',
+    'toast.calendar': 'Calendar: {name}',
+    'toast.kashida': 'Arabic justification: {state}',
+    'toast.italicRecolor': 'Italic recolour: {state}',
+    'toast.on': 'on', 'toast.off': 'off', 'toast.kashidaOn': 'kashida', 'toast.kashidaOff': 'ragged',
+    'toast.cmEditor': 'Live-preview editor: {state}',
+    'toast.updateAvailable': 'Update available: {latest} (you have {current})',
+    'toast.upToDate': 'You’re up to date ({current})',
+    'toast.exported': 'Exported {name}',
+    'toast.noNoteFound': 'No note found for “{target}”',
+    'toast.openedNFiles': 'Opened {n} file{s}',
+    'toast.topbarHidden': 'Top bar hidden — move the pointer to the top edge, or press Ctrl+Shift+T. Ctrl+, opens Settings.',
+    'toast.statusbarHidden': 'Status bar hidden — press Ctrl+Shift+B to bring it back. Ctrl+, opens Settings.',
+    'doc.unsaved': 'unsaved', 'doc.readTime': '≈ {n} min read',
+    // v1.2: the writing toolbar strip (previously zero localization — 24 English-only
+    // tooltips/labels). Shortcut parentheses are content, not untranslated English.
+    'tb.heading': 'Heading level', 'tb.bold': 'Bold (Ctrl+B)', 'tb.boldName': 'Bold',
+    'tb.italic': 'Italic (Ctrl+I)', 'tb.italicName': 'Italic',
+    'tb.strike': 'Strikethrough', 'tb.underline': 'Underline',
+    'tb.code': 'Inline code', 'tb.highlight': 'Highlight (==)',
+    'tb.sub': 'Subscript (~x~)', 'tb.sup': 'Superscript (^x^)',
+    'tb.clear': 'Clear formatting', 'tb.link': 'Insert link', 'tb.wikilink': 'Insert wikilink',
+    'tb.math': 'Inline math (KaTeX)', 'tb.footnote': 'Insert footnote',
+    'tb.quote': 'Blockquote', 'tb.callout': 'Callout (> [!NOTE])',
+    'tb.ul': 'Bulleted list', 'tb.ol': 'Numbered list', 'tb.task': 'Task list',
+    'tb.outdent': 'Outdent (Shift+Tab)', 'tb.indent': 'Indent (Tab)',
+    'tb.codeblock': 'Insert code block', 'tb.table': 'Insert table', 'tb.image': 'Insert image',
+    'tb.rule': 'Insert horizontal rule',
+    'tb.h1': 'Heading 1', 'tb.h2': 'Heading 2', 'tb.h3': 'Heading 3',
+    'tb.h4': 'Heading 4', 'tb.h5': 'Heading 5', 'tb.h6': 'Heading 6',
+    'tb.tableControls': 'Table controls',
+    'tb.rowAfter': 'Insert row below', 'tb.rowDelete': 'Delete row',
+    'tb.colAfter': 'Insert column right', 'tb.colDelete': 'Delete column',
+    'tb.rowPlus': '+ Row', 'tb.rowMinus': '− Row', 'tb.colPlus': '+ Col', 'tb.colMinus': '− Col',
+    'tb.newTab': 'New tab (Ctrl+N)', 'tb.newTabName': 'New tab',
+    'win.minimize': 'Minimize', 'win.maximize': 'Maximize', 'win.close': 'Close',
+    'src.label': 'Markdown source',
+    'banner.conflict': '⚠ “{name}” changed on disk while you had unsaved edits.',
+    'banner.keepMine': 'Keep my edits', 'banner.reload': 'Reload from disk',
+    'tab.conflictTip': '{name} — changed on disk (unresolved)',
 
   },
   ar: {
@@ -138,6 +234,7 @@ export const MESSAGES = {
     'settings.autoHideTitlebarDesc': 'يُخفي الشريط العلوي وأزرار النافذة حتّى يبلغ المؤشّر الحافّة العليا. متاح دائمًا من قائمة عرض أو بـ Ctrl+Shift+T. ولا يمكن سحب النافذة وهو مخفيّ.',
     'settings.hideStatusBar': 'إخفاء شريط الحالة',
     'settings.hideStatusBarDesc': 'يُزيل شريط الحالة ويعيد مساحته للملاحظة. Ctrl+Shift+B.',
+    'settings.files': 'الملفات',
     'menu.commandPalette': 'لوحة الأوامر', 'menu.shortcuts': 'اختصارات لوحة المفاتيح',
     'menu.checkUpdates': 'التحقق من التحديثات…', 'menu.about': 'حول BP MD RTL Reader',
     // Welcome screen (T-R7). The product name + the .md extension stay Latin (content).
@@ -175,6 +272,96 @@ export const MESSAGES = {
     'readerControls.toggle': 'إعدادات القراءة', 'readerControls.title': 'إعدادات القراءة', 'readerControls.textSize': 'حجم النص',
     'readerControls.decreaseText': 'تصغير حجم النص', 'readerControls.increaseText': 'زيادة حجم النص', 'readerControls.resetText': 'إعادة حجم النص',
     'readerControls.contentWidth': 'عرض المحتوى',
+    // v1.2 حوار الإغلاق بنمط Word: ثلاثة خيارات بدل confirm() الإنجليزي ثنائي الخيارات.
+    'dlg.unsavedTitle': 'تغييرات غير محفوظة',
+    'dlg.saveOnePre': 'هل تريد حفظ التغييرات في ',
+    'dlg.saveOnePost': '؟',
+    'dlg.saveMany': 'لديك {n} ملاحظة غير محفوظة. هل تريد حفظها قبل الإغلاق؟',
+    'dlg.hint': 'ستفقد تغييراتك إن لم تحفظها.',
+    'dlg.save': 'حفظ', 'dlg.saveAll': 'حفظ الكل',
+    'dlg.dontSave': 'عدم الحفظ', 'dlg.closeWithoutSaving': 'إغلاق دون حفظ',
+    'dlg.cancel': 'إلغاء',
+    // الاسترداد بعد الأعطال أو الإغلاق القسري.
+    'recovery.title': 'استرداد ملاحظات غير محفوظة؟',
+    'recovery.body': 'توجد {n} ملاحظة من جلسة سابقة لم تُحفظ. هل تريد استعادتها؟',
+    'recovery.restore': 'استرداد', 'recovery.discard': 'تجاهل',
+    'recovery.hint': 'تُفتح كنسخ غير محفوظة — استخدم «حفظ باسم» للاحتفاظ بها.',
+    'recovery.restored': 'استُرجعت {n} ملاحظة — احفظها للاحتفاظ بها',
+    // الإعدادات: حفظ تلقائي اختياري (للملفات المفتوحة من القرص فقط).
+    'settings.autosave': 'الحفظ التلقائي',
+    'settings.autosaveDesc': 'يحفظ الملفات المفتوحة تلقائيًا كل 30 ثانية تقريبًا. الملاحظات بلا اسم تحتاج «حفظ باسم».',
+    // رسائل التوست (كانت إنجليزية ثابتة في كل مواضع الاستدعاء).
+    'toast.saved': 'تم حفظ {name}', 'toast.savedAs': 'تم الحفظ باسم {name}',
+    'toast.noFileToSave': 'لا ملف للحفظ',
+    'toast.couldNotSave': 'تعذّر الحفظ',
+    'toast.couldNotSaveName': 'تعذّر حفظ {name} ({reason})',
+    'toast.saveCanceled': 'أُلغي الحفظ — الملاحظة ما زالت غير محفوظة',
+    'toast.downloaded': 'تم تنزيل {name}',
+    'toast.openedFile': 'فُتح {name}', 'toast.couldNotOpenFile': 'تعذّر فتح الملف',
+    'toast.openFileFailed': 'تعذّر فتح «{name}»',
+    'toast.folderNoNotes': 'فُتح المجلد — لا ملفات .md',
+    'toast.openedFolder': 'فُتح «{name}» — {n} ملاحظة',
+    'toast.couldNotOpenFolder': 'تعذّر فتح المجلد',
+    'toast.demoLoaded': 'حُمّلت الملاحظات التجريبية',
+    'toast.skippedType': 'تخطّينا «{name}» — المسموح .md/.markdown/.txt فقط',
+    'toast.skippedSize': 'تخطّينا «{name}» — يتجاوز حد 10 ميغابايت',
+    'toast.couldNotRead': 'تعذّرت قراءة «{name}»',
+    'toast.loadedN': 'حُمّلت {n} ملفات',
+    'toast.reopenedConflict': '«{name}» مفتوح بتعديلات غير محفوظة — أبقينا نسختك',
+    'toast.reloaded': 'أُعيد التحميل من القرص', 'toast.keptEdits': 'أبقينا تعديلاتك',
+    'toast.vaultTruncated': 'المجلد كبير — نعرض أول {n} ملف',
+    'toast.leftVault': '«{name}» حُفظ خارج المجلد المفتوح',
+    // شريط الحالة (كان إنجليزيًا ثابتًا).
+    'status.noFolder': 'لا مجلد', 'status.folder': 'مجلد: {name}', 'status.folders': 'مجلدات: {n}',
+    'status.lnCol': 'س {l} · عمود {c}', 'status.nWords': '{n} كلمة',
+    'sc.cycleTheme': 'تبديل السمة',
+    // كليك يمين: بنود كل سطح (شجرة الملفات / التبويبات / روابط الويكي).
+    'ctx.reveal': 'إظهار في مستكشف الملفات', 'ctx.copyPath': 'نسخ المسار',
+    'ctx.close': 'إغلاق', 'ctx.closeOthers': 'إغلاق التبويبات الأخرى', 'ctx.closeAll': 'إغلاق كل التبويبات',
+    'ctx.duplicate': 'مضاعفة الملاحظة', 'ctx.openNote': 'فتح الملاحظة', 'ctx.copyName': 'نسخ الاسم',
+    'ctxmenu.label': 'القائمة السياقية', 'dropdown.label': 'القائمة',
+    'toast.theme': 'السمة: {name}', 'toast.direction': 'الاتجاه: {dir}',
+    'toast.sidebar': 'الشريط الجانبي: {state}', 'toast.inspector': 'المُعايِن: {state}',
+    'toast.shown': 'ظاهر', 'toast.hidden': 'مخفي',
+    'toast.calendar': 'التقويم: {name}',
+    'toast.kashida': 'ضبط العربية: {state}',
+    'toast.italicRecolor': 'تلوين المائل: {state}',
+    'toast.on': 'مفعل', 'toast.off': 'معطل', 'toast.kashidaOn': 'بالكشيدة', 'toast.kashidaOff': 'متعرج',
+    'toast.cmEditor': 'محرّر المعاينة الحيّة: {state}',
+    'toast.updateAvailable': 'يتوفر تحديث: {latest} (لديك {current})',
+    'toast.upToDate': 'لديك أحدث إصدار ({current})',
+    'toast.exported': 'تم تصدير {name}',
+    'toast.noNoteFound': 'لا ملاحظة باسم «{target}»',
+    'toast.openedNFiles': 'فُتحت {n} ملفات',
+    'toast.topbarHidden': 'الشريط العلوي مخفي — حرّك المؤشر إلى الحافة العليا أو اضغط Ctrl+Shift+T. وCtrl+, يفتح الإعدادات.',
+    'toast.statusbarHidden': 'شريط الحالة مخفي — اضغط Ctrl+Shift+B لإعادته. وCtrl+, يفتح الإعدادات.',
+    'doc.unsaved': 'غير محفوظة', 'doc.readTime': '≈ {n} د قراءة',
+    // v1.2: شريط أدوات الكتابة (كان بلا أي تعريب — 24 تلميحاً إنجليزياً). أقواس الاختصارات
+    // محتوى لا يُترجم.
+    'tb.heading': 'مستوى العنوان', 'tb.bold': 'عريض (Ctrl+B)', 'tb.boldName': 'عريض',
+    'tb.italic': 'مائل (Ctrl+I)', 'tb.italicName': 'مائل',
+    'tb.strike': 'يتوسطه خط', 'tb.underline': 'تسطير',
+    'tb.code': 'شفرة داخل السطر', 'tb.highlight': 'تظليل (==)',
+    'tb.sub': 'أسفل النص (~x~)', 'tb.sup': 'أعلى النص (^x^)',
+    'tb.clear': 'مسح التنسيق', 'tb.link': 'إدراج رابط', 'tb.wikilink': 'إدراج رابط ويكي',
+    'tb.math': 'رياضيات داخل السطر (KaTeX)', 'tb.footnote': 'إدراج هامش سفلي',
+    'tb.quote': 'اقتباس', 'tb.callout': 'تنبيه (> [!NOTE])',
+    'tb.ul': 'قائمة نقطية', 'tb.ol': 'قائمة مرقمة', 'tb.task': 'قائمة مهام',
+    'tb.outdent': 'تقليل الإزاحة (Shift+Tab)', 'tb.indent': 'زيادة الإزاحة (Tab)',
+    'tb.codeblock': 'إدراج كتلة شفرة', 'tb.table': 'إدراج جدول', 'tb.image': 'إدراج صورة',
+    'tb.rule': 'إدراج فاصل أفقي',
+    'tb.h1': 'عنوان 1', 'tb.h2': 'عنوان 2', 'tb.h3': 'عنوان 3',
+    'tb.h4': 'عنوان 4', 'tb.h5': 'عنوان 5', 'tb.h6': 'عنوان 6',
+    'tb.tableControls': 'أدوات الجدول',
+    'tb.rowAfter': 'إدراج صف أسفل', 'tb.rowDelete': 'حذف الصف',
+    'tb.colAfter': 'إدراج عمود لليمين', 'tb.colDelete': 'حذف العمود',
+    'tb.rowPlus': '+ صف', 'tb.rowMinus': '− صف', 'tb.colPlus': '+ عمود', 'tb.colMinus': '− عمود',
+    'tb.newTab': 'تبويب جديد (Ctrl+N)', 'tb.newTabName': 'تبويب جديد',
+    'win.minimize': 'تصغير', 'win.maximize': 'تكبير', 'win.close': 'إغلاق',
+    'src.label': 'مصدر الماركداون',
+    'banner.conflict': '⚠ «{name}» تغيّر على القرص أثناء وجود تعديلات غير محفوظة.',
+    'banner.keepMine': 'أبقِ تعديلاتي', 'banner.reload': 'أعد التحميل من القرص',
+    'tab.conflictTip': '{name} — تغيّر على القرص (لم يُحسم)',
 
   },
 };
@@ -182,4 +369,15 @@ export const MESSAGES = {
 /** Translate a key for a locale, falling back to English then the key itself. */
 export function t(key, locale = 'en') {
   return translate(MESSAGES, key, locale);
+}
+
+/**
+ * Fill `{name}`-style placeholders in a catalog template. Unknown vars render as
+ * empty (never the literal `{key}`), so a missing variable can't leak keys to the UI.
+ */
+export function formatMessage(template, vars = {}) {
+  return String(template == null ? '' : template).replace(/\{(\w+)\}/g, (_, k) => {
+    const v = vars[k];
+    return v == null ? '' : String(v);
+  });
 }

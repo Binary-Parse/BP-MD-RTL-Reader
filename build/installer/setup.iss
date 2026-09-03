@@ -11,7 +11,7 @@
 
 ; ---- Version (overridable from the build script: /DAppVersion=x.y.z) --------
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.2.1"
 #endif
 
 ; ---- Verified source --------------------------------------------------------
@@ -56,6 +56,9 @@ DisableProgramGroupPage=auto
 AllowNoIcons=yes
 UsePreviousAppDir=yes
 
+; ---- License page (accept/refuse) — repo-root MIT text, English binding ----
+LicenseFile=..\..\LICENSE
+
 ; ---- Privileges: admin (per-machine) by default; /CURRENTUSER & dialog allowed
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline dialog
@@ -82,6 +85,8 @@ WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
 ChangesAssociations=yes
+; Warn (and offer a clean close) when the app is running, via the Restart Manager.
+CloseApplications=yes
 #ifdef ReleaseSigning
 SignTool=bpmd
 SignedUninstaller=yes

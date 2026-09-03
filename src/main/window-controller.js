@@ -13,12 +13,14 @@ function createWindowController({
   getCurrentSettings,
   persistWindowState,
   closeVaultWatcher,
-  deliverPendingFile,
+  deliverPendingFiles,
   clampWindowBounds,
   isPackaged,
   classifyNavigation,
   isExternallyOpenable,
   buildContextMenuTemplate,
+  // v1.2: optional labels resolver so the right-click menu follows the UI locale.
+  buildContextMenuLabels = null,
   writeLog,
   ipcMain,
   crypto,
@@ -62,6 +64,47 @@ function createWindowController({
   // is destroyed or the renderer reports the menu closed without a selection, so the stash
   // cannot grow unbounded across a long session.
   const contextMenuStash = new Map();
+  // v1.2: dirty-state ledger. The renderer reports how many open files have unsaved
+  // edits ('doc:dirty-state'); keyed by webContents so main still knows the truth when
+  // the close prompt round-trip never comes back (hung or crashed renderer).
+  const dirtyCountBySender = new WeakMap();
+  // v1.2: pending close failsafes, keyed by webContents. The renderer owns the
+  // Save/Don't-Save/Cancel decision, but a hung renderer must not make the window
+  // unclosable: after CLOSE_FAILSAFE_MS main force-closes. The renderer clears the
+  // failsafe by approving (window-close-confirmed) or aborting (window-close-aborted,
+  // i.e. the user hit Cancel or a Save As was declined); recovery snapshots limit
+  // the data cost of a force-close.
+  const CLOSE_FAILSAFE_MS = 20000;
+  const closeFailsafeBySender = new Map();
+  function clearCloseFailsafe(sender) {
+    const timer = closeFailsafeBySender.get(sender);
+    if (timer) {
+      clearTimeout(timer);
+      closeFailsafeBySender.delete(sender);
+    }
+  }
+  let windowChromeHandlersRegistered = false;
+  function registerWindowChromeHandlers() {
+    if (windowChromeHandlersRegistered || !ipcMain || typeof ipcMain.on !== 'function') return;
+    windowChromeHandlersRegistered = true;
+    ipcMain.on('doc:dirty-state', (event, count) => {
+      if (!Number.isInteger(count) || count < 0 || count > 10000) return;
+      dirtyCountBySender.set(event.sender, count);
+    });
+    // NOTE: no extra 'window-close-confirmed' listener here — that channel is owned by
+    // ipc-controller (registered exactly once, enforced by main-close-protocol.test).
+    // The failsafe clears via 'window-close-aborted', or self-cancels once the window
+    // is destroyed / already approved.
+    ipcMain.on('window-close-aborted', (event) => clearCloseFailsafe(event.sender));
+    ipcMain.on('window-set-fullscreen', (event, flag) => {
+      const win = BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
+        ? BrowserWindow.fromWebContents(event.sender)
+        : null;
+      if (win && !win.isDestroyed() && typeof win.setFullScreen === 'function') {
+        win.setFullScreen(flag === true);
+      }
+    });
+  }
   // selectAll is deliberately absent: webContents.selectAll() selects the entire renderer
   // DOM (titlebar/sidebar/statusbar), not just the document (see
   // src/renderer/editor/edit-commands.js's module header). The dispatcher below relays a
@@ -165,6 +208,7 @@ function createWindowController({
 
   function createWindow() {
     registerContextMenuActionHandler(); // idempotent; the first window registers it for all
+    registerWindowChromeHandlers(); // v1.2: dirty ledger + fullscreen, same idempotent pattern
     const displays = (screen && typeof screen.getAllDisplays === 'function') ? screen.getAllDisplays() : [];
     const currentSettings = getCurrentSettings();
     const bounds = clampWindowBounds(currentSettings && currentSettings.window, displays);
@@ -231,12 +275,32 @@ function createWindowController({
         return;
       }
       win.webContents.send('app:request-close');
+      // v1.2 failsafe: the renderer owns the Save/Don't-Save/Cancel decision, but if it
+      // never answers (JS wedged, dialog wedged) the window must still be closable.
+      // The failsafe is cleared by window-close-confirmed / window-close-aborted.
+      clearCloseFailsafe(win.webContents);
+      const failsafe = setTimeout(() => {
+        closeFailsafeBySender.delete(win.webContents);
+        if (win.isDestroyed() || approvedCloseWindows.has(win)) return;
+        log('warn', 'window:close-failsafe', `renderer never answered app:request-close within ${CLOSE_FAILSAFE_MS}ms — force closing`);
+        approvedCloseWindows.add(win);
+        persistWindowState(win);
+        closeVaultWatcher();
+        win.close();
+      }, CLOSE_FAILSAFE_MS);
+      closeFailsafeBySender.set(win.webContents, failsafe);
     });
+
+    // v1.2: mirror native fullscreen state so the titlebar toggle + F11 stay in sync.
+    if (typeof win.on === 'function') {
+      win.on('enter-full-screen', () => { if (!win.isDestroyed()) win.webContents.send('window-fullscreen-changed', true); });
+      win.on('leave-full-screen', () => { if (!win.isDestroyed()) win.webContents.send('window-fullscreen-changed', false); });
+    }
 
     win.loadURL(appRendererUrl);
     win.webContents.on('did-finish-load', () => {
       rendererLoaded = true;
-      deliverPendingFile(win);
+      deliverPendingFiles(win);
     });
     win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       log('error', 'window:did-fail-load', `${errorCode} ${errorDescription} ${validatedURL} main=${isMainFrame}`);
@@ -264,7 +328,8 @@ function createWindowController({
     win.webContents.on('will-redirect', guardNavigation);
 
     win.webContents.on('context-menu', (_event, params) => {
-      const descriptors = buildContextMenuTemplate(params, { isExternallyOpenable });
+      const labels = typeof buildContextMenuLabels === 'function' ? buildContextMenuLabels() : undefined;
+      const descriptors = buildContextMenuTemplate(params, { isExternallyOpenable, labels });
       if (descriptors.length === 0) return;
       const nonce = crypto.randomUUID();
       contextMenuStash.set(nonce, { descriptors, params, sender: win.webContents });

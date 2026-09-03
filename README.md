@@ -9,7 +9,7 @@ first-class right-to-left support for Arabic.**
 
 Opens plain `.md` files from disk. No proprietary format, no account, no telemetry.
 
-[![Version](https://img.shields.io/badge/version-1.1.0-3ddc4a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.1-3ddc4a)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-47848F)](#download)
 [![License](https://img.shields.io/badge/license-MIT-3ddc4a)](LICENSE)
 [![Built with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -92,9 +92,12 @@ Builds are published on the
 | **macOS** | x64 and arm64 `.dmg` or `.zip` | Both architectures are signed and notarized by Apple |
 | **Linux** | x64 and arm64 `.AppImage` or `.deb` | Package and architecture per distribution |
 
-Every release also ships `SHA256SUMS.txt`, a source manifest for the Inno payload, and
-GitHub build provenance attestations. Verify the checksum before running a downloaded
-file; the exact file names and commands are in [docs/BUILD.md](docs/BUILD.md).
+Every release also ships `SHA256SUMS.txt` and a source manifest for the Inno payload.
+Verify the checksum before running a downloaded file; the exact file names and commands
+are in [docs/BUILD.md](docs/BUILD.md). (Releases are built locally per
+[docs/BUILD.md](docs/BUILD.md) — GitHub Actions is not used to cut them, so there are
+no automated build-provenance attestations; the checksum file is the verification
+artifact.)
 
 ---
 

@@ -30,6 +30,10 @@ function createIpcController({
   migrate,
   compareVersions,
   fetchFn,
+  // v1.2: surface-menu Reveal/Copy-Path support. Both optional so unit harnesses can
+  // omit them; the handlers degrade to a no-op error instead of crashing.
+  shell = null,
+  clipboard = null,
   updateManifestUrl = DEFAULT_UPDATE_MANIFEST_URL,
 }) {
   // B1 (multi-folder workspaces): one entry per currently-open vault, keyed by the
@@ -315,7 +319,7 @@ function createIpcController({
     ipcMain.handle('fs:writeFile', async (_event, payload) => {
       if (!payload || typeof payload !== 'object') return { error: 'invalid' };
       const {
-        documentId, content, baseHash, bom, eol, finalNewline, revision,
+        documentId, content, baseHash, bom, eol, finalNewline, revision, encoding,
       } = payload;
       if (typeof content !== 'string') return { error: 'invalid' };
       if (Buffer.byteLength(content, 'utf8') > 10 * 1024 * 1024) {
@@ -333,6 +337,8 @@ function createIpcController({
         bom,
         eol,
         finalNewline,
+        // v1.2: re-encode in the file's original encoding (UTF-8/UTF-16/Windows-1256).
+        encoding: typeof encoding === 'string' ? encoding : 'utf8',
       });
       return result.ok ? { ...result, revision } : result;
     });
@@ -355,6 +361,7 @@ function createIpcController({
         bom: !!payload.bom,
         eol: payload.eol === '\r\n' ? '\r\n' : '\n',
         finalNewline: payload.finalNewline !== false,
+        encoding: typeof payload.encoding === 'string' ? payload.encoding : 'utf8',
       });
       if (!written.ok) return written;
       try {
@@ -496,6 +503,90 @@ function createIpcController({
         else if (command === 'undo') webContents.undo();
         else if (command === 'redo') webContents.redo();
       } catch (_) { /* no-op */ }
+    });
+
+    // v1.2: surface-menu support — Reveal in Explorer / Copy Path. The renderer only
+    // ever sends an opaque documentId; main resolves it to the real path here, so the
+    // renderer still never learns filesystem paths.
+    ipcMain.handle('fs:reveal', (_event, documentId) => {
+      const capabilityRegistry = getCapabilityRegistry();
+      const record = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
+      if (!record) return { error: 'unauthorized-capability' };
+      if (!shell || typeof shell.showItemInFolder !== 'function') return { error: 'unsupported' };
+      try {
+        shell.showItemInFolder(record.path);
+        return { ok: true };
+      } catch (_) {
+        return { error: 'reveal-failed' };
+      }
+    });
+
+    ipcMain.handle('fs:copy-path', (_event, documentId) => {
+      const capabilityRegistry = getCapabilityRegistry();
+      const record = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
+      if (!record) return { error: 'unauthorized-capability' };
+      if (!clipboard || typeof clipboard.writeText !== 'function') return { error: 'unsupported' };
+      try {
+        clipboard.writeText(record.path);
+        return { ok: true };
+      } catch (_) {
+        return { error: 'copy-failed' };
+      }
+    });
+
+    // ── v1.2: crash-recovery snapshots (<userData>/recovery/snapshot.json). ──
+    // The renderer mirrors its dirty in-memory notes every 10s; a sanctioned close
+    // clears the file, a crash leaves it for the next launch's recovery prompt.
+    const RECOVERY_MAX_FILES = 20;
+    const RECOVERY_MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+    const recoveryFilePath = () => path.join(app.getPath('userData'), 'recovery', 'snapshot.json');
+
+    ipcMain.handle('recovery:snapshot', async (_event, files) => {
+      if (!Array.isArray(files)) return { error: 'invalid' };
+      const clean = [];
+      let total = 0;
+      for (const entry of files.slice(0, RECOVERY_MAX_FILES)) {
+        if (!entry || typeof entry.name !== 'string' || typeof entry.content !== 'string') continue;
+        if (entry.name.length === 0 || entry.name.length > 200) continue;
+        const bytes = Buffer.byteLength(entry.content, 'utf8');
+        if (bytes > 10 * 1024 * 1024) continue;
+        if (total + bytes > RECOVERY_MAX_TOTAL_BYTES) break;
+        total += bytes;
+        clean.push({ name: entry.name, content: entry.content, at: Date.now() });
+      }
+      try {
+        fs.mkdirSync(path.join(app.getPath('userData'), 'recovery'), { recursive: true });
+      } catch (_) {
+        return { error: 'write-failed' };
+      }
+      const result = atomicWriteFile(
+        fs,
+        recoveryFilePath(),
+        Buffer.from(JSON.stringify({ files: clean }), 'utf8'),
+      );
+      return result && result.ok ? { ok: true, count: clean.length } : { error: 'write-failed' };
+    });
+
+    ipcMain.handle('recovery:pop', async () => {
+      try {
+        const raw = await fs.promises.readFile(recoveryFilePath(), 'utf8');
+        fs.promises.unlink(recoveryFilePath()).catch(() => { /* best-effort cleanup */ });
+        const parsed = JSON.parse(raw);
+        const files = parsed && Array.isArray(parsed.files) ? parsed.files : [];
+        return {
+          ok: true,
+          files: files.filter((f) => f && typeof f.name === 'string' && typeof f.content === 'string'),
+        };
+      } catch (_) {
+        return { ok: true, files: [] }; // nothing to recover — the normal launch path
+      }
+    });
+
+    ipcMain.handle('recovery:clear', async () => {
+      try {
+        await fs.promises.unlink(recoveryFilePath());
+      } catch (_) { /* already absent — fine */ }
+      return { ok: true };
     });
 
     const LOG_RATE_LIMIT_PER_MIN = 100;

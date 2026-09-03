@@ -74,7 +74,9 @@ test.describe('smoke tests', () => {
     await page.click('#themeBtn');
     await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'sepia');
-    await expect(themeIcon).toHaveAttribute('href', '#ic-book-open');
+    // v1.2: sepia no longer borrows the Reading/Edit toggle's book-open glyph —
+    // the theme button shows the palette icon instead.
+    await expect(themeIcon).toHaveAttribute('href', '#ic-palette');
 
     // Click again to go back to paper
     await page.click('#themeBtn');

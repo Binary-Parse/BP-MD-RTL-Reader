@@ -4,6 +4,8 @@ export const PERSISTED_KEYS = new Set([
   'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
   // T-F19 chrome settings
   'windowTitleMode', 'autoHideTitlebar', 'hideStatusBar',
+  // v1.2: Word-style auto-save toggle
+  'autosave',
 ]);
 
 const noop = () => {};
@@ -69,6 +71,7 @@ export function createSettingsController({
       windowTitleMode: state.windowTitleMode,
       autoHideTitlebar: state.autoHideTitlebar,
       hideStatusBar: state.hideStatusBar,
+      autosave: state.autosave,
       lastSession: getLastSession(),
     };
   }
@@ -151,6 +154,7 @@ export function createSettingsController({
         ? saved.windowTitleMode : 'file';
       state.autoHideTitlebar = typeof saved.autoHideTitlebar === 'boolean' ? saved.autoHideTitlebar : false;
       state.hideStatusBar = typeof saved.hideStatusBar === 'boolean' ? saved.hideStatusBar : false;
+      state.autosave = typeof saved.autosave === 'boolean' ? saved.autosave : true;
       apply.applyChromeLayout();
       apply.syncWindowTitle();
       await apply.restoreLastSession(saved.lastSession);

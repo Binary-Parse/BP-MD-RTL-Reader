@@ -36,6 +36,9 @@ const DEFAULTS = Object.freeze({
   windowTitleMode: 'file',
   autoHideTitlebar: false,
   hideStatusBar: false,
+  // v1.2: Word-style auto-save of files opened from disk (untitled notes still need
+  // Save As). Renderer-driven; main only persists and restores the flag.
+  autosave: true,
   recents: [],
   window: { w: 1280, h: 820, maximized: false },
   lastSession: null,
@@ -86,6 +89,7 @@ function migrate(raw) {
   if (raw.windowTitleMode === 'app' || raw.windowTitleMode === 'file') out.windowTitleMode = raw.windowTitleMode;
   if (typeof raw.autoHideTitlebar === 'boolean') out.autoHideTitlebar = raw.autoHideTitlebar;
   if (typeof raw.hideStatusBar === 'boolean') out.hideStatusBar = raw.hideStatusBar;
+  if (typeof raw.autosave === 'boolean') out.autosave = raw.autosave;
   if (Array.isArray(raw.recents)) {
     out.recents = raw.recents
       .filter(r => r && typeof r.path === 'string'

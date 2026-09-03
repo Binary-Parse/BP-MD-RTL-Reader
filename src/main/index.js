@@ -1,6 +1,7 @@
 const path = require('path');
 const {
   parseFileArg,
+  parseFileArgs,
   shouldResetChrome,
   isNetworkPath,
   isTooManyFiles,
@@ -11,7 +12,7 @@ const {
   filterAndSortMdFiles,
 } = require('./main-logic');
 const { classifyNavigation, isExternallyOpenable } = require('./navigation');
-const { buildContextMenuTemplate } = require('./context-menu');
+const { buildContextMenuTemplate, labelsForLocale } = require('./context-menu');
 const { createDocumentStore, atomicWriteFile } = require('./document-store');
 const { createCapabilityRegistry } = require('./capabilities');
 const { createSettingsStore, clampWindowBounds, migrate, resetChromeSettings } = require('./settings');
@@ -146,17 +147,32 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
   }
 
   // ==== FILE ASSOCIATION ====
-  let pendingFileToOpen = null;
+  let pendingFilesToOpen = [];
 
-  function deliverPendingFile(win) {
-    if (!pendingFileToOpen || !win || win.isDestroyed()) return;
-    const filePath = pendingFileToOpen;
-    pendingFileToOpen = null;
-    try {
-      const capability = capabilityRegistry.grantDocument(filePath);
-      const snapshot = ipcController.readDocumentCapability(capability.id);
-      if (!snapshot.error) win.webContents.send('open-external-file', snapshot);
-    } catch (_) { /* silent */ }
+  // v1.2: deliver EVERY pending CLI/open-with/second-instance file (parseFileArgs),
+  // and report failures to the renderer instead of swallowing them — the app used to
+  // open with no file and no message when the CLI-supplied path could not be read.
+  // window-controller invokes this from did-finish-load.
+  function deliverPendingFiles(win) {
+    if (!win || win.isDestroyed()) return 0;
+    const files = pendingFilesToOpen;
+    pendingFilesToOpen = [];
+    let delivered = 0;
+    for (const filePath of files) {
+      try {
+        const capability = capabilityRegistry.grantDocument(filePath);
+        const snapshot = ipcController.readDocumentCapability(capability.id);
+        if (!snapshot.error) {
+          win.webContents.send('open-external-file', snapshot);
+          delivered++;
+        } else {
+          win.webContents.send('open-external-file', { error: snapshot.error, name: path.basename(filePath) });
+        }
+      } catch (_) {
+        win.webContents.send('open-external-file', { error: 'read-failed', name: path.basename(filePath) });
+      }
+    }
+    return delivered;
   }
 
   // ==== IPC HANDLERS ====
@@ -187,6 +203,8 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     migrate,
     compareVersions,
     fetchFn,
+    shell,
+    clipboard,
   });
 
   protocolController = createProtocolController({
@@ -215,12 +233,13 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     getCurrentSettings: () => currentSettings,
     persistWindowState,
     closeVaultWatcher: () => ipcController.closeVaultWatcher(),
-    deliverPendingFile,
+    deliverPendingFiles,
     clampWindowBounds,
     isPackaged: !!app.isPackaged,
     classifyNavigation,
     isExternallyOpenable,
     buildContextMenuTemplate,
+    buildContextMenuLabels: () => labelsForLocale(currentSettings && currentSettings.uiLocale),
     writeLog,
     ipcMain, crypto, Menu,
   });
@@ -246,16 +265,16 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     app.quit();
   } else {
     app.on('second-instance', (_event, argv) => {
-      const file = parseFileArg(argv, fs);
+      const files = parseFileArgs(argv, fs);
       const wins = BrowserWindow.getAllWindows();
       if (wins.length === 0) return;
       const win = wins[0];
       applyChromeResetIfAsked(argv);   // relaunching is what a stuck user tries first
       if (win.isMinimized()) win.restore();
       win.focus();
-      if (file) {
-        pendingFileToOpen = file;
-        deliverPendingFile(win);
+      if (files.length > 0) {
+        pendingFilesToOpen = pendingFilesToOpen.concat(files);
+        deliverPendingFiles(win);
       }
     });
 
@@ -266,12 +285,17 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
       capabilityRegistry = createCapabilityRegistry({ fs, path, userDataDir: app.getPath('userData') });
       currentSettings = settingsStore.load();
       applyChromeResetIfAsked(proc.argv);   // before createWindow, so it opens with chrome
-      pendingFileToOpen = parseFileArg(proc.argv, fs);
+      pendingFilesToOpen = parseFileArgs(proc.argv, fs);
       windowController.installApplicationMenu(proc.platform);
       registerIpcHandlers();
       protocolController.registerAppProtocol();
       protocolController.registerBpmdProtocol();
-      createWindow();
+      const win = createWindow();
+      // v1.2: pending CLI files ride did-finish-load (window-controller); if the
+      // renderer is slow, deliver on the next tick so early files aren't dropped.
+      if (pendingFilesToOpen.length > 0 && win) {
+        win.webContents.on('did-finish-load', () => deliverPendingFiles(win));
+      }
       // EC-D2 follow-up (T-F19): a display can vanish mid-session and strand the
       // window off-screen, where an auto-hidden title bar leaves no drag region.
       windowController.watchDisplays();
@@ -285,9 +309,9 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
       if (!filePath) return;
       const validated = parseFileArg(['electron', filePath], fs);
       if (!validated) return;
-      pendingFileToOpen = validated;
+      pendingFilesToOpen = pendingFilesToOpen.concat([validated]);
       const wins = BrowserWindow.getAllWindows();
-      if (wins.length > 0) deliverPendingFile(wins[0]);
+      if (wins.length > 0) deliverPendingFiles(wins[0]);
     });
   }
 

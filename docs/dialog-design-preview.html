@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>معاينة تصاميم حوار الحفظ — BP MD RTL Reader</title>
+<style>
+  /* ═══════════════ رموز التطبيق الفعلية (paper/ink/sepia) ═══════════════ */
+  :root {
+    --paper: #F6F2E7; --paper-deep: #EEE8D8; --paper-edge: #E1D9C4;
+    --ink: #2B2620; --ink-soft: #544C40; --ink-mute: #6F665B;
+    --rule: #D9D0BA; --accent: #35578C; --accent-soft: #D4DCEA;
+    --gold: #A8842C; --close-red: #B3261E;
+    --danger: #B3261E; --danger-soft: #F3DCD9;
+    --shadow: 0 18px 50px -12px rgba(43,38,32,.28), 0 4px 14px -6px rgba(43,38,32,.18);
+  }
+  [data-theme="ink"] {
+    --paper: #171A20; --paper-deep: #1E222A; --paper-edge: #2B3039;
+    --ink: #DDD7C9; --ink-soft: #B9B2A1; --ink-mute: #958D7C;
+    --rule: #303540; --accent: #90AFDD; --accent-soft: #26334A;
+    --gold: #D5B461; --danger: #E27360; --danger-soft: #3A2422;
+    --shadow: 0 18px 50px -12px rgba(0,0,0,.55), 0 4px 14px -6px rgba(0,0,0,.4);
+  }
+  [data-theme="sepia"] {
+    --paper: #F2E7CD; --paper-deep: #EADDBB; --paper-edge: #DBC898;
+    --ink: #3E2E16; --ink-soft: #5F482A; --ink-mute: #755A38;
+    --rule: #CDB584; --accent: #3E5A7E; --accent-soft: #D3D6C8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "IBM Plex Sans Arabic", Tahoma, sans-serif;
+    background: var(--paper-deep); color: var(--ink);
+    padding: 28px 20px 60px; transition: background .25s, color .25s;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  /* شريط التحكم العلوي */
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 14px;
+    padding: 12px 16px; margin-bottom: 8px;
+  }
+  .controls .lbl { font-weight: 600; font-size: 14px; color: var(--ink-soft); }
+  .controls button {
+    font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+    padding: 7px 14px; border-radius: 9px;
+  }
+  .controls button:hover { border-color: var(--accent); color: var(--accent); }
+  .controls button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .note { font-size: 13px; color: var(--ink-mute); margin: 10px 2px 26px; line-height: 1.7; }
+
+  .section-title {
+    font-size: 17px; font-weight: 700; margin: 34px 4px 6px; color: var(--ink);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title .badge {
+    font-size: 12px; background: var(--accent-soft); color: var(--accent);
+    padding: 2px 10px; border-radius: 999px;
+  }
+  .section-desc { font-size: 13.5px; color: var(--ink-mute); margin: 0 4px 14px; line-height: 1.7; }
+
+  /* مسرح العرض: خلفية معتمة مثل التطبيق */
+  .stage {
+    border-radius: 16px; padding: 34px 20px;
+    background: color-mix(in srgb, var(--ink) 72%, black);
+    display: flex; justify-content: center;
+    border: 1px solid var(--rule);
+  }
+
+  /* ═══════════════ عناصر مشتركة للحوار ═══════════════ */
+  .dlg {
+    background: var(--paper); color: var(--ink);
+    border-radius: 14px; box-shadow: var(--shadow);
+    width: 430px; max-width: 100%; overflow: hidden;
+    font-family: "Segoe UI", "IBM Plex Sans Arabic", sans-serif;
+  }
+  .dlg .doc-name { font-weight: 700; }
+
+  /* ═════════ التصميم أ — «دفتري» (بمформировية التطبيق) ═════════ */
+  .a-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 20px 14px; border-bottom: 1px solid var(--rule);
+  }
+  .a-icon {
+    width: 38px; height: 38px; border-radius: 10px; flex: none;
+    background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center;
+  }
+  .a-icon svg { width: 21px; height: 21px; }
+  .a-title { font-family: Georgia, "Times New Roman", serif; font-size: 17.5px; font-weight: 700; }
+  .a-sub { font-size: 12px; color: var(--ink-mute); margin-top: 2px; }
+  .a-body { padding: 16px 20px 6px; font-size: 14.5px; line-height: 1.75; color: var(--ink-soft); }
+  .a-body .doc-name { color: var(--ink); }
+  .a-foot {
+    display: flex; justify-content: flex-end; gap: 9px;
+    padding: 16px 20px 18px;
+  }
+  .btn { font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    border-radius: 9px; padding: 9px 18px; border: 1px solid transparent; }
+  .btn-primary { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.08); }
+  [data-theme="ink"] .btn-primary { color: #10131A; }
+  .btn-quiet { background: transparent; color: var(--ink-soft); border-color: var(--rule); }
+  .btn-quiet:hover { border-color: var(--ink-mute); color: var(--ink); }
+  .btn-danger-text { background: transparent; color: var(--danger); border-color: transparent; }
+  .btn-danger-text:hover { background: var(--danger-soft); }
+
+  /* ═════════ التصميم ب — «مركزي أيقوني» ═════════ */
+  .b-dlg { text-align: center; }
+  .b-body { padding: 26px 26px 20px; }
+  .b-badge {
+    width: 58px; height: 58px; margin: 0 auto 14px; border-radius: 50%;
+    background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center; position: relative;
+  }
+  .b-badge svg { width: 28px; height: 28px; }
+  .b-badge::after {
+    content: "!"; position: absolute; inset-inline-end: -2px; bottom: -2px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--gold); color: var(--paper);
+    font-size: 13px; font-weight: 800; display: grid; place-items: center;
+    border: 2px solid var(--paper);
+  }
+  .b-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .b-msg { font-size: 14px; color: var(--ink-soft); line-height: 1.75; }
+  .b-msg .doc-name { color: var(--ink); }
+  .b-hint { font-size: 12.5px; color: var(--ink-mute); margin-top: 8px; }
+  .b-actions { display: flex; border-top: 1px solid var(--rule); }
+  .b-actions .btn {
+    flex: 1; border-radius: 0; padding: 13px 6px; font-size: 14px;
+    background: transparent; color: var(--ink-soft); border: none;
+    border-inline-start: 1px solid var(--rule);
+  }
+  .b-actions .btn:first-child { border-inline-start: none; }
+  .b-actions .btn:hover { background: var(--paper-deep); }
+  .b-actions .btn-primary { background: var(--accent); color: var(--paper); font-weight: 700; }
+  [data-theme="ink"] .b-actions .btn-primary { color: #10131A; }
+  .b-actions .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+  .b-actions .btn-danger { color: var(--danger); font-weight: 600; }
+  .b-actions .btn-danger:hover { background: var(--danger-soft); }
+
+  /* ═════════ التصميم ج — «شريط إجراءات» (مضغوط) ═════════ */
+  .c-body { padding: 20px 22px 16px; display: flex; gap: 14px; align-items: flex-start; }
+  .c-icon {
+    width: 34px; height: 34px; flex: none; border-radius: 9px; margin-top: 2px;
+    background: var(--danger-soft); color: var(--danger); display: grid; place-items: center;
+  }
+  .c-icon svg { width: 19px; height: 19px; }
+  .c-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .c-msg { font-size: 13.5px; color: var(--ink-soft); line-height: 1.7; }
+  .c-msg .doc-name { color: var(--ink); }
+  .c-foot {
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+    padding: 12px 18px; background: var(--paper-deep); border-top: 1px solid var(--rule);
+  }
+  .c-foot .btn { padding: 8px 16px; font-size: 13.5px; }
+
+  /* نسخة تعدد الملفات (بنمط أ) */
+  .m-list { margin: 4px 0 2px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .m-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    font-size: 13.5px; border-bottom: 1px solid var(--rule); background: var(--paper);
+  }
+  .m-row:last-child { border-bottom: none; }
+  .m-row input { width: 15px; height: 15px; accent-color: var(--accent); }
+  .m-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
+  .m-row .sz { margin-inline-start: auto; font-size: 12px; color: var(--ink-mute); }
+
+  html[dir="ltr"] body { direction: ltr; }
+  .lang-note { text-align: center; font-size: 12px; color: var(--ink-mute); margin-top: 12px; }
+</style>
+</head>
+<body dir="rtl">
+<div class="wrap">
+
+  <div class="controls">
+    <span class="lbl">الثيم:</span>
+    <button id="thPaper" class="on">ورقي</button>
+    <button id="thInk">حبر (داكن)</button>
+    <button id="thSepia">بنّي</button>
+    <span class="lbl" style="margin-inline-start:14px">اللغة:</span>
+    <button id="langAr" class="on">عربي RTL</button>
+    <button id="langEn">English LTR</button>
+  </div>
+  <p class="note" id="intro">هذه معاينة حيّة لثلاثة تصاميم مقترحة لحوار «تغييرات غير محفوظة». بدّل الثيم واللغة من الأعلى، ثم اختر التصميم الذي يعجبك — التنفيذ سيكون داخل التطبيق بنفس الرموز اللونية تماماً.</p>
+
+  <!-- ═══════════════ أ ═══════════════ -->
+  <div class="section-title">التصميم أ — «دفتري» <span class="badge">الأنسب لهوية التطبيق</span></div>
+  <div class="section-desc" data-ar="رأس بشريط عنوان وشعار تحذير هادئ، فاصل رفيع، ثم صف أزرار في الجهة الأخيرة. الأساسي مملوء بلون التمييز (الأزرق اللازوردي)، و«عدم الحفظ» هادئ بإطار، و«إلغاء» شفاف. يبدو كأنه جزء أصيل من بقية نوافذ التطبيق (القوائم والنوافذ المنبثقة الحالية)."
+       data-en="A title header with a calm warning glyph and a hairline divider; actions sit at the inline end. Primary is filled with the app's lapis accent, Don't Save is a quiet outline, Cancel is ghost. Reads as native to the app's existing menus and modals.">…</div>
+  <div class="stage">
+    <div class="dlg" role="dialog" aria-label="dialog A">
+      <div class="a-head">
+        <div class="a-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </div>
+        <div>
+          <div class="a-title" data-ar="تغييرات غير محفوظة" data-en="Unsaved changes">تغييرات غير محفوظة</div>
+          <div class="a-sub" data-ar="آخر حفظ: قبل 3 دقائق" data-en="Last saved: 3 minutes ago">آخر حفظ: قبل 3 دقائق</div>
+        </div>
+      </div>
+      <div class="a-body">
+        <span data-ar="هل تريد حفظ التغييرات في " data-en="Do you want to save the changes to ">هل تريد حفظ التغييرات في </span><span class="doc-name">“Untitled.md”</span><span data-ar="؟" data-en="?">؟</span><br>
+        <span data-ar="ستفقد تغييراتك إن لم تحفظها." data-en="Your changes will be lost if you don't save.">ستفقد تغييراتك إن لم تحفظها.</span>
+      </div>
+      <div class="a-foot">
+        <button class="btn btn-danger-text" data-ar="عدم الحفظ" data-en="Don't Save">عدم الحفظ</button>
+        <button class="btn btn-quiet" data-ar="إلغاء" data-en="Cancel">إلغاء</button>
+        <button class="btn btn-primary" data-ar="حفظ" data-en="Save">حفظ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ ب ═══════════════ -->
+  <div class="section-title">التصميم ب — «مركزي أيقوني» <span class="badge">الأوضح للمسار</span></div>
+  <div class="section-desc" data-ar="شارة أيقونة دائرية في الوسط، رسالة موسّطة، ثم صف أزرار ممتد بعرض الحوار مقسوم بخطوط رفيعة — «حفظ» مملوء و«عدم الحفظ» بلون التحذير. نمط شبيه بحوارات macOS الحديثة؛ الأزرار كبيرة فيسهل إصابتها بالماوس."
+       data-en="A centered circular icon badge, centered message, then a full-width segmented button row divided by hairlines — Save filled, Don't Save in warning color. Reminiscent of modern macOS dialogs; the tall buttons are easy targets.">…</div>
+  <div class="stage">
+    <div class="dlg b-dlg" role="dialog" aria-label="dialog B">
+      <div class="b-body">
+        <div class="b-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </div>
+        <div class="b-title" data-ar="تغييرات غير محفوظة" data-en="Unsaved changes">تغييرات غير محفوظة</div>
+        <div class="b-msg">
+          <span data-ar="هل تريد حفظ التغييرات في " data-en="Do you want to save the changes to ">هل تريد حفظ التغييرات في </span><span class="doc-name">“Untitled.md”</span><span data-ar="؟" data-en="?">؟</span>
+          <div class="b-hint" data-ar="ستفقد تغييراتك إن لم تحفظها." data-en="Your changes will be lost if you don't save.">ستفقد تغييراتك إن لم تحفظها.</div>
+        </div>
+      </div>
+      <div class="b-actions">
+        <button class="btn btn-danger" data-ar="عدم الحفظ" data-en="Don't Save">عدم الحفظ</button>
+        <button class="btn" data-ar="إلغاء" data-en="Cancel">إلغاء</button>
+        <button class="btn btn-primary" data-ar="حفظ" data-en="Save">حفظ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ ج ═══════════════ -->
+  <div class="section-title">التصميم ج — «شريط إجراءات» <span class="badge">الأكثر إيجازاً</span></div>
+  <div class="section-desc" data-ar="حوار منخفض مضغوط: أيقونة تحذير بلون خطر، الرسالة بجوارها، ثم شريط سفلي بلون أعمق يحمل الأزرار في الجهة الأخيرة — «عدم الحفظ» بنص أحمر صريح. نمط شبيه بمطالبات VS Code؛ مناسب لمن يكره الحوارات الكبيرة."
+       data-en="A low, compact dialog: a danger-tinted icon beside the message, then a deeper-toned footer strip carrying the actions at the inline end — Don't Save in explicit red. VS Code-prompt style; good if you dislike large dialogs.">…</div>
+  <div class="stage">
+    <div class="dlg" role="dialog" aria-label="dialog C">
+      <div class="c-body">
+        <div class="c-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        </div>
+        <div>
+          <div class="c-title" data-ar="تغييرات غير محفوظة" data-en="Unsaved changes">تغييرات غير محفوظة</div>
+          <div class="c-msg">
+            <span data-ar="هل تريد حفظ التغييرات في " data-en="Save changes to ">هل تريد حفظ التغييرات في </span><span class="doc-name">“Untitled.md”</span><span data-ar="؟ ستفقد تغييراتك إن لم تحفظها." data-en="? Changes will be lost if you don't save.">؟ ستفقد تغييراتك إن لم تحفظها.</span>
+          </div>
+        </div>
+      </div>
+      <div class="c-foot">
+        <button class="btn btn-danger-text" data-ar="عدم الحفظ" data-en="Don't Save">عدم الحفظ</button>
+        <button class="btn btn-quiet" data-ar="إلغاء" data-en="Cancel">إلغاء</button>
+        <button class="btn btn-primary" data-ar="حفظ" data-en="Save">حفظ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ نسخة تعدد الملفات ═══════════════ -->
+  <div class="section-title">والملاحظة الأخيرة: نسخة «عدة ملفات» <span class="badge">تظهر مع كل التصاميم</span></div>
+  <div class="section-desc" data-ar="عند إغلاق النافذة وعند وجود عدة ملاحظات متسخة: قائمة محددة الكل افتراضياً مع «حفظ الكل». تُنفَّذ بنفس روح التصميم الذي تختاره."
+       data-en="When closing the window with several dirty notes: a check-list, all selected, with Save All. Implemented in the spirit of whichever design you pick.">…</div>
+  <div class="stage">
+    <div class="dlg" role="dialog" aria-label="dialog multi">
+      <div class="a-head">
+        <div class="a-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <div>
+          <div class="a-title" data-ar="حفظ الملاحظات قبل الإغلاق؟" data-en="Save notes before closing?">حفظ الملاحظات قبل الإغلاق؟</div>
+          <div class="a-sub" data-ar="3 ملاحظات غير محفوظة" data-en="3 unsaved notes">3 ملاحظات غير محفوظة</div>
+        </div>
+      </div>
+      <div class="a-body">
+        <div class="m-list">
+          <div class="m-row"><input type="checkbox" checked><span class="dot"></span><span>مقالة-القراءة.md</span><span class="sz">2 KB</span></div>
+          <div class="m-row"><input type="checkbox" checked><span class="dot"></span><span>Untitled-1.md</span><span class="sz">1 KB</span></div>
+          <div class="m-row"><input type="checkbox" checked><span class="dot"></span><span>meeting-notes.md</span><span class="sz">4 KB</span></div>
+        </div>
+      </div>
+      <div class="a-foot">
+        <button class="btn btn-danger-text" data-ar="إغلاق دون حفظ" data-en="Close without Saving">إغلاق دون حفظ</button>
+        <button class="btn btn-quiet" data-ar="إلغاء" data-en="Cancel">إلغاء</button>
+        <button class="btn btn-primary" data-ar="حفظ الكل" data-en="Save All">حفظ الكل</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="lang-note" id="footNote">— اختر التصميم في نافذة السؤال أعلى المحادثة، أو اكتب مزيجاً تريده (مثل: تصميم أ مع أزرار التصميم ب) —</p>
+</div>
+
+<script>
+  // الثيمات
+  const themes = { thPaper: null, thInk: 'ink', thSepia: 'sepia' };
+  for (const [id, val] of Object.entries(themes)) {
+    document.getElementById(id).addEventListener('click', () => {
+      if (val) document.documentElement.setAttribute('data-theme', val);
+      else document.documentElement.removeAttribute('data-theme');
+      for (const b of Object.keys(themes)) document.getElementById(b).classList.toggle('on', b === id);
+    });
+  }
+  // اللغة + الاتجاه
+  const arBtn = document.getElementById('langAr'), enBtn = document.getElementById('langEn');
+  function applyLang(lang) {
+    const rtl = lang === 'ar';
+    document.documentElement.lang = rtl ? 'ar' : 'en';
+    document.documentElement.dir = rtl ? 'rtl' : 'ltr';
+    document.body.dir = rtl ? 'rtl' : 'ltr';
+    document.querySelectorAll('[data-ar]').forEach(el => { el.textContent = el.getAttribute(rtl ? 'data-ar' : 'data-en'); });
+    document.getElementById('intro').textContent = rtl
+      ? 'هذه معاينة حيّة لثلاثة تصاميم مقترحة لحوار «تغييرات غير محفوظة». بدّل الثيم واللغة من الأعلى، ثم اختر التصميم الذي يعجبك — التنفيذ سيكون داخل التطبيق بنفس الرموز اللونية تماماً.'
+      : 'A live preview of three proposed designs for the "Unsaved changes" dialog. Switch theme and language above, then pick the one you like — it will be implemented in the app with the exact same palette.';
+    document.getElementById('footNote').textContent = rtl
+      ? '— اختر التصميم في نافذة السؤال أعلى المحادثة، أو اكتب مزيجاً تريده (مثل: تصميم أ مع أزرار التصميم ب) —'
+      : '— Pick a design in the question prompt above, or type a mix you want (e.g. design A with design B buttons) —';
+    arBtn.classList.toggle('on', rtl);
+    enBtn.classList.toggle('on', !rtl);
+  }
+  arBtn.addEventListener('click', () => applyLang('ar'));
+  enBtn.addEventListener('click', () => applyLang('en'));
+  applyLang('ar'); // fill the description paragraphs on first paint
+</script>
+</body>
+</html>

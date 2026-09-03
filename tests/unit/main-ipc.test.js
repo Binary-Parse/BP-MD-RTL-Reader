@@ -558,11 +558,12 @@ describe('fs:readVault', () => {
     mockFs.readFileSync.mockClear();
     mockFs.readFileSync.mockReturnValueOnce(BOM + '# Heading\nbody');
     const r = await readVault({}, '/bom-vault');
-    // L165: readFile called with the joined fullPath and 'utf8' encoding.
+    // v1.2: read() reads raw BYTES (no encoding arg) so the encoding can be detected;
+    // the mock string still decodes as UTF-8 with its BOM stripped.
     expect(mockFs.readFileSync).toHaveBeenCalledTimes(1);
     const [readArg, encArg] = mockFs.readFileSync.mock.calls[0];
     expect(readArg).toContain('doc.md');
-    expect(encArg).toBe('utf8');
+    expect(encArg).toBeUndefined();
     // L166-167: BOM stripped, exact result shape.
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ name: 'doc.md', relPath: 'doc.md', content: '# Heading\nbody', meta: { bom: true } });
@@ -714,8 +715,9 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     openFile(ev, '/abs/dir/My Note.md');
 
     expect(ev.preventDefault).toHaveBeenCalled();
-    // L94: readFileSync called with the EXACT path and 'utf8'.
-    expect(mockFs.readFileSync).toHaveBeenCalledWith('/abs/dir/My Note.md', 'utf8');
+    // v1.2: readFileSync called with the EXACT path and NO encoding (raw bytes, the
+    // encoding is detected by document-store).
+    expect(mockFs.readFileSync).toHaveBeenCalledWith('/abs/dir/My Note.md');
     // L96-100: channel + payload pinned exactly.
     expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledTimes(1);
     const [channel, payload] = mockElectron._mockWin.webContents.send.mock.calls[0];
@@ -778,13 +780,14 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
   });
 
-  test('readFileSync throwing is swallowed → no send (silent catch L101)', () => {
+  test('readFileSync throwing is caught (no crash) → renderer gets an error payload (v1.2)', () => {
     mockFs.readFileSync.mockImplementationOnce(() => { throw new Error('ENOENT'); });
     mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([mockElectron._mockWin]);
     mockElectron._mockWin.webContents.send.mockClear();
     const ev = { preventDefault: vi.fn() };
     expect(() => openFile(ev, '/throws.md')).not.toThrow();
     expect(ev.preventDefault).toHaveBeenCalled();
-    expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
+    // v1.2: the failure is no longer swallowed silently — the renderer toasts it.
+    expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledWith('open-external-file', { error: 'read-failed', name: 'throws.md' });
   });
 });

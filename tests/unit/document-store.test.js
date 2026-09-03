@@ -347,16 +347,16 @@ describe('document-store — residual mutation survivors', () => {
     expect(fs._files['/v/a.md']).toBe('x\n'); // startsWith('x') would wrongly append → 'x\n\n'
   });
 
-  // 53:42 / 70:48? / 75:60 — readFileSync('utf8') encoding arg in read() and write()'s
-  // conflict re-read. mock asserts the encoding is forwarded.
-  test('read + write forward the utf8 encoding to readFileSync', () => {
+  // v1.2 — read() now reads BYTES (no encoding arg) so the encoding can be detected;
+  // write()'s conflict re-read still reads the utf8 string so legacy meta hashes match.
+  test('read reads bytes (no encoding); write conflict re-read forwards utf8', () => {
     const encs = [];
     const base = mockFs({ '/v/a.md': 'old\n' });
     const fs = { ...base, readFileSync: (p, enc) => { encs.push(enc); return base._files[p]; } };
     const store = createDocumentStore({ fs, path: path.posix });
     store.read('/v/a.md');
     store.write('/v/a.md', 'new', { root: '/v', baseHash: hashContent('old\n'), eol: '\n' });
-    expect(encs).toEqual(['utf8', 'utf8']);
+    expect(encs).toEqual([undefined, 'utf8']);
   });
 
   // 87:34 / 89:43 — writeFileSync('utf8') + openSync(tmp, 'r+') string args.

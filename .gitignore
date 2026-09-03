@@ -103,11 +103,15 @@ artifact-manifest*.json
 *.swp
 *~
 
-# Operating-system metadata — kept: release.yml checks this repo out on
+# Operating-system metadata — kept: CI checks this repo out on
 # ubuntu-latest, windows-latest, and macos-latest.
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Local agent/automation scratch (untracked tooling state)
+.video_agent/
+.zcode/
 ._*
 .DocumentRevisions-V100
 .fseventsd

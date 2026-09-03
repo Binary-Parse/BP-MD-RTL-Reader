@@ -72,4 +72,10 @@ describe('electron-builder cross-platform config (T-B7)', () => {
   test('NSIS treats installer warnings as errors', () => {
     expect(pkg.build.nsis.warningsAsErrors).toBe(true);
   });
+
+  test('NSIS assisted installer ships the license page (v1.2.1)', () => {
+    // electron-builder resolves nsis resources relative to buildResourcesDir ('build/')
+    expect(pkg.build.nsis.license).toBe('installer/LICENSE-INSTALLER.txt');
+    expect(pkg.build.nsis.oneClick).toBe(false); // license page only exists in assisted flow
+  });
 });

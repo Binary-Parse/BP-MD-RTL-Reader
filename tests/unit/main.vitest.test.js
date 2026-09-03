@@ -1044,9 +1044,11 @@ describe('src/main/index.js — lifecycle + file-association + log rotation (aud
     const openFileEvent = { preventDefault: vi.fn() };
     mockAppListeners['open-file'](openFileEvent, '/some/path.md');
 
-    // preventDefault always called; send NOT called because readFileSync threw
+    // preventDefault always called; the throw is caught (the app still opens) — but
+    // v1.2 no longer swallows the failure silently: the renderer gets an error payload
+    // so it can toast 'Could not open <file>'.
     expect(openFileEvent.preventDefault).toHaveBeenCalled();
-    expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
+    expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledWith('open-external-file', { error: 'read-failed', name: 'path.md' });
   });
 
   // ─ app.on('activate') — recreates window when none ─────────────────

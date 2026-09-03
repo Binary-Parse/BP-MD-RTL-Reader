@@ -132,6 +132,26 @@ Describe 'Elevated installer command boundaries' {
         $Version | Should -Not -Match 'UninstallString'
     }
 
+    It 'NSIS v1.2.1 upgrade prompt reads versions read-only and routes removal through Windows settings' {
+        # Detection exists and reads only the DisplayVersion value of the two known keys.
+        $Nsis | Should -Match 'Function BpmdDetectInstalledVersion'
+        $Nsis | Should -Match 'DisplayVersion'
+        $Nsis | Should -Match 'BPMD_EB_UNINSTALL_KEY'
+        $Nsis | Should -Match 'BPMD_INNO_UNINSTALL_KEY'
+        # The same-version prompt guides removal to the Windows settings page by text.
+        $Nsis | Should -Match 'Installed apps'
+        # Localized prompts ship in both UI languages.
+        $Nsis | Should -Match 'LangString BpmdUpgFound\s+1033'
+        $Nsis | Should -Match 'LangString BpmdUpgFound\s+1025'
+    }
+
+    It 'both installers present a license page' {
+        $PkgJson = Get-Content -Raw (Join-Path $RepoRoot 'package.json') | ConvertFrom-Json
+        $PkgJson.build.nsis.license | Should -Be 'installer/LICENSE-INSTALLER.txt'
+        $Inno | Should -Match '(?m)^LicenseFile='
+        Test-Path (Join-Path $RepoRoot 'build\installer\LICENSE-INSTALLER.txt') | Should -BeTrue
+    }
+
     It 'same-version setup offers repair or cancel without an elevated Remove action' {
         $Inno | Should -Match 'Repair.*reinstall the current version'
         $Inno | Should -Not -Match 'Remove.*uninstall BP MD RTL Reader from this PC'

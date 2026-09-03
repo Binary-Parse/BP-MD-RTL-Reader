@@ -93,6 +93,9 @@ export function createWorkspaceController({
   renderTree = noop,
   renderTabs = noop,
   setVaultUi = noop,
+  // v1.2: optional localized-message resolver. When absent (unit tests, browser lane)
+  // every message below falls back to the exact English string it has always used.
+  tmsg = null,
   getElement = (id) => hostDocument?.getElementById(id),
 } = {}) {
   if (!state) throw new TypeError('workspace controller requires state');
@@ -128,17 +131,28 @@ export function createWorkspaceController({
     workspaceEpoch++;
   }
 
-  function mayAbandonWorkspace() {
+  const L = (key, fallback, vars) => {
+    if (tmsg) { const s = tmsg(key, vars); if (s) return s; }
+    if (vars) {
+      return fallback.replace(/\{(\w+)\}/g, (_, k) => (vars[k] == null ? '' : String(vars[k])));
+    }
+    return fallback;
+  };
+
+  // v1.2: these prompts are now Word-style Save/Don't-Save/Cancel (the renderer injects
+  // the themed three-way dialog), so they became async — callers await them.
+  async function mayAbandonWorkspace() {
     const dirty = state.files.filter((file) => file.dirty).length;
-    return dirty === 0 || confirmDiscard(`${dirty} unsaved file${dirty === 1 ? '' : 's'}. Discard changes and continue?`);
+    if (dirty === 0) return true;
+    return !!(await confirmDiscard(L('dlg.saveMany', '{n} unsaved file{s}. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' })));
   }
 
   // B4: the vault-scoped counterpart of mayAbandonWorkspace -- closing ONE folder only
   // prompts about ITS OWN dirty files, never another open folder's.
-  function mayAbandonVault(targetVaultId) {
+  async function mayAbandonVault(targetVaultId) {
     const dirty = state.files.filter((file) => file.vaultId === targetVaultId && file.dirty).length;
-    return dirty === 0
-      || confirmDiscard(`${dirty} unsaved file${dirty === 1 ? '' : 's'} in this folder. Discard changes and continue?`);
+    if (dirty === 0) return true;
+    return !!(await confirmDiscard(L('dlg.saveMany', '{n} unsaved file{s} in this folder. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' })));
   }
 
   function getOpenVaults() {
@@ -150,7 +164,7 @@ export function createWorkspaceController({
   // Returns false without changing anything if the user declines a dirty-file prompt.
   async function closeVault(targetVaultId) {
     if (!targetVaultId || !openVaultNames.has(targetVaultId)) return false;
-    if (!mayAbandonVault(targetVaultId)) return false;
+    if (!(await mayAbandonVault(targetVaultId))) return false;
 
     const activeFile = state.activeFile != null ? state.files[state.activeFile] : null;
     const activeWasClosed = !!activeFile && activeFile.vaultId === targetVaultId;
@@ -219,7 +233,7 @@ export function createWorkspaceController({
         if (!result || result.canceled || result.error || !result.vault?.id) return;
         const read = normalizeVaultRead(await electronAPI.readVault(result.vault.id), result.vault);
         if (!read) {
-          showToast('Could not open folder', 'error');
+          showToast(L('toast.couldNotOpenFolder', 'Could not open folder'), 'error');
           return;
         }
         const folderName = read.vault?.name || result.vault.name || 'folder';
@@ -235,13 +249,14 @@ export function createWorkspaceController({
         const firstNewIndex = state.files.findIndex((file) => file.vaultId === targetVaultId);
         if (read.entries.length === 0) {
           if (!hadActiveFile && firstNewIndex < 0) showWelcome();
-          showToast('Folder opened — no .md files found', 'info');
+          showToast(L('toast.folderNoNotes', 'Folder opened — no .md files found'), 'info');
         } else {
-          showToast(`Opened "${folderName}" — ${read.entries.length} note${read.entries.length === 1 ? '' : 's'}`);
+          showToast(L('toast.openedFolder', 'Opened "{name}" — {n} note{s}', { name: folderName, n: read.entries.length, s: read.entries.length === 1 ? '' : 's' }));
+        if (read.truncated) showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: read.entries.length }), 'info');
         }
         revealAfterOpen(hadActiveFile, firstNewIndex);
       } catch (error) {
-        if (error.name !== 'AbortError') showToast('Could not open folder', 'error');
+        if (error.name !== 'AbortError') showToast(L('toast.couldNotOpenFolder', 'Could not open folder'), 'error');
       }
       return;
     }
@@ -265,15 +280,15 @@ export function createWorkspaceController({
         state.files = [...state.files, ...picked];
         setVaultUi(handle.name);
         if (picked.length === 0) {
-          showToast('Folder opened — no .md files found', 'info');
+          showToast(L('toast.folderNoNotes', 'Folder opened — no .md files found'), 'info');
         } else {
-          showToast(`Opened "${handle.name}" — ${picked.length} note${picked.length === 1 ? '' : 's'}`);
+          showToast(L('toast.openedFolder', 'Opened "{name}" — {n} note{s}', { name: handle.name, n: picked.length, s: picked.length === 1 ? '' : 's' }));
         }
         revealAfterOpen(hadActiveFile, picked.length ? firstNewIndex : -1);
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.error(error);
-          showToast('Could not open folder', 'error');
+          showToast(L('toast.couldNotOpenFolder', 'Could not open folder'), 'error');
         }
       }
       return;
@@ -301,7 +316,7 @@ export function createWorkspaceController({
       state.vaultName = folderName;
       state.files = [...state.files, ...picked];
       setVaultUi(folderName);
-      showToast(`Opened "${folderName}" — ${picked.length} note${picked.length === 1 ? '' : 's'}`);
+      showToast(L('toast.openedFolder', 'Opened "{name}" — {n} note{s}', { name: folderName, n: picked.length, s: picked.length === 1 ? '' : 's' }));
       revealAfterOpen(hadActiveFile, firstNewIndex);
     });
     input.click();
@@ -320,7 +335,7 @@ export function createWorkspaceController({
           return;
         }
         addFile(fileFromSnapshot(result));
-        showToast(`Opened ${result.name}`);
+        showToast(L('toast.openedFile', 'Opened {name}', { name: result.name }));
       } catch (_) {
         showToast('Could not open file', 'error');
       }
@@ -333,7 +348,7 @@ export function createWorkspaceController({
         });
         const file = await handle.getFile();
         addFile({ name: file.name, path: file.name, handle, content: await file.text(), dirty: false });
-        showToast(`Opened ${file.name}`);
+        showToast(L('toast.openedFile', 'Opened {name}', { name: file.name }));
       } catch (error) {
         if (error.name !== 'AbortError') console.error(error);
       }
@@ -342,30 +357,35 @@ export function createWorkspaceController({
     fileInput?.click();
   }
 
-  async function saveCurrent() {
-    closeMenu();
-    if (state.activeFile === null || !state.files[state.activeFile]) {
-      showToast('No file to save', 'error');
-      return;
-    }
-    const file = state.files[state.activeFile];
+  // v1.2: the write-through core, split out of saveCurrent so the auto-save timer and
+  // the close flow can persist ANY file (not just the active tab). Returns one of:
+  //   'ok'       written in place (handle or documentId path)
+  //   'conflict' the disk copy changed underneath us — file.conflict is set + disk copy
+  //              re-read so the resolve banner can appear (previously a single non-vault
+  //              file just got a dead-end toast: the banner was vault-only)
+  //   'nosave'   no on-disk identity — caller should fall through to Save As
+  //   'error'    the write failed
+  async function writeThrough(file) {
     const submittedContent = file.content;
     const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
+    // Dirty is only cleared when the saved bytes are still exactly what the editor had
+    // when the save began — an edit landing mid-save keeps the file dirty (the call
+    // sites below re-check the same guard for their toasts).
+    const cleanIfUnchanged = () => {
+      if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
+    };
+    const electronAPI = api();
     if (file.handle && file.handle.createWritable) {
       try {
         const writable = await file.handle.createWritable();
         await writable.write(submittedContent);
         await writable.close();
-        if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
-        renderTabs();
-        showToast(`Saved ${file.name}`);
+        cleanIfUnchanged();
+        return 'ok';
       } catch (_) {
-        showToast('Could not save', 'error');
+        return 'error';
       }
-      return;
     }
-
-    const electronAPI = api();
     if (file.documentId && electronAPI && typeof electronAPI.writeFile === 'function') {
       try {
         const meta = file.meta || {};
@@ -377,61 +397,114 @@ export function createWorkspaceController({
           bom: !!meta.bom,
           eol: meta.eol === '\r\n' ? '\r\n' : '\n',
           finalNewline: meta.finalNewline !== false,
+          encoding: typeof meta.encoding === 'string' ? meta.encoding : 'utf8',
         });
         if (result && result.ok) {
           file.meta = result.meta || file.meta;
-          if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
-          renderTabs();
-          showToast(`Saved ${file.name}`);
-        } else {
-          showToast(`Could not save ${file.name} (${result?.error || 'unknown'})`, 'error');
+          cleanIfUnchanged();
+          return 'ok';
         }
+        if (result && result.error === 'conflict') {
+          // Re-read the disk copy so the Keep-mine/Reload banner has something to show.
+          file.conflict = true;
+          try {
+            const fresh = electronAPI && typeof electronAPI.readFile === 'function'
+              ? await electronAPI.readFile(file.documentId)
+              : null;
+            if (fresh && typeof fresh.content === 'string') {
+              file.diskContent = fresh.content;
+              file.diskMeta = fresh.meta || null;
+            }
+          } catch (_) { /* banner still renders; reload will just no-op */ }
+          return 'conflict';
+        }
+        file._lastWriteError = (result && result.error) || 'unknown';
+        return 'error';
       } catch (_) {
-        showToast('Could not save', 'error');
+        file._lastWriteError = null;
+        return 'error';
+      }
+    }
+    return 'nosave';
+  }
+
+  async function saveCurrent(target) {
+    closeMenu();
+    const file = target
+      || (state.activeFile === null ? null : state.files[state.activeFile]);
+    if (!file) {
+      showToast(L('toast.noFileToSave', 'No file to save'), 'error');
+      return;
+    }
+    const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
+    const submittedContent = file.content;
+    const outcome = await writeThrough(file);
+    if (outcome === 'ok') {
+      const unchanged = file.revision === submittedRevision && file.content === submittedContent;
+      if (unchanged) file.dirty = false;
+      renderTabs();
+      showToast(L('toast.saved', 'Saved {name}', { name: file.name }));
+      return;
+    }
+    if (outcome === 'conflict') {
+      const idx = state.files.indexOf(file);
+      if (idx >= 0) renderFile(idx);
+      showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: 'conflict' }), 'error');
+      return;
+    }
+    if (outcome === 'error') {
+      renderTabs();
+      if (file._lastWriteError) {
+        showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: file._lastWriteError }), 'error');
+      } else {
+        showToast(L('toast.couldNotSave', 'Could not save'), 'error');
       }
       return;
     }
-    if (electronAPI && typeof electronAPI.saveFileAs === 'function') {
-      await saveAs();
-      return;
-    }
-    const blob = new Blob([file.content], { type: 'text/markdown' });
-    const urlApi = hostWindow.URL || globalThis.URL;
-    const url = urlApi.createObjectURL(blob);
-    const anchor = hostDocument.createElement('a');
-    anchor.href = url;
-    anchor.download = file.name;
-    anchor.click();
-    urlApi.revokeObjectURL(url);
-    showToast(`Downloaded ${file.name}`);
+    // 'nosave': a new/untitled note (or a dragged-in file) has no on-disk identity yet,
+    // so saving it means Save As — a dialog. If the user CANCELS that dialog the old
+    // code returned in total silence, which read as "Ctrl+S did nothing"; name the fact.
+    if (electronAPIHasSaveAs()) { await saveAs(file); return; }
+    await browserSaveAs(file);
   }
 
-  async function saveAs() {
+  function electronAPIHasSaveAs() {
+    const electronAPI = api();
+    return !!(electronAPI && typeof electronAPI.saveFileAs === 'function');
+  }
+
+  async function saveAs(target) {
     closeMenu();
-    if (state.activeFile === null || !state.files[state.activeFile]) {
-      showToast('No file to save', 'error');
+    const file = target
+      || (state.activeFile === null ? null : state.files[state.activeFile]);
+    if (!file) {
+      showToast(L('toast.noFileToSave', 'No file to save'), 'error');
       return;
     }
-    const file = state.files[state.activeFile];
-    const submittedContent = file.content;
-    const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
     const electronAPI = api();
     if (electronAPI && typeof electronAPI.saveFileAs === 'function') {
+      const submittedContent = file.content;
+      const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
       try {
         const meta = file.meta || {};
         const result = await electronAPI.saveFileAs({
           suggestedName: file.name,
-          content: submittedContent,
+          content: file.content,
           revision: submittedRevision,
           bom: !!meta.bom,
           eol: meta.eol === '\r\n' ? '\r\n' : '\n',
           finalNewline: meta.finalNewline !== false,
+          encoding: typeof meta.encoding === 'string' ? meta.encoding : 'utf8',
         });
-        if (!result || result.canceled) return;
-        if (!result.ok) {
-          showToast(`Could not save (${result.error || 'unknown'})`, 'error');
+        if (!result || result.canceled) {
+          showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
           return;
         }
+        if (!result.ok) {
+          showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: result.error || 'unknown' }), 'error');
+          return;
+        }
+        const leftVault = !!file.vaultId;
         file.documentId = result.documentId;
         file.vaultId = null;
         file.name = result.name;
@@ -439,14 +512,25 @@ export function createWorkspaceController({
         file.meta = result.meta || file.meta;
         if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
         renderTabs();
-        renderFile(state.activeFile);
-        showToast(`Saved as ${result.name}`);
+        const idx = state.files.indexOf(file);
+        if (idx >= 0) renderFile(idx);
+        showToast(L('toast.savedAs', 'Saved as {name}', { name: result.name }));
+        // v1.2: Save As can land anywhere on disk; when it moves the note OUT of its
+        // open folder it silently lost that folder's watch/conflict protection. Say so.
+        if (leftVault) showToast(L('toast.leftVault', '“{name}” was saved outside the open folder', { name: result.name }), 'info');
       } catch (_) {
-        showToast('Could not save', 'error');
+        showToast(L('toast.couldNotSave', 'Could not save'), 'error');
       }
       return;
     }
-    if ('showSaveFilePicker' in hostWindow) {
+    await browserSaveAs(file);
+  }
+
+  // Browser-lane Save As: File System Access API when available, else a plain download.
+  async function browserSaveAs(file) {
+    const submittedContent = file.content;
+    const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
+    if (typeof hostWindow.showSaveFilePicker === 'function') {
       try {
         const handle = await hostWindow.showSaveFilePicker({
           suggestedName: file.name,
@@ -460,14 +544,38 @@ export function createWorkspaceController({
         file.path = handle.name;
         if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
         renderTabs();
-        renderFile(state.activeFile);
-        showToast(`Saved as ${handle.name}`);
+        const idx = state.files.indexOf(file);
+        if (idx >= 0) renderFile(idx);
+        showToast(L('toast.savedAs', 'Saved as {name}', { name: handle.name }));
       } catch (error) {
-        if (error.name !== 'AbortError') showToast('Could not save', 'error');
+        if (error.name !== 'AbortError') showToast(L('toast.couldNotSave', 'Could not save'), 'error');
       }
       return;
     }
-    await saveCurrent();
+    const blob = new Blob([file.content], { type: 'text/markdown' });
+    const urlApi = hostWindow.URL || globalThis.URL;
+    const url = urlApi.createObjectURL(blob);
+    const anchor = hostDocument.createElement('a');
+    anchor.href = url;
+    anchor.download = file.name;
+    anchor.click();
+    urlApi.revokeObjectURL(url);
+    showToast(L('toast.downloaded', 'Downloaded {name}', { name: file.name }));
+  }
+
+  // v1.2: Save-All used by the close flow and the auto-save timer. Saves every dirty
+  // file it can (in place); returns false if any file stayed dirty (a Save As dialog
+  // was canceled) so the caller can abort the close — Word's behavior.
+  async function saveAllDirty() {
+    const dirty = state.files.filter((file) => file.dirty);
+    for (const file of dirty) {
+      const outcome = await writeThrough(file);
+      if (outcome === 'nosave') continue; // untitled notes keep their dirty flag; their close prompt stands
+      if (outcome !== 'ok') return false;
+      renderTabs();
+    }
+    renderTabs();
+    return state.files.every((file) => !file.dirty);
   }
 
   function renderRecents() {
@@ -565,6 +673,17 @@ export function createWorkspaceController({
   }
 
   function openExternalFile(snapshot) {
+    // v1.2: main now reports CLI/open-with delivery failures instead of silently
+    // dropping them — say so instead of opening with no file and no message.
+    if (snapshot && snapshot.error) {
+      showToast(
+        snapshot.name
+          ? L('toast.openFileFailed', 'Could not open “{name}”', { name: snapshot.name })
+          : L('toast.couldNotOpenFile', 'Could not open file'),
+        'error',
+      );
+      return;
+    }
     const { name, content } = snapshot || {};
     if (!name || typeof content !== 'string') return;
     markUserIntent();
@@ -680,6 +799,11 @@ export function createWorkspaceController({
     setVaultUi(folderName);
     renderTree(state.files);
     renderFile(pickActiveIndex(state.files, lastSession.activePath));
+    // v1.2: the >5000-file cap used to truncate the restore listing SILENTLY — files
+    // beyond the cap just vanished from the tree on relaunch. Name the fact.
+    if (read.truncated) {
+      showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: read.entries.length }), 'info');
+    }
   }
 
   function bindExternalEvents() {
@@ -697,6 +821,8 @@ export function createWorkspaceController({
     openSingleFile,
     saveCurrent,
     saveAs,
+    saveAllDirty,
+    writeThrough,
     pushRecent,
     renderRecents,
     openRecent,

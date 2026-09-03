@@ -21,6 +21,9 @@
   --teal: #7CBBA0;
   --plum: #C093B0;
   --green: #8CC17A;
+  /* v1.2 design tokens (see base.css) */
+  --backdrop: #0F1116;
+  --caution: #D98F6C;
 }
 
 [data-theme="sepia"] {

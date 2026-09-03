@@ -5,7 +5,7 @@ body {
   font-family: var(--sans);
   font-size: 0.9375rem;
   color: var(--ink);
-  background: #2A2620;
+  background: var(--backdrop);
   -webkit-font-smoothing: antialiased;
   font-synthesis: none; /* T2: ship real weights/italics — never fake bold or oblique */
   font-optical-sizing: auto; /* T6: Literata (variable opsz) adapts its cut to the font-size */
@@ -39,7 +39,7 @@ body {
   max-height: none;
   border-radius: 0;
 }
-.app::backdrop { background: #0F1116; }
+.app::backdrop { background: var(--backdrop); }
 
 /* ============ TITLEBAR ============ */
 .titlebar {
@@ -734,7 +734,7 @@ html[dir="rtl"] .tree-root[aria-expanded="false"] .tree-twisty { rotate: 90deg; 
 .find-btn:hover { background: var(--paper-edge); color: var(--ink); }
 
 mark.find-hit {
-  background: #FFE082;
+  background: var(--find-hit);
   color: var(--ink);
   border-radius: 2px;
   padding: 0 1px;
@@ -1276,8 +1276,8 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .callout-tip       { --callout-color: var(--green); }
 .callout-important { --callout-color: var(--plum); }
 .callout-warning   { --callout-color: var(--gold); }
-.callout-caution   { --callout-color: #B25A38; }
-[data-theme="ink"] .callout-caution { --callout-color: #D98F6C; }
+.callout-caution   { --callout-color: var(--caution); }
+
 .callout-info      { --callout-color: var(--teal); }
 
 .editor ul, .editor ol { padding-inline-start: 24px; margin-bottom: 16px; }
@@ -1988,7 +1988,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast::before { content: '✓'; color: var(--green); font-weight: 600; }
-.toast.error::before { content: '!'; color: #E27360; }
+.toast.error::before { content: '!'; color: var(--toast-error); }
 .toast.info::before { content: 'i'; color: var(--gold); font-style: italic; font-family: var(--serif); }
 
 /* Reader controls stay with the shared content pane rather than a mode-specific toolbar. */
@@ -2074,8 +2074,8 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   z-index: 400;
   white-space: nowrap;
   pointer-events: none;
-  background: #23262D;
-  color: #EFEAE0;
+  background: var(--tip-bg);
+  color: var(--tip-fg);
   font-family: var(--sans);
   font-size: 0.71875rem;
   font-weight: 500;
@@ -2100,8 +2100,8 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   z-index: 400;
   white-space: nowrap;
   pointer-events: none;
-  background: #23262D;
-  color: #EFEAE0;
+  background: var(--tip-bg);
+  color: var(--tip-fg);
   font-family: var(--sans);
   font-size: 0.71875rem;
   font-weight: 500;
@@ -2122,4 +2122,119 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .insp-title, .insp-section h4, .recent-label, .pal-section-label,
 .dd-section-label, .set-group-label, .table-controls .tc-label, .about-version {
   font-family: var(--sans); font-weight: 600; letter-spacing: 0.09em;
+}
+
+/* =====================================================================
+   v1.2 polish pass (audit remediation)
+   ===================================================================== */
+/* The find bar's magic 290px assumed the 300px inspector column was open; with the
+   inspector hidden it floated mid-pane. Tuck it into the pane edge instead. */
+.app-body.no-inspector .find-bar { inset-inline-end: 12px; }
+
+/* Keyboard focus policy: interactive controls get one visible, theme-aware ring.
+   UA defaults washed out on the paper/ink surfaces (`.dd-item` was effectively
+   invisible), leaving keyboard users stranded. */
+:where(button, [role="button"], [role="menuitem"], [role="tab"], [role="switch"],
+       [role="treeitem"], [role="option"], input, textarea, select, [href], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Arabic typography: letter-spacing tears the joined script apart. Neutralize the
+   chrome's tracking (uppercase kicker labels) whenever the UI renders RTL. The
+   higher specificity (html[dir] + universal) beats the class-level rules above
+   without !important. */
+html[dir="rtl"] * { letter-spacing: normal; }
+
+/* ── Word-style dialogs — «centered icon» design (v1.2, user-picked from
+   docs/dialog-design-preview.html). Used by the Save/Don't-Save/Cancel prompt and
+   the crash-recovery prompt; rides the app's existing modal overlay, focus trap
+   and theme tokens. ── */
+.dlg-body {
+  padding: 26px 26px 20px;
+  text-align: center;
+}
+.dlg-badge {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+.dlg-badge .ic { width: 28px; height: 28px; }
+.dlg-badge::after {
+  content: '!';
+  position: absolute;
+  inset-inline-end: -2px;
+  bottom: -2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--paper);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--paper);
+}
+.dlg-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.dlg-msg {
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+  line-height: 1.75;
+}
+.dlg-msg .doc-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+.dlg-hint {
+  font-size: 0.78125rem;
+  color: var(--ink-mute);
+  margin-top: 8px;
+}
+.dlg-actions {
+  display: flex;
+  border-top: 1px solid var(--rule);
+}
+.dlg-btn {
+  flex: 1;
+  border-radius: 0;
+  padding: 13px 6px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--ink-soft);
+  border: none;
+  border-inline-start: 1px solid var(--rule);
+}
+.dlg-btn:hover { background: var(--paper-deep); }
+.dlg-btn:focus-visible { outline-offset: -3px; }
+.dlg-btn.dlg-primary {
+  background: var(--accent);
+  color: var(--paper);
+  font-weight: 700;
+}
+.dlg-btn.dlg-primary:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+[data-theme="ink"] .dlg-btn.dlg-primary { color: #10131A; }
+.dlg-btn.dlg-danger {
+  color: var(--toast-error);
+  font-weight: 600;
+}
+.dlg-btn.dlg-danger:hover {
+  background: color-mix(in srgb, var(--toast-error) 12%, transparent);
 }

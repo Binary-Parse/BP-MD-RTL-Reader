@@ -61,7 +61,7 @@ describe('workspace controller', () => {
     });
   });
 
-  test('requires state and tracks identity, session, and discard intent', () => {
+  test('requires state and tracks identity, session, and discard intent', async () => {
     expect(() => createWorkspaceController()).toThrow('workspace controller requires state');
     const confirmDiscard = vi.fn(() => false);
     const activeState = {
@@ -72,7 +72,7 @@ describe('workspace controller', () => {
     controller.setVaultIdentity('cap-vault', Number.NaN);
     expect(controller.getVaultId()).toBe('cap-vault');
     expect(controller.getVaultGeneration()).toBe(0);
-    expect(controller.mayAbandonWorkspace()).toBe(false);
+    expect(await controller.mayAbandonWorkspace()).toBe(false);
     expect(confirmDiscard).toHaveBeenCalledWith('2 unsaved files. Discard changes and continue?');
     expect(controller.buildSession()).toEqual({
       vaults: [{ vaultId: 'cap-vault', openPaths: ['a.md', 'b.md'] }],
@@ -83,7 +83,7 @@ describe('workspace controller', () => {
     expect(controller.getVaultId()).toBeNull();
 
     activeState.files.forEach((file) => { file.dirty = false; });
-    expect(controller.mayAbandonWorkspace()).toBe(true);
+    expect(await controller.mayAbandonWorkspace()).toBe(true);
     expect(confirmDiscard).toHaveBeenCalledTimes(1);
   });
 
@@ -484,6 +484,7 @@ describe('workspace controller', () => {
     expect(writeFile).toHaveBeenCalledWith({
       documentId: 'doc-1', content: 'body', revision: 2, baseHash: 'base',
       bom: true, eol: '\r\n', finalNewline: false,
+      encoding: 'utf8', // v1.2: the original encoding rides along with every write
     });
     expect(state.files[0].dirty).toBe(false);
     expect(state.files[0].meta.hash).toBe('next');
@@ -575,6 +576,7 @@ describe('workspace controller', () => {
     expect(saveFileAs).toHaveBeenCalledWith({
       suggestedName: 'draft.md', content: 'body', revision: 1,
       bom: false, eol: '\n', finalNewline: true,
+      encoding: 'utf8', // v1.2: the original encoding rides along with every write
     });
     expect(state.files[0]).toMatchObject({
       name: 'saved.md', path: 'saved.md', documentId: 'doc-new', vaultId: null,
@@ -593,13 +595,15 @@ describe('workspace controller', () => {
       saveFileAs: vi.fn(async () => ({ canceled: true })),
     } });
     await canceled.controller.saveAs();
-    expect(canceled.calls.toasts).toEqual([]);
+    // v1.2: the cancel path is no longer silent — silence read as 'Ctrl+S did nothing'.
+    expect(canceled.calls.toasts).toEqual([['Save canceled — the note is still unsaved', 'info']]);
 
     const rejected = harness({ state: makeState(), electronAPI: {
       saveFileAs: vi.fn(async () => ({ ok: false, error: 'denied' })),
     } });
     await rejected.controller.saveAs();
-    expect(rejected.calls.toasts).toContainEqual(['Could not save (denied)', 'error']);
+    // v1.2: the failure names the file that failed, not just the fact.
+    expect(rejected.calls.toasts).toContainEqual(['Could not save a.md (denied)', 'error']);
 
     const failed = harness({ state: makeState(), electronAPI: {
       saveFileAs: vi.fn(async () => { throw new Error('failed'); }),

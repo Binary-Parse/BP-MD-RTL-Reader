@@ -14,6 +14,8 @@ function state() {
     uiLocale: 'en', uiDirection: 'ltr', readerTextScale: 1, readerWidthCh: 72,
     // T-F19 chrome settings
     windowTitleMode: 'file', autoHideTitlebar: false, hideStatusBar: false,
+    // v1.2: Word-style auto-save toggle
+    autosave: true,
     files: [], activeFile: null,
   };
 }
@@ -45,6 +47,8 @@ describe('settings controller', () => {
       'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
       // T-F19 chrome settings
       'windowTitleMode', 'autoHideTitlebar', 'hideStatusBar',
+      // v1.2: Word-style auto-save toggle
+      'autosave',
     ]);
   });
 
@@ -81,6 +85,8 @@ describe('settings controller', () => {
       windowTitleMode: 'file',
       autoHideTitlebar: false,
       hideStatusBar: false,
+      // v1.2: Word-style auto-save toggle
+      autosave: true,
     });
   });
 

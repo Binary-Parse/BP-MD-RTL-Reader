@@ -86,6 +86,31 @@ describe('buildExportDoc (T-F12)', () => {
     expect(fullHtml).toContain('<span class="wikilink">Target</span>');
   });
 
+  // Audit 3a: local-file markdown links would survive as dead links / epubcheck errors;
+  // the shared pipeline neutralizes them for EVERY artifact (HTML, PDF, EPUB).
+  test('neutralizes local-file links to inert text; web/mail/tel/anchors survive', () => {
+    const parseMarkdown = () => [
+      '<p><a href="README.md">docs</a></p>',
+      '<p><a href="bpmd://vault/note">vault</a></p>',
+      '<p><a href="https://x.test/a">web</a><a href="mailto:a@b">mail</a><a href="tel:+1">tel</a><a href="#sec">anchor</a></p>',
+    ].join('');
+    const { fullHtml } = buildExportDoc({ name: 'safe', content: 'x' }, { parseMarkdown });
+    expect(fullHtml).not.toContain('README.md');
+    expect(fullHtml).not.toContain('bpmd://');
+    expect(fullHtml).toContain('<span>docs</span>');
+    expect(fullHtml).toContain('<span>vault</span>');
+    for (const kept of ['href="https://x.test/a"', 'href="mailto:a@b"', 'href="tel:+1"', 'href="#sec"']) {
+      expect(fullHtml).toContain(kept);
+    }
+  });
+
+  test('a kept data: image loses any srcset naming local variants', () => {
+    const parseMarkdown = () => '<p><img src="data:image/png;base64,AA" alt="e" srcset="local-2x.png 2x"></p>';
+    const { fullHtml } = buildExportDoc({ name: 'safe', content: 'x' }, { parseMarkdown });
+    expect(fullHtml).toContain('src="data:image/png;base64,AA"');
+    expect(fullHtml).not.toContain('local-2x.png');
+  });
+
   test('applies callout semantics and injected code highlighting before serialization', () => {
     const parseMarkdown = () => '<blockquote><p>[!NOTE] Heads up\nBody.</p></blockquote><pre><code class="language-js">const x=1</code></pre>';
     const hljs = { getLanguage: () => true, highlight: () => ({ value: '<span class="kw">const</span> x=1' }) };
@@ -168,5 +193,72 @@ describe('buildExportDoc — exact output (mutation kills)', () => {
     const katex = { renderToString: (t) => `<span class="katex">${t}</span>` };
     const { fullHtml } = buildExportDoc({ name: 'm.md', content: 'E=mc^2' }, { parseMarkdown: P, katex, DOMPurify: null });
     expect(fullHtml).toContain('E=mc^2'); // builds without error when katex is present
+  });
+});
+
+// T5.1c: the Notes appendix — the exported artifact carries the reader's highlights/notes
+// when the open document has any, and stays byte-identical to before when it has none.
+describe('buildExportDoc — Notes appendix (T5.1c)', () => {
+  const P = (s) => `<p>${s}</p>`;
+  const notes = [
+    { id: 'h1', text: 'the first passage', note: 'Worth quoting', at: 1, anchor: { headingSlug: '', ordinal: 0 } },
+    { id: 'h2', text: 'a bare highlight', note: '', at: 2, anchor: { headingSlug: '', ordinal: 0 } },
+  ];
+
+  test('no annotations → no appendix at all', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P });
+    // The stylesheet always names the class, so assert on the MARKUP form.
+    expect(fullHtml).not.toContain('class="export-annotations"');
+    expect(fullHtml).not.toContain('>Notes</h2>');
+    // …including an explicitly empty array, which is what the renderer passes for a
+    // document whose stored annotations belong to a DIFFERENT file.
+    expect(buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P, annotations: [] }).fullHtml)
+      .not.toContain('class="export-annotations"');
+  });
+
+  test('renders a section after the body with the label, each excerpt and each note', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'body text' }, {
+      parseMarkdown: P, annotations: notes, annotationsLabel: 'الملاحظات',
+    });
+    expect(fullHtml).toContain('<section class="export-annotations">');
+    expect(fullHtml).toContain('الملاحظات');
+    expect(fullHtml).toContain('the first passage');
+    expect(fullHtml).toContain('Worth quoting');
+    expect(fullHtml).toContain('a bare highlight');
+    // The appendix sits at the END: after the rendered body paragraph (the stylesheet also
+    // names the class, so search for the section MARKUP).
+    expect(fullHtml.indexOf('<section class="export-annotations"')).toBeGreaterThan(fullHtml.indexOf('body text'));
+    // A highlight without a note contributes no empty note paragraph (the stylesheet also
+    // names the class, so count the MARKUP form only).
+    expect(fullHtml.match(/class="export-annotation-note"/g)).toHaveLength(1);
+  });
+
+  test('the label defaults to "Notes" and note text is escaped, never markup', () => {
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'x' }, {
+      parseMarkdown: P,
+      annotations: [{ id: 'h1', text: '<img src=x onerror=1>', note: '<script>bad()</script>', at: 1, anchor: {} }],
+    });
+    // applyBidi adds dir/data-dir to every block, so assert the heading TEXT, not the tag.
+    expect(fullHtml).toContain('>Notes</h2>');
+    expect(fullHtml).toContain('&lt;img src=x onerror=1&gt;');
+    expect(fullHtml).toContain('&lt;script&gt;bad()&lt;/script&gt;');
+    expect(fullHtml).not.toContain('<script>bad()');
+  });
+
+  test('malformed entries are skipped rather than throwing', () => {
+    expect(() => buildExportDoc({ name: 'n.md', content: 'x' }, { parseMarkdown: P, annotations: [null, { text: '' }] }))
+      .not.toThrow();
+    const { fullHtml } = buildExportDoc({ name: 'n.md', content: 'x' }, {
+      parseMarkdown: P, annotations: [null, { text: '' }, 'nope'],
+    });
+    expect(fullHtml).not.toContain('class="export-annotations"');
+  });
+});
+
+describe('RTL-H3: exported code stays LTR inside an RTL document', () => {
+  test('the HTML export stylesheet pins pre and code to ltr', () => {
+    const { fullHtml } = buildExportDoc({ name: 'كتاب.md', content: 'نص\n' }, { parseMarkdown: md, direction: 'rtl' });
+    expect(fullHtml).toContain('direction: ltr; text-align: start;');
+    expect(fullHtml).toContain('direction: ltr; unicode-bidi: isolate;');
   });
 });

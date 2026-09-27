@@ -1,11 +1,12 @@
 /**
- * Unit tests for isArabicHeavy() + escapeHtml() + escapeReg()
+ * Unit tests for isArabicHeavy()
  * Mutation-testable: exercises every branch of the actual implementation.
+ * (The escapeHtml()/escapeReg() suites that used to run here too live in
+ * i18n.test.js — this file no longer registers them a second time.)
  */
 
 import { describe, test, expect } from 'vitest';
 import { isArabicHeavy } from '../../src/renderer/i18n.js';
-import { describeEscapeHtml, describeEscapeReg } from './escape-helpers-suite.js';
 
 describe('isArabicHeavy()', () => {
   test('returns true for Arabic-heavy text', () => {
@@ -69,7 +70,3 @@ describe('isArabicHeavy()', () => {
     expect(isArabicHeavy(arabicHead + latinTail)).toBe(true);
   });
 });
-
-// escapeHtml() + escapeReg() suites are shared with i18n.test.js (audit #13).
-describeEscapeHtml();
-describeEscapeReg();

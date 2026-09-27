@@ -27,14 +27,12 @@ async function setupWithText(page, text) {
   }, text);
   await page.locator('.cm-mount .cm-editor').first().waitFor({ state: 'visible', timeout: 8000 });
   await page.locator('.cm-mount .cm-content').click();
-  await page.waitForTimeout(50);
 }
 const cmValue = (page) => page.evaluate(() => window.getActiveCmAdapter().getValue());
 const cmSelect = (page, start, end) => page.evaluate(([s, e]) => window.getActiveCmAdapter().setSelection({ start: s, end: e }), [start, end]);
 
 async function clickEditMenuItem(page, label) {
   await page.click('.tb-menu-item[data-menu="edit"]');
-  await page.waitForTimeout(100);
   // Find the dd-item by visible name text
   const handle = await page.evaluateHandle((label) => {
     const items = Array.from(document.querySelectorAll('.dd-item:not(.disabled)'));
@@ -46,7 +44,6 @@ async function clickEditMenuItem(page, label) {
   const el = handle.asElement();
   if (!el) throw new Error(`Edit menu item "${label}" not found`);
   await el.click();
-  await page.waitForTimeout(150);
 }
 
 test.describe('[EM] Edit menu click-through — Copy/Cut/Paste/Undo/Redo/SelectAll', () => {
@@ -88,8 +85,7 @@ test.describe('[EM] Edit menu click-through — Copy/Cut/Paste/Undo/Redo/SelectA
     const i = (await cmValue(page)).indexOf('|');
     await cmSelect(page, i, i + 1);
     await clickEditMenuItem(page, 'Paste');
-    await page.waitForTimeout(200);
-    expect(await cmValue(page)).toBe('beforeMIDDLEafter');
+    await expect.poll(() => cmValue(page)).toBe('beforeMIDDLEafter');
   });
 
   test('Undo — reverts last input (after a deliberate edit)', async ({ page }) => {
@@ -100,7 +96,6 @@ test.describe('[EM] Edit menu click-through — Copy/Cut/Paste/Undo/Redo/SelectA
     const beforeUndo = await cmValue(page);
     expect(beforeUndo).toBe('initial more');
     await clickEditMenuItem(page, 'Undo');
-    await page.waitForTimeout(150);
     const afterUndo = await cmValue(page);
     expect(afterUndo).not.toBe('initial more');
   });
@@ -111,10 +106,8 @@ test.describe('[EM] Edit menu click-through — Copy/Cut/Paste/Undo/Redo/SelectA
     await page.keyboard.press('Control+End');
     await page.keyboard.type(' X');
     await clickEditMenuItem(page, 'Undo');
-    await page.waitForTimeout(150);
     const afterUndo = await cmValue(page);
     await clickEditMenuItem(page, 'Redo');
-    await page.waitForTimeout(150);
     const afterRedo = await cmValue(page);
     expect(afterRedo).not.toBe(afterUndo);
   });

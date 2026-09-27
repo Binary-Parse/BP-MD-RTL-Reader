@@ -3,7 +3,7 @@
  * Pure functions: no DOM, no side effects.
  */
 
-export const THEMES = ['paper', 'ink', 'sepia'];
+export const THEMES = ['paper', 'ink', 'sepia', 'oasis'];
 
 export function getNextTheme(currentTheme) {
   const i = THEMES.indexOf(currentTheme);

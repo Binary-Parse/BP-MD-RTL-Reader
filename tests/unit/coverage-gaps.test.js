@@ -6,7 +6,7 @@ import { sanitizeHtml, sanitizeSvg, renderTrusted } from '../../src/renderer/mar
 import { parseFrontMatter } from '../../src/renderer/markdown/frontmatter.js';
 import { t } from '../../src/renderer/locale.js';
 import { extractHeadings, activeHeading } from '../../src/renderer/components/outline.js';
-import { resolveDirection, stepCaret } from '../../src/renderer/bidi.js';
+import { resolveDirection } from '../../src/renderer/bidi.js';
 import { migrate, createSettingsStore, defaultSettings } from '../../src/main/settings.js';
 import path from 'node:path';
 
@@ -40,9 +40,9 @@ describe('outline guards', () => {
 });
 
 describe('bidi edge', () => {
-  test('resolveDirection non-string + stepCaret clamp', () => {
+  // (audit QA-09: the dead `stepCaret` helper and its clamp assertion were deleted with it.)
+  test('resolveDirection non-string falls back to the inherited direction', () => {
     expect(resolveDirection(123, 'rtl')).toBe('rtl');
-    expect(stepCaret('ab', 0, -1)).toBe(0);
   });
 });
 
@@ -70,12 +70,12 @@ describe('context-menu defaults + settings enums (branch coverage)', () => {
   test('migrate honors all enum + window branches', async () => {
     const { migrate } = await import('../../src/main/settings.js');
     const m = migrate({
-      uiDirection: 'rtl', uiLocale: 'ar', numerals: 'arabic-indic', calendar: 'hijri',
+      uiDirection: 'rtl', uiLocale: 'ar', calendar: 'hijri',
       sidebarVisible: false, inspectorVisible: false,
       window: { x: 10, y: 20, w: 900, h: 700, maximized: true },
     });
     expect(m).toMatchObject({
-      uiDirection: 'rtl', uiLocale: 'ar', numerals: 'arabic-indic', calendar: 'hijri',
+      uiDirection: 'rtl', uiLocale: 'ar', calendar: 'hijri',
       sidebarVisible: false, inspectorVisible: false,
     });
     expect(m.window).toMatchObject({ x: 10, y: 20, w: 900, h: 700, maximized: true });

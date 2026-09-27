@@ -68,7 +68,6 @@ test.describe('[T-F16] Mermaid diagrams', () => {
     await page.waitForLoadState('networkidle');
     await inject(page, DOC);
     await expect(page.locator('#noteContent .mermaid svg')).toHaveCount(1, { timeout: 15000 });
-    await page.waitForTimeout(300);
     await expect(page).toHaveScreenshot('mermaid-1440x900.png', { maxDiffPixels: 8000, threshold: 0.2 });
   });
 });

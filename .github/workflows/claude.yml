@@ -33,6 +33,7 @@ jobs:
         (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # These stay write: the action is asked to commit a fix and open a pull
     # request, which cannot be done with read scopes. The mitigation for that
     # authority is the author_association gate above, which decides who may

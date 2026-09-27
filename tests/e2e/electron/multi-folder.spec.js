@@ -120,12 +120,21 @@ test.describe('two real folders coexist @electron', () => {
     await openFolder(folderB);
 
     // Render A's note (its image src is only rewritten to bpmd:// on render) and read it.
-    const idA = await page.evaluate(() => {
+    // The src is captured in the SAME evaluate turn as renderFile: the fixtures below are
+    // deliberately not valid PNGs (see beforeEach), so the <img> fires an error as soon as
+    // Chromium tries to decode it and audit UX-12's handler replaces it with the named
+    // placeholder. Reading synchronously keeps this about the REWRITE, which is what the
+    // bytes assertions below actually verify via the real protocol handler.
+    const a = await page.evaluate(() => {
       const idx = window._appState.files.findIndex((f) => f.name === 'note.md' && f.vaultId && f.content.includes('Note A'));
       window.renderFile(idx);
-      return window._appState.files[idx].vaultId;
+      return {
+        id: window._appState.files[idx].vaultId,
+        src: document.querySelector('#noteContent img')?.getAttribute('src') ?? null,
+      };
     });
-    const srcA = await page.locator('#noteContent img').getAttribute('src');
+    const idA = a.id;
+    const srcA = a.src;
     expect(srcA).toBe(`bpmd://vault/${idA}/pic.png`);
 
     // fetch() runs in the MAIN process (electronApp.evaluate), not the renderer — the
@@ -147,12 +156,16 @@ test.describe('two real folders coexist @electron', () => {
     expect(escapeAttempt).toBe(404);
 
     // And B's own id still resolves to B's own bytes, unaffected by A's activity.
-    const idB = await page.evaluate(() => {
+    const b = await page.evaluate(() => {
       const idx = window._appState.files.findIndex((f) => f.name === 'note.md' && f.vaultId && f.content.includes('Note B'));
       window.renderFile(idx);
-      return window._appState.files[idx].vaultId;
+      return {
+        id: window._appState.files[idx].vaultId,
+        src: document.querySelector('#noteContent img')?.getAttribute('src') ?? null,
+      };
     });
-    const srcB = await page.locator('#noteContent img').getAttribute('src');
+    const idB = b.id;
+    const srcB = b.src;
     expect(srcB).toBe(`bpmd://vault/${idB}/pic.png`);
     const bytesB = await electronApp.evaluate(async ({ net }, url) => (await net.fetch(url)).text(), srcB);
     expect(bytesB).toBe('PNG-BYTES-FROM-FOLDER-B');

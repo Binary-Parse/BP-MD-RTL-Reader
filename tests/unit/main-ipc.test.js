@@ -483,14 +483,16 @@ describe('fs:readVault', () => {
   test('a NON-symlink .md never calls realpath (L146 guard) and uses lstat size directly', async () => {
     await authorize('/plain');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('plain.md')]);
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 42 });
+    // mtimeMs rides on the walk's own lstat (readAsync reuses it — no extra stat call).
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 42, mtimeMs: 77 });
     mockFs.promises.realpath.mockClear();
     mockFs.promises.stat.mockClear();
     mockFs.readFileSync.mockReturnValueOnce('plain-content');
     const r = await readVault({}, '/plain');
     expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ name: 'plain.md', relPath: 'plain.md', content: 'plain-content' });
-    // L146 isSymbolicLink() false → neither realpath nor the symlink-stat branch runs.
+    expect(r[0]).toMatchObject({ name: 'plain.md', relPath: 'plain.md', content: 'plain-content', meta: { mtimeMs: 77 } });
+    // L146 isSymbolicLink() false → neither realpath nor the symlink-stat branch runs,
+    // and the read consumes the walk's stat instead of issuing a fresh promises.stat.
     expect(mockFs.promises.realpath).not.toHaveBeenCalled();
     expect(mockFs.promises.stat).not.toHaveBeenCalled();
   });
@@ -504,8 +506,8 @@ describe('fs:readVault', () => {
     ]);
     // a-huge sorts before b-tiny via localeCompare → lstat order is deterministic.
     mockFs.promises.lstat
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 * 1024 * 1024 + 1 }) // 1 byte over
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 100 });
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 * 1024 * 1024 + 1 }) // 1 byte over
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 100 });
     mockFs.readFileSync.mockReturnValueOnce('kept');
     const r = await readVault({}, '/oversize');
     expect(r).toHaveLength(1);
@@ -515,7 +517,7 @@ describe('fs:readVault', () => {
   test('a file at EXACTLY 10 MiB is NOT oversized (boundary kept)', async () => {
     await authorize('/exact');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('exact.md')]);
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 * 1024 * 1024 });
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 * 1024 * 1024 });
     mockFs.readFileSync.mockReturnValueOnce('exactly-10mib');
     const r = await readVault({}, '/exact');
     expect(r).toHaveLength(1);
@@ -532,7 +534,7 @@ describe('fs:readVault', () => {
       Array.from({ length: 11 }, (_, i) => dirent(`f${String(i).padStart(2, '0')}.md`))
     );
     for (let i = 0; i < 11; i++) {
-      mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 * 1024 * 1024 });
+      mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 * 1024 * 1024 });
     }
     // First 10 files read fine (cumulative goes 10,20,...,100 MiB — none EXCEED 100 yet
     // because at file #10 cumulative == 100 MiB and 100 > 100 is false).
@@ -554,7 +556,7 @@ describe('fs:readVault', () => {
   test('a normal .md → result item {name, relPath, content} with content read utf8 + BOM stripped', async () => {
     await authorize('/bom-vault');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('doc.md')]);
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 50 });
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 50 });
     mockFs.readFileSync.mockClear();
     mockFs.readFileSync.mockReturnValueOnce(BOM + '# Heading\nbody');
     const r = await readVault({}, '/bom-vault');
@@ -575,7 +577,7 @@ describe('fs:readVault', () => {
   test('content WITHOUT a BOM is returned unchanged (proves stripBOM is conditional, not a blind slice(1))', async () => {
     await authorize('/no-bom');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('nobom.md')]);
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 });
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 });
     mockFs.readFileSync.mockReturnValueOnce('# NoBOM');
     const r = await readVault({}, '/no-bom');
     expect(r[0].content).toBe('# NoBOM'); // first char NOT dropped
@@ -585,8 +587,8 @@ describe('fs:readVault', () => {
     await authorize('/multi');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('beta.md'), dirent('alpha.md')]);
     mockFs.promises.lstat
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 })
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 10 });
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 })
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 });
     // sorted order is alpha, beta → readFile is consumed in that order.
     mockFs.readFileSync
       .mockReturnValueOnce('A')
@@ -789,5 +791,111 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     expect(ev.preventDefault).toHaveBeenCalled();
     // v1.2: the failure is no longer swallowed silently — the renderer toasts it.
     expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledWith('open-external-file', { error: 'read-failed', name: 'throws.md' });
+  });
+});
+
+// ── text:decode (v1.3.0): the encoding-aware byte lane for dropped/picked files ──
+describe('text:decode — encoding-aware byte lane for dropped/picked files', () => {
+  async function bootDecode() {
+    const mockElectron = buildMockElectron();
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return getHandle(mockElectron, 'text:decode');
+  }
+
+  test('UTF-8 bytes decode to clean text with utf8 meta', async () => {
+    const decode = await bootDecode();
+    const res = await decode({}, new Uint8Array(Buffer.from('# hi\n', 'utf8')));
+    expect(res).toMatchObject({
+      ok: true, text: '# hi\n',
+      meta: { encoding: 'utf8', bom: false, eol: '\n', finalNewline: true },
+    });
+  });
+
+  test('UTF-16LE BOM bytes decode and report their encoding so a later save stays faithful', async () => {
+    const decode = await bootDecode();
+    const res = await decode({}, new Uint8Array(Buffer.from('\uFEFF# hi', 'utf16le')));
+    expect(res).toMatchObject({ ok: true, text: '# hi', meta: { encoding: 'utf16le', bom: true } });
+  });
+
+  test('legacy Windows-1256 bytes decode through the codepage — drag-drop parity with the picker', async () => {
+    const decode = await bootDecode();
+    const bytes = Uint8Array.from([0xC3, 0xD1]);
+    const res = await decode({}, bytes);
+    expect(res.ok).toBe(true);
+    expect(res.meta).toMatchObject({ encoding: 'windows-1256', bom: false });
+    expect(res.text).toBe(new TextDecoder('windows-1256').decode(bytes));
+  });
+
+  test('CRLF is preserved as meta.eol while the returned text is LF-normalized', async () => {
+    const decode = await bootDecode();
+    const res = await decode({}, new Uint8Array(Buffer.from('a\r\nb', 'utf8')));
+    expect(res).toMatchObject({ text: 'a\nb', meta: { eol: '\r\n' } });
+  });
+
+  test('invalid payloads are refused: non-bytes, empty, and over-cap', async () => {
+    const decode = await bootDecode();
+    expect(await decode({}, null)).toEqual({ error: 'invalid' });
+    expect(await decode({}, 'str')).toEqual({ error: 'invalid' });
+    expect(await decode({}, new Uint8Array(0))).toEqual({ error: 'invalid' });
+    expect(await decode({}, new Uint8Array(10 * 1024 * 1024 + 1))).toEqual({ error: 'file-too-large' });
+  });
+});
+
+describe('fs:readVault yields the event loop during the decode pass (vaultReadYieldEvery)', () => {
+  test('results stay complete and sorted while yielding between files', async () => {
+    const el = buildMockElectron();
+    const dirent = (name) => ({ name, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
+    const fsMock = buildMockFs({
+      realpathSync: vi.fn((p) => p),
+      statSync: vi.fn((p) => (String(p).endsWith('.md')
+        ? { isFile: () => true, isDirectory: () => false, size: 10, mtimeMs: 1 }
+        : { isFile: () => false, isDirectory: () => true, size: 0, mtimeMs: 1 })),
+      readFileSync: vi.fn(() => 'x'),
+      existsSync: vi.fn(() => true),
+    });
+    fsMock.promises.readdir.mockResolvedValue([dirent('a.md'), dirent('b.md'), dirent('c.md')]);
+    fsMock.promises.lstat.mockResolvedValue({ isSymbolicLink: () => false, isFile: () => true, size: 10, mtimeMs: 1 });
+    el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/yield-vault'] }));
+    bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'src/main/index.js']), vaultReadYieldEvery: 1 });
+    await new Promise((r) => setTimeout(r, 30));
+    const open = el.ipcMain.handle.mock.calls.find((c) => c[0] === 'dialog:openFolder')?.[1];
+    const read = el.ipcMain.handle.mock.calls.find((c) => c[0] === 'fs:readVault')?.[1];
+    const picked = await open();
+    const res = await read({ sender: el._mockWin.webContents }, picked.vault.id);
+    expect(res.entries.map((e) => e.relPath)).toEqual(['a.md', 'b.md', 'c.md']);
+    expect(res.entries.every((e) => e.content === 'x')).toBe(true);
+  });
+});
+
+// Audit 2026-09-26 SEC-02: Electron's structured clone ships a typed array's whole
+// backing ArrayBuffer, not just the view — the bridge must right-size any payload
+// before it crosses, or a 1-byte view of a multi-GB buffer drags the entire store
+// into main ahead of the size caps.
+describe('bridge right-sizes typed-array payloads (SEC-02)', () => {
+  test('a non-exact view is copied into its own buffer; an exact view passes through untouched', async () => {
+    const { setupBridge } = await import('../../src/preload/index.js');
+    const contextBridge = { exposeInMainWorld: vi.fn() };
+    const ipcRenderer = { invoke: vi.fn(), on: vi.fn(), send: vi.fn() };
+    setupBridge({ contextBridge, ipcRenderer });
+    const api = contextBridge.exposeInMainWorld.mock.calls[0][1];
+
+    const backing = new ArrayBuffer(1024);
+    const view = new Uint8Array(backing, 512, 4);
+    api.decodeBytes(view);
+    const sent = ipcRenderer.invoke.mock.calls[0][1];
+    expect(sent).toBeInstanceOf(Uint8Array);
+    expect(sent.byteLength).toBe(4);
+    expect(sent.byteOffset).toBe(0);
+    expect(sent.buffer.byteLength).toBe(4);
+
+    const exact = new Uint8Array([1, 2, 3]);
+    api.decodeBytes(exact);
+    expect(ipcRenderer.invoke.mock.calls[1][1]).toBe(exact);
+
+    api.exportEpub({ bytes: view, defaultName: 'n.epub' });
+    const epubArg = ipcRenderer.invoke.mock.calls[2][1];
+    expect(epubArg.bytes.buffer.byteLength).toBe(4);
+    expect(epubArg.defaultName).toBe('n.epub');
   });
 });

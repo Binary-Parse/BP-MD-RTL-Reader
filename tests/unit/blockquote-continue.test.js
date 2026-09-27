@@ -69,6 +69,18 @@ describe('[T-F13] listContinuation — pure continuation logic', () => {
       expect(listContinuation('1. ')).toEqual({ empty: true, marker: '1. ' });
       expect(listContinuation('5) ')).toEqual({ empty: true, marker: '5) ' });
     });
+    // Audit 5: exact increment — zero-padded width is preserved and huge markers
+    // never pass through a float.
+    test('preserves the zero-padded width ("01." → "02.")', () => {
+      expect(listContinuation('01. first')).toEqual({ empty: false, prefix: '02. ' });
+      expect(listContinuation('009. item')).toEqual({ empty: false, prefix: '010. ' });
+      expect(listContinuation('09. item')).toEqual({ empty: false, prefix: '10. ' }); // carries widen naturally
+    });
+    test('increments huge markers without float precision loss (BigInt)', () => {
+      const wide = '99999999999999999999';
+      expect(listContinuation(`${wide}. big`)).toEqual({ empty: false, prefix: '100000000000000000000. ' });
+      expect(listContinuation(`000000000000000000001. x`)).toEqual({ empty: false, prefix: '000000000000000000002. ' });
+    });
   });
 
   describe('task list items', () => {
@@ -85,5 +97,21 @@ describe('[T-F13] listContinuation — pure continuation logic', () => {
     test('preserves indentation on tasks', () => {
       expect(listContinuation('  - [ ] sub')).toEqual({ empty: false, prefix: '  - [ ] ' });
     });
+  });
+});
+
+// ED-01 (2026-09-26): Enter inside a quoted list item continues BOTH markers.
+describe('quote + list composition (ED-01)', () => {
+  test('"> - item" continues as "> - ", not a bare quote', () => {
+    expect(listContinuation('> - منظم الاقتباس')).toEqual({ empty: false, prefix: '> - ' });
+  });
+  test('"> - [x] done" continues as an UNCHECKED quoted task', () => {
+    expect(listContinuation('> - [x] done')).toEqual({ empty: false, prefix: '> - [ ] ' });
+  });
+  test('an empty quoted list item exits the list but keeps the quote', () => {
+    expect(listContinuation('> - ')).toEqual({ empty: false, prefix: '> ' });
+  });
+  test('nested quotes compose with the inner list marker', () => {
+    expect(listContinuation('> > 1. step')).toEqual({ empty: false, prefix: '> > 2. ' });
   });
 });

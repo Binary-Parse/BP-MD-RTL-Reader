@@ -41,7 +41,7 @@ const ENGLISH = [
   '| Capability        | Status |',
   '| ----------------- | ------ |',
   '| RTL + Arabic      | yes    |',
-  '| Themes            | three  |',
+  '| Themes            | four   |',
   '| Telemetry         | none   |',
   '',
   'Tagged with #reading #focus.',
@@ -113,12 +113,14 @@ await page.addStyleTag({
 await page.evaluate(() => document.activeElement && document.activeElement.blur());
 await page.waitForTimeout(600);
 
-// Themes (default is paper). #themeBtn cycles paper -> ink -> sepia -> paper.
+// Themes (default is paper). #themeBtn cycles paper -> ink -> sepia -> oasis -> paper.
 await shot(page, 'theme-paper.png');
 await page.click('#themeBtn'); await page.waitForTimeout(450);
 await shot(page, 'theme-ink.png');
 await page.click('#themeBtn'); await page.waitForTimeout(450);
 await shot(page, 'theme-sepia.png');
+await page.click('#themeBtn'); await page.waitForTimeout(450);
+await shot(page, 'theme-oasis.png');
 await page.click('#themeBtn'); await page.waitForTimeout(450); // back to paper
 
 // Park the pointer off every control. Cycling themes above leaves the cursor resting on
@@ -148,4 +150,4 @@ await shot(page, 'command-palette.png');
 await page.keyboard.press('Escape');
 
 await browser.close();
-console.log('Screenshots written to docs/assets/: theme-paper, theme-ink, theme-sepia, rtl-arabic, editor, command-palette');
+console.log('Screenshots written to docs/assets/: theme-paper, theme-ink, theme-sepia, theme-oasis, rtl-arabic, editor, command-palette');

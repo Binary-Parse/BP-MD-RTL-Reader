@@ -27,7 +27,6 @@ async function openFiles(page, files, active = 0) {
     }));
     window.renderFile(active);
   }, { files, active });
-  await page.waitForTimeout(120);
 }
 
 async function setMode(page, mode) {
@@ -35,7 +34,6 @@ async function setMode(page, mode) {
     window._appState.windowTitleMode = mode;
     window.syncWindowTitle();
   }, mode);
-  await page.waitForTimeout(60);
 }
 
 test.describe('[T-F19] OS window title', () => {
@@ -59,11 +57,9 @@ test.describe('[T-F19] OS window title', () => {
 
     // renderFile() is the chokepoint every save, edit and conflict path funnels through
     await page.evaluate(() => { window._appState.files[0].dirty = true; window.renderFile(0); });
-    await page.waitForTimeout(120);
     expect(await page.title()).toBe(titled('notes.md', true));
 
     await page.evaluate(() => { window._appState.files[0].dirty = false; window.renderFile(0); });
-    await page.waitForTimeout(120);
     expect(await page.title()).toBe(titled('notes.md'));
   });
 
@@ -71,7 +67,6 @@ test.describe('[T-F19] OS window title', () => {
     await openFiles(page, [{ name: 'first.md' }, { name: 'second.md' }], 0);
     expect(await page.title()).toBe(titled('first.md'));
     await page.evaluate(() => window.renderFile(1));
-    await page.waitForTimeout(120);
     expect(await page.title()).toBe(titled('second.md'));
   });
 
@@ -79,7 +74,6 @@ test.describe('[T-F19] OS window title', () => {
     await openFiles(page, [{ name: 'notes.md' }]);
     // drive the real control rather than an internal
     await page.click('.tab .close');
-    await page.waitForTimeout(250);
     expect(await page.title()).toBe(PRODUCT);
   });
 
@@ -108,7 +102,6 @@ test.describe('[T-F19] OS window title', () => {
     await openFiles(page, [{ name: '• notes.md' }]);
     const clean = await page.title();
     await page.evaluate(() => { window._appState.files[0].dirty = true; window.renderFile(0); });
-    await page.waitForTimeout(120);
     const dirty = await page.title();
     expect(clean).not.toBe(dirty);
     expect(clean).toBe(titled('• notes.md'));

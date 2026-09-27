@@ -90,7 +90,6 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, FORTY_FOUR_PCT_ARABIC);
-    await page.waitForTimeout(200);
 
     // With impl threshold=0.5 this content (~44%) should NOT auto-RTL
     const computedDir = await getEditorComputedDirection(page);
@@ -103,16 +102,17 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     // expect(computedDir).toBe('rtl');
   });
 
-  test('[A2] Arabic-first block resolves to per-block dir=rtl (first-strong, not ratio)', async ({ page }) => {
+  test('[A2] a 50/50 Arabic-first block inherits the base direction (audit UX-01 tie rule)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
-    // The whole-doc isArabicHeavy ratio flip was retired (T-R1). Direction is now
-    // per-block by first-strong char: this block STARTS Arabic → dir=rtl.
+    // The whole-doc isArabicHeavy ratio flip was retired (T-R1). Direction is per-block:
+    // first-strong, EXCEPT when the opposite script is a strict majority (audit UX-01).
+    // An exact 50/50 tie now inherits the base direction — ltr here — instead of flipping
+    // to the first strong char's direction.
     await injectMarkdown(page, FIFTY_PCT_ARABIC);
-    await page.waitForTimeout(200);
 
-    await expect(page.locator('#noteContent p').first()).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('#noteContent p').first()).toHaveAttribute('dir', 'ltr');
     // The container itself is NOT whole-document flipped.
     expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
@@ -145,7 +145,6 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     let threw = false;
     try {
       await injectMarkdown(page, '');
-      await page.waitForTimeout(200);
     } catch (e) {
       threw = true;
     }
@@ -174,9 +173,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, ARABIC_WITH_CODE);
-    await page.waitForTimeout(300);
 
     const preDirection = await page.evaluate(() => {
       const pre = document.querySelector('#noteContent pre');
@@ -196,9 +193,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, ARABIC_WITH_BLOCKQUOTE);
-    await page.waitForTimeout(300);
 
     const borderInfo = await page.evaluate(() => {
       const bq = document.querySelector('#noteContent blockquote');
@@ -233,9 +228,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, ARABIC_WITH_BLOCKQUOTE);
-    await page.waitForTimeout(300);
 
     const paddingInfo = await page.evaluate(() => {
       const bq = document.querySelector('#noteContent blockquote');
@@ -268,9 +261,7 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, arabicWithList);
-    await page.waitForTimeout(300);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const listPadding = await page.evaluate(() => {
       const ul = document.querySelector('#noteContent ul');
@@ -299,10 +290,8 @@ test.describe('[Adversarial-B] CSS logical-property geometry in RTL mode', () =>
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     // Use a single-line Arabic paragraph so the text bounding box is meaningful
     await injectMarkdown(page, '# عنوان\n\nهذه فقرة عربية قصيرة.\n');
-    await page.waitForTimeout(300);
 
     const geometry = await page.evaluate(() => {
       const p = document.querySelector('#noteContent p');
@@ -357,7 +346,6 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(300);
 
     await expect(page.locator('#noteContent p[dir="rtl"]').first()).toBeVisible();
     expect(await getEditorComputedDirection(page)).toBe('ltr');
@@ -371,7 +359,6 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(300);
 
     const manualRTL = await page.evaluate(() => {
       return document.getElementById('appBody')._manualRTL;
@@ -386,12 +373,10 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
 
     // Arabic doc → its block is rtl.
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(200);
     await expect(page.locator('#noteContent p[dir="rtl"]').first()).toBeVisible();
 
     // English doc → its block is ltr; container never whole-doc flipped.
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(200);
     await expect(page.locator('#noteContent p[dir="ltr"]').first()).toBeVisible();
     expect(await getEditorComputedDirection(page)).toBe('ltr');
     await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
@@ -402,17 +387,14 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(200);
     // No auto-flip: the container stays ltr until the user toggles.
     expect(await getEditorComputedDirection(page)).toBe('ltr');
 
     await page.click('#rtlBtn');          // manual override ON
-    await page.waitForTimeout(100);
     expect(await getEditorComputedDirection(page)).toBe('rtl');
     expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(true);
 
     await page.click('#rtlBtn');          // manual override OFF
-    await page.waitForTimeout(100);
     expect(await getEditorComputedDirection(page)).toBe('ltr');
     expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(false);
   });
@@ -426,15 +408,12 @@ test.describe('[Adversarial-C] Auto-RTL path (renderFile without manual toggle)'
 
     // Load an Arabic note, then force RTL on it.
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(300);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(true);
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
 
     // Load a DIFFERENT note (English) — it adopts its own AUTO direction, not the prior RTL.
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(300);
     expect(await page.evaluate(() => document.getElementById('appBody')._manualRTL)).toBe(false);
     expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
@@ -457,7 +436,6 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     expect(await getEditorComputedDirection(page)).toBe('rtl');
 
     // Reload the page
@@ -481,7 +459,6 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     for (let i = 0; i < 10; i++) {
       await page.click('#rtlBtn');
     }
-    await page.waitForTimeout(300);
 
     // 3-state cycle AUTO→RTL→LTR: 10 clicks (10 mod 3 = 1) lands deterministically on forced RTL.
     const stateDir = await page.evaluate(() => window._appState.direction);
@@ -505,7 +482,6 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
 
     // Trigger via keyboard shortcut
     await page.keyboard.press('Control+Shift+L');
-    await page.waitForTimeout(100);
 
     const computedDir = await getEditorComputedDirection(page);
     expect(computedDir).toBe('rtl');
@@ -542,13 +518,11 @@ test.describe('[Adversarial-D] State and direction persistence', () => {
     expect(initialText).toBe('LTR');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const rtlText = await page.locator('#dirIndicator').textContent();
     expect(rtlText).toBe('RTL');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const ltrText = await page.locator('#dirIndicator').textContent();
     expect(ltrText).toBe('LTR');
@@ -570,7 +544,6 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const toolbarDir = await page.evaluate(() => {
       const tb = document.querySelector('.titlebar');
@@ -598,11 +571,9 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(200);
 
     // Toggle RTL
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
     const computedDir = await getEditorComputedDirection(page);
@@ -616,13 +587,11 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
 
     // Per-block load must NOT force the source textarea to rtl.
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(200);
     expect(await page.evaluate(() =>
       document.getElementById('srcTextarea').getAttribute('dir'))).not.toBe('rtl');
 
     // The manual ⇄ override sets the source textarea to dir=auto (never rtl).
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     const srcDir = await page.evaluate(() =>
       document.getElementById('srcTextarea').getAttribute('dir'));
     expect(srcDir).toBe('auto');
@@ -637,14 +606,11 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
 
     // Load a note and force RTL on it.
     await injectMarkdown(page, ARABIC_HEAVY);
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
 
     // Create a new note — it must NOT inherit the previous note's forced RTL.
     await page.evaluate(() => window.newNote());
-    await page.waitForTimeout(300);
     await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
     expect(await getEditorComputedDirection(page)).toBe('ltr');
   });
@@ -656,19 +622,18 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
-    // Cycle through all three themes
+    // Cycle through all four themes (T1.1 added oasis)
     await page.click('#themeBtn'); // paper → ink
-    await page.waitForTimeout(100);
     expect(await getEditorComputedDirection(page)).toBe('rtl');
 
     await page.click('#themeBtn'); // ink → sepia
-    await page.waitForTimeout(100);
     expect(await getEditorComputedDirection(page)).toBe('rtl');
 
-    await page.click('#themeBtn'); // sepia → paper
-    await page.waitForTimeout(100);
+    await page.click('#themeBtn'); // sepia → oasis
+    expect(await getEditorComputedDirection(page)).toBe('rtl');
+
+    await page.click('#themeBtn'); // oasis → paper
     expect(await getEditorComputedDirection(page)).toBe('rtl');
 
     // Attribute must also remain
@@ -702,7 +667,6 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
       }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(300);
 
     // The XSS payload must not execute
     const xssFired = await page.evaluate(() => window.__xss_fired);
@@ -760,7 +724,6 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, rtlOverrideContent);
-    await page.waitForTimeout(300);
 
     // Should NOT auto-trigger RTL (no Arabic script characters)
     const computedDir = await getEditorComputedDirection(page);
@@ -781,7 +744,6 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, scriptInjection);
-    await page.waitForTimeout(300);
 
     const xssFired = await page.evaluate(() => window.__md_xss);
     expect(xssFired).toBeUndefined();
@@ -797,7 +759,6 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, longArabic);
-    await page.waitForTimeout(300);
 
     await expect(page.locator('#noteContent p[dir="rtl"]').first()).toBeVisible();
     expect(await getEditorComputedDirection(page)).toBe('ltr');
@@ -814,7 +775,6 @@ test.describe('[Adversarial-F] Injection and hostile input', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, mixedContent);
-    await page.waitForTimeout(300);
 
     // First 500 chars are English → should NOT auto-RTL
     const computedDir = await getEditorComputedDirection(page);
@@ -865,11 +825,8 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
 
     // Force RTL on tab A, visit tab B, then return to A.
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await page.evaluate(() => window.renderFile(1));
-    await page.waitForTimeout(50);
     await page.evaluate(() => window.renderFile(0));
-    await page.waitForTimeout(100);
 
     // A's stored RTL is restored.
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
@@ -884,7 +841,6 @@ test.describe('[Adversarial-G] Mutation walk-through', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(300);
 
     const computedDir = await getEditorComputedDirection(page);
     expect(computedDir).toBe('ltr');
@@ -906,7 +862,6 @@ test.describe('[T-R9] bidi tables + logical cursor', () => {
 
   test('RTL table mirrors columns, cells keep explicit dir, arrows traverse logically', async ({ page }) => {
     await injectMarkdown(page, '# جدول\n\n| المفتاح | Value |\n| --- | --- |\n| واحد | 1 |\n| two | اثنان |\n');
-    await page.waitForTimeout(80);
 
     // (1) the table itself is RTL → columns mirror.
     await expect(page.locator('#noteContent table').first()).toHaveAttribute('dir', 'rtl');
@@ -933,8 +888,9 @@ test.describe('[T-R9] bidi tables + logical cursor', () => {
   });
 
   test('an English-first table stays LTR (no spurious mirror)', async ({ page }) => {
-    await injectMarkdown(page, '| Name | قيمة |\n| --- | --- |\n| one | واحد |\n');
-    await page.waitForTimeout(80);
+    // audit UX-01: a block only flips when the opposite script is a STRICT majority, so this
+    // guard uses a genuinely English-majority table (12 Latin vs 4 Arabic letters).
+    await injectMarkdown(page, '| Name | Notes |\n| --- | --- |\n| one | قيمة |\n');
     await expect(page.locator('#noteContent table').first()).toHaveAttribute('dir', 'ltr');
     const ltrFirstLeftmost = await page.$$eval('#noteContent thead th',
       (ths) => ths[0].getBoundingClientRect().left < ths[1].getBoundingClientRect().left);

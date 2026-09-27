@@ -61,6 +61,37 @@ describe('Proxy State store', () => {
     expect(calls[0]).toEqual({ key: 'zoomFactor', val: 1.5 });
     expect(state.zoomFactor).toBe(1.5);
   });
+
+  test('subscriber does not fire when a set assigns the current value', () => {
+    const { state, subscribe } = createState({ theme: 'paper' });
+    const calls = [];
+    subscribe((key, val) => calls.push({ key, val }));
+    state.theme = 'paper';
+    expect(calls).toEqual([]);
+    state.theme = 'ink';
+    state.theme = 'ink';
+    expect(calls).toEqual([{ key: 'theme', val: 'ink' }]);
+    expect(state.theme).toBe('ink');
+  });
+
+  test('deleteProperty removes the key and notifies with undefined', () => {
+    const { state, subscribe } = createState({ files: [], activeFile: 2 });
+    const calls = [];
+    subscribe((key, val) => calls.push({ key, val }));
+    delete state.activeFile;
+    expect(calls).toEqual([{ key: 'activeFile', val: undefined }]);
+    expect('activeFile' in state).toBe(false);
+    expect(state.activeFile).toBeUndefined();
+  });
+
+  test('deleteProperty of an absent key notifies no one', () => {
+    const { state, subscribe } = createState({ theme: 'paper' });
+    const calls = [];
+    subscribe((key) => calls.push(key));
+    delete state.notThere;
+    expect(calls).toEqual([]);
+    expect(state.theme).toBe('paper');
+  });
 });
 
 describe('direction toggle logic', () => {

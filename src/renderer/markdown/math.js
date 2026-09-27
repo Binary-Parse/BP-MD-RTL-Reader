@@ -67,16 +67,34 @@ export function mathExtension() {
   };
 }
 
+// Render cache (audit PERF-01): the sanitized KaTeX HTML for a given (display, tex)
+// is deterministic — re-rendering identical math on every render tick was the single
+// largest pipeline cost. Cleared wholesale at the cap (simple, no LRU).
+const TEX_CACHE_MAX = 500;
+const texCache = new Map();
+export function clearTexCache() { texCache.clear(); }
+
 // Render a single TeX string to a sanitized, LTR-isolated KaTeX span (or null on error).
 // Exported so the CM6 live-preview math widgets reuse the EXACT same render+sanitize path.
 export function renderTex(tex, display, { katex, DOMPurify, doc }) {
-  let html;
-  try { html = katex.renderToString(tex, katexOptions({ displayMode: display })); }
-  catch (_) { return null; }
+  const key = (display ? '1' : '0') + '\u0000' + tex;
+  const cached = texCache.get(key);
   const span = doc.createElement('span');
   span.className = display ? 'math-block' : 'math-inline';
   span.setAttribute('dir', 'ltr'); // math is LTR even in RTL prose (isolate)
-  span.innerHTML = sanitizeMath(html, DOMPurify);
+  let safe;
+  if (cached !== undefined) {
+    if (cached === null) return null; // previously-failing TeX fails the same way
+    safe = cached;
+  } else {
+    let html;
+    try { html = katex.renderToString(tex, katexOptions({ displayMode: display })); }
+    catch (_) { texCache.set(key, null); return null; }
+    safe = sanitizeMath(html, DOMPurify);
+    if (texCache.size >= TEX_CACHE_MAX) texCache.clear();
+    texCache.set(key, safe);
+  }
+  span.innerHTML = safe;
   return span;
 }
 
@@ -89,6 +107,16 @@ function restoreInNode(node, ctx) {
   let found = false;
   while ((m = PLACEHOLDER_RE.exec(text))) {
     const display = m[1] === '1';
+    // The sentinel characters are ordinary typeable text: a .md can carry a forged
+    // placeholder that never passed mathPlaceholder's size gate. Hex length is exactly
+    // twice the decoded UTF-8 byte count, so this check is the same cap, pre-decode.
+    if (m[2].length > MAX_MATH_BYTES * 2) {
+      if (m.index > last) frag.appendChild(ctx.doc.createTextNode(text.slice(last, m.index)));
+      frag.appendChild(ctx.doc.createTextNode(m[0]));
+      last = m.index + m[0].length;
+      found = true;
+      continue;
+    }
     const tex = hexDecode(m[2]);
     if (m.index > last) frag.appendChild(ctx.doc.createTextNode(text.slice(last, m.index)));
     const el = renderTex(tex, display, ctx);

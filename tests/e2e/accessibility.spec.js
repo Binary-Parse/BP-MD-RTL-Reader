@@ -45,7 +45,6 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('No critical or serious violations with demo notes loaded', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(300);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -53,9 +52,7 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('No critical or serious violations in RTL mode', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
     await page.evaluate(() => window.toggleRTL());
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -63,9 +60,7 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('No critical or serious violations in dark (ink) theme', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
     await page.evaluate(() => { document.documentElement.setAttribute('data-theme', 'ink'); });
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -75,7 +70,6 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
     // T-F13: there is no source mode — the CM6 live-preview editor is the only surface.
     await page.evaluate(() => window.loadDemo());
     await page.locator('.cm-mount .cm-editor').first().waitFor({ state: 'visible', timeout: 8000 });
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -83,7 +77,6 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('No critical or serious violations with command palette open', async ({ page }) => {
     await page.evaluate(() => window.openPalette());
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -91,7 +84,6 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('No critical or serious violations with modal open', async ({ page }) => {
     await page.evaluate(() => window.showShortcuts());
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -101,7 +93,6 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
   // segmented control are new ARIA surface that axe should see.
   test('No critical or serious violations with the Settings dialog open', async ({ page }) => {
     await page.evaluate(() => window.showSettings());
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -109,9 +100,7 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
 
   test('No critical or serious violations with find bar open', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
     await page.evaluate(() => window.openFind());
-    await page.waitForTimeout(200);
     const results = await runAxe(page);
     const serious = seriousViolations(results.violations);
     expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
@@ -128,7 +117,7 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
   });
 
   test('Callouts have no WCAG AA color-contrast violation in any shipped theme', async ({ page }) => {
-    const themes = ['paper', 'ink', 'sepia'];
+    const themes = ['paper', 'ink', 'sepia', 'oasis'];
     for (const theme of themes) {
       await page.evaluate((t) => {
         document.documentElement.setAttribute('data-theme', t);
@@ -136,12 +125,47 @@ test.describe('Accessibility (axe-core WCAG 2.1 AA)', () => {
         host.style.display = 'block';
         host.innerHTML = '<aside class="callout callout-note" role="note" aria-label="Note: Heads up"><div class="callout-title"><span class="callout-icon" aria-hidden="true">ⓘ</span><span>Heads up</span></div><div class="callout-body">Readable callout body.</div></aside>';
       }, theme);
-      await page.waitForTimeout(300);
       const callout = page.locator('.callout').first();
       await expect(callout).toBeVisible();
       const results = await runAxe(page, '.callout');
       const contrast = results.violations.filter(v => v.id === 'color-contrast');
       expect(contrast, `${theme} callout contrast violations`).toHaveLength(0);
+    }
+  });
+
+  // audit UX-05: the full-page scan never switched to sepia, so sepia's token regressions
+  // (--ink-mute, and --gold as a code-token colour) shipped unseen.
+  test('No critical or serious violations in sepia theme (full page)', async ({ page }) => {
+    await page.evaluate(() => window.loadDemo());
+    await page.evaluate(() => { document.documentElement.setAttribute('data-theme', 'sepia'); });
+    const results = await runAxe(page);
+    const serious = seriousViolations(results.violations);
+    expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
+  });
+
+  // T1.1: the same full-page guard for the fourth theme.
+  test('No critical or serious violations in oasis theme (full page)', async ({ page }) => {
+    await page.evaluate(() => window.loadDemo());
+    await page.evaluate(() => { document.documentElement.setAttribute('data-theme', 'oasis'); });
+    const results = await runAxe(page);
+    const serious = seriousViolations(results.violations);
+    expect(serious, `Violations: ${JSON.stringify(serious.map(v => v.id))}`).toHaveLength(0);
+  });
+
+  // audit UX-05: --gold colours the hljs number/built_in/symbol tokens inside #editor (which
+  // contains #noteContent), and it must clear AA on --paper AND the deeper `pre` surface.
+  test('Code-block token colors pass WCAG AA in every shipped theme', async ({ page }) => {
+    const themes = ['paper', 'ink', 'sepia', 'oasis'];
+    for (const theme of themes) {
+      await page.evaluate((t) => {
+        document.documentElement.setAttribute('data-theme', t);
+        const host = document.getElementById('noteContent');
+        host.style.display = 'block';
+        host.innerHTML = '<pre dir="ltr"><code class="hljs">const <span class="hljs-number">42</span> = <span class="hljs-built_in">Math</span>.PI; <span class="hljs-symbol">@x</span></code></pre>';
+      }, theme);
+      const results = await runAxe(page, 'pre');
+      const contrast = results.violations.filter(v => v.id === 'color-contrast');
+      expect(contrast, `${theme} code-token contrast violations`).toHaveLength(0);
     }
   });
 });

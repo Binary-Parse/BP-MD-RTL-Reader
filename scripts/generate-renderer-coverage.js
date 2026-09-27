@@ -117,7 +117,8 @@ function loadExpectedFiles() {
 }
 
 function standardCoverage(data, localPath) {
-  const { all, ...rest } = data;
+  const rest = { ...data };
+  delete rest.all;
   return {
     path: (rest.path && rest.path !== '') ? rest.path : localPath,
     statementMap: rest.statementMap || {},

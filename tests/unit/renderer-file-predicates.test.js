@@ -3,9 +3,11 @@
  * The renderer loads raw ES modules under the strict CSP and cannot require() the
  * CommonJS main-logic, so the drag-drop predicate lives in its own ESM module.
  * These cases mirror main-logic's file-predicates.test.js so the two stay in lockstep.
+ * (isVaultFile is main-logic-only: no renderer module ever imported the renderer's
+ * dead copy, so it was removed — vault membership is decided by vaultId, not extension.)
  */
 import { describe, test, expect } from 'vitest';
-import { isVaultFile, isDroppableFile } from '../../src/renderer/file-predicates.js';
+import { isDroppableFile } from '../../src/renderer/file-predicates.js';
 
 describe('isDroppableFile (renderer)', () => {
   test('accepts .md/.markdown/.txt (case-insensitive), rejects others', () => {
@@ -18,16 +20,5 @@ describe('isDroppableFile (renderer)', () => {
     expect(isDroppableFile(null)).toBe(false);
     // type guard: a non-string that COERCES to a matching name is still rejected
     expect(isDroppableFile(['a.txt'])).toBe(false);
-  });
-});
-
-describe('isVaultFile (renderer)', () => {
-  test('accepts only .md/.markdown — .txt is droppable but NOT a vault note', () => {
-    expect(isVaultFile('a.md')).toBe(true);
-    expect(isVaultFile('a.markdown')).toBe(true);
-    expect(isVaultFile('a.txt')).toBe(false);
-    expect(isVaultFile('a.png')).toBe(false);
-    expect(isVaultFile('a.md.bak')).toBe(false);   // the extension must be at the END (anchored)
-    expect(isVaultFile(['a.md'])).toBe(false);      // type guard: coerces to a match but isn't a string
   });
 });

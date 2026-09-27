@@ -41,9 +41,13 @@ function classifyBlock(node, doc) {
 
 function makeWidgetClass(CM6, renderBlock) {
   return class BlockWidget extends CM6.WidgetType {
-    constructor(type, source) { super(); this.type = type; this.source = source; }
+    constructor(type, source, dirKey = '') { super(); this.type = type; this.source = source; this.dirKey = dirKey; }
     // Re-use the same DOM across redraws when the block is unchanged (avoids re-render churn).
-    eq(other) { return other.type === this.type && other.source === this.source; }
+    // dirKey participates in identity: a direction flip (toggle / front-matter) must rebuild
+    // the widget even when the block source itself did not change.
+    eq(other) {
+      return other.type === this.type && other.source === this.source && other.dirKey === this.dirKey;
+    }
     toDOM() {
       const wrap = document.createElement('div');
       wrap.className = `cm-lp-block cm-lp-${this.type}`;
@@ -61,7 +65,7 @@ function makeWidgetClass(CM6, renderBlock) {
 }
 
 /** Pure: the block-widget DecorationSet for a given editor state. Exported for unit tests. */
-export function buildBlockDecorations(CM6, renderBlock, state) {
+export function buildBlockDecorations(CM6, renderBlock, state, dirKey = '') {
   const { Decoration, syntaxTree } = CM6;
   const BlockWidget = makeWidgetClass(CM6, renderBlock);
   const { doc } = state;
@@ -83,7 +87,7 @@ export function buildBlockDecorations(CM6, renderBlock, state) {
       if (endLine.number >= activeFrom && startLine.number <= activeTo) return false;
       const source = doc.sliceString(startLine.from, endLine.to);
       ranges.push(
-        Decoration.replace({ widget: new BlockWidget(type, source), block: true })
+        Decoration.replace({ widget: new BlockWidget(type, source, dirKey), block: true })
           .range(startLine.from, endLine.to),
       );
       return false; // don't descend into the block's children
@@ -92,9 +96,27 @@ export function buildBlockDecorations(CM6, renderBlock, state) {
   return Decoration.set(ranges, true);
 }
 
-export function createBlockPreview(CM6, renderBlock) {
+export function createBlockPreview(CM6, renderBlock, getDirKey = null) {
   const { EditorView, Decoration } = CM6;
-  const compute = (state) => buildBlockDecorations(CM6, renderBlock, state);
+  // The direction key is read at compute time, so a recompute after a direction flip
+  // (setDirection dispatches an explicit selection for exactly this) rebuilds widgets
+  // with the new identity instead of reusing DOM rendered under the old direction.
+  const dirKeyOf = () => (typeof getDirKey === 'function' ? String(getDirKey() || '') : '');
+  // The full-document syntax-tree walk is the expensive part and BOTH facets below ask
+  // for the SAME (state, dirKey) on every update — the decorations facet during the
+  // update, atomicRanges again at measure time. Memoize per EditorState (identity key:
+  // any doc/selection change produces a new state, so entries never go stale; the
+  // dirKey participates so a flip still rebuilds). DecorationSets are immutable, so
+  // sharing one instance between the facets is exactly what CM6 expects.
+  const cache = new WeakMap();
+  const compute = (state) => {
+    const dirKey = dirKeyOf();
+    const hit = cache.get(state);
+    if (hit && hit.dirKey === dirKey) return hit.deco;
+    const deco = buildBlockDecorations(CM6, renderBlock, state, dirKey);
+    cache.set(state, { dirKey, deco });
+    return deco;
+  };
   return [
     // State-derived (recomputed on doc/selection change) so block widgets are known before layout.
     EditorView.decorations.compute(['doc', 'selection'], compute),

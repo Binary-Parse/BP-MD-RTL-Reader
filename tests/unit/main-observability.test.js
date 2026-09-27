@@ -60,6 +60,31 @@ describe('observability — crashReporter.start options (L32)', () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// uncaughtException is terminal: log, then exit(1) — never keep serving IPC
+// ───────────────────────────────────────────────────────────────────────────
+describe('observability — uncaughtException is terminal', () => {
+  test('an uncaught exception logs and then exits the app with code 1', async () => {
+    const mockElectron = buildMockElectron();
+    mockElectron.app.exit = vi.fn();
+    const mockProc = buildMockProc(['node', 'src/main/index.js']);
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: mockProc });
+    await new Promise(r => setTimeout(r, 50));
+
+    mockProc.emit('uncaughtException', new Error('fatal'));
+    expect(mockElectron.app.exit).toHaveBeenCalledTimes(1);
+    expect(mockElectron.app.exit).toHaveBeenCalledWith(1);
+  });
+
+  test('an app mock without .exit (unit harnesses) does not crash the handler', async () => {
+    const mockElectron = buildMockElectron();
+    const mockProc = buildMockProc(['node', 'src/main/index.js']);
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: mockProc });
+    await new Promise(r => setTimeout(r, 50));
+    expect(() => mockProc.emit('uncaughtException', new Error('benign'))).not.toThrow();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // ensureLogPath + writeLog path/fields/truncation                (L38-72)
 // ───────────────────────────────────────────────────────────────────────────
 describe('observability — writeLog path + JSON line shape (L38-72)', () => {

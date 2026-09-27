@@ -7,6 +7,9 @@
 
 const MAX_FILES = 5000;
 const MAX_DEPTH = 12;
+const MAX_CONFLICT_HASH_BYTES = 10 * 1024 * 1024;
+
+const nodeCrypto = require('crypto');
 
 // ── Pure encoding helpers (EC-A1) ──────────────────────────────────────────
 function hasBOM(content) {
@@ -45,6 +48,19 @@ function isValidUtf8(buf) {
   return Buffer.from(text, 'utf8').equals(buf);
 }
 
+// BOM-less UTF-16 detection: in UTF-16 one byte of every pair is the code unit's HIGH
+// byte, and every script this app reads (ASCII/Latin 0x00, Arabic 0x06-0x08) keeps it
+// ≤ 0x08, while the LOW byte is unconstrained. A single-byte encoding (UTF-8, cp1256)
+// can never put ≤0x08 bytes at EVERY other position, so the parity test below is a
+// high-confidence discriminator. Scripts above U+09FF (CJK…) are out of scope.
+function isUtf16Parity(input, highIndex) {
+  if (input.length < 4 || input.length % 2 !== 0) return false;
+  for (let i = highIndex; i < input.length; i += 2) {
+    if (input[i] > 0x08) return false;
+  }
+  return true;
+}
+
 // char -> byte, built once from the decoder so encode and decode can never drift.
 let _cp1256Map = null;
 function cp1256Map() {
@@ -77,6 +93,27 @@ function encodeWindows1256(text) {
   return out;
 }
 
+function firstUnmappableWindows1256Char(text) {
+  const map = cp1256Map();
+  for (const ch of text) {
+    if (ch.codePointAt(0) > 0x7F && !map.has(ch)) return ch;
+  }
+  return null;
+}
+
+function unmappableWindows1256Summary(text, maxSamples = 5) {
+  const map = cp1256Map();
+  const samples = [];
+  let count = 0;
+  for (const ch of text) {
+    if (ch.codePointAt(0) > 0x7F && !map.has(ch)) {
+      count += 1;
+      if (samples.length < maxSamples && !samples.includes(ch)) samples.push(ch);
+    }
+  }
+  return { count, samples };
+}
+
 /** Decode raw file bytes (or a legacy string from a mocked fs) into clean text. */
 function decodeBuffer(input) {
   if (typeof input === 'string') {
@@ -97,8 +134,31 @@ function decodeBuffer(input) {
     return { text: swapped.toString('utf16le').slice(1), encoding: 'utf16be', bom: true, utf8Key: input.toString('utf8') };
   }
   if (input.length >= 3 && input[0] === 0xEF && input[1] === 0xBB && input[2] === 0xBF) {
-    const text = input.slice(3).toString('utf8');
-    return { text, encoding: 'utf8', bom: true, utf8Key: input.toString('utf8') };
+    const body = input.slice(3);
+    // A BOM alone proves nothing about the body: a half-converted legacy cp1256 file
+    // also carries one. Trust UTF-8 only after validating the remaining bytes, else
+    // decode the body as cp1256 (the BOM itself cannot survive that encoding).
+    if (isValidUtf8(body)) {
+      return { text: body.toString('utf8'), encoding: 'utf8', bom: true, utf8Key: input.toString('utf8') };
+    }
+    if (typeof TextDecoder === 'function') {
+      try {
+        const text = new TextDecoder('windows-1256').decode(body);
+        return { text, encoding: 'windows-1256', bom: false, utf8Key: input.toString('utf8') };
+      } catch (_) { /* fall through */ }
+    }
+  }
+  // BOM-less UTF-16 (F7 residue): without this branch a UTF-16 file with its BOM
+  // stripped decoded as mojibake cp1256/UTF-8 and the first save destroyed it.
+  if (isUtf16Parity(input, 1)) {
+    return { text: input.toString('utf16le'), encoding: 'utf16le', bom: false, utf8Key: input.toString('utf8') };
+  }
+  if (isUtf16Parity(input, 0)) {
+    const swapped = Buffer.from(input);
+    for (let i = 0; i + 1 < swapped.length; i += 2) {
+      const t = swapped[i]; swapped[i] = swapped[i + 1]; swapped[i + 1] = t;
+    }
+    return { text: swapped.toString('utf16le'), encoding: 'utf16be', bom: false, utf8Key: input.toString('utf8') };
   }
   const utf8 = input.toString('utf8');
   if (isValidUtf8(input)) {
@@ -141,7 +201,7 @@ function encodeBuffer(text, encoding, bom) {
 
 function hashContent(content, crypto) {
   if (crypto && crypto.createHash) {
-    return crypto.createHash('sha1').update(content).digest('hex');
+    return crypto.createHash('sha256').update(content).digest('hex');
   }
   // deterministic fallback hash
   let h = 0;
@@ -152,7 +212,7 @@ function hashContent(content, crypto) {
 // ── Path guard (EC-A4) ─────────────────────────────────────────────────────
 function isInsideRoot(absPath, root, path) {
   const rel = path.relative(root, absPath);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  return rel !== '' && !rel.split(path.sep).includes('..') && !path.isAbsolute(rel);
 }
 
 function canonicalPath(fs, path, candidate) {
@@ -173,14 +233,55 @@ function validateWriteTarget(fs, path, absPath, root) {
   return { path: absPath };
 }
 
+/**
+ * Remove `<name>.tmp-<uuid>` siblings left behind by a crash between writeFileSync and
+ * renameSync. Only files carrying this writer's exact random-UUID suffix qualify, and only
+ * when older than maxAgeMs, so a concurrent writer's in-flight temp can never be swept.
+ * @returns {number} count removed
+ */
+function sweepStaleTempFiles(fs, path, dir, { maxAgeMs = 60 * 60 * 1000, now = Date.now(), maxDepth = MAX_DEPTH } = {}) {
+  // HYG-02: the sweep walks the same depth the vault read walks — notes live in
+  // subdirectories (a 12-level walk), and a root-only listing never saw the crash
+  // orphans beside the notes it exists to clean.
+  let entries;
+  try { entries = fs.readdirSync(dir); } catch (_) { return 0; }
+  let removed = 0;
+  for (const name of entries) {
+    const full = path.join(dir, name);
+    try {
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) {
+        if (maxDepth > 0) removed += sweepStaleTempFiles(fs, path, full, { maxAgeMs, now, maxDepth: maxDepth - 1 });
+        continue;
+      }
+      if (!/\.tmp-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)) continue;
+      if (!stat.isFile() || now - stat.mtimeMs < maxAgeMs) continue;
+      fs.unlinkSync(full);
+      removed++;
+    } catch (_) { /* in use or already gone — leave it */ }
+  }
+  return removed;
+}
+
 /** Atomically replace a destination with text or binary data. */
 function atomicWriteFile(fs, absPath, data, encoding) {
-  const tmp = absPath + '.tmp-' + Math.random().toString(36).slice(2);
+  const tmp = `${absPath}.tmp-${nodeCrypto.randomUUID()}`;
+  let mode = null;
   try {
-    if (encoding === undefined) fs.writeFileSync(tmp, data);
-    else fs.writeFileSync(tmp, data, encoding);
+    const stat = fs.statSync(absPath);
+    if (stat && typeof stat.mode === 'number') mode = stat.mode & 0o7777;
+  } catch (_) { /* new file — default mode */ }
+  try {
+    const options = encoding === undefined ? { flag: 'wx' } : { encoding, flag: 'wx' };
+    fs.writeFileSync(tmp, data, options);
     if (fs.fsyncSync) {
       try { const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd); } catch (_) { /* best effort */ }
+    }
+    // Re-apply the target's mode so a 0600 note does not widen to the umask default via
+    // the fresh temp file. On Windows chmod only toggles the read-only bit (the rename
+    // below tolerates it); a failed chmod is best-effort and never blocks the write.
+    if (mode != null && typeof fs.chmodSync === 'function') {
+      try { fs.chmodSync(tmp, mode); } catch (_) { /* best effort */ }
     }
     fs.renameSync(tmp, absPath);
     return { ok: true };
@@ -193,11 +294,8 @@ function atomicWriteFile(fs, absPath, data, encoding) {
 }
 
 function createDocumentStore({ fs, path, crypto } = {}) {
-  /** Read a file; return normalized body + meta needed for a faithful write. */
-  function read(absPath) {
-    // v1.2: read BYTES so the encoding can be detected (a mocked fs that only serves
-    // strings still works — decodeBuffer treats strings as UTF-8, as before).
-    const raw = fs.readFileSync(absPath);
+  /** Build the read result from raw bytes (or a legacy mocked string). */
+  function readFromRaw(absPath, raw) {
     const dec = decodeBuffer(raw);
     const meta = {
       bom: dec.bom,
@@ -208,6 +306,46 @@ function createDocumentStore({ fs, path, crypto } = {}) {
       mtimeMs: fs.statSync(absPath).mtimeMs,
     };
     return { content: normalize(dec.text), meta };
+  }
+
+  /** Read a file; return normalized body + meta needed for a faithful write. */
+  function read(absPath) {
+    // v1.2: read BYTES so the encoding can be detected (a mocked fs that only serves
+    // strings still works — decodeBuffer treats strings as UTF-8, as before).
+    return readFromRaw(absPath, fs.readFileSync(absPath));
+  }
+
+  /**
+   * Async read twin of read() so a vault walk never blocks the main event loop.
+   * `knownStat` (from the walk's own lstat/stat) supplies mtimeMs without a second
+   * syscall; absent one, a stat is attempted best-effort.
+   */
+  async function readAsync(absPath, knownStat = null) {
+    if (fs.promises && typeof fs.promises.readFile === 'function') {
+      const raw = await fs.promises.readFile(absPath);
+      let mtimeMs;
+      if (knownStat && typeof knownStat.mtimeMs === 'number') {
+        mtimeMs = knownStat.mtimeMs;
+      } else {
+        try {
+          const stat = typeof fs.promises.stat === 'function'
+            ? await fs.promises.stat(absPath)
+            : fs.statSync(absPath);
+          mtimeMs = stat.mtimeMs;
+        } catch (_) { /* optional metadata */ }
+      }
+      const dec = decodeBuffer(raw);
+      const meta = {
+        bom: dec.bom,
+        eol: detectEol(dec.text),
+        finalNewline: /\n$/.test(dec.text),
+        encoding: dec.encoding,
+        hash: hashContent(dec.utf8Key, crypto),
+        mtimeMs,
+      };
+      return { content: normalize(dec.text), meta };
+    }
+    return read(absPath);
   }
 
   /**
@@ -221,27 +359,45 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     if (validated.error) return validated;
 
     // Conflict detection (EC-A2): the file changed since we last read it.
+    // SEC-01 (2026-09-26): stat before hashing — a target swapped for a multi-GB file
+    // was read whole here just to compute the conflict hash. An oversized target skips
+    // the check; the write itself replaces it with the (capped) incoming content.
     if (baseHash != null && fs.existsSync(absPath)) {
-      const current = hashContent(fs.readFileSync(absPath, 'utf8'), crypto);
-      if (current !== baseHash) return { error: 'conflict' };
+      let size = Infinity;
+      try { size = fs.statSync(absPath).size; } catch (_) { /* unreadable — skip the hash */ }
+      if (size <= MAX_CONFLICT_HASH_BYTES) {
+        const current = hashContent(fs.readFileSync(absPath, 'utf8'), crypto);
+        if (current !== baseHash) return { error: 'conflict' };
+      }
     }
 
     // Re-apply original encoding (EC-A1).
     let out = applyEol(content, eol);
     if (finalNewline && !out.endsWith(eol)) out += eol;
     let written;
+    let utf8Key;
     if (!encoding || encoding === 'utf8') {
       // UTF-8 keeps the legacy string-write path (BOM as the U+FEFF character).
-      if (bom) out = '﻿' + out;
+      if (bom) out = '\uFEFF' + out;
       written = atomicWriteFile(fs, absPath, out, 'utf8');
+      utf8Key = out;
     } else {
+      if (encoding === 'windows-1256') {
+        const unmappable = firstUnmappableWindows1256Char(out);
+        if (unmappable) {
+          const { count, samples } = unmappableWindows1256Summary(out);
+          return { error: 'unmappable-character', char: unmappable, count, samples };
+        }
+      }
       // v1.2: UTF-16 / Windows-1256 go out as real bytes.
-      written = atomicWriteFile(fs, absPath, encodeBuffer(out, encoding, bom));
+      const bytes = encodeBuffer(out, encoding, bom);
+      written = atomicWriteFile(fs, absPath, bytes);
+      utf8Key = bytes.toString('utf8');
     }
     if (written.error) return written;
     let mtimeMs;
     try { mtimeMs = fs.statSync(absPath).mtimeMs; } catch (_) { /* optional metadata */ }
-    return { ok: true, meta: { hash: hashContent(out, crypto), bom, eol, finalNewline, encoding, mtimeMs } };
+    return { ok: true, meta: { hash: hashContent(utf8Key, crypto), bom, eol, finalNewline, encoding, mtimeMs } };
   }
 
   /**
@@ -302,14 +458,15 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     return { close() { if (timer) clearTimeout(timer); try { watcher.close(); } catch (_) { /* already gone */ } } };
   }
 
-  return { read, write, listMarkdown, watch };
+  return { read, readAsync, write, listMarkdown, watch };
 }
 
 module.exports = {
   createDocumentStore,
   // pure helpers exported for unit/mutation testing
   hasBOM, stripBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot,
-  validateWriteTarget, atomicWriteFile,
-  decodeBuffer, encodeBuffer, encodeWindows1256,
+  validateWriteTarget, atomicWriteFile, sweepStaleTempFiles,
+  decodeBuffer, encodeBuffer, encodeWindows1256, firstUnmappableWindows1256Char,
+  unmappableWindows1256Summary,
   MAX_FILES, MAX_DEPTH,
 };

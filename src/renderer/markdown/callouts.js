@@ -73,6 +73,23 @@ function removeFirstLine(p) {
 }
 
 /**
+ * The direction a callout INHERITS at its DOM position: the closest [dir] ancestor
+ * decides (a forced-RTL note must not silently re-base its neutral callouts to LTR),
+ * the computed style is the second opinion, 'ltr' the last resort.
+ */
+function inheritedDirection(el) {
+  for (let node = el; node; node = node.parentElement) {
+    const dir = node.getAttribute && node.getAttribute('dir');
+    if (dir === 'rtl' || dir === 'ltr') return dir;
+  }
+  const view = (el && el.ownerDocument && el.ownerDocument.defaultView) || null;
+  const computed = (view && typeof view.getComputedStyle === 'function')
+    ? view.getComputedStyle(el).direction
+    : '';
+  return computed === 'rtl' ? 'rtl' : 'ltr';
+}
+
+/**
  * Transform callout blockquotes under `root` in place.
  * @param {Element} root
  * @param {{parseCalloutHeader: (line:string)=>({type:string,title:string}|null),
@@ -105,11 +122,13 @@ export function transformCallouts(root, { parseCalloutHeader, resolveDirection }
     wrap.setAttribute('role', 'note');
     const typeLabel = callout.type.charAt(0).toUpperCase() + callout.type.slice(1);
     wrap.setAttribute('aria-label', callout.title === typeLabel ? typeLabel : `${typeLabel}: ${callout.title}`);
-    // Resolve the callout's own direction from its content (title + body). dir="auto"
-    // can't be used on the wrapper because the leading icon glyph is strong-LTR and
-    // would force ltr; resolveDirection reads the first strong char of the prose.
+    // Resolve the callout's own direction from its content (title + body) on top of the
+    // INHERITED base (the note's forced direction), so neutral content keeps the note's
+    // direction instead of defaulting to LTR. dir="auto" can't be used on the wrapper
+    // because the leading icon glyph is strong-LTR and would force ltr; resolveDirection
+    // reads the first strong char of the prose.
     const text = `${callout.title} ${body.textContent || ''}`.trim();
-    wrap.setAttribute('dir', (typeof resolveDirection === 'function') ? resolveDirection(text, 'ltr') : 'auto');
+    wrap.setAttribute('dir', (typeof resolveDirection === 'function') ? resolveDirection(text, inheritedDirection(bq)) : 'auto');
 
     const titleRow = doc.createElement('div');
     titleRow.className = 'callout-title';

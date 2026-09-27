@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from 'vitest';
-import { vaultSearch } from '../../src/renderer/components/search.js';
+import { vaultSearch, warmSearchIndexSlice } from '../../src/renderer/components/search.js';
 
 function escapeHtml(s) {
   return String(s)
@@ -281,5 +281,135 @@ describe('vaultSearch — audit #7 survivors', () => {
     const files = [{ name: 'plain.md' }]; // no content property at all
     expect(() => vaultSearch('zzz-nowhere', files)).not.toThrow();
     expect(vaultSearch('zzz-nowhere', files)).toEqual([]);
+  });
+});
+
+// audit UX-03: Arabic queries additionally match a tashkeel-stripped, hamza-folded
+// normalization of each file, while hits still report ORIGINAL (as-written) spans.
+describe('vaultSearch — Arabic normalization (audit UX-03)', () => {
+  const vocalized = {
+    name: 'note.md',
+    content: 'ذَكَرَ الكِتَابُ في مُحَمَّد بن عبد الله',
+  };
+
+  test('a bare query matches the fully vocalized text and maps back to the original span', () => {
+    const r = vaultSearch('محمد', [vocalized]);
+    expect(r).toHaveLength(1);
+    expect(r[0].hits).toHaveLength(1);
+    expect(r[0].hits[0].match).toBe('مُحَمَّد');
+  });
+
+  test('كتاب matches the vocalized الكِتَابُ (and الكتاب includes the article)', () => {
+    const r = vaultSearch('كتاب', [vocalized]);
+    expect(r).toHaveLength(1);
+    // The query is matched in normalized space and mapped back to the vocalized original
+    // span — exactly the letters that were matched, diacritics included.
+    expect(r[0].hits[0].match).toBe('كِتَابُ');
+    expect(vaultSearch('الكتاب', [vocalized])[0].hits[0].match).toBe('الكِتَابُ');
+  });
+
+  test('a vocalized query matches the bare text too', () => {
+    const r = vaultSearch('مُحَمَّد', [{ name: 'bare.md', content: 'قال محمد بن عبد الله' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0].hits[0].match).toBe('محمد');
+  });
+
+  test('a Latin query on the same file keeps the original fast path (no spurious match)', () => {
+    expect(vaultSearch('muhammad', [vocalized])).toEqual([]);
+    expect(vaultSearch('zzz', [vocalized])).toEqual([]);
+  });
+
+  test('matching is case-insensitive for Latin exactly as before', () => {
+    const files = [{ name: 'a.md', content: 'Hello WORLD' }];
+    expect(vaultSearch('hello', files)[0].hits[0].match).toBe('Hello');
+  });
+
+  test('name matching also folds hamza (إسلام.md found by اسلام)', () => {
+    const files = [{ name: 'إسلام.md', content: 'no body match here' }];
+    const r = vaultSearch('اسلام', files);
+    expect(r).toHaveLength(1);
+    expect(r[0].name).toBe('إسلام.md');
+    expect(r[0].hits).toEqual([]);
+  });
+
+  test('Arabic hits respect the 5-per-file cap and the 40-char snippet window', () => {
+    const content = Array.from({ length: 8 }, () => 'مُحَمَّد هنا').join('\n\n');
+    const r = vaultSearch('محمد', [{ name: 'many.md', content }]);
+    expect(r[0].hits.length).toBe(5);
+    expect(r[0].hits[0].match).toBe('مُحَمَّد');
+  });
+
+  test('an Arabic name + Arabic body still returns content hits with original spelling', () => {
+    const files = [{ name: 'مذكرة.md', content: 'مُحَمَّد كتب' }];
+    const r = vaultSearch('محمد', files);
+    expect(r).toHaveLength(1);
+    expect(r[0].hits[0].match).toBe('مُحَمَّد');
+  });
+
+  // 'İ'.toLowerCase() is 'i' + combining dot (U+0307): its UTF-16 length GROWS, so
+  // lowercasing AFTER building the index map left map[] and the searched string indexed
+  // differently — a large İ prefix made map[idx] undefined and NaN-spilled the whole file
+  // into the hit's "after" region. The map is now built over the lowercased text, so map
+  // and search string are the same string.
+  test('an İ prefix no longer desyncs the Arabic map from the searched string', () => {
+    const files = [{ name: 'i.md', content: 'İİİİİİكتاب' }];
+    const r = vaultSearch('كتاب', files);
+    expect(r).toHaveLength(1);
+    expect(r[0].hits).toHaveLength(1);
+    expect(r[0].hits[0].after).toBe('');
+  });
+});
+
+// audit PERF-06: the idle pre-warm walks the vault in slices. Warming must only populate
+// the same cache the real query uses — never change what a search returns.
+describe('warmSearchIndexSlice (audit PERF-06)', () => {
+  const files = () => [
+    { name: 'a.md', content: 'Alpha needle' },
+    { name: 'b.md', content: 'Beta needle' },
+    { name: 'c.md', content: 'Gamma needle' },
+  ];
+
+  test('warms a whole 3-file slice and reports how many files it saw', () => {
+    expect(warmSearchIndexSlice(files(), 0, 3)).toBe(3);
+    expect(warmSearchIndexSlice(files(), 0, 1)).toBe(1);
+    expect(warmSearchIndexSlice(files(), 1, 3)).toBe(2);
+  });
+
+  test('the warm step is idempotent (the cache is keyed per file/content)', () => {
+    const vault = files();
+    expect(warmSearchIndexSlice(vault, 0, 3)).toBe(3);
+    expect(warmSearchIndexSlice(vault, 0, 3)).toBe(3); // second pass reuses, still counts
+  });
+
+  test('warming does not change the results a cold query returns', () => {
+    const cold = vaultSearch('needle', files());
+    const vault = files();
+    warmSearchIndexSlice(vault, 0, 3);
+    const warm = vaultSearch('needle', vault);
+    expect(warm).toEqual(cold);
+    expect(warm).toHaveLength(3);
+  });
+
+  test('out-of-range and degenerate slices are no-ops', () => {
+    const vault = files();
+    expect(warmSearchIndexSlice(vault, 5, 9)).toBe(0);   // from > length
+    expect(warmSearchIndexSlice(vault, 3, 3)).toBe(0);   // empty slice
+    expect(warmSearchIndexSlice(vault, -2, 0)).toBe(0);  // from < 0 is not a valid start
+    expect(warmSearchIndexSlice(vault, 0, 1)).toBe(1);   // still usable afterwards
+    expect(warmSearchIndexSlice(null, 0, 1)).toBe(0);    // non-array
+    expect(warmSearchIndexSlice([null, undefined], 0, 2)).toBe(0); // falsy entries skipped
+  });
+});
+
+// RTL-M5 (2026-09-26): a query of pure tashkeel/tatweel normalizes to '' — that is a
+// miss for everything, not a match for everything (indexOf('') flooded every file).
+describe('vaultSearch empty normalization (RTL-M5)', () => {
+  test('a pure-diacritics query returns no results instead of matching every file', () => {
+    const files = [
+      { name: 'a.md', path: 'a.md', content: 'محمد' },
+      { name: 'b.md', path: 'b.md', content: 'other' },
+    ];
+    expect(vaultSearch('ًّ', files)).toEqual([]);
+    expect(vaultSearch('َُ', files)).toEqual([]);
   });
 });

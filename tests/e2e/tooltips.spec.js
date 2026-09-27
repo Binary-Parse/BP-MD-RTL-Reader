@@ -30,7 +30,6 @@ async function injectFile(page, name, content) {
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     window.renderFile(0);
   }, { name, content });
-  await page.waitForTimeout(200);
 }
 
 test.describe('[v10] designed tooltips', () => {

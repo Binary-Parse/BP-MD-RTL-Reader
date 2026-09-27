@@ -69,7 +69,10 @@
   /* Highlight surface for marks / wikilink pills — a translucent accent so it stays visible
      on ANY theme background (the old solid --accent-soft vanished on the dark theme). */
   --hl-bg: rgba(168, 132, 44, 0.20);
-  --gold: #A8842C;
+  /* audit UX-05: #A8842C measured 3.13:1 on --paper and 2.86:1 on --paper-deep — below the
+     4.5:1 WCAG AA floor for the 13px code tokens it colours. #82631D measures 5.00 / 4.58
+     (sepia needs its own value — see themes.css). */
+  --gold: #82631D;
   --teal: #2D6A55;
   --plum: #7C4A6B;
   --green: #4E8A3F;
@@ -89,6 +92,14 @@
      strip — see components.css's .statusbar rule. */
   --statusbar-bg: var(--paper-deep);
   --statusbar-fg: var(--ink-soft);
+
+  /* T3.1: one radius scale for the whole UI. components.css used to carry 14 different
+     corner values (5/6/7/8/9/10/12/16px + 0.375rem); every control now picks one of these
+     three. Deliberately NOT tokenised: 0 (sharp corners), 2/3/4px (fine needle radii) and
+     the pill/circle shapes (50% / 99px / 999px). */
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
 
   /* T-F19: compact chrome scale. The title bar and status bar are the ONLY consumers —
      the sidebar, inspector and reading area keep their own sizes deliberately, so this

@@ -33,7 +33,7 @@ This guide describes the features of **BP MD RTL Reader**. For the full key list
 | **Tab bar** | One tab per open file; a `●` marks unsaved changes. The `+` opens a new note. |
 | **Toolbar** | Reading/Edit toggle, formatting, theme (◐), and direction (⇄) buttons. |
 | **Document area** | **Reading** mode shows a clean rendered note; **Edit** mode shows the live-preview editor. |
-| **Inspector** (right) | Document **outline** and **properties**. Toggle with `Ctrl+Shift+I` or the panel button at the far right of the title bar. |
+| **Inspector** (right) | Document **outline**, **properties**, and your saved **notes** (highlights). Toggle with `Ctrl+Shift+I` or the panel button at the far right of the title bar. |
 | **Status bar** | Folder, encoding, format, direction, cursor position, word count, and theme. It can be hidden entirely, giving its space back to the note. |
 
 ---
@@ -42,9 +42,9 @@ This guide describes the features of **BP MD RTL Reader**. For the full key list
 
 There are three ways in:
 
-- **Open a file** — `Ctrl+O`, or the **¶** button. Each file opens in its own tab;
-  open as many as you like.
-- **Open a folder** — `Ctrl+Shift+O`, or the **⌂** button. Every `.md` and
+- **Open a file** — `Ctrl+O`, or **File → Open File…**. Each file opens in its own
+  tab; open as many as you like.
+- **Open a folder** — `Ctrl+Shift+O`, or **File → Open Folder…**. Every `.md` and
   `.markdown` file appears in the **Files** tree, sorted alphabetically. Click any
   entry to read it.
 - **Drag & drop** — drop `.md`, `.markdown`, or `.txt` files (up to 10 MB each) onto
@@ -74,7 +74,13 @@ CodeMirror live-preview surface. This Reading/Edit choice is remembered globally
 <img src="assets/editor.png" width="760" alt="The live-preview editor: formatting toolbar, a rendered note, and the table controls">
 </div>
 
-**Zoom** with `Ctrl+=`, `Ctrl+-`, and `Ctrl+0` (60–200%); the rest of the interface stays put.
+**Zoom** with `Ctrl+=`, `Ctrl+-`, and `Ctrl+0` (60–200%). Zoom scales the whole
+interface — note text, menus, and chrome together — so proportions stay consistent.
+
+**Reading size & width.** The **Aa** button beside the view controls (visible
+whenever a document is open) opens a small popover: text size steps 80–200% and
+content width slides 48–120ch. Unlike app zoom, these shape only the reading
+surface, and both are remembered across launches.
 
 **Right-click** anywhere for a themed context menu: Undo/Redo/Cut/Copy/Paste while
 editing, spellcheck suggestions on a misspelled word, Open/Copy on a link, Copy/Save on
@@ -82,7 +88,7 @@ an image, and — on every surface — quick access to New Note, Find, the Comma
 Settings, and the Auto-hide/Hide Status Bar toggles. It's fully keyboard-navigable
 (arrow keys, `Enter`, `Escape`).
 
-**Fullscreen** the window with the title bar's expand button; `Escape` exits.
+**Fullscreen** the window with `F11` or the title bar's expand button; `Escape` exits.
 
 ---
 
@@ -104,7 +110,9 @@ when the cursor is inside that construct.
 - **Blocks** — Blockquote, Callout (`> [!NOTE]`), Bulleted / Numbered / Task lists, with
   **Indent / Outdent** (or `Tab` / `Shift+Tab`) to nest list items.
 - **Big blocks** — Code block, Table, Image, and Horizontal rule. These always land on
-  their own line — inserting one never splits the text you're on.
+  their own line — inserting one never splits the text you're on. In Reading mode, a
+  floating **copy button** stays beside whichever code block is currently in view as you
+  scroll; clicking it copies that block's exact source.
 
 **Tables are interactive.** When the cursor is inside a table, a controls bar appears with
 **+ Row / − Row / + Col / − Col**, and `Tab` / `Shift+Tab` move between cells (pressing
@@ -114,12 +122,13 @@ when the cursor is inside that construct.
 
 ## Themes
 
-Three reading themes, switched with the **◐** button or `Ctrl+Shift+D` (Paper → Ink →
-Sepia). Your choice is saved and restored on the next launch.
+Four reading themes, switched with the **◐** button or `Ctrl+Shift+D` (Paper → Ink →
+Sepia → Oasis). Your choice is saved and restored on the next launch; on the very first
+run the app follows the system colour scheme until you pick a theme yourself.
 
-| Paper | Ink | Sepia |
-| :---: | :-: | :---: |
-| <img src="assets/theme-paper.png" alt="Paper theme"> | <img src="assets/theme-ink.png" alt="Ink theme"> | <img src="assets/theme-sepia.png" alt="Sepia theme"> |
+| Paper | Ink | Sepia | Oasis |
+| :---: | :-: | :---: | :---: |
+| <img src="assets/theme-paper.png" alt="Paper theme"> | <img src="assets/theme-ink.png" alt="Ink theme"> | <img src="assets/theme-sepia.png" alt="Sepia theme"> | <img src="assets/theme-oasis.png" alt="Oasis warm-dark theme"> |
 
 ---
 
@@ -130,14 +139,24 @@ BP MD RTL Reader supports Arabic and right-to-left documents throughout.
 - **Automatic detection.** When you open a document whose text is predominantly
   Arabic, the layout flips to right-to-left automatically, with Arabic-aware fonts,
   heading alignment, and weight.
-- **Manual flip.** Press `Ctrl+Shift+L` (or the **⇄** button) to force the direction
-  yourself. The choice is **per note** — it applies to the active tab, is restored when
-  you switch back to that tab, and never leaks into your other open notes. Manual choices
-  are cleared on relaunch (each note reopens in Auto).
+- **Manual direction.** Press `Ctrl+Shift+L` (or the **⇄** button) to cycle the active
+  note's direction: **Auto → RTL → LTR → Auto**. Auto is the smart per-block detection
+  above; RTL/LTR force every block of the note. The choice is **per note** — it applies
+  to the active tab, is restored when you switch back to that tab, and never leaks into
+  your other open notes. Manual choices are cleared on relaunch (each note reopens in
+  Auto).
 - **Make it durable.** To have a note always open in a fixed direction, add a
-  `direction: rtl` (or `ltr`) key to its YAML front matter — that persists across sessions.
+  `direction: rtl` (or `ltr`) key to its YAML front matter — that persists across sessions
+  and drives the whole note: the reading pane, and the tables and callouts rendered
+  inside the editor, all follow it.
 - **Mixed content** is handled per element, so embedded English in an Arabic document
-  (and vice-versa) reads correctly.
+  (and vice-versa) reads correctly. Numbers, dates, times, `#tags`, inline code, and
+  links are isolated so they keep their true left-to-right order inside Arabic prose —
+  a date like `2026-06-01` never flips to `01-06-2026` — and code blocks stay
+  left-to-right in exported HTML/EPUB too.
+- **Arabic interface.** **View → Arabic → Arabic Interface (العربية)** — or *Toggle
+  Arabic Interface* in the command palette — switches the entire interface to Arabic
+  with a right-to-left layout. Notes are unaffected; toggle again to return to English.
 
 <div align="center">
 <img src="assets/rtl-arabic.png" width="700" alt="Right-to-left Arabic document">
@@ -175,11 +194,13 @@ BP MD RTL Reader supports Arabic and right-to-left documents throughout.
 ## The inspector
 
 Toggle the right-hand inspector with `Ctrl+Shift+I`, or with the panel button at the far
-right of the title bar. It has two parts:
+right of the title bar. It has three parts:
 
 - **Outline** — every heading (`H1`–`H6`) in the current document; click to jump.
 - **Properties** — file name, word count, estimated read time, text direction, and the
   current view mode.
+- **Notes** — your highlights and margin notes for the current document, most recent
+  first; click an entry to jump to the passage, and **×** deletes it.
 
 ---
 
@@ -191,12 +212,21 @@ right of the title bar. It has two parts:
   file while preserving BOM, line endings, and final-newline style. If the file changed
   externally since it was opened, Save refuses to overwrite it and the conflict controls
   let you keep your edit or reload the disk copy. A new untitled note opens **Save As**.
+  A note stored in the legacy Windows-1256 (Arabic) code page keeps that encoding; if the
+  note now holds a character the code page cannot represent — an emoji, for example —
+  Save refuses rather than silently writing a corrupted `?`, and offers to upgrade the
+  file to UTF-8 (which keeps every character) before completing the save. UTF-16 files
+  are recognised whether or not they carry a byte-order mark.
 - **Save As** — `Ctrl+Shift+S` asks for a destination, writes there atomically, and makes
   that chosen file the tab's new save target.
 - **Export HTML** — **File → Export HTML** produces a single self-contained `.html`
   file (embedded styles, correct `lang`/`dir`) you can share or archive.
 - **Export PDF** — **File → Export PDF** renders the current note to a PDF offline, in an
   isolated renderer (no network).
+- **Export EPUB** — **File → Export EPUB…** packages the note as an EPUB 3 book with the
+  same per-block text direction as the reading view (right-to-left page progression for
+  Arabic). As with the HTML and PDF exports, images referenced from a vault become an
+  `[Image: alt text]` placeholder in the book.
 
 Tabs with unsaved edits show a `●`. Closing a dirty tab, closing the native window, or
 replacing the workspace with another folder, the demo notes, or a recent item asks before discarding changes.
@@ -213,6 +243,10 @@ Unsaved content is memory-only and is not part of session restore.
 | **Window title** | *File name* (default) shows the open note in the Windows taskbar and Alt+Tab, with a leading `•` while it has unsaved changes. *App name* shows only "BP MD RTL Reader". See [Privacy & Security](PRIVACY.md) — the title is visible to anyone who can see your screen. |
 | **Auto-hide top bar** | Hides the top bar and the window controls until you move the pointer into the top ~24 px of the window, then slides it back. Off by default. `Ctrl+Shift+T`. |
 | **Hide bottom status bar** | Removes the status bar and gives its row to the note. Off by default. `Ctrl+Shift+B`. |
+| **Auto-save** | Writes disk-backed notes back to their files automatically once you pause editing for ~15 seconds. On by default; untitled notes still need **Save As**. |
+| **Follow system colour scheme** | On a first run with no saved theme, the app opens light or dark to match Windows. Picking any theme yourself turns this off. |
+| **Daily reading goal** | Settings ▸ Reading — Off / 10 / 20 / 30 minutes (default 10). Sets the target shown in the `5-day streak · Today 12 of 20 min` line on the welcome screen; **Off** hides that line entirely. |
+| **Check for updates automatically** | Settings ▸ Updates — off by default. When on, the app checks the public releases feed at most once a day and shows a local notice if a newer release exists. It never downloads anything; see [Privacy & Security](PRIVACY.md). |
 
 > **While the top bar is auto-hidden the window cannot be dragged** — a frameless window
 > is moved by its title bar, and there is none on screen to grab. Move the pointer to the
@@ -240,21 +274,53 @@ launch.
 
 BP MD RTL Reader remembers how you left it in its local application profile:
 
-- **Saved across launches:** theme, editor zoom, Reading/Edit mode, sidebar/inspector
-  visibility, UI language/direction, calendar, Arabic kashida and italic-color choices;
-  the three **Settings** below (window title, auto-hide top bar, hide status bar);
-  recent files (up to five, paths and opaque grants only); and window geometry.
-- **Downgrading:** the three Settings above were added in the version-4 settings schema.
-  If you install an older build over this one it will not recognise them and will reset
-  them to their defaults on its next save. Nothing else is affected.
+- **Saved across launches:** theme (Paper, Ink, Sepia or Oasis), editor zoom, Reading/Edit mode,
+  sidebar/inspector visibility, UI language/direction, calendar, Arabic kashida and italic-color
+  choices, reading size/width; the **Settings** above (window title, auto-hide top bar, hide
+  status bar, auto-save, follow-system colour scheme, the automatic update check and the daily
+  reading goal); recent files (up to five, paths and opaque grants only); and window geometry.
+- **Reading positions:** each note remembers how far through it you were, and the welcome screen
+  lists the four most recent ones under **Continue reading** with a percentage and a relative
+  time. A position is captured while you read, so it is recorded in the reading view (Ctrl+E
+  toggles Reading ⇄ Edit) — the editor keeps its own scroll position for the session instead.
+- **Highlights & margin notes:** select text in the reading view and choose **Highlight** (saved
+  straight away) or **Note** (write a margin note about that passage). Highlights are stored in
+  `annotations.json` and re-found by their own text when the note is re-rendered; the Inspector's
+  **Notes** section lists them, a click jumps to the passage and × deletes one. In this version a
+  highlight is a single run of text inside one text node — a selection that crosses a paragraph
+  boundary, or even a bold/italic/code boundary inside one paragraph, is not offered a highlight.
+- **Reading streak & minutes:** `reading-stats.json` holds one total per day for up to two years,
+  which produces the `5-day streak · Today 12 of 20 min` line on the welcome screen. Minutes are
+  counted while the reading view is on screen in a visible window; the daily goal (Off / 10 / 20 /
+  30 minutes, in Settings ▸ Reading) only decides what that line says — Off hides it, and nothing
+  ever prompts you.
+- **Crash recovery:** while you work, unsaved notes are mirrored to a local recovery snapshot
+  every ten seconds (up to twenty notes). If the app closes without a chance to save — a crash
+  or a power cut — the next launch offers to restore them as editable tabs. The snapshot is only
+  removed when you choose **Restore** or **Discard** on that prompt; closing or dismissing it
+  leaves your work recoverable for the next launch. Closing the app normally saves or discards
+  on purpose, so nothing is re-offered after a clean exit.
+- **Reading positions:** the shelf entry shows the note's name, its percentage, and its
+  relative path and time.
+- **EPUB export** writes a book to the file you choose; nothing about it is remembered by the
+  app. Images referenced from a vault are replaced with an `[Image: alt text]` placeholder in the
+  exported book, the same way the HTML and PDF exports handle them.
+- **Downgrading:** these Settings post-date older builds — the window title and bar
+  toggles arrived with the version-4 settings schema, auto-save in 1.2.1, and the reading
+  positions / follow-system / update-check / reading-goal fields with version 5. If you
+  install an older build over this one it will not recognise the newer fields and will
+  reset them to their defaults on its next save. Nothing else is affected, and your
+  `annotations.json` and `reading-stats.json` files are left in place for the next newer build.
 - **Session restore:** for a disk-backed folder, the app remembers the folder grant and
   active note. On launch it re-reads the current folder from disk and opens that active
   note. Standalone files and individual tab-open/closed state are not restored.
 - **Per session only:** unsaved edits stay in memory until saved or deliberately
   discarded. They are never written into the settings profile.
 
-On Windows, `%APPDATA%\BP MD RTL Reader` contains `settings.json`,
-`capabilities.json` (opaque filesystem grants mapped to the paths you selected), local
-logs, and Electron profile state. Your Markdown notes remain wherever you saved them;
-the app profile is not a notes folder. See [Privacy & Security](PRIVACY.md), including
-the explicit user-initiated update-check network exception.
+On Windows, `%APPDATA%\bpmdrtlreader` contains `settings.json`,
+`capabilities.json` (opaque filesystem grants mapped to the paths you selected),
+`annotations.json` (your highlights and margin notes, keyed by an opaque document id),
+`reading-stats.json` (daily reading minutes and the streak), local logs, and Electron profile
+state. Your Markdown notes remain wherever you saved them; the app profile is not a notes
+folder. See [Privacy & Security](PRIVACY.md), including the explicit user-initiated
+update-check network exception.

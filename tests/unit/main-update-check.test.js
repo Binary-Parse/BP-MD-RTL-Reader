@@ -30,11 +30,13 @@ describe('update:check (T-Q6)', () => {
     expect(typeof handler).toBe('function');
   });
 
-  test('a newer release → { updateAvailable: true } with the release url', async () => {
+  test('a newer release → { updateAvailable: true } without the network-sourced url', async () => {
     const fetchFn = vi.fn(() => Promise.resolve(okJson({ tag_name: 'v1.2.0', html_url: 'https://x/releases/1.2.0' })));
     await setup(fetchFn);
     const r = await handler();
-    expect(r).toEqual({ current: '1.0.0', latest: '1.2.0', updateAvailable: true, url: 'https://x/releases/1.2.0' });
+    expect(r).toEqual({ current: '1.0.0', latest: '1.2.0', updateAvailable: true });
+    // audit SEC-09: the release page URL is never echoed to the renderer.
+    expect(r).not.toHaveProperty('url');
     // privacy: a single GET, no body/identifiers — just an Accept + UA header.
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [, opts] = fetchFn.mock.calls[0];
@@ -100,12 +102,13 @@ describe('update:check (T-Q6)', () => {
     expect((await handler()).latest).toBe('3.1.0');
   });
 
-  // L378: `(data && data.html_url) || ''` — a release with NO html_url yields url:''.
-  test('release with no html_url → url is the empty string (not undefined)', async () => {
+  // L378: the handler must NOT surface a network-sourced url at all (audit SEC-09) —
+  // a release WITH html_url and one WITHOUT both produce a url-less result.
+  test('no html_url in the response, and no url field either way', async () => {
     await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: 'v2.0.0' }))));
     const r = await handler();
     expect(r.updateAvailable).toBe(true);
-    expect(r.url).toBe('');
+    expect(r).not.toHaveProperty('url');
   });
 
   // L378: compareVersions(...) > 0 — an EQUAL version is not "available" (boundary).
@@ -113,6 +116,27 @@ describe('update:check (T-Q6)', () => {
     await setup(vi.fn(() => Promise.resolve(okJson({ tag_name: 'v1.0.0', html_url: 'https://x' }))));
     const r = await handler();
     expect(r.updateAvailable).toBe(false);
-    expect(r.url).toBe('https://x');
+    expect(r).not.toHaveProperty('url'); // the upstream html_url is dropped even when present
+  });
+
+  // Audit LOW #2: a compromised renderer looping the channel cannot drive unbounded
+  // pinned-host traffic — a repeat inside the cooldown is served from the previous result.
+  test('a repeat check inside the cooldown returns the cached result with no second request', async () => {
+    const fetchFn = vi.fn(() => Promise.resolve(okJson({ tag_name: 'v1.2.0' })));
+    await setup(fetchFn);
+    const first = await handler();
+    const second = await handler();
+    expect(second).toEqual(first);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a network failure is not cached — the next check really retries', async () => {
+    let offline = true;
+    await setup(vi.fn(() => (offline
+      ? Promise.reject(new Error('offline'))
+      : Promise.resolve(okJson({ tag_name: 'v1.2.0' })))));
+    expect((await handler()).error).toBe('network');
+    offline = false;
+    expect((await handler()).latest).toBe('1.2.0');
   });
 });

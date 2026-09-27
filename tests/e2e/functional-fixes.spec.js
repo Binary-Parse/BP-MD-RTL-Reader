@@ -91,6 +91,39 @@ test.describe('[R09] wikilinks render + navigate in the CM6 live-preview', () =>
     // navWikilink resolves "Target Note" → switches the active file to index 1
     expect(await page.evaluate(() => window._appState.activeFile)).toBe(1);
   });
+
+  // audit UX-14c: with two open folders holding a same-named note, a wikilink must resolve
+  // inside the vault of the note it was written in — not the first global match.
+  test('a wikilink prefers a same-named note in the ACTIVE file\'s vault', async ({ page }) => {
+    await goto(page);
+    await page.evaluate(() => {
+      window._appState.files = [
+        { name: 'index.md', path: 'index.md', content: '# A', dirty: false, vaultId: 'cap-vault-a' },
+        { name: 'index.md', path: 'index.md', content: '# B', dirty: false, vaultId: 'cap-vault-b' },
+        { name: 'notes.md', path: 'notes.md', content: '# Notes\n\nSee [[index]].', dirty: false, vaultId: 'cap-vault-b' },
+      ];
+      window.renderFile(2); // the note lives in vault B
+    });
+    await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
+    await page.evaluate(() => window.getActiveCmAdapter().setSelection({ start: 0, end: 0 })); // caret off the link line
+    const anchor = page.locator('.cm-mount a.wikilink');
+    await expect(anchor).toHaveCount(1);
+    await anchor.click();
+    expect(await page.evaluate(() => window._appState.activeFile)).toBe(1); // vault B's index (0 is vault A's)
+
+    // A match outside the active vault still resolves when the active vault has none.
+    await page.evaluate(() => {
+      window._appState.files = [
+        { name: 'index.md', path: 'index.md', content: '# A', dirty: false, vaultId: 'cap-vault-a' },
+        { name: 'notes.md', path: 'notes.md', content: '# Notes\n\nSee [[index]].', dirty: false, vaultId: 'cap-vault-b' },
+      ];
+      window.renderFile(1);
+    });
+    await page.evaluate(() => window.getActiveCmAdapter().setSelection({ start: 0, end: 0 }));
+    await expect(page.locator('.cm-mount a.wikilink')).toHaveCount(1);
+    await page.locator('.cm-mount a.wikilink').click();
+    expect(await page.evaluate(() => window._appState.activeFile)).toBe(0);
+  });
 });
 
 // ── R10: vault-relative images → bpmd:// ────────────────────────────────────
@@ -152,5 +185,29 @@ test.describe('[R10] note-relative images rewrite to bpmd://vault/<vaultId>/<rel
     expect(srcs[0]).toBe('https://x/y.png');
     expect(srcs[1]).toMatch(/^data:image\/png/);
     expect(srcs[2]).toBe('pic.png');
+  });
+
+  // audit UX-12: a vault image whose file cannot load (in this lane bpmd:// has no
+  // registered handler, exactly like a deleted file in the packaged app) becomes a named
+  // placeholder instead of the browser's broken-image glyph.
+  test('a missing vault image renders a named placeholder', async ({ page }) => {
+    await goto(page);
+    await page.evaluate(() => {
+      window._appState.files = [{ name: 'n.md', path: 'n.md', content: '![alt](missing.png)', dirty: false, vaultId: 'cap-vault' }];
+      window.renderFile(0);
+    });
+    const placeholder = page.locator('#noteContent .img-missing');
+    await expect(placeholder).toHaveCount(1);
+    await expect(placeholder).toHaveText('Image not found: missing.png');
+    await expect(page.locator('#noteContent img')).toHaveCount(0); // the broken <img> is gone
+  });
+
+  test('a missing image in a subfolder names the note-relative path', async ({ page }) => {
+    await goto(page);
+    await page.evaluate(() => {
+      window._appState.files = [{ name: 'note.md', path: 'sub/note.md', content: '![](gone/pic.png)', dirty: false, vaultId: 'cap-vault' }];
+      window.renderFile(0);
+    });
+    await expect(page.locator('#noteContent .img-missing')).toHaveText('Image not found: sub/gone/pic.png');
   });
 });

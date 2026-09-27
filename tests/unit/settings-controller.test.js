@@ -10,12 +10,16 @@ function state() {
   return {
     theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'edit',
     sidebarVisible: true, inspectorVisible: true, recents: [], calendar: 'gregorian',
-    arabicKashida: false, italicRecolor: true, cmEditor: false,
+    arabicKashida: false, italicRecolor: true,
     uiLocale: 'en', uiDirection: 'ltr', readerTextScale: 1, readerWidthCh: 72,
     // T-F19 chrome settings
     windowTitleMode: 'file', autoHideTitlebar: false, hideStatusBar: false,
     // v1.2: Word-style auto-save toggle
     autosave: true,
+    // v5 (T0.1). themeFollowSystem mirrors the RESTORE fallback (false when the key is
+    // absent), exactly like windowTitleMode:'file' / autosave:true above — the new-install
+    // default of `true` lives in settings.js's defaultSettings().
+    readingProgress: [], themeFollowSystem: false, updateCheck: 'manual', readingGoalMin: 10,
     files: [], activeFile: null,
   };
 }
@@ -23,7 +27,7 @@ function state() {
 function actions() {
   return {
     applyTheme: vi.fn(), setZoom: vi.fn(), setEditorMode: vi.fn(), setViewMode: vi.fn(),
-    applyPanelLayout: vi.fn(), renderRecents: vi.fn(), applyKashida: vi.fn(),
+    applyPanelLayout: vi.fn(), renderRecents: vi.fn(), renderContinue: vi.fn(), applyKashida: vi.fn(),
     applyItalicRecolor: vi.fn(), setUiLocale: vi.fn(), setUiDirection: vi.fn(),
     setReaderTextScale: vi.fn(), setReaderWidthCh: vi.fn(),
     restoreLastSession: vi.fn(async () => {}),
@@ -44,11 +48,13 @@ describe('settings controller', () => {
     expect([...PERSISTED_KEYS]).toEqual([
       'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible',
       'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
-      'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
+      'italicRecolor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
       // T-F19 chrome settings
       'windowTitleMode', 'autoHideTitlebar', 'hideStatusBar',
       // v1.2: Word-style auto-save toggle
       'autosave',
+      // v5 (T0.1)
+      'readingProgress', 'themeFollowSystem', 'updateCheck', 'readingGoalMin',
     ]);
   });
 
@@ -75,7 +81,6 @@ describe('settings controller', () => {
       calendar: 'gregorian',
       arabicKashida: false,
       italicRecolor: true,
-      cmEditor: false,
       uiLocale: 'en',
       uiDirection: 'ltr',
       lastSession: { vaultId: 'v', activePath: 'a.md' },
@@ -87,6 +92,45 @@ describe('settings controller', () => {
       hideStatusBar: false,
       // v1.2: Word-style auto-save toggle
       autosave: true,
+      // v5 (T0.1)
+      readingProgress: [],
+      themeFollowSystem: false,
+      updateCheck: 'manual',
+      readingGoalMin: 10,
+    });
+  });
+
+  // T0.1: the new keys must survive a restore → payload round-trip (place 3 of the
+  // four-places rule), and each is coerced exactly like the chrome keys above.
+  test('restores and re-emits the v5 keys, coercing malformed values', async () => {
+    const activeState = state();
+    const controller = createSettingsController({
+      state: activeState, bridge: {
+        getSettings: vi.fn(async () => ({
+          readingProgress: [
+            { key: 'k', name: 'n', path: 'a.md', vaultId: 'cap-v', documentId: null, ratio: 0.5, at: 2, extra: 1 },
+            { path: 'bad.md' },                              // no capability id → dropped
+            { path: 'b.md', documentId: 'cap-d', ratio: 0.25, at: 3 },
+          ],
+          themeFollowSystem: 'yes',
+          updateCheck: 'always',
+          readingGoalMin: 45,
+        })),
+      },
+      actions: actions(), subscribe: vi.fn(), getLastSession: () => null,
+    });
+    await expect(controller.restoreSettings()).resolves.toBe(true);
+    expect(activeState.themeFollowSystem).toBe(false);   // non-boolean → false
+    expect(activeState.updateCheck).toBe('manual');      // invalid → manual
+    expect(activeState.readingGoalMin).toBe(10);         // invalid → 10
+    // sanitizeProgress orders newest-first, so b.md (at:3) leads despite arriving second.
+    expect(activeState.readingProgress.map((e) => e.path)).toEqual(['b.md', 'a.md']);
+    expect(controller.settingsPayload().readingProgress).toEqual([
+      { key: '', name: '', path: 'b.md', vaultId: null, documentId: 'cap-d', ratio: 0.25, at: 3 },
+      { key: 'k', name: 'n', path: 'a.md', vaultId: 'cap-v', documentId: null, ratio: 0.5, at: 2 },
+    ]);
+    expect(controller.settingsPayload()).toMatchObject({
+      themeFollowSystem: false, updateCheck: 'manual', readingGoalMin: 10,
     });
   });
 
@@ -177,7 +221,7 @@ describe('settings controller', () => {
         { name: 'invalid', path: 'b.md' },
       ],
       calendar: 'hijri', arabicKashida: true, italicRecolor: false,
-      cmEditor: true, uiLocale: 'ar', uiDirection: 'rtl',
+      uiLocale: 'ar', uiDirection: 'rtl',
       readerTextScale: 1.2, readerWidthCh: 84,
       lastSession: { vaultId: 'v', activePath: 'a.md' },
     })) };
@@ -197,7 +241,6 @@ describe('settings controller', () => {
       calendar: 'hijri',
       arabicKashida: true,
       italicRecolor: false,
-      cmEditor: true,
     });
     expect(apply.applyTheme).toHaveBeenCalledWith('ink');
     expect(apply.setZoom).toHaveBeenCalledWith(1.2);
@@ -236,7 +279,7 @@ describe('settings controller', () => {
         theme: 'unknown', zoomFactor: 'large', viewMode: 'source',
         sidebarVisible: 'no', inspectorVisible: null, recents: {},
         calendar: 'lunar', arabicKashida: 'yes', italicRecolor: 1,
-        cmEditor: 'yes', uiLocale: 'fr', uiDirection: 'auto',
+        uiLocale: 'fr', uiDirection: 'auto',
       })) },
       actions: apply,
     });
@@ -251,8 +294,7 @@ describe('settings controller', () => {
     expect(apply.restoreLastSession).toHaveBeenCalledWith(undefined);
   });
 
-  test('restores alternate valid values and all supported recent capability shapes', async () => {
-    const activeState = state();
+  test('restores alternate valid values and all supported recent capability shapes', async () => {    const activeState = state();
     activeState.theme = 'ink';
     activeState.calendar = 'hijri';
     const apply = actions();
@@ -293,6 +335,55 @@ describe('settings controller', () => {
     });
     await expect(controller.restoreSettings()).rejects.toThrow('restore failed');
     expect(controller.isRestoring()).toBe(false);
+  });
+
+  // T2.1: the first-run system-scheme follow. `prefersDarkScheme` is injected so both
+  // branches are deterministic in the node environment.
+  test('themeFollowSystem derives ink/paper from the system scheme and writes nothing back', async () => {
+    const darkState = state();
+    const darkApply = actions();
+    const dark = createSettingsController({
+      state: darkState,
+      bridge: { getSettings: vi.fn(async () => ({ theme: 'paper', themeFollowSystem: true })), setSettings: vi.fn() },
+      actions: darkApply,
+      prefersDarkScheme: () => true,
+    });
+    await expect(dark.restoreSettings()).resolves.toBe(true);
+    expect(darkState.theme).toBe('ink');
+    expect(darkApply.applyTheme).toHaveBeenCalledWith('ink');
+    expect(darkApply.applyTheme).toHaveBeenCalledTimes(1); // not the saved literal too
+
+    const lightState = state();
+    const light = createSettingsController({
+      state: lightState,
+      bridge: { getSettings: vi.fn(async () => ({ theme: 'sepia', themeFollowSystem: true })), setSettings: vi.fn() },
+      actions: actions(),
+      prefersDarkScheme: () => false,
+    });
+    await light.restoreSettings();
+    expect(lightState.theme).toBe('paper'); // system wins over the saved literal while following
+
+    // …and the saved theme is honoured the moment the flag is false.
+    const savedState = state();
+    const saved = createSettingsController({
+      state: savedState,
+      bridge: { getSettings: vi.fn(async () => ({ theme: 'sepia', themeFollowSystem: false })) },
+      actions: actions(),
+      prefersDarkScheme: () => true,
+    });
+    await saved.restoreSettings();
+    expect(savedState.theme).toBe('sepia');
+  });
+
+  test('prefersDarkScheme defaults to false without a matchMedia in scope', async () => {
+    const activeState = state();
+    const controller = createSettingsController({
+      state: activeState,
+      bridge: { getSettings: vi.fn(async () => ({ themeFollowSystem: true })) },
+      actions: actions(),
+    });
+    await expect(controller.restoreSettings()).resolves.toBe(true);
+    expect(activeState.theme).toBe('paper');
   });
 
   test('binds only persisted state keys to the debounced writer', () => {

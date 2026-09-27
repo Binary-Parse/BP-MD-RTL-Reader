@@ -22,9 +22,10 @@ test.describe('local-first / network', () => {
     });
 
     await page.goto(INDEX_URL);
-    await page.waitForTimeout(500);
 
-    // Engines/sanitizer/math/highlighter are all present despite blocked network.
+    // Engines/sanitizer/math are blocking vendor scripts. highlight.js is NOT: audit
+    // PERF-07 moved its 1.08 MB off first paint, so it must be absent until a fenced
+    // block renders (asserted below, still with the network blocked).
     const libs = await page.evaluate(() => ({
       marked: typeof window.marked,
       DOMPurify: typeof window.DOMPurify,
@@ -34,16 +35,16 @@ test.describe('local-first / network', () => {
     expect(libs.marked).not.toBe('undefined');
     expect(libs.DOMPurify).not.toBe('undefined');
     expect(libs.katex).toBe('object');
-    expect(libs.hljs).toBe('object');
+    expect(libs.hljs).toBe('undefined');
 
     // Render a note with math + a code block + a Mermaid diagram — all must work offline.
     await page.evaluate(() => {
       window._appState.files = [{ name: 't.md', path: 't.md', content: '$x^2 + 1$\n\n```js\nconst y = 2;\n```\n\n```mermaid\ngraph TD; A-->B\n```\n', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
     await expect(page.locator('#noteContent .math-inline .katex')).toHaveCount(1);
     await expect(page.locator('#noteContent pre code.hljs')).toHaveCount(1);
+    expect(await page.evaluate(() => typeof window.hljs)).toBe('object');
     // Mermaid lazy-loads from the local vendor bundle and renders even offline.
     await expect(page.locator('#noteContent .mermaid svg')).toHaveCount(1, { timeout: 15000 });
 
@@ -64,5 +65,12 @@ test.describe('local-first / network', () => {
     // None of the F9/F16 deps, NO font CDN, NO CDN at all was requested — all vendored.
     const cdnish = external.filter((u) => /katex|highlight|hljs|mermaid|d3|jsdelivr|unpkg|cdnjs|googleapis|gstatic|fontsource/i.test(u));
     expect(cdnish).toEqual([]);
+    // audit CMP-14: the stronger, unfiltered claim — the app issues ZERO non-file requests.
+    // If this ever fails, the list above names the offender and it is a real regression,
+    // not a test problem.
+    expect(external, `unexpected external request(s): ${external.join(', ')}`).toEqual([]);
+    // T7.1: the update check is opt-in, and 'manual' is the default — with no settings bridge
+    // the renderer never even asks, which is why the zero-request claim above holds.
+    expect(await page.evaluate(() => window._appState.updateCheck)).toBe('manual');
   });
 });

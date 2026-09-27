@@ -18,7 +18,6 @@ test.describe('[T-F11] italic recolour opt-out', () => {
       window._appState.files = [{ name: 'e.md', path: 'e.md', content: 'Some *emphasised* prose with a normal run.\n', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(80);
   });
 
   const colors = (page) => page.evaluate(() => {

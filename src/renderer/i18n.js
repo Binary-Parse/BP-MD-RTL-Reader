@@ -19,7 +19,8 @@ export function escapeHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
@@ -36,29 +37,10 @@ export function escapeReg(s) {
 
 /** True if the text contains Arabic diacritics (tashkeel) — needs taller leading. */
 export function hasTashkeel(text) {
-  return typeof text === 'string' && /[ً-ٰٟۖ-ۭ]/.test(text);
+  return typeof text === 'string' && /[\u064B-\u065F\u0670\u0640]/.test(text);
 }
 
 /** Recommended line-height for an Arabic block (T-R3): looser when tashkeel present. */
 export function arabicLineHeight(text) {
   return hasTashkeel(text) ? 2.0 : 1.8;
-}
-
-const ARABIC_INDIC = '٠١٢٣٤٥٦٧٨٩';
-
-/** Convert Western digits to Eastern Arabic-Indic numerals (T-R5). */
-export function toArabicIndic(s) {
-  return String(s).replace(/[0-9]/g, (d) => ARABIC_INDIC[Number(d)]);
-}
-
-/** Convert Eastern Arabic-Indic numerals back to Western digits (T-R5). */
-export function toWesternDigits(s) {
-  return String(s).replace(/[٠-٩]/g, (d) => String(ARABIC_INDIC.indexOf(d)));
-}
-
-/** Apply a numerals style ('western' | 'arabic-indic') to a string. */
-export function applyNumerals(s, style) {
-  if (style === 'arabic-indic') return toArabicIndic(s);
-  if (style === 'western') return toWesternDigits(s);
-  return String(s);
 }

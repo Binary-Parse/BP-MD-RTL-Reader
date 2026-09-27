@@ -36,7 +36,7 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
         // page.goto()/reloads so we count everything the test executes.
         await page.coverage.startJSCoverage({ resetOnNavigation: false });
         started = true;
-      } catch (err) {
+      } catch (_err) {
         // A spec that manages its own coverage (coverage-collector.spec.js)
         // will already have JSCoverage enabled — skip rather than crash.
         started = false;
@@ -48,7 +48,7 @@ if (process.env.COLLECT_RENDERER_COVERAGE) {
       let coverage;
       try {
         coverage = await page.coverage.stopJSCoverage();
-      } catch (err) {
+      } catch (_err) {
         return;
       }
       // Keep first-party renderer scripts (src/renderer/*.js — app.js + its ES-module imports).

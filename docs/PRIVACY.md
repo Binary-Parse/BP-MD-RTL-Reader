@@ -8,16 +8,19 @@ untrusted Markdown is sanitized before it is rendered.
 - **No telemetry.** No analytics, usage tracking, or product metrics.
 - **No accounts, sync, or cloud.** There is nothing to sign in to.
 - **No crash upload.** Crash reporting to any remote server is disabled.
-- **No automatic update check or download.** Network access occurs only when you choose
-  **Help → Check for Updates…**; that request is described below.
-- **Local data.** Notes and settings are stored only on the local machine.
+- **No update download, and no update check unless you asked for one.** Network access
+  occurs when you choose **Help → Check for Updates…**, and — if you turn it on in
+  Settings ▸ Updates — an automatic check at most once a day. Both are described below;
+  neither ever downloads or installs anything.
+- **Local data.** Notes, settings, highlights, and reading stats are stored only on the
+  local machine.
 
 ## Where your data lives
 
 | What | Where |
 | ---- | ----- |
-| App settings (`settings.json`), filesystem grants (`capabilities.json`), Electron profile state, and local diagnostic logs | `%APPDATA%\bpmdrtlreader` (logs are in `logs\`) |
-| Supported legacy app-data aliases | `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and `%LOCALAPPDATA%\BP MD RTL Reader` |
+| App settings (`settings.json`), filesystem grants (`capabilities.json`), highlights & margin notes (`annotations.json`), daily reading stats (`reading-stats.json`), crash-recovery snapshots (`recovery\`), Electron profile state, and local diagnostic logs | `%APPDATA%\bpmdrtlreader` (logs are in `logs\`) |
+| Legacy app-data aliases (older installs; the app reads only the directory above — the uninstaller cleans these up) | `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and `%LOCALAPPDATA%\BP MD RTL Reader` |
 | Your notes | wherever **you** saved them — plain `.md` files |
 
 Both Windows installer families offer three actions before an interactive uninstall:
@@ -41,14 +44,17 @@ uninstaller lists the remaining path instead of reporting complete cleanup.
 
 ## What persists between sessions
 
-So the app reopens the way you left it, a single local file —
-`%APPDATA%\bpmdrtlreader\settings.json` — stores your preferences. It is a plain JSON
-file on your machine, written only by you (via the app) and **never transmitted**. It
-holds:
+So the app reopens the way you left it, plain JSON files in
+`%APPDATA%\bpmdrtlreader\` store your preferences. They are written only by you (via
+the app) and **never transmitted**. `settings.json` holds:
 
-- **Appearance & layout** — theme (paper/ink/sepia), editor zoom, Reading/Edit mode,
-  panel visibility, UI language/direction, calendar, Arabic kashida, italic color, and
-  the chrome settings below (window-title mode, auto-hide top bar, hide status bar).
+- **Appearance & layout** — theme (paper/ink/sepia/oasis), whether the app follows the
+  system colour scheme on first run, editor zoom, Reading/Edit mode, panel visibility,
+  UI language/direction, calendar, Arabic kashida, italic color, and the chrome settings
+  below (window-title mode, auto-hide top bar, hide status bar).
+- **Reading positions** — per note, the last scroll position as a ratio (0–1) with a
+  timestamp, plus the note's name and relative display path, so the welcome screen can
+  offer "Continue reading". Positions and names only — never note content.
 - **Recent files** — a short list (max five) of the **names and relative display paths** of notes you
   recently opened, so they appear under "Recents". This records *paths only* — never the
   contents of your notes. Main-process opaque capability IDs provide the authority to
@@ -59,8 +65,13 @@ holds:
   path. On launch the app re-reads the folder from disk; it does not persist note content,
   unsaved edits, standalone tabs, or each folder tab's open/closed state.
 
-The settings schema reserves a `numerals` field, but the current UI does not expose or
-apply a digit-style setting. It should not be treated as a user-visible persisted option.
+Two more local files hold the reading features:
+
+- `annotations.json` — your highlights and margin notes, keyed by an opaque document
+  identifier. The file stores the highlighted text, your note text, and an anchor; it
+  is never transmitted, and the annotations channel carries text only (no paths).
+- `reading-stats.json` — daily reading-minute totals (two years) so the welcome line
+  can show your streak against the optional daily goal. Local only.
 
 ## What the window title shows
 
@@ -106,13 +117,16 @@ images use `bpmd://`. Neither scheme talks to the network:
 Rendering works fully offline: no font, library, image, or note content is fetched from a
 CDN or remote server.
 
-There is one narrow main-process exception. If—and only if—you choose **Help → Check for
-Updates…**, the app sends an HTTPS `GET` to
+There is one narrow main-process exception. When you choose **Help → Check for
+Updates…** — and, if you enable **Settings ▸ Updates → Check for updates automatically**,
+at most once a day after that — the app sends an HTTPS `GET` to
 `https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest` with
 GitHub's JSON `Accept` header and a `BP-MD-RTL-Reader` User-Agent. It sends no note content,
 stored path, account identifier, or telemetry; ordinary network metadata such as IP
 address and request headers is visible to GitHub. The command reads public release
-metadata only: it neither downloads nor installs an update. On an offline machine the
+metadata only: it neither downloads nor installs an update — when the automatic check
+finds a newer release it shows a local notice, whose "View release" button opens the
+project's releases page (one fixed URL the app owns). On an offline machine the
 request fails and the rest of the app continues to work.
 
 ## Security model
@@ -130,8 +144,14 @@ BP MD RTL Reader follows current Electron hardening guidance:
   `<script>`, event handlers, and other active content. Opening a hostile `.md` file
   cannot run code.
 - **Guarded folder reads** — when you open a folder, reads are restricted to the folder
-  you picked, reject UNC/network paths, reject symlinks that escape the folder, and are
-  size-bounded (per-file, file-count, and cumulative caps).
+  you picked, reject UNC network paths (`\\server\share` and `//server/share`), reject
+  symlinks that escape the folder, and are size-bounded (per-file, file-count, and
+  cumulative caps). One limitation, stated plainly: a **drive-letter mapped share**
+  (e.g. `Z:\notes`) is indistinguishable from a local drive by any pure-Node check, so
+  it is not rejected. On such a share the folder watcher cannot run — the
+  external-change indicator and conflict banner will not appear for edits made by
+  other programs, and saving uses atomic-rename over the network. Keep vaults on a
+  local (or properly local-synced) folder for full data-safety behavior.
 
 If you discover a security issue, please report it privately to **Binary Parse** rather
 than opening a public issue.

@@ -89,6 +89,21 @@ describe('footnoteExtension via real marked', () => {
     expect(out.match(/<li id="fn-/g)).toHaveLength(1);
   });
 
+  test('repeated references get UNIQUE ids (first keeps fnref-N, later ones get -k)', () => {
+    const m = fresh();
+    const out = m.parse('a[^1] b[^1] c[^1]\n\n[^1]: once');
+    // no two elements share an id (duplicate ids are epubcheck-fatal)…
+    const ids = [...out.matchAll(/id="(fnref-[^"]+)"/g)].map((mm) => mm[1]);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(3);
+    // …the first keeps the plain id the note body's backlink targets…
+    expect(ids).toEqual(['fnref-1', 'fnref-1-2', 'fnref-1-3']);
+    // …every ref still links to the shared note body, and the backlink still
+    // points at the FIRST reference's id.
+    expect(out.match(/href="#fn-1"/g)).toHaveLength(3);
+    expect(out).toContain('href="#fnref-1"');
+  });
+
   test('esc() escapes &, <, >, and "', () => {
     const m = fresh();
     const out = m.parse('r[^1]\n\n[^1]: a & b < c > d "e"');
@@ -132,5 +147,28 @@ describe('footnoteExtension via real marked', () => {
     const out = inst.parse('hi[^1]\n\n[^1]: there');
     expect(out).toMatch(/id="fnref-1"/);
     expect(out).toMatch(/<li id="fn-1"[^>]*>there/);
+  });
+});
+
+// MD-01 (2026-09-26): a reference with no definition is literal text (GFM), not a
+// numbered link to an empty list item in a stranded footnotes section.
+describe('dangling footnote references (MD-01)', () => {
+  let Marked;
+  beforeAll(async () => { ({ Marked } = await import('marked')); });
+  const fresh = () => {
+    const inst = new Marked();
+    inst.use(footnoteExtension());
+    return inst;
+  };
+  test('a reference without a definition renders as literal text and emits no section', () => {
+    const html = fresh().parse('see [^3] for details\n');
+    expect(html).toContain('[^3]');
+    expect(html).not.toContain('fn-ref');
+    expect(html).not.toContain('footnotes');
+  });
+  test('a reference BEFORE its definition still resolves (pre-scan)', () => {
+    const html = fresh().parse('see [^a]\n\n[^a]: the note\n');
+    expect(html).toContain('fn-ref');
+    expect(html).toContain('the note');
   });
 });

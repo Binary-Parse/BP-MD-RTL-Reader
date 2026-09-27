@@ -22,10 +22,10 @@ test.describe('[T-Q6] opt-in update check', () => {
 
   test('an available update is surfaced via a toast', async ({ page }) => {
     await page.evaluate(() => {
-      window.electronAPI = { checkForUpdate: () => Promise.resolve({ current: '1.0.0', latest: '1.2.0', updateAvailable: true, url: 'x' }) };
+      window.electronAPI = { checkForUpdate: () => Promise.resolve({ current: '1.0.0', latest: '9.9.9-e2e', updateAvailable: true, url: 'x' }) };
     });
     await page.evaluate(() => window.checkForUpdate());
-    await expect(page.locator('#toast')).toContainText('Update available: 1.2.0');
+    await expect(page.locator('#toast')).toContainText('Update available: 9.9.9-e2e');
   });
 
   test('up-to-date reports cleanly (no false "update")', async ({ page }) => {

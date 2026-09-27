@@ -6,6 +6,13 @@
 import { sanitizeHtml } from './trusted.js';
 import { footnoteExtension } from './footnotes.js';
 
+// audit SEC-11: a wikilink alias is author-controlled text rendered into element content.
+// The TARGET already had its quotes stripped (an attribute-value guard); the alias needs
+// real escaping. Local helper — this module is pure/DI and imports no escaper.
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));
+
 export function wikilinkTokenizer(src) {
   const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
   if (m) {
@@ -21,7 +28,7 @@ export function wikilinkTokenizer(src) {
 
 export function wikilinkRenderer(token) {
   const safe = token.target.replace(/['"]/g, '');
-  return `<a class="wikilink" data-target="${safe}">${token.alias}</a>`;
+  return `<a class="wikilink" data-target="${safe}">${esc(token.alias)}</a>`;
 }
 
 export function configureMarked(marked) {
@@ -39,7 +46,7 @@ export function configureMarked(marked) {
       },
       renderer(t) {
         const safe = t.target.replace(/['"]/g, '');
-        return `<a class="wikilink" data-target="${safe}">${t.alias}</a>`;
+        return `<a class="wikilink" data-target="${safe}">${esc(t.alias)}</a>`;
       }
     }, {
       // Highlight ==text== → <mark> (Typora/Obsidian). Inner is inline-parsed so **bold** etc.
@@ -66,7 +73,7 @@ export function configureMarked(marked) {
       name: 'superscript', level: 'inline',
       start(src) { return src.indexOf('^'); },
       tokenizer(src) {
-        const m = /^\^([^\^\s]+?)\^/.exec(src);
+        const m = /^\^([^^\s]+?)\^/.exec(src);
         if (m) return { type: 'superscript', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
       },
       renderer(t) { return `<sup>${this.parser.parseInline(t.tokens)}</sup>`; },

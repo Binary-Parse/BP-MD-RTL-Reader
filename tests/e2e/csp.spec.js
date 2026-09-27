@@ -29,7 +29,16 @@ test.describe('[T-B4] strict CSP', () => {
     expect(libs.marked).not.toBe('undefined');
     expect(libs.dompurify).not.toBe('undefined');
     expect(libs.katex).toBe('object');
-    expect(libs.hljs).toBe('object');
+    // audit PERF-07: highlight.js is no longer a blocking vendor <script> — it is injected
+    // at runtime on the first fenced block, which is exactly the case CSP must allow.
+    expect(libs.hljs).toBe('undefined');
+
+    await page.evaluate(() => {
+      window._appState.files = [{ name: 'c.md', path: 'c.md', content: '```js\nconst x = 1;\n```\n', dirty: false }];
+      window.renderFile(0);
+    });
+    await expect(page.locator('#noteContent pre code.hljs')).toHaveCount(1);
+    expect(await page.evaluate(() => typeof window.hljs)).toBe('object');
     expect(violations, `CSP violations on boot: ${violations.join(' | ')}`).toEqual([]);
   });
 

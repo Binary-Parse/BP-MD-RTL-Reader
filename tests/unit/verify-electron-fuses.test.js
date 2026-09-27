@@ -50,7 +50,7 @@ describe('compareFuseWire', () => {
     return {
       version: '1',
       0: FuseState.DISABLE, // runAsNode: false
-      1: FuseState.ENABLE,  // enableCookieEncryption (not in REQUIRED)
+      1: FuseState.ENABLE,  // enableCookieEncryption: true (REQUIRED since T14)
       2: FuseState.DISABLE, // enableNodeOptionsEnvironmentVariable: false
       3: FuseState.DISABLE, // enableNodeCliInspectArguments: false
       4: FuseState.ENABLE,  // enableEmbeddedAsarIntegrityValidation: true
@@ -92,10 +92,14 @@ describe('compareFuseWire', () => {
 
   test('ignores wire indices that REQUIRED does not name, and the version key', () => {
     const wire = goodWire();
-    wire[1] = FuseState.DISABLE; // enableCookieEncryption — not in REQUIRED
-    wire[6] = FuseState.ENABLE;  // not in REQUIRED
+    wire[1] = FuseState.DISABLE; // enableCookieEncryption — in REQUIRED (T14), so flagged
+    wire[6] = FuseState.ENABLE;  // loadBrowserProcessSpecificV8Snapshot — not in REQUIRED
     wire[8] = FuseState.DISABLE; // not in REQUIRED
-    expect(compareFuseWire(wire, REQUIRED)).toEqual([]);
+    expect(compareFuseWire(wire, REQUIRED)).toEqual(['enableCookieEncryption']);
+    const fixed = goodWire();
+    fixed[6] = FuseState.ENABLE;  // unnamed indices stay ignored…
+    fixed[8] = FuseState.DISABLE;
+    expect(compareFuseWire(fixed, REQUIRED)).toEqual([]); // …and a correct wire still passes
   });
 
   test('reports a required fuse the wire does not carry at all', () => {

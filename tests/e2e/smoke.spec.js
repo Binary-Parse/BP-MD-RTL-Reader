@@ -23,9 +23,7 @@ test.describe('smoke tests', () => {
     const jsErrors = errors.filter(e =>
       !e.includes('fonts.googleapis') &&
       !e.includes('fonts.gstatic') &&
-      !e.includes('cdn.jsdelivr') &&
-      !e.includes('Failed to load resource') &&
-      !e.includes('net::ERR')
+      !e.includes('cdn.jsdelivr')
     );
     expect(jsErrors).toHaveLength(0);
   });
@@ -52,7 +50,7 @@ test.describe('smoke tests', () => {
     await expect(page.locator('#welcome')).toBeVisible();
   });
 
-  test('cycle all three themes via button', async ({ page }) => {
+  test('cycle all four themes via button', async ({ page }) => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
@@ -66,26 +64,28 @@ test.describe('smoke tests', () => {
 
     // Click theme button to go to ink
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'ink');
     await expect(themeIcon).toHaveAttribute('href', '#ic-moon');
 
     // Click again to go to sepia
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'sepia');
     // v1.2: sepia no longer borrows the Reading/Edit toggle's book-open glyph —
     // the theme button shows the palette icon instead.
     await expect(themeIcon).toHaveAttribute('href', '#ic-palette');
 
+    // T1.1: then the fourth theme, which gets the flame glyph.
+    await page.click('#themeBtn');
+    await expect(html).toHaveAttribute('data-theme', 'oasis');
+    await expect(themeIcon).toHaveAttribute('href', '#ic-flame');
+
     // Click again to go back to paper
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'paper');
     await expect(themeIcon).toHaveAttribute('href', '#ic-sun');
 
     // No console JS errors during theme cycling
-    const jsErrors = errors.filter(e => !e.includes('net::ERR') && !e.includes('Failed to load'));
+    const jsErrors = errors;
     expect(jsErrors).toHaveLength(0);
   });
 
@@ -103,7 +103,6 @@ test.describe('smoke tests', () => {
 
     // Toggle RTL on — dir must land on #srcTextarea and #editor, NOT html
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await expect(srcTextarea).toHaveAttribute('dir', 'auto');
     await expect(editor).toHaveAttribute('dir', 'rtl');
     // html element must NOT gain a dir attribute
@@ -119,7 +118,6 @@ test.describe('smoke tests', () => {
 
     // Toggle RTL off — dir removed from content elements
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await expect(srcTextarea).not.toHaveAttribute('dir');
     await expect(editor).not.toHaveAttribute('dir');
 
@@ -154,7 +152,6 @@ test.describe('smoke tests', () => {
       if (typeof window.renderFile === 'function') window.renderFile(0);
     });
 
-    await page.waitForTimeout(300);
 
     // T-F13: welcome hidden, the CM6 editor visible (the single on-screen surface).
     await expect(page.locator('#welcome')).toBeHidden();
@@ -167,7 +164,7 @@ test.describe('smoke tests', () => {
     expect(html).toContain('<strong>');
 
     // No JS errors
-    const jsErrors = errors.filter(e => !e.includes('net::ERR') && !e.includes('Failed to load') && !e.includes('cdn.jsdelivr') && !e.includes('fonts.'));
+    const jsErrors = errors.filter(e => !e.includes('cdn.jsdelivr') && !e.includes('fonts.'));
     expect(jsErrors).toHaveLength(0);
   });
 
@@ -180,13 +177,34 @@ test.describe('smoke tests', () => {
 
     // Open palette
     await page.keyboard.press('Control+k');
-    await page.waitForTimeout(100);
     await expect(palOverlay).toHaveClass(/open/);
 
     // Close with Escape
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(100);
     await expect(palOverlay).not.toHaveClass(/open/);
+  });
+
+  // audit UX-10: an empty query must not render one button per file on a large vault.
+  test('the palette caps the empty-query file list at 50 and shows a keep-typing hint', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(() => {
+      window._appState.files = Array.from({ length: 60 }, (_, i) => ({
+        name: `note-${String(i).padStart(2, '0')}.md`, path: `note-${String(i).padStart(2, '0')}.md`, content: '',
+      }));
+      window.openPalette();
+    });
+
+    // The 50-file cap holds; the 51st+ file is not rendered.
+    await expect(page.locator('#palResults .pi-name', { hasText: 'note-00.md' })).toHaveCount(1);
+    await expect(page.locator('#palResults .pi-name', { hasText: 'note-59.md' })).toHaveCount(0);
+    await expect(page.locator('#palResults .pal-hint')).toHaveCount(1);
+    await expect(page.locator('#palResults .pal-hint')).toContainText('+10 more');
+
+    // …and typing still filters the whole vault, including beyond the cap.
+    await page.locator('#palInput').fill('note-59');
+    await expect(page.locator('#palResults .pi-name', { hasText: 'note-59.md' })).toHaveCount(1);
+    await expect(page.locator('#palResults .pal-hint')).toHaveCount(0);
   });
 
   test('the single CM6 live-preview editor mounts when a file is open', async ({ page }) => {
@@ -217,7 +235,6 @@ test.describe('smoke tests', () => {
     await expect(palOverlay).not.toHaveClass(/open/);
 
     await page.click('#searchBtn');
-    await page.waitForTimeout(100);
 
     await expect(palOverlay).toHaveClass(/open/);
   });
@@ -227,7 +244,6 @@ test.describe('smoke tests', () => {
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => window.toggleInspector());
-    await page.waitForTimeout(50);
 
     const cols = await page.evaluate(() => {
       return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
@@ -270,8 +286,7 @@ test.describe('smoke tests', () => {
     expect(toastHasError).toBe(false);
 
     const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr') &&
-      !e.includes('Failed to load resource') && !e.includes('net::ERR')
+      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
     );
     expect(jsErrors).toHaveLength(0);
   });
@@ -297,13 +312,11 @@ test.describe('smoke tests', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
 
     await page.evaluate(() => { window.openFind(); window.runFind('the'); });
-    await page.waitForTimeout(100);
     // T-F13: find runs over the CM6 surface — matches tracked in findSourceMatches, navigation
     // via findStep (CM6 selection), not DOM <mark> hits in the (removed) preview.
     expect(await page.evaluate(() => window._appState.findSourceMatches.length)).toBe(3);
 
     await page.click('#findNextBtn');
-    await page.waitForTimeout(50);
     expect(await page.evaluate(() => window._appState.findIdx)).toBe(1);
     expect(await page.$eval('#findInfo', el => el.textContent)).toMatch(/2\s*\/\s*3/);
   });

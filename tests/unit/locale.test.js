@@ -51,6 +51,18 @@ describe('t (translate) — T-R7', () => {
     }
   });
 
+  // T5.1c: the Inspector "Notes" section and the floating selection bar are user-visible
+  // chrome, so both catalogs must carry them (and the Arabic must be a real translation).
+  test('catalog covers the highlights + margin notes chrome (T5.1c)', () => {
+    for (const key of ['panel.notes', 'notes.empty', 'hl.highlight', 'hl.note', 'hl.noteTitle',
+      'hl.notePlaceholder', 'hl.saved', 'hl.removed', 'hl.remove', 'hl.notFound',
+      'hl.saveFailed', 'hl.multiNode']) {
+      expect(MESSAGES.en[key], `en missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `ar missing ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key]).not.toBe(MESSAGES.en[key]);
+    }
+  });
+
   test('catalog covers all reader control labels and accessible names', () => {
     for (const key of [
       'readerControls.toggle', 'readerControls.title', 'readerControls.textSize',

@@ -15,7 +15,6 @@ async function loadFile(page) {
     S.files = [{ name: 'test.md', path: 'test.md', handle: null, content: '# Zoom Test\n\nContent.', dirty: false }];
     window.renderFile(0);
   });
-  await page.waitForTimeout(100);
 }
 
 test.describe('Zoom controls (Issue #5)', () => {
@@ -33,7 +32,6 @@ test.describe('Zoom controls (Issue #5)', () => {
     );
 
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
 
     const after = await page.evaluate(() =>
       window._appState.zoomFactor
@@ -44,7 +42,6 @@ test.describe('Zoom controls (Issue #5)', () => {
 
   test('Ctrl+- decreases zoom on #editorArea', async ({ page }) => {
     await page.keyboard.press('Control+-');
-    await page.waitForTimeout(50);
 
     const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeLessThan(1);
@@ -55,11 +52,9 @@ test.describe('Zoom controls (Issue #5)', () => {
     // Zoom in first
     await page.keyboard.press('Control+=');
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
 
     // Reset
     await page.keyboard.press('Control+0');
-    await page.waitForTimeout(50);
 
     const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(1);
@@ -67,7 +62,6 @@ test.describe('Zoom controls (Issue #5)', () => {
 
   test('zoom scales the rem base on :root (app-wide), clearing the old #editorArea zoom (T-T4)', async ({ page }) => {
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
 
     const z = await page.evaluate(() => ({
       rootFs: parseFloat(document.documentElement.style.fontSize),
@@ -81,7 +75,6 @@ test.describe('Zoom controls (Issue #5)', () => {
     await page.keyboard.press('Control+=');
     await page.keyboard.press('Control+=');
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
 
     const sbZoom = await page.evaluate(() => {
       const sb = document.querySelector('.statusbar');
@@ -117,7 +110,6 @@ test.describe('Zoom controls (Issue #5)', () => {
   test('View menu contains Zoom In, Zoom Out, Reset Zoom items', async ({ page }) => {
     // Open the View menu
     await page.click('.tb-menu-item[data-menu="view"]');
-    await page.waitForTimeout(100);
 
     const dropdown = page.locator('#dropdown');
     await expect(dropdown).toHaveClass(/open/);

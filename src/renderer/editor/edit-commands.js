@@ -58,15 +58,41 @@ function isField(el) {
  * when CM6 is active and handled the command, or `null` when there is no CM6 adapter (the
  * caller then runs the legacy textarea/preview path — i.e. the CM6-failed-to-load fallback).
  */
+// CM6's replaceSelection deletes EVERY selection range, so the clipboard must carry
+// every range's slice too — joined in document order ('\n', matching CM6's own
+// multi-range copy). Adapters that only expose the main range keep working unchanged.
+function cmSelectedText(cm) {
+  const value = cm.getValue();
+  const selection = (typeof cm.getSelection === 'function') ? cm.getSelection() : null;
+  const ranges = (selection && Array.isArray(selection.ranges)) ? selection.ranges : (selection ? [selection] : []);
+  return ranges
+    .map((r) => ({ from: Math.min(r.start, r.end), to: Math.max(r.start, r.end) }))
+    .sort((a, b) => a.from - b.from)
+    .map((r) => value.slice(r.from, r.to))
+    .filter((slice) => slice !== '') // a collapsed range deletes nothing → no separator either
+    .join('\n');
+}
+
 function cmEdit(cmd, deps) {
   const cm = deps.getCmAdapter && deps.getCmAdapter();
   if (!cm) return null;
   if (deps.closeMenu) deps.closeMenu();
-  cm.focus();
+  // UX-04: in Reading mode the user sees the rendered note while CM6 stays mounted but
+  // hidden. Focus must stay on the rendered pane (stealing it destroyed the rendered
+  // selection), the read-only pane refuses cut/paste outright, and copy targets the
+  // rendered selection. Undo/redo deliberately still reach the editor — the Edit menu
+  // documents reading-mode undo as a real document operation.
+  const reading = deps.getViewMode ? deps.getViewMode() === 'reading' : false;
+  if (reading && (cmd === 'cut' || cmd === 'paste')) {
+    if (deps.showToast) deps.showToast('The reading view is read-only', 'info');
+    return { ok: false, reason: 'reading-readonly' };
+  }
+  if (!reading) cm.focus();
 
-  // In Electron, the native command targets the now-focused CM6 surface: it uses the system
-  // clipboard for copy/cut/paste and CM6's own beforeinput (historyUndo/Redo) handling for
-  // undo/redo. Prefer it. Outside Electron (Playwright/file://) fall through to CM6 directly.
+  // In Electron, the native command targets the now-focused surface: in Edit mode that
+  // is CM6 (system clipboard for copy/cut/paste, CM6's beforeinput history for
+  // undo/redo); in Reading mode the DOM selection in the rendered pane. Prefer it.
+  // Outside Electron (Playwright/file://) fall through to the direct paths below.
   if (deps.electronAPI && deps.electronAPI.editCommand) {
     deps.electronAPI.editCommand(cmd);
     return { ok: true, reason: 'ipc' };
@@ -75,10 +101,17 @@ function cmEdit(cmd, deps) {
   if (cmd === 'undo') { cm.undo(); return { ok: true }; }
   if (cmd === 'redo') { cm.redo(); return { ok: true }; }
 
-  const sel = cm.getSelection();
-  const val = cm.getValue();
   if (cmd === 'copy' || cmd === 'cut') {
-    const txt = val.slice(sel.start, sel.end);
+    if (reading) {
+      const sel = deps.getSelection && deps.getSelection();
+      const rendered = sel ? String(sel.toString()) : '';
+      if (!rendered) return { ok: false, reason: 'no-selection' };
+      if (deps.clipboard && deps.clipboard.writeText) {
+        deps.clipboard.writeText(rendered).catch(() => { if (deps.showToast) deps.showToast('Copy failed', 'error'); });
+      }
+      return { ok: true };
+    }
+    const txt = cmSelectedText(cm);
     if (!txt) return { ok: false, reason: 'no-selection' };
     if (deps.clipboard && deps.clipboard.writeText) {
       deps.clipboard.writeText(txt).catch(() => { if (deps.showToast) deps.showToast(`${cmd === 'cut' ? 'Cut' : 'Copy'} failed`, 'error'); });

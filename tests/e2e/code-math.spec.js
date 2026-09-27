@@ -26,7 +26,9 @@ test.describe('[T-F9] code highlighting + KaTeX math', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await inject(page, DOC);
-    await page.waitForTimeout(250);
+    // audit PERF-07: highlight.js is no longer a blocking <script> — it is injected on the
+    // first fenced block, so the engine arrives asynchronously.
+    await page.waitForFunction(() => typeof window.hljs !== 'undefined');
   });
 
   test('the vendored libraries are available locally', async ({ page }) => {
@@ -105,7 +107,6 @@ test.describe('[T-F9] code highlighting + KaTeX math', () => {
       '</code></pre><img src=x onerror="window.__xss = 1">',
       '```',
     ].join('\n'));
-    await page.waitForTimeout(250);
     await expect(page.locator('#noteContent script')).toHaveCount(0);
     await expect(page.locator('#noteContent img[onerror]')).toHaveCount(0);
     expect(await page.evaluate(() => window.__xss)).toBeUndefined();
@@ -116,7 +117,6 @@ test.describe('[T-F9] code highlighting + KaTeX math', () => {
 
   test('[Visual] code + math render at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.waitForTimeout(250);
     await expect(page).toHaveScreenshot('code-math-1440x900.png', { maxDiffPixels: 6000, threshold: 0.2 });
   });
 });
@@ -135,11 +135,101 @@ test.describe('[T-F9] math renders inside CM6 block widgets', () => {
     await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
     // caret on line 1 so the callout + table render as block widgets (not the active raw line)
     await page.evaluate(() => window.getActiveCmAdapter().setSelection({ start: 0, end: 0 }));
-    await page.waitForTimeout(400);
     await expect(page.locator('.cm-mount .cm-lp-callout .katex')).toHaveCount(1);
     await expect(page.locator('.cm-mount .cm-lp-table .katex')).toHaveCount(2);
     // the raw placeholder (a long hex run) must not be visible anywhere in the editor
     const text = await page.evaluate(() => document.querySelector('.cm-mount .cm-content')?.textContent || '');
     expect(/\b[0-9a-f]{12,}\b/.test(text)).toBe(false);
+  });
+});
+
+test.describe('floating copy button tracks the visible code block', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+
+  // Enough leading prose that the first fence starts WELL below the viewport midline
+  // at scrollTop 0, so the not-yet-reached (hidden) state is deterministic.
+  const THREE_BLOCKS = [
+    ...Array.from({ length: 24 }, (_, i) => `Intro paragraph ${i + 1}, with enough words to occupy real vertical space.`),
+    '',
+    '```js',
+    'const one = 1;',
+    '```',
+    '',
+    'Between one and two.',
+    '',
+    '```bash',
+    'go build ./...',
+    '```',
+    '',
+    'Between two and three.',
+    '',
+    '```python',
+    'print("three")',
+    '```',
+    '',
+    'Tail paragraph.',
+  ].join('\n');
+
+  async function scrollTopTo(page, value) {
+    await page.evaluate((v) => { document.querySelector('.preview-pane').scrollTop = v; }, value);
+    await page.waitForTimeout(200); // scroll → rAF-throttled track update
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForLoadState('networkidle');
+    await page.evaluate((md) => {
+      window._appState.files = [{ name: 'doc.md', path: 'doc.md', handle: null, content: md, dirty: false }];
+      window.renderFile(0);
+      window.setViewMode('reading');
+    }, THREE_BLOCKS);
+  });
+
+  test('hidden above the first block, then pinned to the current one while scrolling', async ({ page }) => {
+    const btn = page.locator('#codeCopyFloat');
+    // Everything (or enough) is below the midline at scrollTop 0 → nothing to copy yet.
+    await expect(btn).toBeHidden();
+
+    // Scroll so the SECOND block owns the midline.
+    const tops = await page.evaluate(() => {
+      const sc = document.querySelector('.preview-pane');
+      return Array.from(document.querySelectorAll('#noteContent pre')).map((pre) => pre.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+    });
+    await scrollTopTo(page, tops[1] - 200);
+    await expect(btn).toBeVisible();
+    await expect(btn).toHaveAttribute('data-current', '1');
+    const topFor1 = await btn.evaluate((el) => el.style.top);
+    expect(Number.parseFloat(topFor1)).toBeGreaterThan(0);
+
+    // Further down: the third block takes over and the button MOVES.
+    await scrollTopTo(page, tops[2] - 100);
+    await expect(btn).toHaveAttribute('data-current', '2');
+    const topFor2 = await btn.evaluate((el) => el.style.top);
+    expect(Number.parseFloat(topFor2)).toBeGreaterThan(Number.parseFloat(topFor1));
+
+    // Scrolling back UP returns to earlier blocks by the same midline rule: place
+    // block 0 just BELOW the midline (scrollTop = t0 − clientH/2 + 20 → mid just
+    // past t0 but still well before t1) → block 0 is current again.
+    const ch = await page.evaluate(() => document.querySelector('.preview-pane').clientHeight);
+    await scrollTopTo(page, tops[0] - ch / 2 + 20);
+    await expect(btn).toHaveAttribute('data-current', '0');
+    // …and above everything it hides again.
+    await scrollTopTo(page, 0);
+    await expect(btn).toBeHidden();
+  });
+
+  test('clicking copies the current block source (trailing newline trimmed) and says so', async ({ page }) => {
+    const tops = await page.evaluate(() => {
+      const sc = document.querySelector('.preview-pane');
+      return Array.from(document.querySelectorAll('#noteContent pre')).map((pre) => pre.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+    });
+    await scrollTopTo(page, tops[1] - 200);
+    const btn = page.locator('#codeCopyFloat');
+    await expect(btn).toHaveAttribute('data-current', '1');
+    await btn.click();
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clip).toBe('go build ./...');
+    await expect(page.locator('#toast')).toHaveClass(/show/);
+    await expect(btn).toHaveClass(/copied/);
   });
 });

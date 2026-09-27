@@ -16,7 +16,7 @@ const INDEX_URL = `file:///${path.resolve(__dirname, '../../src/renderer/index.h
 const DEFAULTS = {
   theme: 'paper', zoomFactor: 1, editorMode: 'live',
   sidebarVisible: true, inspectorVisible: true,
-  uiDirection: 'ltr', uiLocale: 'en', numerals: 'western',
+  uiDirection: 'ltr', uiLocale: 'en',
   calendar: 'gregorian', arabicKashida: false, italicRecolor: true,
   recents: [], window: { w: 1280, h: 820, maximized: false }, lastSession: null,
 };

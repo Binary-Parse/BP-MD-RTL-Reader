@@ -50,12 +50,18 @@ function parseFileArgs(argv, fs) {
   );
   const out = [];
   const seen = new Set();
+  let cumulativeBytes = 0;
   for (const a of candidates) {
+    // Same two batch caps readVault enforces: an "Open With" selection of thousands of
+    // files (or a second-instance launch) must not read an unbounded payload into main.
+    if (isTooManyFiles(out.length + 1)) break;
     try {
       const real = fs.realpathSync(a);
       if (seen.has(real)) continue;
       const stat = fs.statSync(real);
       if (stat.isFile() && stat.size <= MAX_OPEN_FILE_BYTES) {
+        if (wouldExceedCumulative(cumulativeBytes, stat.size)) break;
+        cumulativeBytes += stat.size;
         seen.add(real);
         out.push(real);
       }
@@ -83,48 +89,6 @@ function isAuthorizedPath(folderPath, allowedFolders) {
  */
 function isNetworkPath(folderPath) {
   return folderPath.startsWith('\\\\') || folderPath.startsWith('//');
-}
-
-/**
- * Legacy path collectors kept for unit tests. Runtime FS authority is the
- * capability registry (opaque vaultId/documentId); settings.migrate() does not
- * persist lastSession.vaultPath or recents[].vaultRoot/abs. Network paths are
- * excluded (JB2). Returns a de-duplicated array of non-empty string paths.
- * @param {object} settings
- * @returns {string[]}
- */
-function collectAuthorizedFolders(settings) {
-  if (!settings || typeof settings !== 'object') return [];
-  const out = [];
-  const add = (p) => {
-    if (typeof p === 'string' && p && !isNetworkPath(p) && !out.includes(p)) out.push(p);
-  };
-  if (settings.lastSession && typeof settings.lastSession === 'object') add(settings.lastSession.vaultPath);
-  if (Array.isArray(settings.recents)) {
-    for (const r of settings.recents) {
-      if (r && typeof r === 'object') add(r.vaultRoot);
-    }
-  }
-  return out;
-}
-
-/**
- * Legacy single-file path collector (see collectAuthorizedFolders). Unused at
- * runtime. Network paths are excluded (JB2).
- * @param {object} settings
- * @returns {string[]}
- */
-function collectAuthorizedFiles(settings) {
-  if (!settings || typeof settings !== 'object') return [];
-  const out = [];
-  if (Array.isArray(settings.recents)) {
-    for (const r of settings.recents) {
-      if (r && typeof r === 'object' && typeof r.abs === 'string' && r.abs && !isNetworkPath(r.abs) && !out.includes(r.abs)) {
-        out.push(r.abs);
-      }
-    }
-  }
-  return out;
 }
 
 /**
@@ -164,7 +128,8 @@ function wouldExceedCumulative(cumulativeBytes, fileSize) {
  */
 function isSymlinkEscape(realPath, folderPath, path) {
   const rel = path.relative(folderPath, realPath);
-  return rel.startsWith('..') || path.isAbsolute(rel);
+  if (path.isAbsolute(rel)) return true;
+  return rel.split(path.sep).includes('..');
 }
 
 /**
@@ -230,8 +195,6 @@ module.exports = {
   isDroppableFile,
   isAuthorizedPath,
   isNetworkPath,
-  collectAuthorizedFolders,
-  collectAuthorizedFiles,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,

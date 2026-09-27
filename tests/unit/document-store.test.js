@@ -4,7 +4,8 @@
 import { describe, test, expect, vi } from 'vitest';
 import path from 'node:path';
 import {
-  createDocumentStore, hasBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot, atomicWriteFile,
+  createDocumentStore, hasBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot, atomicWriteFile, sweepStaleTempFiles,
+  decodeBuffer, encodeBuffer, encodeWindows1256, firstUnmappableWindows1256Char, unmappableWindows1256Summary, validateWriteTarget,
 } from '../../src/main/document-store.js';
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ function mockFs(initial = {}) {
     writeFileSync: (p, c) => { files[p] = c; },
     renameSync: (a, b) => { files[b] = files[a]; delete files[a]; },
     unlinkSync: (p) => { delete files[p]; },
-    statSync: () => ({ mtimeMs: 123 }),
+    statSync: () => ({ mtimeMs: 123, size: 100 }),
   };
 }
 
@@ -319,14 +320,14 @@ describe('document-store — residual mutation survivors', () => {
     expect(detectEol('plain')).toBe('\n'); // both matches null → 0/0 → '\n'
   });
 
-  // 36:30/36:61 — createHash('sha1') / digest('hex') string args.
-  test('hashContent passes sha1/hex to crypto', () => {
+  // createHash('sha256') / digest('hex') string args.
+  test('hashContent passes sha256/hex to crypto', () => {
     const calls = {};
     const crypto = {
       createHash: (algo) => { calls.algo = algo; return { update() { return this; }, digest: (enc) => { calls.enc = enc; return 'H'; } }; },
     };
     expect(hashContent('x', crypto)).toBe('H');
-    expect(calls.algo).toBe('sha1');
+    expect(calls.algo).toBe('sha256');
     expect(calls.enc).toBe('hex');
   });
 
@@ -359,14 +360,14 @@ describe('document-store — residual mutation survivors', () => {
     expect(encs).toEqual([undefined, 'utf8']);
   });
 
-  // 87:34 / 89:43 — writeFileSync('utf8') + openSync(tmp, 'r+') string args.
-  test('writeFileSync receives utf8 and openSync receives r+', () => {
+  // writeFileSync carries { encoding, flag: 'wx' } + openSync(tmp, 'r+') for the fsync pass.
+  test('writeFileSync receives {encoding:utf8, flag:wx} and openSync receives r+', () => {
     const fs = mockFs();
-    let wEnc; let openFlag;
-    fs.writeFileSync = (p, c, enc) => { wEnc = enc; fs._files[p] = c; };
+    let wOpts; let openFlag;
+    fs.writeFileSync = (p, c, opts) => { wOpts = opts; fs._files[p] = c; };
     fs.fsyncSync = vi.fn(); fs.openSync = (p, flag) => { openFlag = flag; return 7; }; fs.closeSync = vi.fn();
     createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
-    expect(wEnc).toBe('utf8');
+    expect(wOpts).toEqual({ encoding: 'utf8', flag: 'wx' });
     expect(openFlag).toBe('r+');
   });
 
@@ -378,8 +379,8 @@ describe('document-store — residual mutation survivors', () => {
     const store = createDocumentStore({ fs, path: path.posix });
     store.write('/v/a.md', 'x', { root: '/v', eol: '\n' });
     store.write('/v/b.md', 'y', { root: '/v', eol: '\n' });
-    expect(tmps[0]).toMatch(/^\/v\/a\.md\.tmp-[0-9a-z]+$/);
-    expect(tmps[1]).toMatch(/^\/v\/b\.md\.tmp-[0-9a-z]+$/);
+    expect(tmps[0]).toMatch(/^\/v\/a\.md\.tmp-[0-9a-z-]+$/);
+    expect(tmps[1]).toMatch(/^\/v\/b\.md\.tmp-[0-9a-z-]+$/);
   });
 
   // 88:11 / 93 — fsyncSync-absent branch (ConditionalExpression→true would call it).
@@ -535,5 +536,461 @@ describe('document-store — residual mutation survivors', () => {
     const h = createDocumentStore({ fs, path: path.posix }).watch('/v', () => {});
     h.close(); // no event fired → timer stayed null
     expect(watcher.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Post-review hardening: unmappable cp1256 refusal, write-hash consistency,
+//    and the segment-based containment check. ────────────────────────────────
+function byteMockFs(initial = {}) {
+  const files = { ...initial };
+  return {
+    _files: files,
+    existsSync: (p) => p in files,
+    readFileSync: (p, enc) => {
+      if (!(p in files)) { const e = new Error('no'); e.code = 'ENOENT'; throw e; }
+      const v = files[p];
+      if (enc == null || !Buffer.isBuffer(v)) return v;
+      return enc === 'utf8' ? v.toString('utf8') : v;
+    },
+    writeFileSync: (p, c) => { files[p] = c; },
+    renameSync: (a, b) => { files[b] = files[a]; delete files[a]; },
+    unlinkSync: (p) => { delete files[p]; },
+    statSync: () => ({ mtimeMs: 123 }),
+  };
+}
+
+describe('windows-1256 write refuses unmappable characters instead of writing "?"', () => {
+  test('an emoji in a cp1256 save is refused and the file is untouched', () => {
+    const fs = mockFs({ '/v/legacy.md': 'old' });
+    const store = createDocumentStore({ fs, path: path.posix });
+    const r = store.write('/v/legacy.md', 'نص 😀', { root: '/v', encoding: 'windows-1256', eol: '\n' });
+    expect(r.error).toBe('unmappable-character');
+    expect(r.char).toBe('😀');
+    expect(r.count).toBe(1);
+    expect(r.samples).toEqual(['😀']);
+    expect(fs._files['/v/legacy.md']).toBe('old');
+    expect(Object.keys(fs._files)).toEqual(['/v/legacy.md']);
+  });
+
+  test('the error summary counts every occurrence and samples distinct characters', () => {
+    const fs = mockFs();
+    const r = createDocumentStore({ fs, path: path.posix })
+      .write('/v/a.md', '😀 🎉 😀', { root: '/v', encoding: 'windows-1256', eol: '\n' });
+    expect(r.error).toBe('unmappable-character');
+    expect(r.count).toBe(3);
+    expect(r.samples).toEqual(['😀', '🎉']);
+  });
+
+  test('pure cp1256-representable Arabic text still writes', () => {
+    const fs = mockFs();
+    const r = createDocumentStore({ fs, path: path.posix })
+      .write('/v/a.md', 'مرحبا', { root: '/v', encoding: 'windows-1256', eol: '\n' });
+    expect(r.ok).toBe(true);
+    expect(Buffer.isBuffer(fs._files['/v/a.md'])).toBe(true);
+  });
+
+  test('a second identical cp1256 save with the returned hash is NOT a false conflict', () => {
+    const fs = byteMockFs();
+    const store = createDocumentStore({ fs, path: path.posix });
+    const first = store.write('/v/a.md', 'مرحبا', { root: '/v', encoding: 'windows-1256', eol: '\n' });
+    expect(first.ok).toBe(true);
+    const second = store.write('/v/a.md', 'مرحبا', { root: '/v', encoding: 'windows-1256', eol: '\n', baseHash: first.meta.hash });
+    expect(second.ok).toBe(true);
+  });
+
+  test('a utf16le save also returns a hash the next conflict check accepts', () => {
+    const fs = byteMockFs();
+    const store = createDocumentStore({ fs, path: path.posix });
+    const first = store.write('/v/a.md', 'hello', { root: '/v', encoding: 'utf16le', eol: '\n' });
+    const second = store.write('/v/a.md', 'hello', { root: '/v', encoding: 'utf16le', eol: '\n', baseHash: first.meta.hash });
+    expect(second.ok).toBe(true);
+  });
+});
+
+describe('a UTF-8 BOM over non-UTF-8 bytes is not trusted (cp1256 behind a BOM)', () => {
+  const BOM = Buffer.from([0xEF, 0xBB, 0xBF]);
+  const CP1256_MARHABA = Buffer.from([0xE3, 0xD1, 0xCD, 0xC8, 0xC7]);
+
+  test('reads as windows-1256 text, never U+FFFD mojibake', () => {
+    const fs = byteMockFs({ '/v/bom1256.md': Buffer.concat([BOM, CP1256_MARHABA]) });
+    const r = createDocumentStore({ fs, path: path.posix }).read('/v/bom1256.md');
+    expect(r.content).toBe('مرحبا');
+    expect(r.content.includes('\uFFFD')).toBe(false);
+    expect(r.meta.encoding).toBe('windows-1256');
+    expect(r.meta.bom).toBe(false);
+  });
+
+  test('a save keyed to that read does not false-conflict and keeps cp1256 bytes', () => {
+    const fs = byteMockFs({ '/v/bom1256.md': Buffer.concat([BOM, CP1256_MARHABA]) });
+    const store = createDocumentStore({ fs, path: path.posix });
+    const r = store.read('/v/bom1256.md');
+    const w = store.write('/v/bom1256.md', 'مرحبا', {
+      root: '/v', encoding: r.meta.encoding, bom: r.meta.bom,
+      eol: r.meta.eol, finalNewline: false, baseHash: r.meta.hash,
+    });
+    expect(w.ok).toBe(true);
+    expect(Array.from(fs._files['/v/bom1256.md'])).toEqual(Array.from(CP1256_MARHABA));
+  });
+
+  test('a valid UTF-8 body behind a BOM still reads as utf8 bom:true', () => {
+    const fs = byteMockFs({ '/v/bomutf8.md': Buffer.concat([BOM, Buffer.from('مرحبا', 'utf8')]) });
+    const r = createDocumentStore({ fs, path: path.posix }).read('/v/bomutf8.md');
+    expect(r.content).toBe('مرحبا');
+    expect(r.meta.encoding).toBe('utf8');
+    expect(r.meta.bom).toBe(true);
+  });
+});
+
+describe('BOM-less UTF-16 detection (parity heuristic)', () => {
+  const swapPairs = (buf) => {
+    const out = Buffer.from(buf);
+    for (let i = 0; i + 1 < out.length; i += 2) {
+      const t = out[i]; out[i] = out[i + 1]; out[i + 1] = t;
+    }
+    return out;
+  };
+  const LE = Buffer.concat([Buffer.from('مرحبا', 'utf16le'), Buffer.from('\n', 'utf16le')]);
+  const BE = swapPairs(LE);
+  const asciiLe = Buffer.from('hello markdown\n', 'utf16le');
+
+  test('UTF-16LE without a BOM reads as Arabic text, never mojibake', () => {
+    const fs = byteMockFs({ '/v/nole.md': LE });
+    const r = createDocumentStore({ fs, path: path.posix }).read('/v/nole.md');
+    expect(r.content).toBe('مرحبا\n');
+    expect(r.meta.encoding).toBe('utf16le');
+    expect(r.meta.bom).toBe(false);
+    expect(r.content.includes('\uFFFD')).toBe(false);
+  });
+
+  test('UTF-16BE without a BOM reads as Arabic text too', () => {
+    const fs = byteMockFs({ '/v/nobe.md': BE });
+    const r = createDocumentStore({ fs, path: path.posix }).read('/v/nobe.md');
+    expect(r.content).toBe('مرحبا\n');
+    expect(r.meta.encoding).toBe('utf16be');
+    expect(r.meta.bom).toBe(false);
+  });
+
+  test('ASCII-only UTF-16LE without a BOM is detected', () => {
+    const fs = byteMockFs({ '/v/ascii.md': asciiLe });
+    const r = createDocumentStore({ fs, path: path.posix }).read('/v/ascii.md');
+    expect(r.content).toBe('hello markdown\n');
+    expect(r.meta.encoding).toBe('utf16le');
+  });
+
+  test('a save keyed to a BOM-less read round-trips the exact bytes (no false conflict)', () => {
+    const fs = byteMockFs({ '/v/rt.md': LE });
+    const store = createDocumentStore({ fs, path: path.posix });
+    const r = store.read('/v/rt.md');
+    const w = store.write('/v/rt.md', 'مرحبا\n', {
+      root: '/v', encoding: r.meta.encoding, bom: r.meta.bom,
+      eol: r.meta.eol, finalNewline: false, baseHash: r.meta.hash,
+    });
+    expect(w.ok).toBe(true);
+    expect(Array.from(fs._files['/v/rt.md'])).toEqual(Array.from(LE));
+  });
+
+  test('single-byte text never trips the parity heuristic', () => {
+    const fs = byteMockFs({
+      '/v/cp.md': Buffer.from([0xE3, 0xD1, 0xCD, 0xC8, 0xC7]),
+      '/v/utf8.md': Buffer.from('مرحبا ثم English text هنا', 'utf8'),
+    });
+    const store = createDocumentStore({ fs, path: path.posix });
+    expect(store.read('/v/cp.md').meta.encoding).toBe('windows-1256');
+    expect(store.read('/v/utf8.md').meta.encoding).toBe('utf8');
+  });
+});
+
+describe('isInsideRoot rejects only a literal .. segment (names like ..notes.md are inside)', () => {
+  test('a file whose name starts with dots stays inside; real traversal does not', () => {
+    expect(isInsideRoot('/v/..notes.md', '/v', path.posix)).toBe(true);
+    expect(isInsideRoot('/v/sub/..deep.md', '/v', path.posix)).toBe(true);
+    expect(isInsideRoot('/v/../escape.md', '/v', path.posix)).toBe(false);
+    expect(isInsideRoot('/v/sub/../../escape.md', '/v', path.posix)).toBe(false);
+  });
+});
+
+describe('sweepStaleTempFiles — crash-orphaned <name>.tmp-<uuid> cleanup', () => {
+  const OLD = 'note.md.tmp-11111111-1111-4111-8111-111111111111';
+  const FRESH = 'note.md.tmp-22222222-2222-4222-8222-222222222222';
+  const UNRELATED = 'keep.tmp-backup';
+  function sweepFs(entries, mtimes, dirs = new Set()) {
+    return {
+      readdirSync: vi.fn((dir) => (dir === '/v' ? entries : [])),
+      statSync: vi.fn((p) => ({
+        isFile: () => true,
+        isDirectory: () => dirs.has(p),
+        mtimeMs: mtimes[p.slice(p.lastIndexOf(String.fromCharCode(47)) + 1)] ?? Date.now(),
+      })),
+      unlinkSync: vi.fn(),
+    };
+  }
+
+  test('removes only aged uuid-suffixed temps; fresh temps, the live file, and strangers survive', () => {
+    const fs = sweepFs([OLD, FRESH, UNRELATED, 'note.md'], { [OLD]: 0, [FRESH]: Date.now() });
+    const removed = sweepStaleTempFiles(fs, path.posix, '/v', { now: 10 * 60 * 60 * 1000 });
+    expect(removed).toBe(1);
+    expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+    expect(fs.unlinkSync).toHaveBeenCalledWith(path.posix.join('/v', OLD));
+  });
+
+  test('a directory-shaped temp entry is skipped, and an unreadable directory yields 0', () => {
+    const fs = {
+      readdirSync: vi.fn(() => [OLD]),
+      statSync: vi.fn(() => ({ isFile: () => false, mtimeMs: 0 })),
+      unlinkSync: vi.fn(),
+    };
+    expect(sweepStaleTempFiles(fs, path.posix, '/v', { now: 10 * 60 * 60 * 1000 })).toBe(0);
+    expect(fs.unlinkSync).not.toHaveBeenCalled();
+    expect(sweepStaleTempFiles({ readdirSync: vi.fn(() => { throw new Error('EACCES'); }) }, path.posix, '/v')).toBe(0);
+  });
+});
+
+describe('atomicWriteFile preserves the target mode', () => {
+  test('a 0600 target is re-applied to the temp before rename (perms never widen)', () => {
+    const seen = {};
+    const fs = {
+      statSync: vi.fn(() => ({ mode: 0o600 })),
+      writeFileSync: vi.fn(),
+      openSync: vi.fn(() => 7),
+      fsyncSync: vi.fn(),
+      closeSync: vi.fn(),
+      chmodSync: vi.fn((p, m) => { seen.mode = m; }),
+      renameSync: vi.fn(),
+      existsSync: vi.fn(() => false),
+    };
+    expect(atomicWriteFile(fs, '/v/note.md', 'x', 'utf8')).toEqual({ ok: true });
+    expect(seen.mode).toBe(0o600);
+    expect(fs.renameSync).toHaveBeenCalledTimes(1);
+  });
+
+  test('a missing target keeps the default mode (no chmod attempted)', () => {
+    const fs = {
+      statSync: vi.fn(() => { throw new Error('ENOENT'); }),
+      writeFileSync: vi.fn(),
+      renameSync: vi.fn(),
+      existsSync: vi.fn(() => false),
+      chmodSync: vi.fn(),
+    };
+    expect(atomicWriteFile(fs, '/v/new.md', 'x')).toEqual({ ok: true });
+    expect(fs.chmodSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('readAsync — the async vault lane', () => {
+  test('decodes fs.promises bytes, reuses a known stat, and never touches the sync path', async () => {
+    const raw = Buffer.from('\uFEFF# hi', 'utf16le');
+    const fs = {
+      readFileSync: vi.fn(() => { throw new Error('sync path must not run'); }),
+      statSync: vi.fn(() => { throw new Error('sync path must not run'); }),
+      promises: {
+        readFile: vi.fn(async () => raw),
+        stat: vi.fn(async () => ({ mtimeMs: 5 })),
+      },
+    };
+    const store = createDocumentStore({ fs, path: path.posix });
+    const r = await store.readAsync('/v/a.md', { mtimeMs: 9 });
+    expect(r.content).toBe('# hi');
+    expect(r.meta).toMatchObject({ encoding: 'utf16le', bom: true, mtimeMs: 9 });
+    expect(fs.promises.stat).not.toHaveBeenCalled();
+  });
+
+  test('without a known stat it fetches one best-effort; without promises it falls back to read()', async () => {
+    const fs = {
+      readFileSync: vi.fn(() => Buffer.from('# sync', 'utf8')),
+      statSync: vi.fn(() => ({ mtimeMs: 3 })),
+      promises: { readFile: vi.fn(async () => Buffer.from('# async', 'utf8')), stat: vi.fn(async () => ({ mtimeMs: 4 })) },
+    };
+    const store = createDocumentStore({ fs, path: path.posix });
+    const withStat = await store.readAsync('/v/a.md');
+    expect(withStat.content).toBe('# async');
+    expect(withStat.meta.mtimeMs).toBe(4);
+    const fallback = createDocumentStore({ fs: { readFileSync: fs.readFileSync, statSync: fs.statSync }, path: path.posix });
+    const r = await fallback.readAsync('/v/a.md');
+    expect(r.content).toBe('# sync');
+    expect(r.meta.mtimeMs).toBe(3);
+  });
+});
+
+// HYG-02 (2026-09-26): the sweep walks subdirectories — notes live there (the read
+// walks 12 levels), and a root-only listing never saw their crash orphans.
+describe('sweepStaleTempFiles recursion (HYG-02)', () => {
+  const AGED = 'a.md.tmp-33333333-3333-4333-8333-333333333333';
+  const FRESH = 'b.md.tmp-44444444-4444-4444-8444-444444444444';
+  const { vi: viMod } = { vi };
+  test('an aged temp in a subdirectory is swept; a fresh one survives', () => {
+    const fs = {
+      readdirSync: viMod.fn((dir) => (dir === '/v' ? ['sub'] : dir === '/v/sub' ? [AGED, FRESH] : [])),
+      statSync: viMod.fn((p) => ({
+        isFile: () => !p.endsWith('sub'),
+        isDirectory: () => p.endsWith('sub'),
+        mtimeMs: p.includes(AGED.slice(0, 12)) ? 1 : 2e12 - 100,
+      })),
+      unlinkSync: viMod.fn(),
+    };
+    const removed = sweepStaleTempFiles(fs, path.posix, '/v', { now: 2e12, maxAgeMs: 1000 });
+    expect(removed).toBe(1);
+    expect(fs.unlinkSync).toHaveBeenCalledWith(path.posix.join('/v/sub', AGED));
+  });
+  test('the depth cap bounds the walk', () => {
+    let calls = 0;
+    const fs = {
+      readdirSync: viMod.fn((dir) => { calls++; return ['d']; }),
+      statSync: viMod.fn(() => ({ isFile: () => false, isDirectory: () => true, mtimeMs: 0 })),
+      unlinkSync: viMod.fn(),
+    };
+    sweepStaleTempFiles(fs, path.posix, '/v', { now: 1e12 });
+    expect(calls).toBeLessThanOrEqual(13);
+  });
+});
+
+// ── GATE-01 (2026-09-26): every decode/encode branch and write-guard lane that had
+// drifted below the coverage floors after the 09-24 fix pass.
+describe('decodeBuffer full branch battery (GATE-01)', () => {
+  test('a UTF-16BE buffer with BOM swaps to readable text', () => {
+    const le = Buffer.from('\uFEFFمرحبا', 'utf16le');
+    const be = Buffer.from(le);
+    for (let i = 0; i + 1 < be.length; i += 2) { const t = be[i]; be[i] = be[i + 1]; be[i + 1] = t; }
+    const dec = decodeBuffer(be);
+    expect(dec.encoding).toBe('utf16be');
+    expect(dec.bom).toBe(true);
+    expect(dec.text.replace(/^\uFEFF/, '')).toBe('مرحبا');
+  });
+
+  test('BOM-less UTF-16 parity (LE and BE) decodes without the BOM', () => {
+    const le = Buffer.from('hi', 'utf16le');
+    const dec = decodeBuffer(le);
+    expect(dec).toMatchObject({ text: 'hi', encoding: 'utf16le', bom: false });
+    const beBody = Buffer.from('hi', 'utf16le');
+    const be = Buffer.from(beBody);
+    for (let i = 0; i + 1 < be.length; i += 2) { const t = be[i]; be[i] = be[i + 1]; be[i + 1] = t; }
+    const decBe = decodeBuffer(be);
+    expect(decBe).toMatchObject({ text: 'hi', encoding: 'utf16be', bom: false });
+  });
+
+  test('a short/odd buffer skips the parity paths and reads as utf8', () => {
+    expect(decodeBuffer(Buffer.from([0x61]))).toMatchObject({ text: 'a', encoding: 'utf8' });
+    expect(decodeBuffer(Buffer.from([0x00, 0x41, 0x00]))).toMatchObject({ encoding: 'utf8' });
+  });
+
+  test('invalid utf8 with no BOM falls back to windows-1256', () => {
+    const bytes = Buffer.from([0xC7, 0xE1, 0xCE]); // invalid utf8 sequence, valid cp1256 Arabic letters
+    const dec = decodeBuffer(bytes);
+    expect(dec.encoding).toBe('windows-1256');
+    expect(dec.bom).toBe(false);
+    expect(dec.text.length).toBe(3);
+  });
+
+  test('a legacy string or a non-buffer, non-string value degrades to text', () => {
+    expect(decodeBuffer('plain')).toMatchObject({ text: 'plain', encoding: 'utf8' });
+    expect(decodeBuffer(null)).toMatchObject({ text: '', encoding: 'utf8' });
+    expect(decodeBuffer(42)).toMatchObject({ text: '42', encoding: 'utf8' });
+  });
+});
+
+describe('encodeBuffer / encodeWindows1256 battery (GATE-01)', () => {
+  test('round-trips every encoding with and without the BOM', () => {
+    for (const enc of ['utf8', 'utf16le', 'utf16be']) {
+      for (const bom of [true, false]) {
+        const bytes = encodeBuffer('مرحبا', enc, bom);
+        const dec = decodeBuffer(bytes);
+        expect(dec.text).toBe('مرحبا');
+        expect(dec.encoding).toBe(enc);
+        expect(dec.bom).toBe(bom);
+      }
+    }
+  });
+
+  test('windows-1256 encoding ignores the BOM flag and maps ASCII through', () => {
+    const bytes = encodeBuffer('ab', 'windows-1256', true);
+    expect([...bytes]).toEqual([0x61, 0x62]);
+  });
+
+  test('an unmappable character encodes as ? and the helpers report it', () => {
+    expect([...encodeWindows1256('a😀b')]).toEqual([0x61, 0x3F, 0x3F, 0x62]); // surrogate pair → two code units
+    expect(firstUnmappableWindows1256Char('a😀b')).toBe('😀');
+    expect(firstUnmappableWindows1256Char('abc')).toBeNull();
+    expect(unmappableWindows1256Summary('😀🎈🎊🎉🍕')).toEqual({
+      count: 5,
+      samples: ['😀', '🎈', '🎊', '🎉', '🍕'],
+    });
+  });
+});
+
+describe('validateWriteTarget lanes (GATE-01)', () => {
+  const fsOf = (over = {}) => ({
+    existsSync: () => false,
+    realpathSync: (p) => p,
+    ...over,
+  });
+  test('a root-bound target inside the root passes; outside is unauthorized', () => {
+    expect(validateWriteTarget(fsOf(), path.posix, '/v/a.md', '/v')).toEqual({ path: '/v/a.md' });
+    expect(validateWriteTarget(fsOf({ existsSync: () => true }), path.posix, '/other/a.md', '/v'))
+      .toEqual({ error: 'unauthorized-path' });
+  });
+  test('a realpath failure is unauthorized, never a silent pass', () => {
+    expect(validateWriteTarget(fsOf({ realpathSync: () => { throw new Error('x'); } }), path.posix, '/v/a.md', '/v'))
+      .toEqual({ error: 'unauthorized-path' });
+  });
+  test('a non-markdown extension is refused regardless of root', () => {
+    expect(validateWriteTarget(fsOf(), path.posix, '/v/a.txt', '/v')).toEqual({ error: 'invalid-file-type' });
+  });
+});
+
+describe('atomicWriteFile hardening lanes (GATE-01)', () => {
+  test('fsync + mode re-apply run when the fs provides them', () => {
+    const files = { '/v/a.md': 'old' };
+    const calls = [];
+    const fs = {
+      statSync: () => ({ mode: 0o600 }),
+      writeFileSync: (p, c) => { files[p] = c; },
+      renameSync: (a, b) => { files[b] = files[a]; delete files[a]; },
+      existsSync: (p) => p in files,
+      openSync: (p) => { calls.push(['open', p]); return 7; },
+      fsyncSync: (fd) => calls.push(['fsync', fd]),
+      closeSync: (fd) => calls.push(['close', fd]),
+      chmodSync: (p, mode) => calls.push(['chmod', mode]),
+    };
+    expect(atomicWriteFile(fs, '/v/a.md', 'new')).toEqual({ ok: true });
+    expect(calls.map((c) => c[0])).toEqual(['open', 'fsync', 'close', 'chmod']);
+    expect(calls[2][1]).toBe(7);
+    expect(calls[3][1]).toBe(0o600);
+  });
+
+  test('a mid-write failure cleans the temp and maps the error code', () => {
+    const unlinked = [];
+    const fs = {
+      statSync: () => { throw new Error('new file'); },
+      writeFileSync: () => { const e = new Error('x'); e.code = 'ENOSPC'; throw e; },
+      renameSync: () => {},
+      existsSync: () => true,
+      unlinkSync: (p) => unlinked.push(p),
+    };
+    expect(atomicWriteFile(fs, '/v/a.md', 'new')).toEqual({ error: 'enospc' });
+    expect(unlinked).toHaveLength(1);
+    const gone = { ...fs, writeFileSync: () => { const e = new Error('x'); e.code = 'ENOENT'; throw e; }, existsSync: () => false };
+    expect(atomicWriteFile(gone, '/v/a.md', 'new')).toEqual({ error: 'gone' });
+  });
+});
+
+describe('listMarkdown caps (GATE-01)', () => {
+  test('file-count and depth caps stop the walk', () => {
+    const tree = new Map([
+      ['/v', [{ name: 'a.md', file: true }, { name: 'b.md', file: true }, { name: 'c.md', file: true }, { name: 'd.md', file: true }, { name: 'sub', file: false }]],
+      ['/v/sub', [{ name: 'deep.md', file: true }]],
+    ]);
+    const entry = (e) => ({
+      name: e.name,
+      isFile: () => !!e.file,
+      isDirectory: () => !e.file,
+      isSymbolicLink: () => false,
+    });
+    const fs = {
+      realpathSync: (p) => p,
+      readdirSync: (dir) => (tree.get(dir) || []).map(entry),
+    };
+    const store = createDocumentStore({ fs, path: path.posix });
+    const res = store.listMarkdown('/v', { maxFiles: 3, maxDepth: 1 });
+    expect(res.length).toBe(3);
+    expect(res.every((f) => f.relPath.endsWith('.md'))).toBe(true);
   });
 });

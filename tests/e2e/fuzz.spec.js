@@ -91,7 +91,6 @@ test.describe('Fuzzing — parsers & validators', () => {
 
   test('find bar does not crash on 500 random search queries', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
     const queries = Array.from({ length: 500 }, (_, i) => randomString(i % 30, null));
     const result = await page.evaluate((qs) => {
       for (const q of qs) {
@@ -124,7 +123,7 @@ test.describe('Fuzzing — parsers & validators', () => {
 
   test('cycleTheme idempotency: 100 cycles never corrupt theme state', async ({ page }) => {
     const result = await page.evaluate(() => {
-      const themes = ['paper', 'ink', 'sepia'];
+      const themes = ['paper', 'ink', 'sepia', 'oasis'];
       for (let i = 0; i < 100; i++) {
         try {
           window.cycleTheme();

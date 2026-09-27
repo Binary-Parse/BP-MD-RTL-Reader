@@ -33,7 +33,6 @@ async function injectFile(page, name, content) {
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     window.renderFile(0);
   }, { name, content });
-  await page.waitForTimeout(200);
 }
 
 async function injectFiles(page, files) {
@@ -42,12 +41,10 @@ async function injectFiles(page, files) {
     S.files = files.map(f => ({ name: f.name, path: f.name, handle: null, content: f.content, dirty: false }));
     window.renderFile(0);
   }, files);
-  await page.waitForTimeout(200);
 }
 
 async function switchToSourceMode(page) {
   await page.evaluate(() => window.setEditorMode('source'));
-  await page.waitForTimeout(100);
 }
 
 // ===========================================================================
@@ -72,7 +69,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(2);
@@ -105,7 +101,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     const filesBefore = await page.evaluate(() => window._appState.files.length);
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(300);
 
     const filesAfter = await page.evaluate(() => window._appState.files.length);
     expect(filesAfter).toBe(filesBefore);
@@ -123,7 +118,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
@@ -148,14 +142,13 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     const toastText = await page.evaluate(() => document.getElementById('toast').textContent);
     expect(toastText.toLowerCase()).toContain('folder');
 
     // No unhandled JS error should leak out
     const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr') && !e.includes('net::ERR')
+      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
     );
     expect(jsErrors).toHaveLength(0);
   });
@@ -183,7 +176,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(300);
 
     const ipcUsed = await page.evaluate(() => window.__ipcCalled === true);
     const fsaUsed = await page.evaluate(() => window.__fsaCalled === true);
@@ -206,7 +198,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(300);
 
     // v10 redesign (2026-08-25): #vaultName is removed; #sbVault above is the one
     // remaining folder indicator, already checked.
@@ -226,7 +217,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(300);
 
     const toastVisible = await page.evaluate(() => {
       const t = document.getElementById('toast');
@@ -250,7 +240,6 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     const vaultName = await page.evaluate(() => window._appState.vaultName);
     expect(vaultName).toBe('FSAFolder');
@@ -344,7 +333,6 @@ test.describe('[AC2] No "vault" in user-facing strings', () => {
   test('[AC2-demo] after loadDemo(), sbVault text says "folder: demo" not "vault"', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
 
     const sbText = await page.evaluate(() => document.getElementById('sbVault').textContent);
     expect(sbText).toBe('folder: demo');
@@ -365,7 +353,6 @@ test.describe('[AC2] No "vault" in user-facing strings', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(300);
 
     const sbText = await page.evaluate(() => document.getElementById('sbVault').textContent);
     expect(sbText.toLowerCase()).not.toContain('vault');
@@ -376,7 +363,6 @@ test.describe('[AC2] No "vault" in user-facing strings', () => {
   test('[AC2-menu] File menu "Open Folder" item text does not say "vault"', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="file"]');
-    await page.waitForTimeout(100);
 
     const menuText = await page.locator('#dropdown').textContent();
     expect(menuText.toLowerCase()).not.toContain('vault');
@@ -416,17 +402,13 @@ test.describe('[AC3] RTL Arabic search results word-wrap', () => {
     await goto(page);
     await injectFile(page, 'ar.md', ARABIC_CONTENT);
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'نص');
-    await page.waitForTimeout(300);
 
-    const unicodeBidi = await page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(() => {
       const mark = document.querySelector('.sr-snip mark');
-      return mark ? getComputedStyle(mark).unicodeBidi : null;
-    });
-    // 'isolate' or 'isolate' variant accepted
-    expect(unicodeBidi).toBeTruthy();
-    expect(['isolate', 'plaintext']).toContain(unicodeBidi);
+      const bidi = mark ? getComputedStyle(mark).unicodeBidi : null;
+      return bidi === 'isolate' || bidi === 'plaintext';
+    })).toBe(true);
   });
 
   // Black-box: Arabic search snippets do not cause horizontal overflow on the search-results container
@@ -435,9 +417,7 @@ test.describe('[AC3] RTL Arabic search results word-wrap', () => {
     await goto(page);
     await injectFile(page, 'ar.md', ARABIC_CONTENT);
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'عربي');
-    await page.waitForTimeout(300);
 
     const hasOverflow = await page.evaluate(() => {
       const el = document.querySelector('.search-results');
@@ -452,12 +432,9 @@ test.describe('[AC3] RTL Arabic search results word-wrap', () => {
     await goto(page);
     await injectFile(page, 'ar.md', ARABIC_CONTENT);
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'نص');
-    await page.waitForTimeout(300);
 
-    const markCount = await page.evaluate(() => document.querySelectorAll('.sr-snip mark').length);
-    expect(markCount).toBeGreaterThanOrEqual(1);
+    await expect.poll(async () => page.evaluate(() => document.querySelectorAll('.sr-snip mark').length)).toBeGreaterThanOrEqual(1);
   });
 
   // White-box: unicode-bidi:isolate is set as inline style on mark, not just inherited
@@ -465,18 +442,14 @@ test.describe('[AC3] RTL Arabic search results word-wrap', () => {
     await goto(page);
     await injectFile(page, 'ar.md', ARABIC_CONTENT);
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'اختبار');
-    await page.waitForTimeout(300);
 
     // Check via getComputedStyle that the CSS rule is applied
-    const result = await page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(() => {
       const mark = document.querySelector('.sr-snip mark');
-      if (!mark) return null;
-      return getComputedStyle(mark).unicodeBidi;
-    });
-    expect(result).toBeTruthy();
-    expect(result).not.toBe('normal');
+      const bidi = mark ? getComputedStyle(mark).unicodeBidi : null;
+      return !!bidi && bidi !== 'normal';
+    })).toBe(true);
   });
 
   // Adversarial: long unbroken Arabic string (no spaces) wraps without overflow
@@ -486,9 +459,7 @@ test.describe('[AC3] RTL Arabic search results word-wrap', () => {
     await goto(page);
     await injectFile(page, 'ar.md', `# Test\n\n${longArabicWord}\n\nقصير`);
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'قصير');
-    await page.waitForTimeout(300);
 
     const hasOverflow = await page.evaluate(() => {
       const el = document.querySelector('.search-results');
@@ -509,7 +480,6 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
     await goto(page);
     await injectFile(page, 'tagged.md', '# Tagged\n\nA note with #reading #writing #notes tags.');
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     const tagCount = await page.locator('.tag').count();
     expect(tagCount).toBeGreaterThanOrEqual(3);
@@ -520,7 +490,6 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
     await goto(page);
     await injectFile(page, 'tagged.md', '# Tagged\n\nUse #bpmd and #arabic tags here.');
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     const tagTexts = await page.evaluate(() =>
       Array.from(document.querySelectorAll('.tag')).map(t => t.textContent)
@@ -535,7 +504,6 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
     await goto(page);
     await injectFile(page, 'ar.md', '# عربي\n\nملاحظة مع #قراءة و #كتابة علامتين.');
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     const tagTexts = await page.evaluate(() =>
       Array.from(document.querySelectorAll('.tag')).map(t => t.textContent)
@@ -550,7 +518,6 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
     await goto(page);
     // No files injected — default empty state
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     const tagCount = await page.locator('.tag').count();
     expect(tagCount).toBe(0);
@@ -566,7 +533,6 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
     // (could be 0 or non-zero depending on initial pane)
 
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     const tagsAfter = await page.locator('.tag').count();
     expect(tagsAfter).toBeGreaterThan(0);
@@ -604,7 +570,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
   test('[AC5-happy] .tab-name CSS has text-overflow: ellipsis', async ({ page }) => {
     await goto(page);
     await injectFile(page, LONG_FILENAME, '# Long\n\nContent.');
-    await page.waitForTimeout(100);
 
     const textOverflow = await page.evaluate(() => {
       const span = document.querySelector('.tab-name');
@@ -617,7 +582,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
   test('[AC5-happy] .tab .close CSS has flex: 0 0 auto (never hidden)', async ({ page }) => {
     await goto(page);
     await injectFile(page, LONG_FILENAME, '# Long\n\nContent.');
-    await page.waitForTimeout(100);
 
     const flexShrink = await page.evaluate(() => {
       const closeBtn = document.querySelector('.tab .close');
@@ -630,7 +594,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
   test('[AC5-happy] tab element data-tip attribute equals full filename', async ({ page }) => {
     await goto(page);
     await injectFile(page, LONG_FILENAME, '# Long\n\nContent.');
-    await page.waitForTimeout(100);
 
     const tipAttr = await page.evaluate(() => {
       const tab = document.querySelector('.tab');
@@ -644,7 +607,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, LONG_FILENAME, '# Long\n\nContent.');
-    await page.waitForTimeout(100);
 
     const closeBtn = page.locator('.tab .close');
     await expect(closeBtn).toBeVisible();
@@ -662,10 +624,8 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
   test('[AC5-happy] clicking close-X removes the tab and shows welcome screen', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'test.md', '# Test\n\nContent.');
-    await page.waitForTimeout(100);
 
     await page.click('.tab .close');
-    await page.waitForTimeout(200);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
@@ -677,7 +637,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
   test('[AC5-wb-title-on-tab-div] data-tip attribute is on .tab element, not .tab-name span', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'my-note.md', '# Note\n\nContent.');
-    await page.waitForTimeout(100);
 
     const tabTip = await page.evaluate(() => {
       const tab = document.querySelector('.tab');
@@ -704,7 +663,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
       S.files = [{ name: '<img src=x onerror="window.__tabXss=true">.md', path: 'evil.md', handle: null, content: '# Evil', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
 
     const xssTriggered = await page.evaluate(() => window.__tabXss);
     expect(xssTriggered).toBeFalsy();
@@ -720,7 +678,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, veryLong, '# Very Long\n\nContent.');
-    await page.waitForTimeout(100);
 
     const closeBtn = page.locator('.tab .close');
     await expect(closeBtn).toBeVisible();
@@ -752,7 +709,6 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'long.md', LONG_DOC);
-    await page.waitForTimeout(200);
 
     // Get initial statusbar position
     const before = await page.evaluate(() => {
@@ -766,12 +722,10 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
       window.openFind();
       window.runFind('findme');
     });
-    await page.waitForTimeout(100);
 
     // Click next several times
     for (let i = 0; i < 5; i++) {
       await page.click('#findNextBtn');
-      await page.waitForTimeout(50);
     }
 
     const after = await page.evaluate(() => {
@@ -791,7 +745,6 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'long.md', LONG_DOC);
-    await page.waitForTimeout(200);
 
     const before = await page.evaluate(() => {
       const sb = document.querySelector('.statusbar');
@@ -802,12 +755,10 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
       window.openFind();
       window.runFind('findme');
     });
-    await page.waitForTimeout(100);
 
     // Click prev several times (wraps around)
     for (let i = 0; i < 5; i++) {
       await page.click('#findPrevBtn');
-      await page.waitForTimeout(50);
     }
 
     const after = await page.evaluate(() => {
@@ -824,7 +775,6 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'long.md', LONG_DOC);
-    await page.waitForTimeout(200);
 
     const scrollYBefore = await page.evaluate(() => window.scrollY);
 
@@ -832,11 +782,9 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
       window.openFind();
       window.runFind('findme');
     });
-    await page.waitForTimeout(100);
 
     for (let i = 0; i < 5; i++) {
       await page.click('#findNextBtn');
-      await page.waitForTimeout(50);
     }
 
     const scrollYAfter = await page.evaluate(() => window.scrollY);
@@ -848,7 +796,6 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'long.md', LONG_DOC);
-    await page.waitForTimeout(200);
 
     const previewScrollBefore = await page.evaluate(() => {
       const pane = document.querySelector('.preview-pane');
@@ -859,13 +806,11 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
       window.openFind();
       window.runFind('findme');
     });
-    await page.waitForTimeout(100);
 
     // Navigate to at least 3rd result (should cause pane scroll)
     await page.click('#findNextBtn');
     await page.click('#findNextBtn');
     await page.click('#findNextBtn');
-    await page.waitForTimeout(100);
 
     const previewScrollAfter = await page.evaluate(() => {
       const pane = document.querySelector('.preview-pane');
@@ -884,7 +829,6 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'long.md', LONG_DOC);
-    await page.waitForTimeout(200);
 
     const sbTopBefore = await page.evaluate(() =>
       document.querySelector('.statusbar').getBoundingClientRect().top
@@ -894,13 +838,11 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
       window.openFind();
       window.runFind('findme');
     });
-    await page.waitForTimeout(100);
 
     // Click the last find-hit mark (forces a scroll to bottom of document)
     const markCount = await page.locator('mark.find-hit').count();
     if (markCount > 1) {
       await page.locator('mark.find-hit').last().click();
-      await page.waitForTimeout(200);
     }
 
     const sbTopAfter = await page.evaluate(() =>
@@ -918,21 +860,17 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
 
     await goto(page);
     await injectFile(page, 'doc.md', '# Doc\n\nContent without any match for xyzzy.');
-    await page.waitForTimeout(100);
 
     await page.evaluate(() => {
       window.openFind();
       window.runFind('xyzzy123nonexistent');
     });
-    await page.waitForTimeout(100);
 
     // Clicking next/prev on 0 hits should be a safe no-op (findStep guards with empty array check)
     await page.click('#findNextBtn');
-    await page.waitForTimeout(50);
     await page.click('#findPrevBtn');
-    await page.waitForTimeout(100);
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.') && !e.includes('net::ERR'));
+    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
     expect(jsErrors).toHaveLength(0);
   });
 });
@@ -953,7 +891,6 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
   test('[AC9-happy] File menu button opens dropdown', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="file"]');
-    await page.waitForTimeout(100);
 
     const dropdown = page.locator('#dropdown');
     await expect(dropdown).toBeVisible();
@@ -965,7 +902,6 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
   test('[AC9-happy] Edit menu contains all required commands', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="edit"]');
-    await page.waitForTimeout(100);
 
     const menuText = await page.locator('#dropdown').textContent();
     expect(menuText).toContain('Undo');
@@ -985,7 +921,6 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
 
     // Click RTL btn once
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const dirAfterToggle = await page.evaluate(() =>
       document.getElementById('editor') ? document.getElementById('editor').getAttribute('dir') : null
@@ -995,20 +930,16 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
 
     // Toggle back
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
   });
 
   // Black-box: Find bar input accepts text and shows find info
   test('[AC9-happy] find bar input triggers runFind and shows hit count', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'doc.md', '# Doc\n\nThe quick brown fox jumps over the lazy dog.\nThe fox again.');
-    await page.waitForTimeout(100);
 
     await page.evaluate(() => window.openFind());
-    await page.waitForTimeout(100);
 
     await page.fill('#findInput', 'fox');
-    await page.waitForTimeout(200);
 
     const findInfo = await page.locator('#findInfo').textContent();
     expect(findInfo).toMatch(/\d+\/\d+/);
@@ -1019,18 +950,15 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
   test('[AC9-happy] find next and prev buttons cycle through hits', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'doc.md', '# Doc\n\nWord one, word two, word three.');
-    await page.waitForTimeout(100);
 
     await page.evaluate(() => {
       window.openFind();
       window.runFind('word');
     });
-    await page.waitForTimeout(100);
 
     const idxBefore = await page.evaluate(() => window._appState.findIdx);
 
     await page.click('#findNextBtn');
-    await page.waitForTimeout(50);
 
     const idxAfter = await page.evaluate(() => window._appState.findIdx);
     // findIdx should have advanced
@@ -1048,13 +976,11 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
       window.openFind();
       window.runFind('keyword');
     });
-    await page.waitForTimeout(100);
 
     expect(await page.evaluate(() => window._appState.findSourceMatches.length)).toBeGreaterThan(0);
     expect(await page.evaluate(() => document.getElementById('findBar').classList.contains('open'))).toBe(true);
 
     await page.click('#findCloseBtn');
-    await page.waitForTimeout(100);
 
     expect(await page.evaluate(() => document.getElementById('findBar').classList.contains('open'))).toBe(false);
   });
@@ -1075,9 +1001,8 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
     });
 
     await page.keyboard.press('Control+Shift+O');
-    await page.waitForTimeout(300);
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.') && !e.includes('net::ERR'));
+    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
     expect(jsErrors).toHaveLength(0);
   });
 });
@@ -1103,9 +1028,8 @@ test.describe('[ADV] Adversarial tests', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.') && !e.includes('net::ERR'));
+    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
     expect(jsErrors).toHaveLength(0);
   });
 
@@ -1123,7 +1047,6 @@ test.describe('[ADV] Adversarial tests', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     // The renderer should just store whatever name comes from main — no crash
     const fileCount = await page.evaluate(() => window._appState.files.length);
@@ -1150,7 +1073,6 @@ test.describe('[ADV] Adversarial tests', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     const xssTriggered = await page.evaluate(() => window.__toastXss);
     expect(xssTriggered).toBeFalsy();
@@ -1167,7 +1089,6 @@ test.describe('[ADV] Adversarial tests', () => {
       S.files = [{ name: '"><img src=x onerror="window.__titleXss=true">.md', path: 'x.md', handle: null, content: '# X', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
 
     const xssTriggered = await page.evaluate(() => window.__titleXss);
     expect(xssTriggered).toBeFalsy();
@@ -1178,7 +1099,6 @@ test.describe('[ADV] Adversarial tests', () => {
     await goto(page);
     await injectFile(page, 'edit.md', '# Edit\n\nContent.');
     await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
 
     // Remove clipboard API
     await page.evaluate(() => {
@@ -1187,10 +1107,8 @@ test.describe('[ADV] Adversarial tests', () => {
       });
       document.getElementById('srcTextarea').focus();
     });
-    await page.waitForTimeout(50);
 
     await page.evaluate(() => window.execEditCmd('paste'));
-    await page.waitForTimeout(200);
 
     // Should show info toast (graceful degradation)
     const toastText = await page.evaluate(() => document.getElementById('toast').textContent);
@@ -1211,13 +1129,11 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await goto(page);
     await injectFile(page, 'doc.md', '# Doc\n\nContent with keyword keyword keyword.');
-    await page.waitForTimeout(100);
 
     await page.evaluate(() => {
       window.openFind();
       window.runFind('keyword');
     });
-    await page.waitForTimeout(100);
 
     // Remove .preview-pane temporarily to test the fallback branch in scrollMarkIntoPane
     await page.evaluate(() => {
@@ -1227,9 +1143,8 @@ test.describe('[ADV] Adversarial tests', () => {
 
     // findNextBtn click triggers findStep internally — should not throw
     await page.click('#findNextBtn');
-    await page.waitForTimeout(100);
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.') && !e.includes('net::ERR'));
+    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
     expect(jsErrors).toHaveLength(0);
   });
 
@@ -1241,7 +1156,6 @@ test.describe('[ADV] Adversarial tests', () => {
     await goto(page);
     await injectFile(page, 'bq.md', '# BQ\n\n');
     await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
 
     await page.evaluate(() => {
       const ta = document.getElementById('srcTextarea');
@@ -1249,12 +1163,10 @@ test.describe('[ADV] Adversarial tests', () => {
       ta.selectionStart = ta.selectionEnd = ta.value.length;
       ta.focus();
     });
-    await page.waitForTimeout(50);
 
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(100);
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.') && !e.includes('net::ERR'));
+    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
     expect(jsErrors).toHaveLength(0);
   });
 
@@ -1265,9 +1177,7 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await injectFile(page, 'evil.md', 'trigger keyword <script>window.__searchXss=true;</script> after');
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'trigger');
-    await page.waitForTimeout(300);
 
     const xssTriggered = await page.evaluate(() => window.__searchXss);
     expect(xssTriggered).toBeFalsy();
@@ -1296,7 +1206,6 @@ test.describe('[MUT] Mutation detection tests', () => {
     ).join('');
 
     await injectFile(page, 'long.md', longDoc);
-    await page.waitForTimeout(200);
 
     const scrollYBefore = await page.evaluate(() => window.scrollY);
 
@@ -1304,12 +1213,10 @@ test.describe('[MUT] Mutation detection tests', () => {
       window.openFind();
       window.runFind('findtarget');
     });
-    await page.waitForTimeout(100);
 
     // Navigate to a hit that would require scrolling (via UI button, not window.findStep)
     for (let i = 0; i < 10; i++) {
       await page.click('#findNextBtn');
-      await page.waitForTimeout(30);
     }
 
     const scrollYAfter = await page.evaluate(() => window.scrollY);
@@ -1326,7 +1233,6 @@ test.describe('[MUT] Mutation detection tests', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, LONG, '# Long\n\nContent.');
-    await page.waitForTimeout(100);
 
     const result = await page.evaluate(() => {
       const span = document.querySelector('.tab-name');

@@ -52,7 +52,6 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
       await new Promise(r => setTimeout(r, 200));
     });
 
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
@@ -93,7 +92,6 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
       await new Promise(r => setTimeout(r, 200));
     });
 
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
@@ -117,7 +115,6 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
       await new Promise(r => setTimeout(r, 200));
     });
 
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
@@ -137,7 +134,6 @@ test.describe('Drag-drop file loading (Issue #7)', () => {
       await new Promise(r => setTimeout(r, 300));
     });
 
-    await page.waitForTimeout(400);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(2);

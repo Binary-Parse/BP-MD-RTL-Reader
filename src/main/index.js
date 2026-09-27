@@ -9,7 +9,7 @@ const {
   isAuthorizedPath,
   wouldExceedCumulative,
   isSymlinkEscape,
-  filterAndSortMdFiles,
+  filterAndSortMdFiles, MAX_FILES_PER_DIR,
 } = require('./main-logic');
 const { classifyNavigation, isExternallyOpenable } = require('./navigation');
 const { buildContextMenuTemplate, labelsForLocale } = require('./context-menu');
@@ -35,7 +35,7 @@ const crypto = require('crypto');
 // @param {object} deps.electron - the 'electron' module (or a mock)
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
-function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubFetch() }) {
+function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubFetch(), vaultReadYieldEvery }) {
   const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session, protocol } = electron;
   const rootDir = path.resolve(__dirname, '..', '..');
 
@@ -97,6 +97,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
 
   proc.on('uncaughtException', (err) => {
     writeLog('error', 'main:uncaughtException', err?.message, err?.stack);
+    if (app && typeof app.exit === 'function') app.exit(1);
   });
   proc.on('unhandledRejection', (reason) => {
     const msg = reason instanceof Error ? reason.message : String(reason);
@@ -157,12 +158,16 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     if (!win || win.isDestroyed()) return 0;
     const files = pendingFilesToOpen;
     pendingFilesToOpen = [];
-    let delivered = 0;
+    let delivered = 0; const grantedIds = [];
     for (const filePath of files) {
       try {
-        const capability = capabilityRegistry.grantDocument(filePath);
+        // PERF-01: session grants per file, ONE persist after the loop (per-grant persist
+        // made multi-select an O(N²) fsync storm); SEC-01: same standing as a picker grant.
+        const capability = capabilityRegistry.grantDocument(filePath, { persistGrant: false });
+        ipcController.sessionGrantDocument(capability.id);
         const snapshot = ipcController.readDocumentCapability(capability.id);
         if (!snapshot.error) {
+          grantedIds.push(capability.id);
           win.webContents.send('open-external-file', snapshot);
           delivered++;
         } else {
@@ -172,7 +177,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
         win.webContents.send('open-external-file', { error: 'read-failed', name: path.basename(filePath) });
       }
     }
-    return delivered;
+    capabilityRegistry.promoteDocuments(grantedIds); return delivered;
   }
 
   // ==== IPC HANDLERS ====
@@ -203,8 +208,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     migrate,
     compareVersions,
     fetchFn,
-    shell,
-    clipboard,
+    shell, clipboard, vaultReadYieldEvery,
   });
 
   protocolController = createProtocolController({
@@ -266,16 +270,15 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
   } else {
     app.on('second-instance', (_event, argv) => {
       const files = parseFileArgs(argv, fs);
-      const wins = BrowserWindow.getAllWindows();
-      if (wins.length === 0) return;
-      const win = wins[0];
+      // N relaunches concatenate capped batches — keep the queue under the read cap.
+      if (files.length > 0) pendingFilesToOpen = pendingFilesToOpen.concat(files).slice(0, MAX_FILES_PER_DIR);
       applyChromeResetIfAsked(argv);   // relaunching is what a stuck user tries first
+      const wins = BrowserWindow.getAllWindows();
+      if (wins.length === 0) return;   // files stay queued for the next did-finish-load
+      const win = wins[0];
       if (win.isMinimized()) win.restore();
       win.focus();
-      if (files.length > 0) {
-        pendingFilesToOpen = pendingFilesToOpen.concat(files);
-        deliverPendingFiles(win);
-      }
+      deliverPendingFiles(win);
     });
 
     app.whenReady().then(() => {
@@ -320,11 +323,11 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
   app.on('before-quit', () => {
     const wins = BrowserWindow.getAllWindows();
     if (wins.length > 0) persistWindowState(wins[0]);
-    ipcController.closeVaultWatcher();
+    ipcController.dispose();
   });
 
   app.on('window-all-closed', () => {
-    ipcController.closeVaultWatcher();
+    ipcController.dispose();
     if (proc.platform !== 'darwin') app.quit();
   });
 

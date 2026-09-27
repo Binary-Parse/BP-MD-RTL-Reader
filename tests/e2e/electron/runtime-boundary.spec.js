@@ -98,10 +98,10 @@ test.describe('real Electron runtime boundary @electron', () => {
     expect(chrome.windowTitleMode).toBe('app');
     expect(chrome.autoHideTitlebar).toBe(true);
     expect(chrome.hideStatusBar).toBe(true);
-    expect(chrome.version).toBe(4);
+    expect(chrome.version).toBe(5);
     const onDisk = JSON.parse(fs.readFileSync(path.join(profile, 'settings.json'), 'utf8'));
     expect(onDisk).toMatchObject({
-      windowTitleMode: 'app', autoHideTitlebar: true, hideStatusBar: true, version: 4,
+      windowTitleMode: 'app', autoHideTitlebar: true, hideStatusBar: true, version: 5,
     });
 
     // and a malformed value is rejected rather than stored
@@ -114,6 +114,10 @@ test.describe('real Electron runtime boundary @electron', () => {
   });
   test('uses the real preload webFrame zoom bridge and leaves renderer fallback scaling cleared', async () => {
     expect(await page.evaluate(() => typeof window.electronAPI?.setAppZoom)).toBe('function');
+    // T14: window.setZoom is defined by app.js, which evaluates AFTER the preload bridge —
+    // under full-suite load the evaluate could beat the module and flake with
+    // "window.setZoom is not a function". Wait for app.js to be up before driving it.
+    await expect.poll(() => page.evaluate(() => typeof window.setZoom)).toBe('function');
     const viewportBefore = await page.evaluate(() => ({
       innerWidth: window.innerWidth,
       clientWidth: document.documentElement.clientWidth,

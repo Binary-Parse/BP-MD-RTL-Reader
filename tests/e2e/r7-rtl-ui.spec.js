@@ -36,7 +36,7 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
 
   test('Arabic UI localizes the inspector + status chrome', async ({ page }) => {
     await page.evaluate(() => window.setArabicUI(true));
-    expect(await page.locator('.insp-title').textContent()).toBe('المعاينة');
+    expect(await page.locator('.insp-title').textContent()).toBe('المُعايِن');
     expect(await page.locator('.insp-section h4[data-i18n="panel.outline"]').textContent()).toBe('المخطّط');
     expect(await page.locator('.prop-key[data-i18n="prop.file"]').textContent()).toBe('الملف');
     expect(await page.locator('.prop-key[data-i18n="prop.direction"]').textContent()).toBe('الاتجاه');
@@ -63,8 +63,9 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     const names = await page.locator('#dropdown .dd-name').allTextContents();
     expect(names).toContain('ملاحظة جديدة');        // New Note → Arabic
     expect(names).toContain('فتح مجلد…');            // Open Folder… (ellipsis preserved)
-    // No Latin leaks into the Arabic menu — except the acronyms that ARE the content (HTML/PDF).
-    const leftover = names.map((n) => n.replace(/HTML|PDF/g, '')).join('');
+    // No Latin leaks into the Arabic menu — except the acronyms that ARE the content
+    // (HTML / PDF / EPUB are format names, not untranslated English).
+    const leftover = names.map((n) => n.replace(/HTML|PDF|EPUB/g, '')).join('');
     expect(/[A-Za-z]/.test(leftover)).toBe(false);
   });
 
@@ -81,7 +82,6 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
       window._appState.files = [{ name: 'e.md', path: 'e.md', content: '# English heading\n\nA plain English paragraph that must read left-to-right.\n', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(80);
     const dir = await page.evaluate(() => ({
       editor: getComputedStyle(document.getElementById('editor')).direction,
       para: getComputedStyle(document.querySelector('#noteContent p')).direction,
@@ -120,7 +120,6 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
 
   test('Arabic UI localizes the command palette (commands, sections, placeholder, footer)', async ({ page }) => {
     await page.evaluate(() => { window.setArabicUI(true); window.openPalette(); });
-    await page.waitForTimeout(60);
     expect(await page.locator('#palInput').getAttribute('placeholder')).toBe('اكتب أمرًا أو ابحث في الملفات…');
     expect(await page.locator('[data-i18n="palette.navigate"]').textContent()).toBe('تنقّل');
     const names = await page.locator('#palResults .pi-name').allTextContents();
@@ -135,7 +134,6 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
 
   test('the default English palette is unchanged (en keys match verbatim)', async ({ page }) => {
     await page.evaluate(() => window.openPalette());
-    await page.waitForTimeout(60);
     const names = await page.locator('#palResults .pi-name').allTextContents();
     expect(names).toContain('Open Folder…');
     // (the 'Mode: …' palette entries were removed with the view modes — T-F13)
@@ -152,7 +150,6 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
       // showing rendered content rather than the CM6 source surface.
       document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
     });
-    await page.waitForTimeout(250);
     await expect(page).toHaveScreenshot('rtl-ui-chrome-1440x900.png', { maxDiffPixels: 8000, threshold: 0.2 });
   });
 });

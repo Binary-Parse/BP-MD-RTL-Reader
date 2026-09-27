@@ -29,6 +29,7 @@ function esc(s) {
 export function footnoteExtension() {
   const order = [];        // ref ids in first-appearance (render) order
   const defs = new Map();  // id -> definition body text
+  const refCounts = new Map(); // footnote number -> occurrence count (unique ref ids)
   const indexOf = (id) => {
     let i = order.indexOf(id);
     if (i === -1) { order.push(id); i = order.length - 1; }
@@ -49,8 +50,19 @@ export function footnoteExtension() {
           if (m) return { type: 'footnoteRef', raw: m[0], id: m[1] };
         },
         renderer(token) {
+          // MD-01: a reference with no definition is NOT a footnote — GFM renders the
+          // marker as literal text, and a dangling numbered link to an empty list item
+          // (plus a stranded <hr>/<ol>) is a visible defect. Definitions are pre-scanned
+          // in the preprocess hook, so this check is position-independent.
+          if (!defs.has(token.id)) return esc(token.raw);
           const n = indexOf(token.id);
-          return `<sup class="fn-ref" id="fnref-${n}"><a href="#fn-${n}">${n}</a></sup>`;
+          const k = (refCounts.get(n) || 0) + 1;
+          refCounts.set(n, k);
+          // The FIRST occurrence keeps the plain `fnref-N` id (the note body's backlink
+          // target); later occurrences of the same footnote get a per-occurrence id, so
+          // no two elements ever share an id (duplicate ids are fatal for epubcheck).
+          const refId = k === 1 ? `fnref-${n}` : `fnref-${n}-${k}`;
+          return `<sup class="fn-ref" id="${refId}"><a href="#fn-${n}">${n}</a></sup>`;
         },
       },
       {
@@ -70,7 +82,16 @@ export function footnoteExtension() {
     ],
     hooks: {
       // Reset per-document state before each parse so reuse across notes is clean.
-      preprocess(md) { order.length = 0; defs.clear(); return md; },
+      // Definitions are PRE-SCANNED from the raw markdown (MD-01): a reference that
+      // appears before its definition — or with none at all — must know at render time
+      // whether it is a real footnote, and block tokenizers run in document order only.
+      preprocess(md) {
+        order.length = 0; defs.clear(); refCounts.clear();
+        for (const m of String(md).matchAll(/^ {0,3}\[\^([^\]\s]+)\]:/gm)) {
+          if (!defs.has(m[1])) defs.set(m[1], '');
+        }
+        return md;
+      },
       // Append the collected footnotes as a numbered list (reference order), each
       // with a ↩ backlink to its first reference. No-op when nothing was referenced.
       postprocess(html) {

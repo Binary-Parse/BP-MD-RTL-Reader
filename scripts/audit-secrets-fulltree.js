@@ -34,10 +34,11 @@ const path = require('node:path');
 const GITLEAKS_VERSION = '8.30.1';
 const CONFIG_URL = `https://raw.githubusercontent.com/gitleaks/gitleaks/v${GITLEAKS_VERSION}/config/gitleaks.toml`;
 
-// Refresh alongside GITLEAKS_VERSION. A mismatch aborts rather than scanning
-// with unverified rules.
-const CONFIG_SHA256 = process.env.GITLEAKS_CONFIG_SHA256
-  || 'e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf';
+// Refresh alongside GITLEAKS_VERSION: this is the SHA-256 of the default config published
+// at CONFIG_URL for that tag. A mismatch aborts rather than scanning with unverified rules,
+// and there is deliberately no override — an env-supplied hash would let a caller pin the
+// check to whatever bytes it wants to scan with.
+const CONFIG_SHA256 = 'e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf';
 
 /** The default global-allowlist entry that hides node_modules from the scan. */
 const NODE_MODULES_ALLOWLIST = /^\s*'''\(\?:\^\|\/\)node_modules\(\?:\/\.\*\)\?\$''',?\s*$/;
@@ -51,7 +52,7 @@ function fetchDefaultConfig() {
 
 function verify(body) {
   const digest = crypto.createHash('sha256').update(body).digest('hex');
-  if (CONFIG_SHA256 && digest !== CONFIG_SHA256) {
+  if (digest !== CONFIG_SHA256) {
     throw new Error(`gitleaks config SHA-256 mismatch: expected ${CONFIG_SHA256}, got ${digest}`);
   }
   return digest;

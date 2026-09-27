@@ -67,3 +67,31 @@ test('a remembered open panel is restored (persistence)', async ({ page }) => {
   expect(await page.evaluate(() => window._appState.sidebarVisible)).toBe(true);
   expect(await page.evaluate(() => window._appState.inspectorVisible)).toBe(false);
 });
+
+// T2.1: the first-run colour-scheme follow. A profile that never chose a theme
+// (themeFollowSystem true, the migrated default for a NEW install) derives the theme from
+// the OS scheme; a profile with a saved theme is never overridden.
+test('first run on a dark system opens in ink; on a light system in paper', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await withSettings(page, { ...base, themeFollowSystem: true });
+  await page.goto(INDEX_URL);
+  await page.waitForFunction(() => !!window._appState, null, { timeout: 8000 });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'ink');
+  expect(await page.evaluate(() => window._appState.theme)).toBe('ink');
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(INDEX_URL);
+  await page.waitForFunction(() => !!window._appState, null, { timeout: 8000 });
+  // paper is the default: no data-theme attribute is exactly as valid as data-theme="paper"
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'ink');
+  expect(await page.evaluate(() => window._appState.theme)).toBe('paper');
+});
+
+test('a saved theme survives a dark system (themeFollowSystem false)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await withSettings(page, { ...base, theme: 'sepia', themeFollowSystem: false });
+  await page.goto(INDEX_URL);
+  await page.waitForFunction(() => !!window._appState, null, { timeout: 8000 });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'sepia');
+  expect(await page.evaluate(() => window._appState.theme)).toBe('sepia');
+});

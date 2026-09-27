@@ -65,8 +65,9 @@ function createWindowController({
   // cannot grow unbounded across a long session.
   const contextMenuStash = new Map();
   // v1.2: dirty-state ledger. The renderer reports how many open files have unsaved
-  // edits ('doc:dirty-state'); keyed by webContents so main still knows the truth when
-  // the close prompt round-trip never comes back (hung or crashed renderer).
+  // edits ('doc:dirty-state'); keyed by webContents, the ledger is recorded for
+  // diagnostics: the failsafe log line reports the last-known dirty count when it
+  // fires. It does not delay or cancel the force-close.
   const dirtyCountBySender = new WeakMap();
   // v1.2: pending close failsafes, keyed by webContents. The renderer owns the
   // Save/Don't-Save/Cancel decision, but a hung renderer must not make the window
@@ -83,6 +84,20 @@ function createWindowController({
       closeFailsafeBySender.delete(sender);
     }
   }
+  function armCloseFailsafe(win, sender) {
+    clearCloseFailsafe(sender);
+    const failsafe = setTimeout(() => {
+      closeFailsafeBySender.delete(sender);
+      if (win.isDestroyed() || approvedCloseWindows.has(win)) return;
+      const dirtyAtForceClose = (dirtyCountBySender.get(sender) || 0);
+      log('warn', 'window:close-failsafe', `renderer never answered app:request-close within ${CLOSE_FAILSAFE_MS}ms — force closing (${dirtyAtForceClose} unsaved file(s) at last report; recovery snapshots cap the loss)`);
+      approvedCloseWindows.add(win);
+      persistWindowState(win);
+      closeVaultWatcher();
+      win.close();
+    }, CLOSE_FAILSAFE_MS);
+    closeFailsafeBySender.set(sender, failsafe);
+  }
   let windowChromeHandlersRegistered = false;
   function registerWindowChromeHandlers() {
     if (windowChromeHandlersRegistered || !ipcMain || typeof ipcMain.on !== 'function') return;
@@ -93,9 +108,19 @@ function createWindowController({
     });
     // NOTE: no extra 'window-close-confirmed' listener here — that channel is owned by
     // ipc-controller (registered exactly once, enforced by main-close-protocol.test).
-    // The failsafe clears via 'window-close-aborted', or self-cancels once the window
-    // is destroyed / already approved.
+    // The failsafe clears via 'window-close-aborted', re-arms on 'window-close-extend'
+    // (the renderer's close flow keeps it alive while a dialog is genuinely open — a
+    // wedged renderer stops ticking and the failsafe still fires), or self-cancels once
+    // the window is destroyed / already approved.
     ipcMain.on('window-close-aborted', (event) => clearCloseFailsafe(event.sender));
+    ipcMain.on('window-close-extend', (event) => {
+      const win = BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
+        ? BrowserWindow.fromWebContents(event.sender)
+        : null;
+      if (win && !win.isDestroyed() && closeFailsafeBySender.has(event.sender)) {
+        armCloseFailsafe(win, event.sender);
+      }
+    });
     ipcMain.on('window-set-fullscreen', (event, flag) => {
       const win = BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
         ? BrowserWindow.fromWebContents(event.sender)
@@ -277,18 +302,9 @@ function createWindowController({
       win.webContents.send('app:request-close');
       // v1.2 failsafe: the renderer owns the Save/Don't-Save/Cancel decision, but if it
       // never answers (JS wedged, dialog wedged) the window must still be closable.
-      // The failsafe is cleared by window-close-confirmed / window-close-aborted.
-      clearCloseFailsafe(win.webContents);
-      const failsafe = setTimeout(() => {
-        closeFailsafeBySender.delete(win.webContents);
-        if (win.isDestroyed() || approvedCloseWindows.has(win)) return;
-        log('warn', 'window:close-failsafe', `renderer never answered app:request-close within ${CLOSE_FAILSAFE_MS}ms — force closing`);
-        approvedCloseWindows.add(win);
-        persistWindowState(win);
-        closeVaultWatcher();
-        win.close();
-      }, CLOSE_FAILSAFE_MS);
-      closeFailsafeBySender.set(win.webContents, failsafe);
+      // The failsafe is cleared by window-close-confirmed / window-close-aborted and
+      // re-armed by the renderer's close-flow heartbeat (window-close-extend).
+      armCloseFailsafe(win, win.webContents);
     });
 
     // v1.2: mirror native fullscreen state so the titlebar toggle + F11 stay in sync.

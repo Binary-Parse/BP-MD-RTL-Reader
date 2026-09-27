@@ -8,8 +8,9 @@
  * gone and releases are cut by hand, which makes the literals below MORE important, not
  * less: nothing in CI is left to catch one going stale.
  *
- * A literal is acceptable where a build-time substitution is unavailable (a template
- * string in the renderer, an Inno `#ifndef` fallback). A literal nothing checks is not.
+ * A literal is acceptable where a build-time substitution is unavailable (the About-dialog
+ * fallback in the renderer). The Inno script carries no version literal at all: a compile
+ * that omits /DAppVersion fails instead of silently mislabeling the installer.
  */
 import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -31,21 +32,27 @@ describe('the release version has exactly one source of truth', () => {
   });
 
   test('the About dialog states the real version, not a stale literal', () => {
-    // src/renderer/app.js builds the dialog as a template string. There is no preload
-    // bridge for app.getVersion(), and adding IPC surface for a cosmetic label is a worse
-    // trade than pinning the literal here, where drift fails fast and cheaply.
-    const about = /class="about-version">version ([0-9]+\.[0-9]+\.[0-9]+) /.exec(read('src/renderer/app.js'));
-    expect(about, 'could not find the about-version literal in src/renderer/app.js').toBeTruthy();
+    // The renderer asks main for app.getVersion() over the app:version channel; the
+    // literal below is only the browser/dev-lane fallback (no preload bridge there).
+    // The fallback stays pinned to package.json so a bump that forgets it fails fast.
+    const source = read('src/renderer/app.js');
+    expect(source, 'the About dialog must resolve the version over IPC').toContain('getAppVersion');
+    const about = /_aboutVersion \|\| '([0-9]+\.[0-9]+\.[0-9]+)'/.exec(source);
+    expect(about, 'could not find the about-version fallback literal in src/renderer/app.js').toBeTruthy();
     expect(about[1]).toBe(VERSION);
+
+    expect(read('src/preload/index.js')).toContain("getAppVersion: () => ipcRenderer.invoke('app:version')");
+    expect(read('src/main/ipc-controller.js')).toContain("ipcMain.handle('app:version'");
   });
 
-  test("the Inno fallback matches, so a direct compile cannot mislabel the installer", () => {
+  test("the Inno script has no version literal and rejects a compile without /DAppVersion", () => {
     // build/installer/build-installer.ps1 passes /DAppVersion from package.json and
-    // refuses a mismatch, so this #ifndef default is only reached by a direct ISCC run —
-    // which setup.iss rejects anyway. Kept in sync so it can never state a wrong version.
-    const iss = /#define AppVersion "([0-9]+\.[0-9]+\.[0-9]+)"/.exec(read('build/installer/setup.iss'));
-    expect(iss, 'could not find the AppVersion define in setup.iss').toBeTruthy();
-    expect(iss[1]).toBe(VERSION);
+    // refuses a mismatch. setup.iss carries no fallback literal: a direct ISCC run now
+    // fails the compile instead of shipping an installer labeled by a stale default.
+    const source = read('build/installer/setup.iss');
+    expect(source).not.toMatch(/#define AppVersion "/);
+    expect(source, 'setup.iss must #error when AppVersion is not supplied').toMatch(
+      /#ifndef AppVersion\s*\r?\n\s*#error /);
   });
 
   test('the README version badge matches', () => {

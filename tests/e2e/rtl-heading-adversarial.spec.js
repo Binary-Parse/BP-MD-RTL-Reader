@@ -145,9 +145,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const geo = await getTextGeometry(page, '#noteContent h1');
     expect(geo).not.toBeNull();
@@ -165,9 +163,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const geo = await getTextGeometry(page, '#noteContent h2');
     expect(geo).not.toBeNull();
@@ -182,9 +178,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const geo = await getTextGeometry(page, '#noteContent h3');
     expect(geo).not.toBeNull();
@@ -201,9 +195,7 @@ test.describe('[H-Series] Heading physical alignment geometry in RTL mode', () =
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const docMeta = await page.evaluate(() => {
       const dm = document.querySelector('#noteContent .doc-meta');
@@ -238,9 +230,7 @@ test.describe('[I-Series] Heading inside blockquote in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, RTL_BLOCKQUOTE_HEADINGS_MD);
-    await page.waitForTimeout(300);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const bqH1 = document.querySelector('#noteContent blockquote h1');
@@ -257,9 +247,7 @@ test.describe('[I-Series] Heading inside blockquote in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, RTL_BLOCKQUOTE_HEADINGS_MD);
-    await page.waitForTimeout(300);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const bqH2 = document.querySelector('#noteContent blockquote h2');
@@ -279,9 +267,7 @@ test.describe('[I-Series] Heading inside blockquote in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_BLOCKQUOTE_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const geo = await getTextGeometry(page, '#noteContent blockquote h1');
     expect(geo).not.toBeNull();
@@ -307,7 +293,6 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
 
     // Do NOT toggle RTL — stay in LTR
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -328,7 +313,6 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h2 = document.querySelector('#noteContent h2');
@@ -347,7 +331,6 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h3 = document.querySelector('#noteContent h3');
@@ -373,11 +356,9 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
 
     // Step 1: Inject Arabic headings
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     // Step 2: Toggle RTL on — attaches to the active note
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const rtlAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -387,7 +368,6 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
 
     // Step 3: Toggle RTL off
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const ltrAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -404,7 +384,6 @@ test.describe('[J-Series] LTR regression — headings must not become right-alig
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const geo = await getTextGeometry(page, '#noteContent h1');
     expect(geo).not.toBeNull();
@@ -430,9 +409,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, MIXED_HEADING_MD);
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -451,9 +428,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, '## 42\n\nنص.\n');
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h2 = document.querySelector('#noteContent h2');
@@ -476,9 +451,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, arabicWithCombining);
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -502,9 +475,7 @@ test.describe('[K-Series] Mixed Arabic/English headings in RTL mode', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, '# \n\nنص عربي.\n');
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     expect(errors).toHaveLength(0);
 
@@ -535,9 +506,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const fontFamily = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -565,7 +534,6 @@ test.describe('[L-Series] Font change and alignment independence', () => {
 
     // English heading → serif baseline (no toggle).
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
     const ltrFont = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? getComputedStyle(h1).fontFamily : null;
@@ -574,7 +542,6 @@ test.describe('[L-Series] Font change and alignment independence', () => {
     // Arabic heading with NO manual toggle → per-block dir=rtl → Arabic font,
     // even though the editor container stays LTR.
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
     const arFont = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? getComputedStyle(h1).fontFamily : null;
@@ -591,9 +558,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
     // Toggling the global RTL on then off must NOT change the Arabic heading's
     // (content-driven) font — it is Arabic before and after.
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     const afterToggleFont = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
       return h1 ? getComputedStyle(h1).fontFamily : null;
@@ -608,9 +573,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const letterSpacing = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -631,9 +594,7 @@ test.describe('[L-Series] Font change and alignment independence', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const fontSize = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -662,7 +623,6 @@ test.describe('[M-Series] Mutation walk-through — heading alignment guards', (
     // Force dir="ltr" on #editor directly (simulating what would happen if JS
     // set dir="ltr" explicitly rather than removing the attribute)
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     // Set dir="ltr" explicitly
     await page.evaluate(() => {
@@ -694,9 +654,7 @@ test.describe('[M-Series] Mutation walk-through — heading alignment guards', (
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     // Simulate the mutation: remove text-align from h1
     await page.evaluate(() => {
@@ -725,9 +683,7 @@ test.describe('[M-Series] Mutation walk-through — heading alignment guards', (
 
     // Load content, then set RTL (per-note direction)
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const rtlAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');

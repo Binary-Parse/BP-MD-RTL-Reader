@@ -61,8 +61,7 @@ test.describe('display/outline stay in sync with the active file (debounce race)
       a.setSelection({ start: a.getValue().length });
       a.replaceSelection('\n\n## Two\n\nmore');
     });
-    await page.waitForTimeout(300);
-    expect(await outline(page)).toEqual(['One', 'Two']);
+    await expect.poll(() => outline(page)).toEqual(['One', 'Two']);
   });
 });
 
@@ -76,25 +75,23 @@ test.describe('outline drives the CM6 editor', () => {
   test('clicking an outline entry scrolls the editor + places the caret on that heading', async ({ page }) => {
     await boot(page);
     await openHeadingsDoc(page);
-    expect(await outline(page)).toEqual(['One', 'Two', 'Three']);
+    await expect.poll(() => outline(page)).toEqual(['One', 'Two', 'Three']);
     const before = await page.evaluate(() => window.getActiveCmAdapter()._view.scrollDOM.scrollTop);
     await page.locator('.toc-item', { hasText: 'Three' }).click();
-    await page.waitForTimeout(300);
-    const after = await page.evaluate(() => {
+    await expect.poll(() => page.evaluate((b) => {
       const a = window.getActiveCmAdapter();
-      return { scroll: a._view.scrollDOM.scrollTop, caretLine: a._view.state.doc.lineAt(a.getSelection().start).text };
-    });
-    expect(after.scroll).toBeGreaterThan(before);
-    expect(after.caretLine).toContain('Three');
+      const scroll = a._view.scrollDOM.scrollTop;
+      const caretLine = a._view.state.doc.lineAt(a.getSelection().start).text;
+      return scroll > b && caretLine.includes('Three');
+    }, before)).toBe(true);
   });
 
   test('the active outline entry tracks the editor scroll position', async ({ page }) => {
     await boot(page);
     await openHeadingsDoc(page);
     await page.locator('.toc-item', { hasText: 'Three' }).click();
-    await page.waitForTimeout(300);
-    const activeIdx = await page.evaluate(() => [...document.querySelectorAll('.toc-item')].findIndex(i => i.classList.contains('active')));
-    expect(activeIdx).toBe(2);
+    await expect.poll(async () => page.evaluate(() =>
+      [...document.querySelectorAll('.toc-item')].findIndex(i => i.classList.contains('active')))).toBe(2);
   });
 });
 

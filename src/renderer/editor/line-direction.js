@@ -14,6 +14,17 @@
 
 import { resolveBlockDirection } from '../bidi.js';
 
+// RTL-M6: inline code spans are stripped before the dominant-script count, mirroring
+// the rendered preview's blockText() — `` استخدم `Array.prototype.flatMap` هنا `` must
+// resolve RTL in the editor exactly as it does in reading view, or the line's caret
+// motion and alignment contradict the preview of the same text. Fence markers are
+// stripped too; fenced CONTENT is handled by the preview's per-block model.
+const CODE_SPANS = /(```[^`]*```|`[^`]*`)/g;
+
+function stripCodeSpans(text) {
+  return text.replace(CODE_SPANS, ' ');
+}
+
 export function createLineDirection(CM6, getBaseDir = () => 'ltr', getForceDir = () => null) {
   const { ViewPlugin, Decoration, EditorView } = CM6;
   const baseDir = () => (typeof getBaseDir === 'function' ? getBaseDir() : getBaseDir) || 'ltr';
@@ -32,7 +43,7 @@ export function createLineDirection(CM6, getBaseDir = () => 'ltr', getForceDir =
         const line = doc.lineAt(pos);
         if (!seen.has(line.from)) {
           seen.add(line.from);
-          const dir = forced || resolveBlockDirection(line.text, baseDir());
+          const dir = forced || resolveBlockDirection(stripCodeSpans(line.text), baseDir());
           ranges.push(Decoration.line({ attributes: { dir } }).range(line.from));
         }
         pos = line.to + 1;

@@ -12,6 +12,7 @@ import {
   clampWindowBounds,
   createSettingsStore,
   resetChromeSettings,
+  sanitizeReadingProgress,
 } from '../../src/main/settings.js';
 
 describe('migrate (EC-D1)', () => {
@@ -23,7 +24,7 @@ describe('migrate (EC-D1)', () => {
       ],
       lastSession: { vaultId: 'cap-vault', vaultPath: '/forged', openPaths: ['sub/a.md'], activePath: 'sub/a.md' },
     });
-    expect(migrated.version).toBe(4); // T-F19 bumped the schema
+    expect(migrated.version).toBe(5); // T0.1 bumped the schema
     expect(migrated.recents).toEqual([
       { name: 'a.md', path: 'sub/a.md', vaultId: 'cap-vault', documentId: 'cap-doc' },
     ]);
@@ -42,7 +43,7 @@ describe('migrate (EC-D1)', () => {
     expect(m.editorMode).toBe('live');   // invalid → default
     expect(m.zoomFactor).toBe(2.0);      // clamped
     expect('evil' in m).toBe(false);
-    expect(m.version).toBe(4); // T-F19 bumped the schema
+    expect(m.version).toBe(5); // T0.1 bumped the schema
   });
   test('arabicKashida (T-R10): defaults false; accepts boolean; coerces non-boolean to default', () => {
     expect(defaultSettings().arabicKashida).toBe(false);   // ragged by default
@@ -56,13 +57,6 @@ describe('migrate (EC-D1)', () => {
     expect(migrate({ italicRecolor: false }).italicRecolor).toBe(false);
     expect(migrate({ italicRecolor: 'no' }).italicRecolor).toBe(true); // non-boolean → default true
     expect(migrate({}).italicRecolor).toBe(true);
-  });
-
-  test('cmEditor (A1): defaults false; opt-in via boolean true; non-boolean → default', () => {
-    expect(defaultSettings().cmEditor).toBe(false);
-    expect(migrate({ cmEditor: true }).cmEditor).toBe(true);
-    expect(migrate({ cmEditor: 'yes' }).cmEditor).toBe(false); // non-boolean → default
-    expect(migrate({}).cmEditor).toBe(false);
   });
 
   test('side panels default to CLOSED (clean editor-first launch); a saved boolean is kept', () => {
@@ -148,7 +142,7 @@ describe('clampZoom', () => {
 describe('reader preference migration and clamps', () => {
   test('v3 defaults and safely migrates reader typography preferences from earlier settings', () => {
     expect(defaultSettings()).toMatchObject({
-      version: 4, // T-F19 bumped the schema
+      version: 5, // T0.1 bumped the schema
       readerTextScale: 1,
       readerWidthCh: 72,
     });
@@ -157,7 +151,7 @@ describe('reader preference migration and clamps', () => {
       readerTextScale: 1.26,
       readerWidthCh: 85,
     })).toMatchObject({
-      version: 4, // T-F19 bumped the schema
+      version: 5, // T0.1 bumped the schema
       readerTextScale: 1.3,
       readerWidthCh: 86,
     });
@@ -253,16 +247,17 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
     expect(migrate({ uiDirection: 'ltr' }).uiDirection).toBe('ltr');
     expect(migrate({ uiDirection: 'sideways' }).uiDirection).toBe('ltr');
   });
-  test('uiLocale ar/en, numerals, calendar enums', () => {
+  test('uiLocale ar/en, calendar enums (numerals removed — UX-08)', () => {
     expect(migrate({ uiLocale: 'ar' }).uiLocale).toBe('ar');
     expect(migrate({ uiLocale: 'fr' }).uiLocale).toBe('en');
-    expect(migrate({ numerals: 'arabic-indic' }).numerals).toBe('arabic-indic');
-    expect(migrate({ numerals: 'roman' }).numerals).toBe('western');
+    // UX-08: the dormant `numerals` setting is deleted — an old settings.json carrying
+    // the key is ignored by the whitelist rather than resurrected.
+    expect('numerals' in migrate({ numerals: 'arabic-indic' })).toBe(false);
     expect(migrate({ calendar: 'hijri' }).calendar).toBe('hijri');
     expect(migrate({ calendar: 'mayan' }).calendar).toBe('gregorian');
   });
   test('boolean flags: true/false preserved, non-boolean → default', () => {
-    for (const k of ['sidebarVisible', 'inspectorVisible', 'arabicKashida', 'italicRecolor', 'cmEditor']) {
+    for (const k of ['sidebarVisible', 'inspectorVisible', 'arabicKashida', 'italicRecolor']) {
       expect(migrate({ [k]: true })[k]).toBe(true);
       expect(migrate({ [k]: false })[k]).toBe(false);
       expect(migrate({ [k]: 'yes' })[k]).toBe(defaultSettings()[k]); // non-boolean ignored
@@ -294,7 +289,7 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
     expect(migrate({ lastSession: { openPaths: 'x' } }).lastSession).toBeNull();
   });
   test('version is always stamped', () => {
-    expect(migrate({ version: 999 }).version).toBe(4); // T-F19 bumped the schema
+    expect(migrate({ version: 999 }).version).toBe(5); // T0.1 bumped the schema
   });
 });
 
@@ -369,9 +364,9 @@ describe('T-F19 chrome settings', () => {
     // migrate() never READS raw.version — it stamps the current one unconditionally
     // (src/main/settings.js). The bump is a schema label, not a migration trigger, so
     // assert only the literal and do not claim behaviour the code does not have.
-    expect(defaultSettings().version).toBe(4);
-    expect(migrate({ version: 1 }).version).toBe(4);
-    expect(migrate({ version: 99 }).version).toBe(4);
+    expect(defaultSettings().version).toBe(5);
+    expect(migrate({ version: 1 }).version).toBe(5);
+    expect(migrate({ version: 99 }).version).toBe(5);
   });
 
   test('a v3 profile migrates forward without losing its other values', () => {
@@ -428,5 +423,111 @@ describe('resetChromeSettings (T-F19 recovery switch)', () => {
   test('tolerates a missing or non-object argument', () => {
     expect(resetChromeSettings(null).autoHideTitlebar).toBe(false);
     expect(resetChromeSettings(undefined).hideStatusBar).toBe(false);
+  });
+});
+
+// T0.1: the v5 keys. Every branch of each validator gets a case — settings.js is a
+// mutation-tier T1 file, so a surviving mutant here would be an unguarded branch.
+describe('settings v5 keys (T0.1)', () => {
+  test('defaults: new install gets all four keys', () => {
+    expect(defaultSettings()).toMatchObject({
+      readingProgress: [], themeFollowSystem: true, updateCheck: 'manual', readingGoalMin: 10,
+    });
+    expect(migrate({})).toMatchObject({
+      readingProgress: [], themeFollowSystem: false, updateCheck: 'manual', readingGoalMin: 10,
+    });
+  });
+
+  test('themeFollowSystem: an existing file never inherits the follow-system default', () => {
+    expect(migrate({ theme: 'sepia' }).themeFollowSystem).toBe(false);
+    expect(migrate({ themeFollowSystem: true }).themeFollowSystem).toBe(true);
+    expect(migrate({ themeFollowSystem: false }).themeFollowSystem).toBe(false);
+    expect(migrate({ themeFollowSystem: 'yes' }).themeFollowSystem).toBe(false);
+  });
+
+  test('updateCheck accepts manual|auto only', () => {
+    expect(migrate({ updateCheck: 'auto' }).updateCheck).toBe('auto');
+    expect(migrate({ updateCheck: 'manual' }).updateCheck).toBe('manual');
+    expect(migrate({ updateCheck: 'always' }).updateCheck).toBe('manual');
+    expect(migrate({ updateCheck: 1 }).updateCheck).toBe('manual');
+  });
+
+  test('readingGoalMin accepts 0|10|20|30 only', () => {
+    for (const good of [0, 10, 20, 30]) {
+      expect(migrate({ readingGoalMin: good }).readingGoalMin).toBe(good);
+    }
+    for (const bad of [5, 60, -10, '10', null, NaN]) {
+      expect(migrate({ readingGoalMin: bad }).readingGoalMin).toBe(10);
+    }
+  });
+
+  test('readingProgress rejects every malformed shape', () => {
+    expect(sanitizeReadingProgress('nope')).toEqual([]);
+    const bad = [
+      null, 'x', {},
+      { path: '', ratio: 0.5, at: 1, vaultId: 'cap-v' },               // empty path
+      { path: 'a.md', ratio: '0.5', at: 1, vaultId: 'cap-v' },         // ratio not a number
+      { path: 'a.md', ratio: NaN, at: 1, vaultId: 'cap-v' },           // ratio NaN
+      { path: 'a.md', ratio: -0.1, at: 1, vaultId: 'cap-v' },          // ratio < 0
+      { path: 'a.md', ratio: 1.5, at: 1, vaultId: 'cap-v' },           // ratio > 1
+      { path: 'a.md', ratio: 0.5, at: 0, vaultId: 'cap-v' },           // at not positive
+      { path: 'a.md', ratio: 0.5, at: Infinity, vaultId: 'cap-v' },    // at not finite
+      { path: 'a.md', ratio: 0.5, at: 1 },                             // no capability id at all
+      { path: 'a.md', ratio: 0.5, at: 1, vaultId: 'v' },               // malformed vault id
+      { path: 'a.md', ratio: 0.5, at: 1, documentId: 'doc-1' },        // malformed document id
+    ];
+    expect(sanitizeReadingProgress(bad)).toEqual([]);
+  });
+
+  test('readingProgress keeps, normalises, sorts desc and caps at 30', () => {
+    const kept = sanitizeReadingProgress([{
+      key: 'vault:cap-v a.md', name: 'a', path: 'a.md', ratio: 0.25, at: 5,
+      vaultId: 'cap-v', documentId: 'cap-d', secret: 'drop',
+    }]);
+    expect(kept).toEqual([{
+      key: 'vault:cap-v a.md', name: 'a', path: 'a.md', vaultId: 'cap-v',
+      documentId: 'cap-d', ratio: 0.25, at: 5,
+    }]);
+    // documentId-only entries are valid; a missing name/key is normalised, not rejected.
+    expect(sanitizeReadingProgress([{ path: 'b.md', ratio: 1, at: 9, documentId: 'cap-d2' }]))
+      .toEqual([{ key: '', name: '', path: 'b.md', vaultId: null, documentId: 'cap-d2', ratio: 1, at: 9 }]);
+
+    const many = Array.from({ length: 35 }, (_, i) => ({
+      path: `f${i}.md`, ratio: 0.5, at: i + 1, vaultId: 'cap-v',
+    }));
+    const capped = sanitizeReadingProgress(many);
+    expect(capped).toHaveLength(30);
+    expect(capped[0].at).toBe(35);   // newest first
+    expect(capped.at(-1).at).toBe(6); // oldest five dropped
+    expect(migrate({ readingProgress: many }).readingProgress).toHaveLength(30);
+  });
+});
+
+// VAL-01/VAL-02 (2026-09-26): every persisted array/string is bounded — a runaway or
+// hand-edited settings.json used to balloon through migrate and tax every save.
+describe('migrate bounds (VAL-01/VAL-02)', () => {
+  test('window magnitudes clamp to sane integers', () => {
+    const w = migrate({ window: { w: 1e9, h: -1e9, x: 1e9, y: 1e9, maximized: 7 } }).window;
+    expect(w).toEqual({ x: 1000000000, y: 1000000000, w: 20000, h: 200, maximized: true });
+  });
+  test('lastSession vaults and openPaths are count- and length-capped', () => {
+    const vaults = Array.from({ length: 20 }, (_, i) => ({
+      vaultId: `cap-v${i}`,
+      openPaths: Array.from({ length: 500 }, () => 'p.md'),
+    }));
+    const s = migrate({ lastSession: { vaults, activeVaultId: 'cap-v0' } }).lastSession;
+    expect(s.vaults).toHaveLength(8);
+    for (const v of s.vaults) expect(v.openPaths).toHaveLength(200);
+  });
+  test('oversized strings in readingProgress and recents are truncated', () => {
+    const big = 'x'.repeat(5000);
+    const out = migrate({
+      readingProgress: [{ key: big, name: big, path: `${big}.md`, ratio: 0.5, at: 5, vaultId: 'cap-v', documentId: 'cap-d' }],
+      recents: [{ name: big, path: big, vaultId: 'cap-v', documentId: 'cap-d' }],
+    });
+    expect(out.readingProgress[0].key).toHaveLength(1024);
+    expect(out.readingProgress[0].name).toHaveLength(1024);
+    expect(out.recents[0].name).toHaveLength(1024);
+    expect(out.recents[0].path).toHaveLength(1024);
   });
 });

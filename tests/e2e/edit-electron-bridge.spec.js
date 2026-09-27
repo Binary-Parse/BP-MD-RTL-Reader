@@ -29,7 +29,6 @@ async function gotoWithElectronMock(page) {
 
 async function clickEditMenuItem(page, label) {
   await page.click('.tb-menu-item[data-menu="edit"]');
-  await page.waitForTimeout(80);
   const handle = await page.evaluateHandle((label) => {
     const items = Array.from(document.querySelectorAll('.dd-item:not(.disabled)'));
     return items.find(el => {
@@ -40,7 +39,6 @@ async function clickEditMenuItem(page, label) {
   const el = handle.asElement();
   if (!el) throw new Error(`Edit menu item "${label}" not found`);
   await el.click();
-  await page.waitForTimeout(100);
 }
 
 test.describe('[EB] Electron edit-command bridge', () => {

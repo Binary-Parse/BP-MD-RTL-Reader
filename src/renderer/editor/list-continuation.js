@@ -24,13 +24,19 @@ export function listContinuation(line) {
   const indent = indentMatch ? indentMatch[0] : '';
   const rest = text.slice(indent.length);
 
-  // Blockquote(s): one or more "> ". Quotes nest, so capture the whole run.
+  // Blockquote(s): one or more "> ". Quotes nest, so capture the whole run. The quoted
+  // body may itself be a list item ("> - item"): recurse so the inner marker continues
+  // COMPOSED with the quote (ED-01) — Enter used to drop the list level, and an empty
+  // inner item exits the list but keeps the quote (Obsidian behavior).
   const quote = rest.match(/^((?:> )+)(.*)$/);
   if (quote) {
     const marker = quote[1];
-    return quote[2].length === 0
-      ? { empty: true, marker: indent + marker }
-      : { empty: false, prefix: indent + marker };
+    if (quote[2].length === 0) return { empty: true, marker: indent + marker };
+    const inner = listContinuation(quote[2]);
+    if (inner && !inner.empty) {
+      return { empty: false, prefix: indent + marker + inner.prefix };
+    }
+    return { empty: false, prefix: indent + marker };
   }
 
   // Task list: "- [ ] " / "- [x] " (also * / +). Check BEFORE plain bullets.
@@ -52,16 +58,18 @@ export function listContinuation(line) {
       : { empty: false, prefix: indent + marker };
   }
 
-  // Ordered list: "N. " or "N) ". Increment the number on continuation.
+  // Ordered list: "N. " or "N) ". Increment EXACTLY (audit 5): BigInt keeps huge
+  // markers out of float-precision territory, and the result is padded back to the
+  // original zero-padded width ("01." continues as "02.", not "2.").
   const ordered = rest.match(/^(\d+)([.)] )(.*)$/);
   if (ordered) {
     const num = ordered[1];
     const delim = ordered[2];
     const body = ordered[3];
     const marker = num + delim;
-    return body.length === 0
-      ? { empty: true, marker: indent + marker }
-      : { empty: false, prefix: indent + (Number(num) + 1) + delim };
+    if (body.length === 0) return { empty: true, marker: indent + marker };
+    const next = String(BigInt(num) + 1n).padStart(num.length, '0');
+    return { empty: false, prefix: indent + next + delim };
   }
 
   return null;

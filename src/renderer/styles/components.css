@@ -20,7 +20,7 @@ body {
   height: calc(100vh - 48px);
   max-height: 920px;
   background: var(--paper);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   box-shadow: 0 40px 100px -30px rgba(0,0,0,0.5), 0 20px 40px -20px rgba(0,0,0,0.3);
   overflow: hidden;
   display: grid;
@@ -125,7 +125,7 @@ body {
   background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 9px 9px 0 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   font-size: 0.75rem;
   color: var(--ink-mute);
   cursor: pointer;
@@ -195,7 +195,7 @@ body {
   display: grid; place-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--ink-soft);
   font-size: 0.8125rem;
@@ -212,7 +212,7 @@ body {
   height: 28px;
   background: color-mix(in srgb, var(--paper-edge) 42%, var(--paper));
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   padding-block: 0;
   padding-inline: 10px;
   display: flex;
@@ -236,7 +236,7 @@ body {
   padding: 1px 5px;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
 }
 .tb-search:hover .kbd-inline { background: var(--paper-deep); }
 
@@ -301,7 +301,7 @@ html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows
   top: var(--titlebar-h);
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   box-shadow: 0 28px 70px -18px rgba(0,0,0,.4), 0 4px 14px -6px rgba(0,0,0,.2);
   min-width: 280px;
   padding: 7px;
@@ -322,7 +322,7 @@ html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows
   position: fixed;
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   box-shadow: 0 28px 70px -18px rgba(0,0,0,.4), 0 4px 14px -6px rgba(0,0,0,.2);
   min-width: 220px;
   padding: 7px;
@@ -337,7 +337,7 @@ html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows
   align-items: center;
   padding-block: 8px;
   padding-inline: 32px 12px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
   font-size: 0.8125rem;
   color: var(--ink);
@@ -434,7 +434,7 @@ html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
 }
 .sb-tab {
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   font-size: 0.6875rem;
   font-family: var(--sans);
   font-weight: 600;
@@ -456,7 +456,7 @@ html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
   background: var(--rule);
   background-clip: content-box;
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 .sb-pane { display: none; }
@@ -488,7 +488,7 @@ html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
   background: var(--paper);
   border: 1px solid var(--rule);
   padding: 8px 14px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   font-size: 0.75rem;
   cursor: pointer;
   color: var(--ink);
@@ -511,7 +511,7 @@ html[dir="rtl"] #inspectorToggleBtn { transform: scaleX(-1); }
      (arbitrary nesting; the reference's fixed single-level 32px indent does not fit a
      vault that can nest deeper than one level), not a literal inline pixel value. */
   padding-inline: calc(8px + var(--tree-depth, 0) * 14px) 9px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   font-size: 0.8125rem;
   color: var(--ink-soft);
   cursor: pointer;
@@ -607,7 +607,7 @@ html[dir="rtl"] .tree-root[aria-expanded="false"] .tree-twisty { rotate: 90deg; 
   background: var(--paper);
   border: 1px solid var(--rule);
   padding: 3px 8px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   color: var(--ink-soft);
   cursor: pointer;
   display: inline-flex;
@@ -629,7 +629,7 @@ html[dir="rtl"] .tree-root[aria-expanded="false"] .tree-twisty { rotate: 90deg; 
   width: 100%;
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   padding: 7px 12px 7px 28px;
   font-size: 0.8125rem;
   font-family: var(--sans);
@@ -698,7 +698,7 @@ html[dir="rtl"] .tree-root[aria-expanded="false"] .tree-twisty { rotate: 90deg; 
   inset-inline-end: 290px;
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   box-shadow: 0 8px 24px -4px rgba(0,0,0,0.2);
   padding: 8px;
   display: none;
@@ -709,7 +709,7 @@ html[dir="rtl"] .tree-root[aria-expanded="false"] .tree-twisty { rotate: 90deg; 
 .find-bar.open { display: flex; }
 .find-bar input {
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 5px 10px;
   font-size: 0.75rem;
   font-family: var(--sans);
@@ -766,7 +766,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   background: var(--rule);
   background-clip: content-box;
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 /* v10: strip 34->38px, buttons 26x26 -> 28x28, radius 4->7px. */
@@ -794,7 +794,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   display: grid; place-items: center;
   background: transparent;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--ink-soft);
   font-family: var(--serif);
@@ -810,7 +810,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .table-controls { display: none; align-items: center; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--paper-edge); background: var(--paper); }
 .table-controls.show { display: flex; }
 .table-controls .tc-label { font-size: 0.6875rem; text-transform: uppercase; color: var(--ink-mute); margin-inline-end: 4px; }
-.tc-btn { font: inherit; font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--paper-edge); border-radius: 5px; background: var(--paper-deep); color: var(--ink); cursor: pointer; }
+.tc-btn { font: inherit; font-size: 0.75rem; padding: 3px 9px; border: 1px solid var(--paper-edge); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); cursor: pointer; }
 .tc-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 5px; }
 .tool-spacer { flex: 1; }
@@ -834,7 +834,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   inset-inline-start: 0;
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: 0 12px 28px -8px rgba(0,0,0,0.25);
   padding: 5px;
   z-index: 60;
@@ -881,6 +881,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   overscroll-behavior: contain;
   scrollbar-color: var(--rule) transparent;
   min-width: 0;
+  position: relative; /* hosts the floating code-copy button (content coordinates) */
 }
 .source-pane::-webkit-scrollbar, .preview-pane::-webkit-scrollbar { width: 11px; } /* v10 */
 .source-pane::-webkit-scrollbar-track, .preview-pane::-webkit-scrollbar-track { background: transparent; }
@@ -888,7 +889,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   background: var(--rule);
   background-clip: content-box;
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 .source-pane { display: none; }
 /* T-F13: CodeMirror 6 mount fills the source pane; inherit the app's mono type/colours. */
@@ -906,7 +907,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   background: var(--rule);
   background-clip: content-box;
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 .cm-mount .cm-content { color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
 /* v1.2.2: "Start writing…" hint for an empty document — a DOM overlay, never document
@@ -965,7 +966,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 /* Images must never exceed the editor column — a wide image (e.g. a chart) was overflowing the
    pane and forcing a horizontal scrollbar. Constrain to the content width, keep aspect ratio. */
 /* v10: same rounded corners + soft shadow as #noteContent img. */
-.cm-mount .cm-content img, .cm-mount .cm-lp-block img { max-width: 100%; height: auto; border-radius: 10px; box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
+.cm-mount .cm-content img, .cm-mount .cm-lp-block img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
 .editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
 .editor-area.source .source-pane { display: block; }
 .editor-area.source .preview-pane { display: none; }
@@ -1108,18 +1109,19 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   margin: 0 0 24px; padding: 12px 16px;
   background: color-mix(in srgb, var(--gold) 16%, var(--paper));
-  border: 1px solid var(--gold); border-radius: 8px;
+  border: 1px solid var(--gold); border-radius: var(--r-md);
   font-family: var(--sans); font-size: 0.875rem; color: var(--ink);
 }
 .conflict-banner .cf-msg { flex: 1; min-width: 200px; }
 .conflict-banner .cf-btn {
-  font-family: var(--sans); font-size: 0.8125rem; padding: 5px 12px; border-radius: 6px;
+  font-family: var(--sans); font-size: 0.8125rem; padding: 5px 12px; border-radius: var(--r-sm);
   border: 1px solid var(--rule); background: var(--paper); color: var(--ink); cursor: pointer;
 }
 .conflict-banner .cf-btn:hover { border-color: var(--accent); color: var(--accent); }
 .conflict-banner .cf-reload { background: var(--accent); border-color: var(--accent); color: #fff; }
 .conflict-banner .cf-reload:hover { color: #fff; opacity: 0.9; }
 .tab.conflict .tab-conflict { color: var(--gold); margin-inline-end: 4px; }
+.tab.missing .tab-name { opacity: 0.55; text-decoration: underline dashed; text-underline-offset: 3px; }
 
 .editor h2 {
   font-family: var(--serif);
@@ -1183,13 +1185,24 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   background: var(--paper-edge);
   /* v10 redesign (2026-08-25): radius 3->6px, padding 1px 6px -> 1px 8px. */
   padding: 1px 8px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-weight: 500;
   cursor: pointer;
   text-decoration: none !important;
 }
 .wikilink:hover { background: var(--accent-fill); color: white !important; }
 .wikilink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* audit UX-12: a note-relative vault image whose file is gone renders as this named
+   placeholder instead of the browser's broken-image glyph (see rewriteVaultImages). */
+.img-missing {
+  border: 1px dashed var(--caution);
+  color: var(--ink-mute);
+  padding: 12px 16px;
+  border-radius: var(--r-sm);
+  margin: 12px 0;
+  font-size: 0.85rem;
+}
 
 /* Footnotes (R11): superscript refs + the end-of-document notes list. */
 .fn-ref { font-size: 0.75em; line-height: 0; }
@@ -1210,7 +1223,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 #noteContent u, .cm-mount .cm-u { text-decoration: underline; }
 /* Responsive images in the rendered preview (powers outline/export) — same fix as the editor. */
 /* v10: rounded corners + a soft drop shadow, not a bare flush image. */
-#noteContent img { max-width: 100%; height: auto; border-radius: 10px; box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
+#noteContent img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
 
 /* v10 redesign (2026-08-25): gold instead of accent, a tinted background, generous
    uniform padding and rounded end corners (border-start/end-end so RTL mirrors). */
@@ -1278,7 +1291,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .callout {
   margin: 20px 0;
   padding: 12px 16px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--callout-color, var(--accent)) 8%, var(--paper));
   border-inline-start: 3px solid var(--callout-color, var(--accent));
 }
@@ -1319,7 +1332,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .editor pre {
   background: var(--paper-deep);
   border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   padding: 20px 24px;
   margin: 20px 0;
   font-family: var(--mono);
@@ -1353,12 +1366,39 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 /* Mermaid diagrams (T-F16): always LTR, centred, responsive. */
 .mermaid { display: block; direction: ltr; text-align: center; margin: 20px 0; overflow-x: auto; }
 .mermaid svg { max-width: 100%; height: auto; }
+/* audit UX-09: a diagram that fails to parse or times out keeps its source block and says so. */
+pre[data-mermaid-error] { border: 1px solid var(--caution); border-radius: var(--r-sm); }
+.mermaid-error { color: var(--caution); font-size: 0.75rem; margin: -14px 0 16px; }
+/* Floating copy button: ONE button follows the code block currently in view
+   while the reader scrolls (top set in content coordinates by updateCodeTrack,
+   so it scrolls with the block between moves). Code blocks are always LTR, so
+   the physical right edge is correct under both UI directions. */
+.code-copy-float {
+  position: absolute;
+  right: 10px;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper-edge);
+  color: var(--ink-soft);
+  cursor: pointer;
+  opacity: 0.92;
+  z-index: 5;
+}
+.code-copy-float .ic { width: 0.9rem; height: 0.9rem; }
+.code-copy-float:hover { background: var(--accent-soft); color: var(--accent); }
+.code-copy-float.copied { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.code-copy-float[hidden] { display: none; }
 /* v10 redesign (2026-08-25): an accent-tinted chip, no border -- was a neutral
    --paper-deep/--rule chip. */
 .editor code {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   padding: 2px 7px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-family: var(--mono);
   /* Relative to the surrounding text so inline code inside a heading scales with the
      heading (0.85em) instead of being pinned to a tiny absolute size. */
@@ -1521,7 +1561,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   background: var(--paper-deep);
   border: 1px solid var(--rule);
   padding: 16px 18px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   cursor: pointer;
   text-align: start;
   display: flex;
@@ -1586,6 +1626,24 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   margin-inline-start: auto;
 }
 
+/* T4.1: the Continue-reading shelf — a recents row with a percentage, a metadata line and
+   a thin progress bar (all spans, so the whole row stays one focusable button). */
+.continue-list { border-top: 1px solid var(--rule); padding-top: 20px; text-align: start; margin-bottom: 8px; }
+.continue-item { flex-wrap: wrap; padding: 8px 0 10px; }
+.continue-item .c-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.continue-item .c-pct { font-family: var(--mono); font-size: 0.6875rem; color: var(--accent); margin-inline-start: auto; }
+.continue-item .c-sub { flex: 1 1 100%; font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); }
+.continue-item .c-bar { flex: 1 1 100%; height: 2px; background: var(--rule); overflow: hidden; }
+.continue-item .c-bar-fill { display: block; height: 100%; background: var(--accent); }
+/* T8.1: the reading line above the shelf — quiet metadata, never a notification. */
+.streak-line {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-mute);
+  text-align: start;
+  margin-bottom: 10px;
+}
+
 /* inspector */
 .inspector {
   background: var(--paper-deep);
@@ -1619,7 +1677,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   background: var(--rule);
   background-clip: content-box;
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 .insp-section { padding: 14px 16px; border-bottom: 1px solid var(--rule); }
 .insp-section:last-child { border-bottom: none; }
@@ -1670,6 +1728,125 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   color: var(--ink-mute);
 }
 .prop-val { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* T5.1c: highlights + margin notes. `.user-hl` is the applied highlight inside the reading
+   view (padding-block stays 0 so the text baseline is untouched); `.hl-popover` is the
+   floating Highlight/Note bar over a text selection. No transitions anywhere, so
+   prefers-reduced-motion needs no extra rule. */
+.user-hl { background: var(--hl-bg); border-radius: var(--r-sm); padding: 0 1px; }
+.hl-popover { position: absolute; display: flex; gap: 4px; z-index: 40; }
+/* A class selector beats the UA `[hidden] { display: none }` rule, so the bar must say it
+   itself — otherwise the element renders as an empty box at the document origin. */
+.hl-popover[hidden] { display: none; }
+.hl-popover button {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper-edge);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.hl-popover button:hover { color: var(--accent); border-color: var(--accent); }
+
+.note-list { display: flex; flex-direction: column; }
+.note-empty { font-size: 0.75rem; color: var(--ink-mute); font-style: italic; padding: 4px 0; }
+.note-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--rule);
+}
+.note-row:last-child { border-bottom: none; }
+.note-jump {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: start;
+  font-family: var(--serif);
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.note-jump:hover { color: var(--accent); }
+.note-jump .n-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-jump .n-time { display: block; font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); }
+.note-del {
+  flex: 0 0 auto;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.note-del:hover { color: var(--accent); }
+
+/* T5.1c: the note prompt inside the shared modal. */
+.note-excerpt {
+  margin: 0 0 12px;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--rule);
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+.note-field {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 88px;
+  resize: vertical;
+  font-family: var(--serif);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+.note-field:focus { outline: none; border-color: var(--accent); }
+
+/* T7.1: the opt-in update notice — a small floating card with two actions. #toast is
+   text-only, so this is its own element (built by showUpdateNotice in app.js). */
+.update-bar {
+  position: fixed;
+  inset-block-end: 44px;
+  inset-inline-end: 16px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 12px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+.update-bar[hidden] { display: none; }
+.update-bar .ub-text { font-size: 0.8125rem; color: var(--ink); }
+.update-bar .ub-btn {
+  flex: 0 0 auto;
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper-edge);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.update-bar .ub-btn:hover { color: var(--accent); border-color: var(--accent); }
+.update-bar .ub-primary { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.update-bar .ub-primary:hover { color: var(--paper); }
 
 /* statusbar */
 /* v10 redesign (2026-08-25): integrated with the theme (--paper-deep/--ink-soft, set
@@ -1722,7 +1899,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   max-width: 90%;
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   box-shadow: 0 40px 110px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.05);
   overflow: hidden;
 }
@@ -1757,7 +1934,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   align-items: center;
   padding: 9px 13px;
   gap: 12px;
-  border-radius: 9px; /* v10: 5->9px */
+  border-radius: var(--r-md); /* v10: 5->9px */
   cursor: pointer;
   width: 100%;
   border: 0;
@@ -1784,7 +1961,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   padding: 1px 5px;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
-  border-radius: 6px; /* v10: 3->6px */
+  border-radius: var(--r-sm); /* v10: 3->6px */
   color: var(--ink-soft);
   min-width: 18px;
   text-align: center;
@@ -1794,6 +1971,12 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   text-transform: uppercase;
   color: var(--ink-mute);
   padding: 8px 14px 4px;
+}
+/* audit UX-10: non-interactive "N more files" hint under the capped file list. */
+.pal-hint {
+  padding: 8px 14px;
+  font-size: 0.75rem;
+  color: var(--ink-mute);
 }
 .pal-footer {
   padding: 9px 16px;
@@ -1812,7 +1995,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   padding: 1px 5px;
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 6px; /* v10: 3->6px */
+  border-radius: var(--r-sm); /* v10: 3->6px */
   margin-inline-end: 4px;
 }
 
@@ -1832,7 +2015,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .modal {
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   box-shadow: 0 40px 110px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.05);
   width: 600px;
   max-width: 90%;
@@ -1860,7 +2043,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   display: grid; place-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px; /* v10: 4->8px */
+  border-radius: var(--r-md); /* v10: 4->8px */
   cursor: pointer;
   color: var(--ink-mute);
   font-size: 1rem;
@@ -1894,7 +2077,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   padding: 2px 6px;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
-  border-radius: 6px; /* v10: 3->6px */
+  border-radius: var(--r-sm); /* v10: 3->6px */
   color: var(--ink-soft);
   min-width: 22px;
   text-align: center;
@@ -1931,26 +2114,26 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .set-desc .kbd {
   font-family: var(--mono); font-size: 0.6875rem;
   padding: 1px 5px; background: var(--paper-deep);
-  border: 1px solid var(--rule); border-radius: 6px; color: var(--ink-soft); /* v10: 3->6px */
+  border: 1px solid var(--rule); border-radius: var(--r-sm); color: var(--ink-soft); /* v10: 3->6px */
 }
 /* v10: segmented control radius 6->9px, buttons 4->6px. */
 .set-seg {
   display: flex; flex: none;
   background: var(--paper-deep);
   border: 1px solid var(--rule);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   padding: 2px; gap: 2px;
 }
 .set-seg button {
   font: inherit; font-size: 0.75rem;
-  padding: 4px 10px; border: none; border-radius: 6px;
+  padding: 4px 10px; border: none; border-radius: var(--r-sm);
   background: transparent; color: var(--ink-mute); cursor: pointer;
 }
 .set-seg button[aria-pressed="true"] { background: var(--accent); color: var(--paper); }
 .set-switch {
   flex: none; margin-top: 2px;
   width: 36px; height: 20px; padding: 0;
-  border: 1px solid var(--ink-mute); border-radius: 10px;
+  border: 1px solid var(--ink-mute); border-radius: var(--r-md);
   background: var(--paper-deep); cursor: pointer; position: relative;
   transition: background 0.14s ease, border-color 0.14s ease;
 }
@@ -1999,12 +2182,12 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   position: absolute;
   /* T-F19: clearance is derived, not a magic 50px (= old 26px bar + 24px gap). */
   bottom: calc(var(--statusbar-h) + 24px);
-  inset-inline-start: 50%;
+  left: 50%;
   transform: translateX(-50%) translateY(100px);
   background: var(--ink);
   color: var(--paper);
   padding: 10px 18px;
-  border-radius: 10px; /* v10: 6->10px */
+  border-radius: var(--r-md); /* v10: 6->10px */
   font-size: 0.8125rem;
   box-shadow: 0 12px 30px rgba(0,0,0,0.3);
   opacity: 0;
@@ -2061,7 +2244,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   width: min(18rem, calc(100vw - 2rem));
   padding: 0.875rem;
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--paper);
   color: var(--ink);
   box-shadow: 0 20px 48px -16px rgba(0,0,0,.3);
@@ -2070,7 +2253,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
 .reader-control-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .reader-control-row + .reader-control-row { margin-block-start: 0.75rem; }
 .reader-control-label { flex: 1; min-width: 0; font-size: 0.75rem; color: var(--ink-soft); }
-.reader-scale-actions { display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: 0.375rem; overflow: hidden; }
+.reader-scale-actions { display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: var(--r-sm); overflow: hidden; }
 .reader-scale-actions button {
   min-width: 2.25rem;
   min-height: 1.875rem;
@@ -2111,7 +2294,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   font-weight: 500;
   letter-spacing: 0.01em;
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   box-shadow: 0 8px 22px -6px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.07);
   opacity: 0;
   transition: opacity 120ms ease 350ms;
@@ -2137,7 +2320,7 @@ mark.find-hit.current { background: var(--accent-fill); color: white; }
   font-weight: 500;
   letter-spacing: 0.01em;
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   box-shadow: 0 8px 22px -6px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.07);
   opacity: 0;
   transition: opacity 120ms ease;

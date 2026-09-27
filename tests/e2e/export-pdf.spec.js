@@ -29,9 +29,7 @@ test.describe('[T-F6] Export PDF action', () => {
       window.electronAPI = { exportPDF: (payload) => { window.__pdf = payload; return Promise.resolve({ ok: true, path: 'C:/tmp/on-reading.pdf' }); } };
       window.loadDemo();
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => window.renderFile(0));
-    await page.waitForTimeout(100);
 
     await page.evaluate(() => window.exportPDF());
     const payload = await page.evaluate(() => window.__pdf);
@@ -53,7 +51,6 @@ test.describe('[T-F6] Export PDF action', () => {
       window.electronAPI = { exportPDF: () => Promise.resolve({ ok: true }) };
       window.loadDemo();
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => { window.renderFile(0); return window.exportPDF(); });
     await expect(page.locator('#toast')).toContainText('.pdf');
     await expect(page.locator('#toast')).not.toContainText('C:\\Users');
@@ -64,9 +61,7 @@ test.describe('[T-F6] Export PDF action', () => {
       window.electronAPI = { exportPDF: () => Promise.resolve({ canceled: true }) };
       window.loadDemo();
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => { window.renderFile(0); return window.exportPDF(); });
-    await page.waitForTimeout(100);
     await expect(page.locator('#toast')).not.toContainText('failed');
   });
 
@@ -75,7 +70,6 @@ test.describe('[T-F6] Export PDF action', () => {
       window.electronAPI = { exportPDF: () => Promise.resolve({ error: 'export-failed' }) };
       window.loadDemo();
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => { window.renderFile(0); return window.exportPDF(); });
     await expect(page.locator('#toast')).toContainText('PDF export failed');
   });
@@ -85,7 +79,6 @@ test.describe('[T-F6] Export PDF action', () => {
       window.electronAPI = { exportPDF: () => Promise.reject(new Error('ipc boom')) };
       window.loadDemo();
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => { window.renderFile(0); return window.exportPDF(); });
     await expect(page.locator('#toast')).toContainText('PDF export failed');
   });
@@ -103,7 +96,6 @@ test.describe('[T-F6] Export PDF action', () => {
 
   test('without the desktop bridge → "needs the desktop app" (graceful in a plain browser)', async ({ page }) => {
     await page.evaluate(() => { delete window.electronAPI; window.loadDemo(); });
-    await page.waitForTimeout(150);
     await page.evaluate(() => { window.renderFile(0); return window.exportPDF(); });
     await expect(page.locator('#toast')).toContainText('needs the desktop app');
   });

@@ -45,7 +45,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#srcTextarea')).toHaveAttribute('dir', 'auto');
   });
@@ -55,7 +54,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
   });
@@ -65,7 +63,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('html')).not.toHaveAttribute('dir', 'rtl');
   });
@@ -75,7 +72,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#appBody')).not.toHaveAttribute('dir');
   });
@@ -92,7 +88,6 @@ test.describe('RTL and theme bug fixes', () => {
 
     // RTL state — grid container must still be ltr
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const rtlDir = await page.evaluate(() => {
       return getComputedStyle(document.getElementById('appBody')).direction;
@@ -106,14 +101,12 @@ test.describe('RTL and theme bug fixes', () => {
 
     // Toggle on
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const rtlState = await page.evaluate(() => window._appState.direction);
     expect(rtlState).toBe('rtl');
 
     // Toggle off
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const ltrState = await page.evaluate(() => window._appState.direction);
     expect(ltrState).toBe('ltr');
@@ -124,9 +117,7 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#srcTextarea')).not.toHaveAttribute('dir');
   });
@@ -136,9 +127,7 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#editor')).not.toHaveAttribute('dir');
   });
@@ -152,7 +141,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'ink');
   });
@@ -162,27 +150,27 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
 
     await expect(page.locator('#app')).not.toHaveAttribute('data-theme');
   });
 
-  test('[Theme-html] three theme button clicks cycle paper→ink→sepia→paper on html', async ({ page }) => {
+  test('[Theme-html] four theme button clicks cycle paper→ink→sepia→oasis→paper on html', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     const html = page.locator('html');
 
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'ink');
 
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
     await expect(html).toHaveAttribute('data-theme', 'sepia');
 
+    // T1.1: the fourth (warm dark) theme.
     await page.click('#themeBtn');
-    await page.waitForTimeout(100);
+    await expect(html).toHaveAttribute('data-theme', 'oasis');
+
+    await page.click('#themeBtn');
     await expect(html).toHaveAttribute('data-theme', 'paper');
   });
 
@@ -196,7 +184,6 @@ test.describe('RTL and theme bug fixes', () => {
 
     // Cycle to ink theme
     await page.click('#themeBtn');
-    await page.waitForTimeout(200);
 
     const bgColor = await page.evaluate(() => {
       return getComputedStyle(document.querySelector('.statusbar')).backgroundColor;
@@ -242,7 +229,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(300);
 
     await expect(page).toHaveScreenshot('ltr-paper-1440x900.png', {
       maxDiffPixels: 5000,
@@ -256,7 +242,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
-    await page.waitForTimeout(300);
 
     await expect(page).toHaveScreenshot('ltr-ink-1440x900.png', {
       maxDiffPixels: 5000,
@@ -270,7 +255,6 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(300);
 
     await expect(page).toHaveScreenshot('rtl-paper-1440x900.png', {
       maxDiffPixels: 5000,
@@ -284,9 +268,7 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await page.click('#themeBtn');
-    await page.waitForTimeout(200);
     await page.click('#rtlBtn');
-    await page.waitForTimeout(300);
 
     await expect(page).toHaveScreenshot('rtl-ink-1440x900.png', {
       maxDiffPixels: 5000,
@@ -304,11 +286,9 @@ test.describe('RTL and theme bug fixes', () => {
 
     // Per-note direction: load Arabic content first, then force RTL on that note.
     await injectMarkdown(page, ARABIC_CONTENT);
-    await page.waitForTimeout(200);
 
     // Toggle RTL — attaches to the now-active note (sets _manualRTL=true, dir=rtl on #editor).
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     // Assert dir attribute is set (pre-existing assertion class)
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
@@ -327,17 +307,14 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(200);
 
     // Toggle on
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     const rtlDir = await getEditorComputedDirection(page);
     expect(rtlDir).toBe('rtl');
 
     // Toggle off — must return to ltr
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     const ltrDir = await getEditorComputedDirection(page);
     expect(ltrDir).toBe('ltr');
   });
@@ -353,10 +330,8 @@ test.describe('RTL and theme bug fixes', () => {
 
     // Per-note direction: load Arabic content first, then force RTL on that note.
     await injectMarkdown(page, ARABIC_CONTENT);
-    await page.waitForTimeout(300);
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     // Geometric assertion: paragraph text must be right-aligned in RTL mode
     const paraTextAlign = await page.evaluate(() => {
@@ -405,19 +380,16 @@ test.describe('RTL and theme bug fixes', () => {
 
     // Force RTL on tab A — the choice attaches to that note.
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
     expect(await getEditorComputedDirection(page)).toBe('rtl');
 
     // Switch to tab B — it keeps its own AUTO direction, NOT tab A's forced RTL.
     await page.evaluate(() => window.renderFile(1));
-    await page.waitForTimeout(100);
     await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
     expect(await getEditorComputedDirection(page)).toBe('ltr');
 
     // Return to tab A — its forced RTL is restored.
     await page.evaluate(() => window.renderFile(0));
-    await page.waitForTimeout(100);
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
     expect(await getEditorComputedDirection(page)).toBe('rtl');
   });
@@ -449,10 +421,8 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h1 = document.querySelector('#noteContent h1');
@@ -473,10 +443,8 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h2 = document.querySelector('#noteContent h2');
@@ -497,10 +465,8 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     const textAlign = await page.evaluate(() => {
       const h3 = document.querySelector('#noteContent h3');
@@ -543,16 +509,12 @@ test.describe('RTL and theme bug fixes', () => {
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ARABIC_CONTENT);
-    await page.waitForTimeout(200);
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     await injectMarkdown(page, ENGLISH_CONTENT);
-    await page.waitForTimeout(200);
 
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     expect(rtlErrors).toHaveLength(0);
   });

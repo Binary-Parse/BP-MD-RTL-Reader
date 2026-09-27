@@ -44,4 +44,10 @@ describe('compareVersions (T-Q6)', () => {
     expect(compareVersions('1.0.0-alpha', '1.0.0-beta')).toBe(-1);
     expect(compareVersions('1.0.0-alpha', '1.0.0-alpha')).toBe(0);
   });
+
+  test('rejects numeric components beyond 15 digits instead of collapsing them to Infinity (VER-01)', () => {
+    expect(parse(`1.${'9'.repeat(400)}.0`)).toBeNull();
+    expect(compareVersions(`1.${'9'.repeat(400)}.0`, `1.${'8'.repeat(400)}.0`)).toBeNull();
+    expect(compareVersions(`v1.${'9'.repeat(15)}.0`, '2.0.0')).toBe(-1);
+  });
 });

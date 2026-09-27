@@ -78,25 +78,68 @@ describe('resolveBlockDirection (T-R1 dominant-script — fixes mixed Arabic/Eng
     expect(resolveBlockDirection('123 — !! :)', 'ltr')).toBe('ltr');
     expect(resolveBlockDirection('123 — !! :)')).toBe('ltr');
   });
-  test('near-balanced block keeps first-strong (no flip below the clear-majority threshold)', () => {
-    expect(resolveBlockDirection('مرab')).toBe('rtl'); // 50/50, starts Arabic → first-strong rtl
-    expect(resolveBlockDirection('abمر')).toBe('ltr'); // 50/50, starts Latin → first-strong ltr
-    // English-first table content (7 Latin vs 8 Arabic = 53% RTL, below 60%) keeps ltr.
-    expect(resolveBlockDirection('Name قيمة one واحد')).toBe('ltr');
+  test('near-balanced block inherits on an exact tie; a strict majority still flips', () => {
+    // audit UX-01: an exact tie now inherits the base direction (default ltr here), instead
+    // of first-strong picking whichever script happened to open the block.
+    expect(resolveBlockDirection('مرab')).toBe('ltr'); // 50/50 → inherited ltr
+    expect(resolveBlockDirection('abمر')).toBe('ltr'); // 50/50 → inherited ltr
+    expect(resolveBlockDirection('مرab', 'rtl')).toBe('rtl'); // …and inherits rtl when rtl is the base
+    // English-first table content (7 Latin vs 8 Arabic = 53% RTL) is a STRICT RTL majority → rtl.
+    expect(resolveBlockDirection('Name قيمة one واحد')).toBe('rtl');
   });
   test('empty / non-string → inherited', () => {
     expect(resolveBlockDirection('', 'rtl')).toBe('rtl');
     expect(resolveBlockDirection(null, 'ltr')).toBe('ltr');
     expect(resolveBlockDirection(undefined, 'rtl')).toBe('rtl');
   });
-  test('the 0.6 clear-majority boundary is inclusive (pins >= vs >)', () => {
-    // English-first, RTL share EXACTLY 0.6 (3 Arabic / 5 strong) → flips to rtl.
+  test('the strict-majority boundary is exclusive (pins > vs >=)', () => {
+    // English-first, RTL share 0.6 (3 Arabic / 5 strong) → strict majority → flips to rtl.
     expect(resolveBlockDirection('abمرح')).toBe('rtl');
-    // English-first, RTL share 0.5 (< 0.6) → keeps first-strong ltr.
+    // English-first, RTL share 0.5 → exactly a tie → inherits ltr.
     expect(resolveBlockDirection('abcمرح')).toBe('ltr');
-    // Symmetric: Arabic-first, LTR share exactly 0.6 → flips to ltr; 0.5 stays rtl.
+    // Symmetric: Arabic-first, LTR share 0.6 → flips to ltr; 0.5 is a tie → inherits ltr.
     expect(resolveBlockDirection('مرabc')).toBe('ltr');
-    expect(resolveBlockDirection('مرحabc')).toBe('rtl');
+    expect(resolveBlockDirection('مرحabc')).toBe('ltr');
+  });
+});
+
+// audit UX-01: the regression table for the strict-majority rule — URL stripping, the
+// 50–60% dead band the old 0.6 threshold left behind, and ties inheriting the base.
+describe('resolveBlockDirection — audit UX-01 regression table', () => {
+  test('a ~53%-Arabic paragraph that opens in Arabic stays rtl', () => {
+    // 46 Arabic vs 41 Latin letters — a strict Arabic majority, but only just.
+    const text = 'المستخدمون البرمجة التطبيقات مكتبة الوثائق جديد نظام documentation framework testing quality notes';
+    expect(resolveBlockDirection(text, 'rtl')).toBe('rtl');
+  });
+
+  test('the same paragraph with one English word prepended (exact 50/50 tie) stays rtl when rtl is the base', () => {
+    // The old 0.6 threshold left a 50–60% dead band: one prepended English word flipped a
+    // genuinely Arabic paragraph to LTR. An exact tie now inherits the base direction.
+    const text = 'Notes المستخدمون البرمجة التطبيقات مكتبة الوثائق جديد نظام documentation framework testing quality notes';
+    expect(resolveBlockDirection(text, 'rtl')).toBe('rtl');
+    expect(resolveBlockDirection(text, 'ltr')).toBe('ltr'); // tie still follows the base
+  });
+
+  test('a URL is stripped before counting, so an Arabic sentence containing one stays rtl', () => {
+    const text = 'راجع https://docs.example.com/en-us/azure/devops/pipelines/processes للمزيد من التفاصيل';
+    expect(resolveBlockDirection(text, 'rtl')).toBe('rtl');
+  });
+
+  test('an LTR-first heading that is ~80% Arabic flips to rtl', () => {
+    expect(resolveBlockDirection('API دليل المستخدم')).toBe('rtl');
+  });
+
+  test('an English paragraph with one Arabic word stays ltr', () => {
+    expect(resolveBlockDirection('hello world peace سلام again')).toBe('ltr');
+  });
+
+  test('neutral-only text inherits the base direction', () => {
+    expect(resolveBlockDirection('1234 !!!', 'rtl')).toBe('rtl');
+    expect(resolveBlockDirection('1234 !!!', 'ltr')).toBe('ltr');
+  });
+
+  test('an exact tie with inherited ltr → ltr', () => {
+    expect(resolveBlockDirection('abمر', 'ltr')).toBe('ltr');
   });
 });
 
@@ -140,4 +183,29 @@ describe('slugify (EC-C5)', () => {
   test('Latin', () => expect(slugify('Hello World!')).toBe('hello-world'));
   test('Arabic preserved', () => expect(slugify('في فعل القراءة')).toBe('في-فعل-القراءة'));
   test('trims dashes', () => expect(slugify('  — a — b — ')).toBe('a-b'));
+  // audit UX-14c: tashkeel/tatweel fold away BEFORE the run-collapse, so a vocalized
+  // heading slugs identically to its bare form.
+  test('folds tashkeel and tatweel', () => {
+    expect(slugify('كِتَاب')).toBe(slugify('كتاب'));
+    expect(slugify('كِتَاب')).toBe('كتاب');
+    expect(slugify('مُحَمَّد بن عبد الله')).toBe('محمد-بن-عبد-الله');
+    expect(slugify('كــتاب')).toBe('كتاب'); // U+0640 tatweel
+  });
+});
+
+// RTL-M7 (2026-09-26): the URL strip covers scheme-less forms — a bare domain or an
+// email address in a short Arabic sentence used to flip the whole paragraph LTR.
+describe('resolveBlockDirection scheme-less URL stripping (RTL-M7)', () => {
+  test('a bare domain mention does not flip an Arabic sentence to LTR', () => {
+    const text = 'راجع docs.example.com/en-us/azure/devops/pipelines/processes/page للمزيد';
+    expect(resolveBlockDirection(text, 'ltr')).toBe('rtl');
+  });
+  test('an email address does not flip a short Arabic sentence to LTR', () => {
+    const text = 'راسلنا support@example-company.com الآن';
+    expect(resolveBlockDirection(text, 'ltr')).toBe('rtl');
+  });
+  test('a scheme’d URL still strips (regression)', () => {
+    const text = 'راجع https://docs.example.com/en-us/azure للمزيد من التفاصيل';
+    expect(resolveBlockDirection(text, 'ltr')).toBe('rtl');
+  });
 });

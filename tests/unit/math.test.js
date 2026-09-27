@@ -6,9 +6,9 @@
  * Unit-tested with injected fakes; an integration test uses REAL marked to prove
  * LaTeX survives uncorrupted.
  */
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeEach } from 'vitest';
 import { Marked } from 'marked';
-import { mathExtension, mathPlaceholder, restoreMath } from '../../src/renderer/markdown/math.js';
+import { mathExtension, mathPlaceholder, restoreMath, renderTex, clearTexCache } from '../../src/renderer/markdown/math.js';
 import { configureMarked } from '../../src/renderer/markdown/markdown.js';
 
 // A katex that records the TeX it receives, so we can assert it was uncorrupted.
@@ -52,6 +52,10 @@ describe('mathExtension tokenizer', () => {
 });
 
 describe('restoreMath (jsdom)', () => {
+  // The KaTeX render cache (audit PERF-01) is process-wide; clear it so each case starts
+  // from a cold cache and observes its own katex stub.
+  beforeEach(() => clearTexCache());
+
   const opts = () => ({ katex: recordingKatex(), DOMPurify: idDOMPurify });
   test('inline placeholder → dir="ltr" math span; block → math-block display', () => {
     const root = frag(`<p>x ${mathPlaceholder('E=mc^2', false)} y</p><p>${mathPlaceholder('\\int', true)}</p>`);
@@ -84,6 +88,16 @@ describe('restoreMath (jsdom)', () => {
     expect(root.querySelector('p').textContent).toBe('$\\bad$');
   });
 
+  test('a forged oversized placeholder (literal U+E000 wire format) never reaches KaTeX', () => {
+    const k = recordingKatex();
+    const forged = String.fromCharCode(0xE000) + '0' + '61'.repeat(40 * 1024) + String.fromCharCode(0xE001);
+    const root = frag(`<p>${forged}</p>`);
+    restoreMath(root, { katex: k, DOMPurify: idDOMPurify });
+    expect(k.calls).toHaveLength(0);
+    expect(root.querySelector('.math-inline')).toBeNull();
+    expect(root.querySelector('p').textContent).toBe(forged);
+  });
+
   test('null root / missing katex → safe no-op', () => {
     expect(() => restoreMath(null, opts())).not.toThrow();
     const root = frag(`<p>${mathPlaceholder('x', false)}</p>`);
@@ -112,5 +126,48 @@ describe('integration with real marked — LaTeX is NOT corrupted (the F9 fix)',
     const k = recordingKatex();
     restoreMath(frag(html), { katex: k, DOMPurify: idDOMPurify });
     expect(k.calls).toHaveLength(0);
+  });
+});
+
+// audit PERF-01: identical math is not re-rendered on every render tick.
+describe('renderTex cache (audit PERF-01)', () => {
+  beforeEach(() => clearTexCache());
+
+  test('the same (tex, display) renders KaTeX exactly once and reuses the HTML', () => {
+    const k = recordingKatex();
+    const opts = { katex: k, DOMPurify: idDOMPurify, doc: document };
+    const first = renderTex('E=mc^2', false, opts);
+    const second = renderTex('E=mc^2', false, opts);
+    expect(k.calls).toHaveLength(1);
+    expect(first.innerHTML).toBe(second.innerHTML);
+    expect(second.className).toBe('math-inline');
+    expect(second.getAttribute('dir')).toBe('ltr');
+  });
+
+  test('inline and display modes are separate cache keys', () => {
+    const k = recordingKatex();
+    const opts = { katex: k, DOMPurify: idDOMPurify, doc: document };
+    renderTex('x=1', false, opts);
+    renderTex('x=1', true, opts);
+    expect(k.calls).toHaveLength(2);
+    expect(k.calls[1].display).toBe(true);
+  });
+
+  test('clearTexCache() forces a re-render', () => {
+    const k = recordingKatex();
+    const opts = { katex: k, DOMPurify: idDOMPurify, doc: document };
+    renderTex('a+b', false, opts);
+    clearTexCache();
+    renderTex('a+b', false, opts);
+    expect(k.calls).toHaveLength(2);
+  });
+
+  test('a previously-failing TeX fails the same way without re-invoking KaTeX', () => {
+    let calls = 0;
+    const boom = { renderToString: () => { calls += 1; throw new Error('bad'); } };
+    const opts = { katex: boom, DOMPurify: idDOMPurify, doc: document };
+    expect(renderTex('\\boom', false, opts)).toBeNull();
+    expect(renderTex('\\boom', false, opts)).toBeNull();
+    expect(calls).toBe(1);
   });
 });

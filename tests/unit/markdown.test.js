@@ -128,6 +128,23 @@ describe('wikilink renderer', () => {
     expect(match[1]).not.toContain('"');
     expect(match[1]).toBe('targetwithquotes');
   });
+
+  // audit SEC-11: the alias is element CONTENT, so it must be escaped — a raw payload in
+  // `[[target|<payload>]]` used to reach the DOM as live markup.
+  test('escapes an HTML payload in the alias (SEC-11)', () => {
+    const html = wikilinkRenderer({ target: 'Note', alias: '<img src=x onerror=alert(1)>' });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  test('escapes quotes and ampersands in the alias', () => {
+    const html = wikilinkRenderer({ target: 'Note', alias: `he said "hi" & 'bye'` });
+    expect(html).toContain('&quot;hi&quot;');
+    expect(html).toContain('&amp;');
+    expect(html).toContain('&#39;bye&#39;');
+    // The attribute guard on the target is unaffected by the alias escaping.
+    expect(html).toContain('data-target="Note"');
+  });
 });
 
 describe('configureMarked — integration with real marked (audit #29)', () => {
@@ -200,6 +217,16 @@ describe('configureMarked — integration with real marked (audit #29)', () => {
     // Mutant that breaks the replace would leak the quote into data-target.
     const dataTarget = out.match(/data-target="([^"]*)"/)[1];
     expect(dataTarget).toBe('evilname');
+  });
+
+  // audit SEC-11: the PRODUCTION renderer (marked's inner extension, not the exported
+  // helper) must escape the alias too — this is the path the preview actually uses.
+  test('renderer: an HTML payload in the alias is escaped, never live markup (SEC-11)', () => {
+    const m = freshMarked();
+    const out = m.parse('[[Note|<img src=x onerror=alert(1)>]]');
+    expect(out).not.toContain('<img');
+    expect(out).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(out).toMatch(/data-target="Note"/);
   });
 
   test('renderer: target is .trim()-ed via the inner extension too', () => {

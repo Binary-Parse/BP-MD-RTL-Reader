@@ -1,6 +1,9 @@
 /** Strict SemVer 2.0 parsing/comparison for the opt-in update check. */
 
-const SEMVER = /^[vV]?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+// Numeric components are capped at 15 digits: Number() collapses ≥309-digit runs to
+// Infinity, which made two DIFFERENT huge releases compare equal (the update notice
+// silently vanished). Longer components now fail the parse → 'invalid-version' (VER-01).
+const SEMVER = /^[vV]?(0|[1-9]\d{0,14})\.(0|[1-9]\d{0,14})\.(0|[1-9]\d{0,14})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 function parse(value) {
   if (typeof value !== 'string') return null;

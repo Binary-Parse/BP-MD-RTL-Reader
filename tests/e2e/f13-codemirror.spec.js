@@ -38,12 +38,49 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     });
     expect(r.isPort).toBe(true);
     expect(r.value).toBe('# Hello\nworld');
-    expect(r.sel).toEqual({ start: 0, end: 7 });
+    // getSelection also exposes every range (multi-selection cut/copy); the main-range
+    // shape stays the contract all other consumers read.
+    expect(r.sel).toEqual({ start: 0, end: 7, ranges: [{ start: 0, end: 7 }] });
     expect(r.afterReplace).toBe('# Hi\nworld');
     expect(r.changed).toBe('# Hi\nworld');          // onChange fired on the edit
     expect(r.findO.length).toBeGreaterThanOrEqual(1); // 'world' contains 'o'
     expect(r.dir).toBe('rtl');                        // per-doc direction support
     expect(r.loaded).toBe('new content');
+  });
+
+  // audit PERF-08: the caret line/col comes from CM6's own line index (an O(log n)
+  // lookup) instead of `val.slice(0, pos).split('\n')` on every keystroke.
+  test('lineAt reports the caret line/column and clamps out-of-range positions', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const doc = 'ab\ncdef\n\ng'; // indices: L1 0-2, L2 3-7, L3 8 (empty), L4 9-10
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc });
+      const out = {
+        hasLineAt: typeof ad.lineAt === 'function',
+        first: ad.lineAt(0),
+        endOfLine1: ad.lineAt(2),
+        line2col3: ad.lineAt(5),
+        emptyLine: ad.lineAt(8),
+        end: ad.lineAt(10),
+        clampedHigh: ad.lineAt(9999),
+        clampedLow: ad.lineAt(-5),
+      };
+      ad.destroy();
+      div.remove();
+      return out;
+    });
+    expect(r.hasLineAt).toBe(true);
+    expect(r.first).toEqual({ line: 1, col: 1 });
+    expect(r.endOfLine1).toEqual({ line: 1, col: 3 });
+    expect(r.line2col3).toEqual({ line: 2, col: 3 });
+    expect(r.emptyLine).toEqual({ line: 3, col: 1 });
+    expect(r.end).toEqual({ line: 4, col: 2 });
+    expect(r.clampedHigh).toEqual({ line: 4, col: 2 });
+    expect(r.clampedLow).toEqual({ line: 1, col: 1 });
   });
 
   test('live-preview hides markdown markers on inactive lines, shows them on the active line', async ({ page }) => {
@@ -433,7 +470,6 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     await page.evaluate(() => window.setEditorMode('source'));
     await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.type('ZZTOP');
-    await page.waitForTimeout(60);
     const f = await page.evaluate(() => window._appState.files[window._appState.activeFile]);
     expect(f.content).toContain('ZZTOP'); // CM6 edit flowed through EditorPort → the model
     expect(f.dirty).toBe(true);
@@ -450,9 +486,7 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.type('KEEPME');
-    await page.waitForTimeout(50);
     await page.evaluate(() => window.wrapSelection('**', '**')); // toolbar/Ctrl+B path
-    await page.waitForTimeout(50);
     const content = await page.evaluate(() => window._appState.files[0].content);
     expect(content).toContain('KEEPME'); // the CM6 edit survived (the bug overwrote it with the stale textarea)
     expect(content).toContain('**');     // and the formatting applied to the CM6 doc

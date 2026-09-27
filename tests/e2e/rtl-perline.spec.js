@@ -28,7 +28,6 @@ test.describe('[T-R1/R2] live per-line RTL on a mixed AR/EN document', () => {
     await page.waitForLoadState('networkidle');
     // NO manual #rtlBtn — exercise the pure per-block path.
     await injectMarkdown(page, MIXED);
-    await page.waitForTimeout(200);
   });
 
   // ── T-R1: each block carries its own direction ───────────────────────────
@@ -95,11 +94,65 @@ test.describe('[T-R1/R2] live per-line RTL on a mixed AR/EN document', () => {
     expect(bdiInLtr).toBe(0);
   });
 
+  // ── RTL-H1/H2: neutral digit runs keep true LTR order inside RTL prose ────
+
+  test('[RTL-H1] digit isolates carry dir=ltr and render their characters left-to-right', async ({ page }) => {
+    await injectMarkdown(page, 'الموعد النهائي 2026-06-01 والوقت 12:30 مساءً\n');
+    const info = await page.$$eval('#noteContent p[dir="rtl"] bdi', (bdis) =>
+      bdis.map((b) => ({ text: b.textContent, dir: b.getAttribute('dir') })));
+    expect(info).toContainEqual({ text: '2026-06-01', dir: 'ltr' });
+    expect(info).toContainEqual({ text: '12:30', dir: 'ltr' });
+    expect(info.every((i) => i.dir === 'ltr' || (i.text || '').startsWith('#'))).toBe(true);
+
+    const order = await page.evaluate(() => {
+      const bdi = [...document.querySelectorAll('#noteContent p[dir="rtl"] bdi')]
+        .find((b) => b.textContent === '2026-06-01');
+      const text = bdi.firstChild;
+      const first = document.createRange();
+      first.setStart(text, 0); first.setEnd(text, 1);
+      const last = document.createRange();
+      last.setStart(text, 9); last.setEnd(text, 10);
+      return { first: first.getBoundingClientRect().x, last: last.getBoundingClientRect().x };
+    });
+    expect(order.first).toBeLessThan(order.last);
+  });
+
+  test('[RTL-H1] rendered flow: the earlier run sits to the RIGHT of the later one (RTL line, intact runs)', async ({ page }) => {
+    await injectMarkdown(page, 'الموعد النهائي 2026-06-01 والوقت 12:30 مساءً\n');
+    const xs = await page.evaluate(() => {
+      const get = (t) => [...document.querySelectorAll('#noteContent p[dir="rtl"] bdi')]
+        .find((b) => b.textContent === t).getBoundingClientRect().x;
+      return { date: get('2026-06-01'), time: get('12:30') };
+    });
+    expect(xs.date).toBeGreaterThan(xs.time);
+  });
+
+  test('[RTL-H2] a wikilink whose text is a neutral date keeps LTR digit order inside its anchor', async ({ page }) => {
+    await injectMarkdown(page, 'موعد التسليم [[2026-06-01]] ثابت لا يتغير\n');
+    const info = await page.evaluate(() => {
+      const a = document.querySelector('#noteContent p[dir="rtl"] a.wikilink');
+      const bdi = a && a.querySelector('bdi');
+      if (!bdi) return null;
+      const text = bdi.firstChild;
+      const first = document.createRange();
+      first.setStart(text, 0); first.setEnd(text, 1);
+      const last = document.createRange();
+      last.setStart(text, 9); last.setEnd(text, 10);
+      return {
+        text: bdi.textContent,
+        dir: bdi.getAttribute('dir'),
+        firstX: first.getBoundingClientRect().x,
+        lastX: last.getBoundingClientRect().x,
+      };
+    });
+    expect(info).toMatchObject({ text: '2026-06-01', dir: 'ltr' });
+    expect(info.firstX).toBeLessThan(info.lastX);
+  });
+
   // ── Visual baseline ──────────────────────────────────────────────────────
 
   test('[Visual] mixed per-line RTL renders correctly at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.waitForTimeout(200);
     await expect(page).toHaveScreenshot('mixed-perline-1440x900.png', {
       maxDiffPixels: 5000,
       threshold: 0.2,
@@ -113,12 +166,10 @@ test.describe('[T-R1/R2] manual override + bidi-aware export', () => {
     await page.waitForLoadState('networkidle');
     // English-first doc → baseDir ltr → the neutral "123" block resolves ltr…
     await injectMarkdown(page, '# Title\n\n123\n');
-    await page.waitForTimeout(150);
     const neutral = page.locator('#noteContent p').first();
     await expect(neutral).toHaveAttribute('dir', 'ltr');
     // …manual RTL override flips the base → the neutral block re-resolves to rtl.
     await page.click('#rtlBtn');
-    await page.waitForTimeout(150);
     await expect(neutral).toHaveAttribute('dir', 'rtl');
   });
 
@@ -126,19 +177,17 @@ test.describe('[T-R1/R2] manual override + bidi-aware export', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await injectMarkdown(page, '# مرحبا بالعالم\n\nفقرة عربية مع رقم 42.\n');
-    await page.waitForTimeout(150);
     const out = await page.evaluate(() => window.exportHTML());
     expect(out).toMatch(/<html lang="ar" dir="rtl">/);
     expect(out).toMatch(/<h1[^>]*dir="rtl"/);
     expect(out).toMatch(/<p[^>]*dir="rtl"/);
-    expect(out).toContain('<bdi>42</bdi>'); // inline isolation carried into export
+    expect(out).toContain('<bdi dir="ltr">42</bdi>'); // inline isolation carried into export, explicit ltr (RTL-H1)
   });
 
   test('[Arabic typography] a per-block RTL paragraph uses the Arabic font (no manual flip)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await injectMarkdown(page, '# عنوان\n\nفقرة عربية كاملة.\n');
-    await page.waitForTimeout(150);
     const fonts = await page.evaluate(() => {
       const p = document.querySelector('#noteContent p[dir="rtl"]');
       const editor = document.getElementById('editor');

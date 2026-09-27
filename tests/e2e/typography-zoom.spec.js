@@ -39,7 +39,6 @@ test.describe('[T-T4] app-wide zoom (rem base)', () => {
     const beforeMenu = await fs('.tb-menu-item[data-menu="file"]');
     const beforeStat = await fs('#sbVault');
     await page.evaluate(() => window.setZoom(1.5));
-    await page.waitForTimeout(50);
     expect(await fs('.tb-menu-item[data-menu="file"]')).toBeCloseTo(beforeMenu * 1.5, 0); // chrome text scaled
     expect(await fs('#sbVault')).toBeCloseTo(beforeStat * 1.5, 0);                          // status bar too
   });
@@ -67,7 +66,6 @@ test.describe('[T-T4] app-wide zoom (rem base)', () => {
     test(`at zoom ${z} the chrome stays within the viewport (statusbar + titlebar reachable)`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.evaluate((zoom) => window.setZoom(zoom), z);
-      await page.waitForTimeout(60);
       const m = await page.evaluate(() => {
         const sb = document.querySelector('.statusbar').getBoundingClientRect();
         const tb = document.querySelector('.titlebar').getBoundingClientRect();
@@ -97,7 +95,6 @@ test.describe('[T-T5] minimum label size', () => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app', { state: 'visible' });
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
 
     const measured = [];
     // Always-visible chrome (correct live selectors: .toolbar-strip, .tabs — not .toolbar/.tab-strip).
@@ -110,13 +107,11 @@ test.describe('[T-T5] minimum label size', () => {
     await page.keyboard.press('Escape');
 
     await page.evaluate(() => window.openPalette());
-    await page.waitForTimeout(100);
     const palette = await scanChrome(page, '.palette *');
     measured.push(...palette);
     await page.keyboard.press('Escape');
 
     await page.evaluate(() => window.showShortcuts());
-    await page.waitForTimeout(100);
     const modal = await scanChrome(page, '.modal-header *, .modal-title');
     measured.push(...modal);
 

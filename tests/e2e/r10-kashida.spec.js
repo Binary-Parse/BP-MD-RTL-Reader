@@ -27,7 +27,6 @@ test.describe('[T-R10] Arabic kashida justification', () => {
       window._appState.files = [{ name: 'a.md', path: 'a.md', content: `${ar}\n\n${en}\n`, dirty: false }];
       window.renderFile(0);
     }, { ar: AR, en: EN });
-    await page.waitForTimeout(100);
     // Tag the AR (dir=rtl) and EN (not rtl) paragraphs for stable selection.
     await page.evaluate(() => {
       const ps = [...document.querySelectorAll('#noteContent p')];
@@ -64,7 +63,6 @@ test.describe('[T-R10] Arabic kashida justification', () => {
       window._appState.files = [{ name: 'h.md', path: 'h.md', content: `## ${ar}\n\n${ar}\n`, dirty: false }];
       window.renderFile(0);
     }, AR);
-    await page.waitForTimeout(100);
     const kinds = await page.evaluate(() => {
       const h = document.querySelector('#noteContent h2[dir="rtl"]');
       const p = document.querySelector('#noteContent p[dir="rtl"]');

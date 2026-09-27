@@ -52,7 +52,6 @@ test.describe('new inline marks', () => {
   test('marks render in BOTH the editor and the preview', async ({ page }) => {
     await open(page, '# H\n\nthis ==hi== and X^2^ and H~2~O and <u>u</u>\n');
     await caret(page, 0); // active line 1 → marks on line 3 render
-    await page.waitForTimeout(250);
     const ed = await page.evaluate(() => ({
       hl: document.querySelectorAll('.cm-mount .cm-hl').length,
       sup: document.querySelectorAll('.cm-mount .cm-sup').length,
@@ -75,7 +74,6 @@ test('a wide image is constrained to the editor width (no horizontal overflow)',
   const url = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
   await open(page, `# T\n\n![chart](${url})\n\ntail\n`);
   await caret(page, 0); // off the image line so the block widget renders
-  await page.waitForTimeout(300);
   const r = await page.evaluate(() => {
     const img = document.querySelector('.cm-mount .cm-lp-image img') || document.querySelector('.cm-mount .cm-lp-block img');
     const content = document.querySelector('.cm-mount .cm-content');
@@ -127,10 +125,8 @@ test('Ctrl+1–6 sets heading level', async ({ page }) => {
 test('active-state highlights the construct at the caret', async ({ page }) => {
   await open(page, 'a **bold** here\n');
   await caret(page, 5); // inside **bold**
-  await page.waitForTimeout(120);
   expect(await page.evaluate(() => document.getElementById('tbBold').classList.contains('is-active'))).toBe(true);
   await caret(page, 0);
-  await page.waitForTimeout(120);
   expect(await page.evaluate(() => document.getElementById('tbBold').classList.contains('is-active'))).toBe(false);
 });
 
@@ -139,10 +135,8 @@ test.describe('interactive table controls', () => {
   test('controls appear only inside a table; +Row / +Col edit it', async ({ page }) => {
     await open(page, T);
     await page.evaluate(() => { const a = window.getActiveCmAdapter(); a.setSelection({ start: 0, end: 0 }); }); // in "intro"
-    await page.waitForTimeout(120);
     expect(await page.evaluate(() => document.getElementById('tableControls').classList.contains('show'))).toBe(false);
     await page.evaluate(() => { const a = window.getActiveCmAdapter(); const p = a.getValue().indexOf('1 |'); a.setSelection({ start: p, end: p }); });
-    await page.waitForTimeout(120);
     expect(await page.evaluate(() => document.getElementById('tableControls').classList.contains('show'))).toBe(true);
     await page.click('#tcRowAfter');
     expect(await val(page)).toContain('| 1 | 2 |\n|  |  |');

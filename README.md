@@ -9,11 +9,11 @@ first-class right-to-left support for Arabic.**
 
 Opens plain `.md` files from disk. No proprietary format, no account, no telemetry.
 
-[![Version](https://img.shields.io/badge/version-1.2.2-3ddc4a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.0-3ddc4a)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-47848F)](#download)
 [![License](https://img.shields.io/badge/license-MIT-3ddc4a)](LICENSE)
 [![Built with Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Checks](https://img.shields.io/badge/checks-CI%20gated-brightgreen)](docs/BUILD.md#testing)
+[![Checks](https://img.shields.io/badge/checks-local%20test%20gates-brightgreen)](docs/BUILD.md#testing)
 
 <img src="docs/assets/theme-paper.png" width="820" alt="BP MD RTL Reader in reading mode: file tree, rendered Markdown with serif typography, and the document inspector">
 
@@ -42,7 +42,10 @@ quotes, lists, and tables.
 - **Several folders at once.** Open more than one folder; each becomes a named root in the
   file tree and can be closed independently, without disturbing the others.
 - **Reading and editing.** A reading view with a tuned type scale, and a CodeMirror 6
-  live-preview editor where the line under the caret shows raw Markdown.
+  live-preview editor where the line under the caret shows raw Markdown. The app
+  remembers where you stopped in each note, highlights and margin notes persist with
+  your library, and a quiet reading-streak line tracks daily minutes against an
+  optional goal.
 - **Fully offline.** The Markdown engine, sanitizer, math and diagram renderers, syntax
   highlighting, and every font are bundled locally. The renderer makes no network requests.
 - **Hardened rendering.** Context isolation on, Node integration off, a minimal preload
@@ -66,14 +69,16 @@ quotes, lists, and tables.
 
 | | |
 | --- | --- |
-| **Bidirectional text** | Per-block Arabic/RTL detection; manual direction flip; Unicode bidi isolation; Arabic-aware fonts, alignment, and optional kashida justification; mirrored quotes, lists, and tables |
+| **Bidirectional text** | Per-block Arabic/RTL detection; manual direction flip; Unicode bidi isolation that keeps numbers, dates, links, and inline code in true left-to-right order inside Arabic prose; Arabic-aware fonts, alignment, and optional kashida justification; mirrored quotes, lists, and tables |
 | **Workspace** | Open several folders at once, each a named root in the tree; per-folder close; tabbed editing; folder-wide search; `#tags`; recent files; session restore |
 | **Editor** | A single CodeMirror 6 live-preview surface — text renders as you type while the caret line shows raw Markdown; adjustable reading width and text size; app zoom 60–200% |
 | **Writing** | Toolbar for Bold/Italic/Strikethrough/Code, H1–H6, lists, quotes, and callouts; interactive tables (add and remove rows and columns, `Tab` between cells); links, images, footnotes; highlight, sub/superscript, indent/outdent; shortcuts (`Ctrl+B`/`I`, `Ctrl+1`–`6`) |
 | **Markdown** | Headings, lists and task lists, tables, blockquotes, callouts, footnotes, fenced code with syntax highlighting, KaTeX math, Mermaid diagrams, `==highlight==`, `<u>`, and sub/superscript — via [marked](https://marked.js.org/), [DOMPurify](https://github.com/cure53/DOMPurify), [KaTeX](https://katex.org/), [highlight.js](https://highlightjs.org/), and [Mermaid](https://mermaid.js.org/), all bundled locally |
+| **Faithful saves** | Opens UTF-8, UTF-16 (with or without a byte-order mark), and legacy Windows-1256 (Arabic) files; every save preserves the file's own encoding, BOM, line endings, and final-newline style. A character the file's legacy code page cannot carry is never corrupted — Save offers a one-click upgrade of that file to UTF-8 instead |
 | **Linking** | `[[wiki-links]]` with `[[target\|alias]]` aliases; click to jump; document outline |
-| **Productivity** | Command palette (`Ctrl+K`); find-in-document (`Ctrl+F`); daily notes; PDF and HTML export; drag-and-drop |
-| **Interface** | Three themes (Paper, Ink, Sepia) remembered across sessions; a fully Arabic interface option; frameless window; optional auto-hiding chrome; keyboard-first navigation |
+| **Productivity** | Command palette (`Ctrl+K`); find-in-document (`Ctrl+F`); daily notes; PDF, HTML, and EPUB export; drag-and-drop |
+| **Reading** | Per-note reading positions with a **Continue reading** shelf on the welcome card; highlights and margin notes saved alongside your library (Inspector **Notes** section); a quiet daily-reading streak with an optional goal (10/20/30 min) |
+| **Interface** | Four themes (Paper, Ink, Sepia, Oasis) remembered across sessions; follows the system colour scheme on first run; a fully Arabic interface option; frameless window; optional auto-hiding chrome; keyboard-first navigation |
 
 Full **[Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)** reference, or press `Ctrl+/` in
 the app. Every feature is documented in the **[User Guide](docs/USER_GUIDE.md)**.
@@ -87,9 +92,9 @@ Builds are published on the
 
 | Platform | Files | Notes |
 | -------- | ----- | ----- |
-| **Windows 10/11** | `…-Windows-NSIS-multiarch.exe`, `…-Windows-Inno-x64.exe` | Signed installers; NSIS covers x64, 32-bit, and ARM64, Inno is x64 |
-| **Windows portable** | `…-Windows-Portable-multiarch.exe` | Signed; no installation required |
-| **macOS** | x64 and arm64 `.dmg` or `.zip` | Both architectures are signed and notarized by Apple |
+| **Windows 10/11** | `…-Windows-NSIS-multiarch.exe`, `…-Windows-Inno-x64.exe` | NSIS covers x64, 32-bit, and ARM64; Inno is x64. Windows installers are Authenticode-signed in official releases — signing is a manual release step (docs/BUILD.md); verify against the published SHA256SUMS.txt |
+| **Windows portable** | `…-Windows-Portable-multiarch.exe` | No installation required; verify against SHA256SUMS.txt |
+| **macOS** | x64 and arm64 `.dmg` or `.zip` | Both architectures are signed and notarized by Apple in official releases (manual signing/notarization — docs/BUILD.md); verify via SHA256SUMS.txt |
 | **Linux** | x64 and arm64 `.AppImage` or `.deb` | Package and architecture per distribution |
 
 Every release also ships `SHA256SUMS.txt` and a source manifest for the Inno payload.
@@ -114,12 +119,14 @@ artifact.)
 
 ## Privacy and security
 
-The app is local-first. It performs no telemetry, analytics, crash upload, or automatic
-update check.
+The app is local-first. It performs no telemetry, no analytics, and no crash upload, and
+it never contacts the network unless you ask it to — update checks are manual
+(**Help → Check for Updates…**) by default, with an opt-in daily automatic check in
+Settings that only notifies you and never downloads anything.
 
-- Notes stay wherever the plain Markdown files live. Settings, recent paths, local logs,
-  and filesystem grants are kept in the app profile — `%APPDATA%\BP MD RTL Reader` on
-  Windows.
+- Notes stay wherever the plain Markdown files live. Settings, recent paths, reading
+  positions, highlights and margin notes, reading stats, local logs, and filesystem
+  grants are kept in the app profile — `%APPDATA%\bpmdrtlreader` on Windows.
 - The renderer runs with `contextIsolation` enabled and `nodeIntegration` disabled behind
   a minimal preload bridge. Rendered HTML is sanitized with DOMPurify under Trusted Types.
   Packaged builds serve the interface over `app://` rather than `file://` inside the asar.
@@ -129,8 +136,10 @@ update check.
 - Folder access is capability-based: absolute paths never cross the preload boundary. The
   main process grants opaque identifiers and enforces containment, size caps, and symlink
   escape checks.
-- The only app-level network request is **Help → Check for Updates…**, which reads
-  GitHub's public release metadata. It never runs automatically and sends no note content.
+- The only app-level network requests are update checks, which read GitHub's public
+  release metadata (`api.github.com`) and send no note content: **Help → Check for
+  Updates…** whenever you choose, plus an optional daily automatic check (Settings ▸
+  Updates, off by default) that only shows a notice — it never downloads or installs.
 
 Details in **[docs/PRIVACY.md](docs/PRIVACY.md)**.
 

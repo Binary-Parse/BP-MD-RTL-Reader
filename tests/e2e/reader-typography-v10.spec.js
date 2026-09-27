@@ -15,7 +15,6 @@ async function injectAndRender(page, content) {
     window._appState.files = [{ name: 'v10-typography.md', path: 'v10-typography.md', content, dirty: false }];
     window.renderFile(0);
   }, content);
-  await page.waitForTimeout(150);
 }
 
 test.describe('[v10] reading-surface type scale', () => {

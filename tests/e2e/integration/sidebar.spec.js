@@ -62,11 +62,9 @@ test.describe('Sidebar integration tests', () => {
   test('tag filtering: clicking a tag switches to search pane with tag query', async ({ page }) => {
     // Load demo first
     await page.evaluate(() => { if (typeof window.loadDemo === 'function') window.loadDemo(); });
-    await page.waitForTimeout(200);
 
     // Switch to tags pane
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(100);
 
     // Check tags rendered (demo notes have #reading, #prose etc.)
     const tagCloud = page.locator('.tag-cloud');
@@ -77,31 +75,24 @@ test.describe('Sidebar integration tests', () => {
   test('sidebar search: filterFiles returns matches', async ({ page }) => {
     // Load demo files
     await page.evaluate(() => { if (typeof window.loadDemo === 'function') window.loadDemo(); });
-    await page.waitForTimeout(200);
 
     // Switch to search pane
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
 
     // Type in search box
     await page.fill('#sbSearchInput', 'reading');
-    await page.waitForTimeout(200);
 
     // Should see search results
     const results = page.locator('.search-result');
-    const count = await results.count();
-    expect(count).toBeGreaterThan(0);
+    await expect.poll(async () => results.count()).toBeGreaterThan(0);
   });
 
   test('sidebar search: non-matching query shows empty state', async ({ page }) => {
     await page.evaluate(() => { if (typeof window.loadDemo === 'function') window.loadDemo(); });
-    await page.waitForTimeout(200);
 
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
 
     await page.fill('#sbSearchInput', 'zzznomatchzzz');
-    await page.waitForTimeout(200);
 
     const emptyMsg = page.locator('.search-empty');
     await expect(emptyMsg).toBeVisible();
@@ -113,14 +104,12 @@ test.describe('Sidebar integration tests', () => {
 
     // Toggle via keyboard shortcut Ctrl+\
     await page.keyboard.press('Control+\\');
-    await page.waitForTimeout(100);
 
     // app-body should have no-sidebar class
     await expect(page.locator('#appBody')).toHaveClass(/no-sidebar/);
 
     // Toggle back
     await page.keyboard.press('Control+\\');
-    await page.waitForTimeout(100);
     await expect(page.locator('#appBody')).not.toHaveClass(/no-sidebar/);
   });
 
@@ -137,27 +126,20 @@ test.describe('Sidebar integration tests', () => {
       ];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
 
     // Switch to search pane
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
 
     // Type the query
     await page.fill('#sbSearchInput', 'quantum');
-    await page.waitForTimeout(200);
 
     // Should have 2 result rows
     const results = page.locator('.search-result');
-    const count = await results.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expect(results).toHaveCount(2);
 
     // Each result should have a <mark> element in its snippet
-    const markCount = await page.evaluate(() => {
-      const snippets = document.querySelectorAll('.sr-snip mark');
-      return snippets.length;
-    });
-    expect(markCount).toBeGreaterThanOrEqual(2);
+    await expect.poll(async () => page.evaluate(() =>
+      document.querySelectorAll('.sr-snip mark').length)).toBeGreaterThanOrEqual(2);
   });
 
   test('[AC2] vault search: clicking result navigates to that file', async ({ page }) => {
@@ -169,33 +151,25 @@ test.describe('Sidebar integration tests', () => {
       ];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
 
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'unicorn');
-    await page.waitForTimeout(200);
 
     // Click the second result (second.md)
     const results = page.locator('.search-result');
-    const count = await results.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expect(results).toHaveCount(2);
 
     await results.nth(1).click();
-    await page.waitForTimeout(200);
 
     // Should have navigated to that file (activeFile index 1)
-    const activeIdx = await page.evaluate(() => window._appState.activeFile);
-    expect(activeIdx).toBe(1);
+    await expect.poll(async () => page.evaluate(() => window._appState.activeFile)).toBe(1);
   });
 
   test('[AC2] vault search: empty query shows "Type to search." state', async ({ page }) => {
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
 
     // Clear the input (it may be pre-populated)
     await page.fill('#sbSearchInput', '');
-    await page.waitForTimeout(100);
 
     // Scope to the search results container to avoid tag-pane clash
     const emptyMsg = page.locator('#searchResults .search-empty');
@@ -212,17 +186,15 @@ test.describe('Sidebar integration tests', () => {
       S.files = [{ name: 'many.md', path: 'many.md', handle: null, content, dirty: false }];
       window.renderFile(0);
     }, content);
-    await page.waitForTimeout(200);
 
     await page.click('.sb-tab[data-pane="search"]');
-    await page.waitForTimeout(100);
     await page.fill('#sbSearchInput', 'target');
-    await page.waitForTimeout(200);
 
+    await expect.poll(async () => page.evaluate(() =>
+      document.querySelectorAll('.sr-snip').length)).toBeGreaterThan(0);
     const snippetCount = await page.evaluate(() => {
       return document.querySelectorAll('.sr-snip').length;
     });
-    expect(snippetCount).toBeGreaterThan(0);
     expect(snippetCount).toBeLessThanOrEqual(5);
   });
 });

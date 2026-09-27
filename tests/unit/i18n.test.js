@@ -126,6 +126,7 @@ describe('isArabicHeavy() L14 — audit #10 mutants (zero-letters + boundary)', 
   });
 });
 
-// escapeHtml() + escapeReg() suites are shared with arabic.test.js.
+// escapeHtml() + escapeReg() live in i18n.js, so i18n.test.js is their single home —
+// arabic.test.js used to register the same suites a second time (duplicate coverage).
 describeEscapeHtml();
 describeEscapeReg();

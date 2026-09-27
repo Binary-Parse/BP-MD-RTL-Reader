@@ -1,11 +1,16 @@
+// T4.1: the stored reading positions are validated with the same rules the shelf uses.
+import { sanitizeProgress } from '../reading-progress.js';
+
 export const PERSISTED_KEYS = new Set([
   'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible',
   'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
-  'italicRecolor', 'cmEditor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
+  'italicRecolor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
   // T-F19 chrome settings
   'windowTitleMode', 'autoHideTitlebar', 'hideStatusBar',
   // v1.2: Word-style auto-save toggle
   'autosave',
+  // v5 (T0.1): reading positions, system-colour follow, update-check mode, daily goal
+  'readingProgress', 'themeFollowSystem', 'updateCheck', 'readingGoalMin',
 ]);
 
 const noop = () => {};
@@ -20,6 +25,11 @@ export function createSettingsController({
   delay = 200,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
+  // T2.1: injected so unit tests can drive both branches; the renderer's real default reads
+  // the live media query.
+  prefersDarkScheme = () => (typeof globalThis.matchMedia === 'function'
+    ? !!globalThis.matchMedia('(prefers-color-scheme: dark)').matches
+    : false),
 } = {}) {
   if (!state) throw new TypeError('settings controller requires state');
 
@@ -30,6 +40,7 @@ export function createSettingsController({
     setViewMode: actions.setViewMode || noop,
     applyPanelLayout: actions.applyPanelLayout || noop,
     renderRecents: actions.renderRecents || noop,
+    renderContinue: actions.renderContinue || noop, // T4.1: the Continue-reading shelf
     applyKashida: actions.applyKashida || noop,
     applyItalicRecolor: actions.applyItalicRecolor || noop,
     setUiLocale: actions.setUiLocale || noop,
@@ -63,7 +74,6 @@ export function createSettingsController({
       calendar: state.calendar,
       arabicKashida: state.arabicKashida,
       italicRecolor: state.italicRecolor,
-      cmEditor: state.cmEditor,
       uiLocale: state.uiLocale,
       uiDirection: state.uiDirection,
       readerTextScale: state.readerTextScale,
@@ -72,6 +82,19 @@ export function createSettingsController({
       autoHideTitlebar: state.autoHideTitlebar,
       hideStatusBar: state.hideStatusBar,
       autosave: state.autosave,
+      // v5 (T0.1)
+      readingProgress: state.readingProgress.map((entry) => ({
+        key: entry.key || '',
+        name: entry.name || '',
+        path: entry.path,
+        vaultId: entry.vaultId || null,
+        documentId: entry.documentId || null,
+        ratio: entry.ratio,
+        at: entry.at,
+      })),
+      themeFollowSystem: state.themeFollowSystem,
+      updateCheck: state.updateCheck,
+      readingGoalMin: state.readingGoalMin,
       lastSession: getLastSession(),
     };
   }
@@ -111,7 +134,14 @@ export function createSettingsController({
 
     restoring = true;
     try {
-      if (themes.includes(saved.theme)) {
+      // T2.1: a profile that never chose a theme (themeFollowSystem true — the first-run
+      // default) derives it from the OS scheme instead of the saved literal. Nothing is
+      // written back: this stays a DERIVED preference until the user picks a theme.
+      if (saved.themeFollowSystem === true) {
+        const systemTheme = prefersDarkScheme() ? 'ink' : 'paper';
+        state.theme = systemTheme;
+        apply.applyTheme(systemTheme);
+      } else if (themes.includes(saved.theme)) {
         state.theme = saved.theme;
         apply.applyTheme(saved.theme);
       }
@@ -145,7 +175,6 @@ export function createSettingsController({
         state.italicRecolor = saved.italicRecolor;
         apply.applyItalicRecolor();
       }
-      if (typeof saved.cmEditor === 'boolean') state.cmEditor = saved.cmEditor;
       if (saved.uiLocale === 'ar' || saved.uiLocale === 'en') apply.setUiLocale(saved.uiLocale);
       if (saved.uiDirection === 'rtl' || saved.uiDirection === 'ltr') apply.setUiDirection(saved.uiDirection);
       // T-F19: coerce here as well as in main/settings.js migrate() — restoreSettings
@@ -155,6 +184,14 @@ export function createSettingsController({
       state.autoHideTitlebar = typeof saved.autoHideTitlebar === 'boolean' ? saved.autoHideTitlebar : false;
       state.hideStatusBar = typeof saved.hideStatusBar === 'boolean' ? saved.hideStatusBar : false;
       state.autosave = typeof saved.autosave === 'boolean' ? saved.autosave : true;
+      // v5 (T0.1): coerce like the chrome keys above — the bridge payload is not always
+      // migrated (dev/tests). readingProgress is stored shape-checked here; T4.1c swaps in
+      // the renderer's sanitizeProgress + re-renders the Continue shelf.
+      state.themeFollowSystem = typeof saved.themeFollowSystem === 'boolean' ? saved.themeFollowSystem : false;
+      state.updateCheck = (saved.updateCheck === 'manual' || saved.updateCheck === 'auto') ? saved.updateCheck : 'manual';
+      state.readingGoalMin = [0, 10, 20, 30].includes(saved.readingGoalMin) ? saved.readingGoalMin : 10;
+      state.readingProgress = sanitizeProgress(saved.readingProgress);
+      apply.renderContinue();
       apply.applyChromeLayout();
       apply.syncWindowTitle();
       await apply.restoreLastSession(saved.lastSession);

@@ -26,7 +26,6 @@ async function injectFile(page, content) {
     window._appState.files = [{ name: 'a.md', path: 'a.md', handle: null, content: c, dirty: false }];
     window.renderFile(0);
   }, content);
-  await page.waitForTimeout(150);
 }
 
 // ===========================================================================
@@ -39,7 +38,6 @@ test.describe('[F1] Find works in the CM6 editor', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'hello');
-    await page.waitForTimeout(200);
     const count = await page.$eval('#findInfo', el => el.textContent);
     // Expect "1/3"
     expect(count).toMatch(/1\s*\/\s*3/);
@@ -51,10 +49,8 @@ test.describe('[F1] Find works in the CM6 editor', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'foo');
-    await page.waitForTimeout(200);
     const first = await page.$eval('#findInfo', el => el.textContent);
     await page.click('#findNextBtn');
-    await page.waitForTimeout(150);
     const second = await page.$eval('#findInfo', el => el.textContent);
     expect(first).toMatch(/1\s*\/\s*3/);
     expect(second).toMatch(/2\s*\/\s*3/);
@@ -69,7 +65,6 @@ test.describe('[F2] Keyboard shortcuts modal is current', () => {
     await goto(page);
     // Trigger via keyboard shortcut Ctrl+/ which is the documented path
     await page.keyboard.press('Control+/');
-    await page.waitForTimeout(200);
   }
 
   test('Zoom In/Out/Reset listed', async ({ page }) => {
@@ -109,10 +104,8 @@ test.describe('[F3] Layout — both panels hidden does not blank the editor', ()
       // Use button clicks for reliability
     });
     await page.click('#sidebarToggleBtn');
-    await page.waitForTimeout(100);
     // Now click the inspector toggle
     await page.click('#inspectorToggleBtn');
-    await page.waitForTimeout(100);
     const layout = await page.evaluate(() => {
       const body = document.getElementById('appBody');
       const editor = document.querySelector('.editor-wrap');
@@ -133,7 +126,6 @@ test.describe('[F3] Layout — both panels hidden does not blank the editor', ()
     await goto(page);
     await injectFile(page, 'content');
     await page.click('#sidebarToggleBtn');
-    await page.waitForTimeout(100);
     const w = await page.evaluate(() => {
       return document.querySelector('.editor-wrap').getBoundingClientRect().width;
     });
@@ -144,7 +136,6 @@ test.describe('[F3] Layout — both panels hidden does not blank the editor', ()
     await goto(page);
     await injectFile(page, 'content');
     await page.click('#inspectorToggleBtn');
-    await page.waitForTimeout(100);
     const w = await page.evaluate(() => {
       return document.querySelector('.editor-wrap').getBoundingClientRect().width;
     });

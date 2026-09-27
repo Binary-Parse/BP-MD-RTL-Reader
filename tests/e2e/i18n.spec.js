@@ -98,7 +98,6 @@ test.describe('I18N & Localization', () => {
 
   test('No hardcoded English strings in dynamically generated UI (tags pane)', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
-    await page.waitForTimeout(200);
     const emptyText = await page.evaluate(() => {
       // Force empty tags by clearing files then switching pane
       window._appState.files = [];

@@ -44,8 +44,22 @@ function createProtocolController({
 
   function registerAppProtocol() {
     if (!protocol || typeof protocol.handle !== 'function') return;
+    // audit SEC-08: resolveAppAsset needs realpath containment, and the app root's realpath
+    // is stable for the life of this controller — memoize it once, resolve each target per
+    // request. (Deliberately per-controller, not module state: the root differs per run and
+    // per test.)
+    let realRoot;
+    const appAssetFs = {
+      realpathSync(target) {
+        if (target === rootDir) {
+          if (realRoot === undefined) realRoot = fs.realpathSync(rootDir);
+          return realRoot;
+        }
+        return fs.realpathSync(target);
+      },
+    };
     protocol.handle('app', async (request) => {
-      const res = resolveAppAsset(request.url, rootDir, path);
+      const res = resolveAppAsset(request.url, rootDir, path, appAssetFs);
       if (res.error) return new Response('Not found', { status: 404 });
       try {
         const data = await fs.promises.readFile(res.path);

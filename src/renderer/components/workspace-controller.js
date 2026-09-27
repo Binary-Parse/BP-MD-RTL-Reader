@@ -1,4 +1,5 @@
-import { buildSession, pickActiveIndex } from '../session.js';
+import { buildSession, pickActiveIndex, fileKey } from '../session.js';
+import { progressPercent, relativeTime } from '../reading-progress.js';
 
 const noop = () => {};
 
@@ -9,6 +10,7 @@ export function fileFromSnapshot(entry, vaultId = null) {
     handle: null,
     content: entry.content,
     dirty: false,
+    missing: false,
     documentId: entry.documentId || null,
     vaultId: entry.vaultId || vaultId,
     meta: entry.meta || { bom: false, eol: '\n', finalNewline: false, hash: null },
@@ -61,9 +63,9 @@ export function mergeVaultSlice(existing, vaultId, incoming) {
     const diskChanged = (prevHash != null && diskHash != null)
       ? diskHash !== prevHash
       : normalizeText(previous.content) !== normalizeText(incomingFile.content);
-    if (!diskChanged) return previous; // app-owned save / unchanged disk → keep in-memory state (incl. dirty edits)
+    if (!diskChanged) return previous.missing ? { ...previous, missing: false } : previous; // app-owned save / unchanged disk → keep in-memory state (incl. dirty edits)
     if (previous.dirty) {
-      return { ...previous, conflict: true, diskContent: incomingFile.content, diskMeta: incomingFile.meta };
+      return { ...previous, conflict: true, diskContent: incomingFile.content, diskMeta: incomingFile.meta, missing: false };
     }
     return {
       ...previous,
@@ -72,11 +74,44 @@ export function mergeVaultSlice(existing, vaultId, incoming) {
       documentId: incomingFile.documentId || previous.documentId,
       conflict: false,
       diskContent: null,
+      missing: false,
     };
   });
-  const keptAbsent = [...previousByPath.values()].filter((file) => !seenPaths.has(file.path));
+  const keptAbsent = [...previousByPath.values()]
+    .filter((file) => !seenPaths.has(file.path))
+    .map((file) => ({ ...file, missing: true }));
   const otherVaultFiles = existing.filter((file) => file.vaultId !== vaultId);
   return [...otherVaultFiles, ...merged, ...keptAbsent];
+}
+
+/**
+ * T14 (post-review F1, CRITICAL): mergeVaultSlice REBUILDS the files array — other-vault
+ * files first, then the merged vault, kept-absent last — so a still-valid activeFile INDEX
+ * can silently come to point at a DIFFERENT vault's file. The next keystroke reads
+ * State.files[State.activeFile] and would write the open editor's content into that foreign
+ * file object (dirtying it), and autosave would then write it to disk: silent cross-file
+ * corruption triggered by anything that ticks a vault (watcher, autosave of a sibling
+ * folder, re-opening a recent). Every caller must capture the active file object BEFORE the
+ * merge and pass it here right after — resolution is by identity, then by fileKey (a
+ * same-path merge may replace the object without changing which tab it is).
+ */
+export function resolveActiveAfterMerge(state, previousActive) {
+  if (previousActive == null) return;
+  const activeKey = fileKey(previousActive);
+  const same = (file) => {
+    if (file === previousActive) return true;
+    if (!file) return false;
+    // A merge that changed the note on disk returns a NEW object and may carry a
+    // re-granted capability id — vaultId+path is the stable tab identity for vault
+    // files; fileKey covers loose single-file documents.
+    if (previousActive.vaultId && file.vaultId === previousActive.vaultId
+      && file.path === previousActive.path) return true;
+    return activeKey != null && fileKey(file) === activeKey;
+  };
+  const idx = state.files.findIndex(same);
+  // Unreachable in practice (the merge is a superset of the previous files), but a stale
+  // index must never survive: null reads as "no active tab" everywhere downstream.
+  state.activeFile = idx >= 0 ? idx : null;
 }
 
 export function createWorkspaceController({
@@ -96,6 +131,9 @@ export function createWorkspaceController({
   // v1.2: optional localized-message resolver. When absent (unit tests, browser lane)
   // every message below falls back to the exact English string it has always used.
   tmsg = null,
+  // v1.3.0: the encoding-upgrade dialog (Windows-1256 file + an unencodable character).
+  // Absent (unit tests, browser lane) → an unmappable character stays a plain save error.
+  confirmEncodingUpgrade = null,
   getElement = (id) => hostDocument?.getElementById(id),
 } = {}) {
   if (!state) throw new TypeError('workspace controller requires state');
@@ -139,6 +177,24 @@ export function createWorkspaceController({
     return fallback;
   };
 
+  // audit QA-07: main reports per-reason skip counts on every vault read (unreadable,
+  // oversized, symlink-escaped, non-regular) and the renderer used to drop them, so a
+  // partially-readable folder looked complete. One line, both read paths.
+  function skippedCount(read) {
+    const skipped = (read && read.skipped) || {};
+    return (skipped.unreadable || 0) + (skipped.oversized || 0)
+      + (skipped.escaped || 0) + (skipped.special || 0);
+  }
+  function reportSkipped(read) {
+    const n = skippedCount(read);
+    if (n > 0) {
+      showToast(L('toast.vaultSkipped', '{n} file(s) could not be shown (unreadable, oversized, or unsafe links)', { n }), 'info');
+    }
+  }
+
+  // audit UX-13: one report per failed-re-read streak (see handleVaultChanged).
+  let _watchFailNotified = false;
+
   // v1.2: these prompts are now Word-style Save/Don't-Save/Cancel (the renderer injects
   // the themed three-way dialog), so they became async — callers await them.
   async function mayAbandonWorkspace() {
@@ -152,7 +208,7 @@ export function createWorkspaceController({
   async function mayAbandonVault(targetVaultId) {
     const dirty = state.files.filter((file) => file.vaultId === targetVaultId && file.dirty).length;
     if (dirty === 0) return true;
-    return !!(await confirmDiscard(L('dlg.saveMany', '{n} unsaved file{s} in this folder. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' })));
+    return !!(await confirmDiscard(L('dlg.saveManyVault', '{n} unsaved file{s} in this folder. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' })));
   }
 
   function getOpenVaults() {
@@ -171,6 +227,7 @@ export function createWorkspaceController({
     const survivorPath = !activeWasClosed && activeFile ? activeFile.path : null;
     const survivorVaultId = !activeWasClosed && activeFile ? activeFile.vaultId : undefined;
     const closedIndex = state.activeFile;
+    const closedVaultName = openVaultNames.get(targetVaultId) || null;
 
     state.files = state.files.filter((file) => file.vaultId !== targetVaultId);
     openVaultNames.delete(targetVaultId);
@@ -182,6 +239,9 @@ export function createWorkspaceController({
       try { await electronAPI.closeVault(targetVaultId); } catch (_) { /* best-effort; the watcher leaks harmlessly */ }
     }
 
+    if (closedVaultName && state.vaultName === closedVaultName) {
+      state.vaultName = [...openVaultNames.values()][0] || '';
+    }
     setVaultUi(state.vaultName);
     renderTree(state.files);
     if (activeWasClosed) {
@@ -230,7 +290,11 @@ export function createWorkspaceController({
     if (electronAPI && typeof electronAPI.openFolder === 'function') {
       try {
         const result = await electronAPI.openFolder();
-        if (!result || result.canceled || result.error || !result.vault?.id) return;
+        if (!result || result.canceled) return;
+        if (result.error || !result.vault?.id) {
+          if (result.error) showToast(L('toast.couldNotOpenFolder', 'Could not open folder'), 'error');
+          return;
+        }
         const read = normalizeVaultRead(await electronAPI.readVault(result.vault.id), result.vault);
         if (!read) {
           showToast(L('toast.couldNotOpenFolder', 'Could not open folder'), 'error');
@@ -239,12 +303,14 @@ export function createWorkspaceController({
         const folderName = read.vault?.name || result.vault.name || 'folder';
         const targetVaultId = read.vault?.id || result.vault.id;
         const hadActiveFile = hasActiveFile();
+        const prevActive = state.activeFile != null ? state.files[state.activeFile] : null;
         state.vaultName = folderName;
         setVaultIdentity(targetVaultId, read.vault?.generation || 0, folderName);
         // grantVault dedupes by canonical realpath, so re-opening the SAME folder
         // reuses the same targetVaultId -- mergeVaultSlice then reconciles it exactly
         // like a disk-watch tick, refreshing it in place rather than duplicating it.
         state.files = mergeVaultSlice(state.files, targetVaultId, read.entries);
+        resolveActiveAfterMerge(state, prevActive); // T14 (F1): the merge reshuffles indexes
         setVaultUi(folderName);
         const firstNewIndex = state.files.findIndex((file) => file.vaultId === targetVaultId);
         if (read.entries.length === 0) {
@@ -253,6 +319,7 @@ export function createWorkspaceController({
         } else {
           showToast(L('toast.openedFolder', 'Opened "{name}" — {n} note{s}', { name: folderName, n: read.entries.length, s: read.entries.length === 1 ? '' : 's' }));
         if (read.truncated) showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: read.entries.length }), 'info');
+        reportSkipped(read);
         }
         revealAfterOpen(hadActiveFile, firstNewIndex);
       } catch (error) {
@@ -331,13 +398,13 @@ export function createWorkspaceController({
         const result = await electronAPI.openFile();
         if (!result || result.canceled) return;
         if (result.error || typeof result.content !== 'string') {
-          showToast('Could not open file', 'error');
+          showToast(L('toast.couldNotOpenFile', 'Could not open file'), 'error');
           return;
         }
         addFile(fileFromSnapshot(result));
         showToast(L('toast.openedFile', 'Opened {name}', { name: result.name }));
       } catch (_) {
-        showToast('Could not open file', 'error');
+        showToast(L('toast.couldNotOpenFile', 'Could not open file'), 'error');
       }
       return;
     }
@@ -367,6 +434,8 @@ export function createWorkspaceController({
       && !(file.documentId && electronAPI && typeof electronAPI.writeFile === 'function');
   }
 
+  const saveQueues = new WeakMap();
+
   // v1.2: the write-through core, split out of saveCurrent so the auto-save timer and
   // the close flow can persist ANY file (not just the active tab). Returns one of:
   //   'ok'       written in place (handle or documentId path)
@@ -375,7 +444,15 @@ export function createWorkspaceController({
   //              file just got a dead-end toast: the banner was vault-only)
   //   'nosave'   no on-disk identity — caller should fall through to Save As
   //   'error'    the write failed
-  async function writeThrough(file) {
+  async function writeThrough(file, opts) {
+    const previous = saveQueues.get(file);
+    const chained = (previous ? previous.catch(() => {}) : Promise.resolve())
+      .then(() => performWriteThrough(file, opts));
+    saveQueues.set(file, chained);
+    return chained;
+  }
+
+  async function performWriteThrough(file, { interactive = false } = {}) {
     const submittedContent = file.content;
     const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
     // Dirty is only cleared when the saved bytes are still exactly what the editor had
@@ -384,6 +461,12 @@ export function createWorkspaceController({
     const cleanIfUnchanged = () => {
       if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
     };
+    const noteRecreatedMissing = () => {
+      if (file.vaultId && file.missing) {
+        showToast(L('toast.recreatedMissing', '"{name}" was deleted on disk — saving recreated it', { name: file.name }), 'info');
+        file.missing = false;
+      }
+    };
     const electronAPI = api();
     if (file.handle && file.handle.createWritable) {
       try {
@@ -391,27 +474,46 @@ export function createWorkspaceController({
         await writable.write(submittedContent);
         await writable.close();
         cleanIfUnchanged();
+        noteRecreatedMissing();
         return 'ok';
       } catch (_) {
         return 'error';
       }
     }
     if (file.documentId && electronAPI && typeof electronAPI.writeFile === 'function') {
+      const buildPayload = (encoding, bom) => ({
+        documentId: file.documentId,
+        content: submittedContent,
+        revision: submittedRevision,
+        baseHash: (file.meta || {}).hash,
+        bom,
+        eol: (file.meta || {}).eol === '\r\n' ? '\r\n' : '\n',
+        finalNewline: (file.meta || {}).finalNewline !== false,
+        encoding,
+      });
       try {
         const meta = file.meta || {};
-        const result = await electronAPI.writeFile({
-          documentId: file.documentId,
-          content: submittedContent,
-          revision: submittedRevision,
-          baseHash: meta.hash,
-          bom: !!meta.bom,
-          eol: meta.eol === '\r\n' ? '\r\n' : '\n',
-          finalNewline: meta.finalNewline !== false,
-          encoding: typeof meta.encoding === 'string' ? meta.encoding : 'utf8',
-        });
+        const firstEncoding = typeof meta.encoding === 'string' ? meta.encoding : 'utf8';
+        let result = await electronAPI.writeFile(buildPayload(firstEncoding, !!meta.bom));
+        if (result && result.error === 'unmappable-character') {
+          // A legacy code page (Windows-1256) cannot carry every character in the note.
+          // Interactive saves offer the Sublime/Visual-Studio escape — upgrade THIS file
+          // to UTF-8 and complete the save — while the auto-save timer never prompts.
+          if (interactive && typeof confirmEncodingUpgrade === 'function') {
+            const upgrade = await confirmEncodingUpgrade({
+              name: file.name,
+              encoding: firstEncoding,
+              count: result.count || 0,
+              samples: Array.isArray(result.samples) ? result.samples : [],
+            });
+            if (!upgrade) return 'encoding-declined';
+            result = await electronAPI.writeFile(buildPayload('utf8', false));
+          }
+        }
         if (result && result.ok) {
           file.meta = result.meta || file.meta;
           cleanIfUnchanged();
+          noteRecreatedMissing();
           return 'ok';
         }
         if (result && result.error === 'conflict') {
@@ -448,12 +550,16 @@ export function createWorkspaceController({
     }
     const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
     const submittedContent = file.content;
-    const outcome = await writeThrough(file);
+    const outcome = await writeThrough(file, { interactive: true });
     if (outcome === 'ok') {
       const unchanged = file.revision === submittedRevision && file.content === submittedContent;
       if (unchanged) file.dirty = false;
       renderTabs();
       showToast(L('toast.saved', 'Saved {name}', { name: file.name }));
+      return;
+    }
+    if (outcome === 'encoding-declined') {
+      showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
       return;
     }
     if (outcome === 'conflict') {
@@ -495,9 +601,9 @@ export function createWorkspaceController({
     if (electronAPI && typeof electronAPI.saveFileAs === 'function') {
       const submittedContent = file.content;
       const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
-      try {
+      const saveAsPayload = () => {
         const meta = file.meta || {};
-        const result = await electronAPI.saveFileAs({
+        return {
           suggestedName: file.name,
           content: file.content,
           revision: submittedRevision,
@@ -505,7 +611,28 @@ export function createWorkspaceController({
           eol: meta.eol === '\r\n' ? '\r\n' : '\n',
           finalNewline: meta.finalNewline !== false,
           encoding: typeof meta.encoding === 'string' ? meta.encoding : 'utf8',
-        });
+        };
+      };
+      try {
+        let result = await electronAPI.saveFileAs(saveAsPayload());
+        if (result && result.error === 'unmappable-character' && typeof confirmEncodingUpgrade === 'function') {
+          // The chosen destination keeps the source encoding; offer the UTF-8 upgrade and,
+          // accepted, retry through the same Save As channel (the picker re-opens on the
+          // same name — main owns the path, the renderer never sees it).
+          const meta = file.meta || {};
+          const upgrade = await confirmEncodingUpgrade({
+            name: file.name,
+            encoding: typeof meta.encoding === 'string' ? meta.encoding : 'utf8',
+            count: result.count || 0,
+            samples: Array.isArray(result.samples) ? result.samples : [],
+          });
+          if (upgrade) {
+            const metaBeforeUpgrade = file.meta;
+            file.meta = { ...meta, encoding: 'utf8', bom: false };
+            result = await electronAPI.saveFileAs(saveAsPayload());
+            if (!result || result.canceled) file.meta = metaBeforeUpgrade;
+          }
+        }
         if (!result || result.canceled) {
           showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
           return;
@@ -582,7 +709,7 @@ export function createWorkspaceController({
   async function saveAllDirty({ promptUntitled = false } = {}) {
     const dirty = state.files.filter((file) => file.dirty);
     for (const file of dirty) {
-      const outcome = await writeThrough(file);
+      const outcome = await writeThrough(file, { interactive: true });
       if (outcome === 'nosave') {
         if (!promptUntitled) continue;
         await saveAs(file);
@@ -592,11 +719,78 @@ export function createWorkspaceController({
         if (file.dirty) return false;
         continue;
       }
-      if (outcome !== 'ok') return false;
+      // v1.3.0 (F8): a failed Save-All during the close flow used to abort with zero
+      // feedback — the window silently stayed open, no toast, and a conflicted file's
+      // banner was never rendered. Mirror saveCurrent's per-outcome reporting so the
+      // user sees exactly which file refused to save and why.
+      if (outcome === 'encoding-declined') {
+        showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
+        return false;
+      }
+      if (outcome === 'conflict') {
+        const idx = state.files.indexOf(file);
+        if (idx >= 0) renderFile(idx);
+        showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: 'conflict' }), 'error');
+        return false;
+      }
+      if (outcome !== 'ok') {
+        renderTabs();
+        if (file._lastWriteError) {
+          showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: file._lastWriteError }), 'error');
+        } else {
+          showToast(L('toast.couldNotSave', 'Could not save'), 'error');
+        }
+        return false;
+      }
       renderTabs();
     }
     renderTabs();
     return state.files.every((file) => !file.dirty);
+  }
+
+  // T4.1: the "Continue reading" shelf. It reuses the recents row shape and, crucially,
+  // openRecent() — so a shelf entry gets the same disk/vault re-validation (including the
+  // moved-folder recovery path) for free. DOM-built only: no innerHTML with stored text.
+  function renderContinue() {
+    const wrap = getElement('continueWrap');
+    const list = getElement('continueList');
+    if (!wrap || !list) return;
+    const entries = Array.isArray(state.readingProgress) ? state.readingProgress.slice(0, 4) : [];
+    if (entries.length === 0) {
+      wrap.hidden = true;
+      list.textContent = '';
+      return;
+    }
+    wrap.hidden = false;
+    list.textContent = '';
+    entries.forEach((entry) => {
+      const button = hostDocument.createElement('button');
+      button.type = 'button';
+      button.className = 'recent-item continue-item';
+      const icon = hostDocument.createElement('span');
+      icon.className = 'r-ic';
+      icon.textContent = '¶';
+      const name = hostDocument.createElement('span');
+      name.className = 'c-name';
+      name.setAttribute('dir', 'auto'); // an Arabic filename stays readable
+      name.textContent = entry.name || entry.path;
+      const pct = hostDocument.createElement('span');
+      pct.className = 'c-pct';
+      pct.textContent = `${progressPercent(entry.ratio)}%`;
+      const sub = hostDocument.createElement('span');
+      sub.className = 'c-sub';
+      sub.setAttribute('dir', 'auto');
+      sub.textContent = `${entry.path} · ${relativeTime(entry.at, state.uiLocale)}`;
+      const bar = hostDocument.createElement('span');
+      bar.className = 'c-bar';
+      const fill = hostDocument.createElement('span');
+      fill.className = 'c-bar-fill';
+      fill.style.width = `${progressPercent(entry.ratio)}%`;
+      bar.appendChild(fill);
+      button.append(icon, name, pct, sub, bar);
+      button.addEventListener('click', () => openRecent(entry));
+      list.appendChild(button);
+    });
   }
 
   function renderRecents() {
@@ -630,6 +824,7 @@ export function createWorkspaceController({
   }
 
   function pushRecent(file) {
+    if (!file.documentId && !file.vaultId) return;
     const entry = {
       name: file.name,
       path: file.path,
@@ -640,7 +835,14 @@ export function createWorkspaceController({
       vaultId: file.vaultId || null,
       documentId: file.documentId || null,
     };
-    state.recents = [entry, ...state.recents.filter((recent) => recent.path !== file.path)].slice(0, 5);
+    // Dedupe on the same (path, vaultId) identity openRecent resolves by: path-only
+    // matching evicted a DIFFERENT folder's entry for a same-named relative path.
+    state.recents = [
+      entry,
+      ...state.recents.filter((recent) => !(
+        recent.path === file.path && (recent.vaultId || null) === (entry.vaultId || null)
+      )),
+    ].slice(0, 5);
     renderRecents();
   }
 
@@ -658,6 +860,17 @@ export function createWorkspaceController({
       return;
     }
     const electronAPI = api();
+    // SEC-01: a persisted recent no longer confers authority by itself — re-validate the
+    // record against disk first (main follows a moved folder and then grants this session).
+    if (recent.vaultId && electronAPI && typeof electronAPI.reopenVault === 'function') {
+      try {
+        const reopened = await electronAPI.reopenVault(recent.vaultId);
+        if (!reopened || !reopened.ok) {
+          showToast(L('toast.recentMissing', 'Could not re-open "{name}" — the folder may have moved', { name: recent.name }), 'error');
+          return;
+        }
+      } catch (_) { /* fall through and let readVault surface the error */ }
+    }
     if (recent.vaultId && electronAPI && typeof electronAPI.readVault === 'function') {
       try {
         const read = normalizeVaultRead(
@@ -667,8 +880,10 @@ export function createWorkspaceController({
         if (read && read.entries.length) {
           const folderName = read.vault?.name || 'folder';
           state.vaultName = folderName;
+          const prevActive = state.activeFile != null ? state.files[state.activeFile] : null;
           setVaultIdentity(recent.vaultId, read.vault?.generation || 0, folderName);
           state.files = mergeVaultSlice(state.files, recent.vaultId, read.entries);
+          resolveActiveAfterMerge(state, prevActive); // T14 (F1): indexes reshuffle here too
           setVaultUi(folderName);
           renderTree(state.files);
           index = state.files.findIndex((file) => file.vaultId === recent.vaultId && file.path === recent.path);
@@ -678,6 +893,16 @@ export function createWorkspaceController({
       } catch (_) { /* fall through */ }
     }
     if (recent.documentId && electronAPI && typeof electronAPI.readFile === 'function') {
+      // SEC-01: the same disk re-validation gate for a loose (single-file) recent.
+      if (typeof electronAPI.reopenDocument === 'function') {
+        try {
+          const reopened = await electronAPI.reopenDocument(recent.documentId);
+          if (!reopened || !reopened.ok) {
+            showToast(L('toast.recentMissing', 'Could not re-open "{name}" — the file may have moved', { name: recent.name }), 'error');
+            return;
+          }
+        } catch (_) { /* fall through and let readFile surface the error */ }
+      }
       try {
         const result = await electronAPI.readFile(recent.documentId);
         if (result && !result.error && typeof result.content === 'string') {
@@ -687,10 +912,10 @@ export function createWorkspaceController({
       } catch (_) { /* fall through */ }
     }
     if (!recent.vaultId && !recent.documentId) {
-      showToast(`"${recent.name || recent.path}" was saved by an older version — open it once to restore it`, 'info');
+      showToast(L('toast.recentNeedsRestore', '"{name}" was saved by an older version — open it once to restore it', { name: recent.name || recent.path }), 'info');
       return;
     }
-    showToast(`Could not open "${recent.name || recent.path}"`, 'error');
+    showToast(L('toast.recentOpenFailed', 'Could not open "{name}"', { name: recent.name || recent.path }), 'error');
   }
 
   function openExternalFile(snapshot) {
@@ -731,8 +956,16 @@ export function createWorkspaceController({
         { id: changedVaultId, name: state.vaultName },
       );
     } catch (_) {
+      // audit UX-13: a failed re-read used to return silently, leaving the tree quietly
+      // stale. Say it ONCE per failure streak (the flag resets on the next good read) so a
+      // flapping watcher cannot spam toasts.
+      if (!_watchFailNotified) {
+        _watchFailNotified = true;
+        showToast(L('toast.watchFailed', 'Folder changed on disk but re-reading it failed — the tree may be stale'), 'info');
+      }
       return;
     }
+    _watchFailNotified = false;
     if (!read || openVaultGenerations.get(changedVaultId) !== generation) return;
     const entries = read.entries;
     const newGeneration = read.vault?.generation || generation;
@@ -741,89 +974,97 @@ export function createWorkspaceController({
 
     const activeFile = state.activeFile != null ? state.files[state.activeFile] : null;
     const activePath = activeFile && activeFile.vaultId === changedVaultId ? activeFile.path : null;
+    // audit QA-04: this was a near-duplicate of mergeVaultSlice (two drifting copies of the
+    // hash-compare / keep-absent logic). The merge itself is now the shared pure helper;
+    // only the ACTIVE-FILE EFFECTS (conflict banner vs silent reload) remain here.
     const previousByPath = new Map(
       state.files.filter((file) => file.vaultId === changedVaultId).map((file) => [file.path, file]),
     );
-    const normalizeText = (value) => String(value == null ? '' : value).replace(/\r\n?/g, '\n');
+    const previousActive = activePath != null ? previousByPath.get(activePath) : null;
+    state.files = mergeVaultSlice(state.files, changedVaultId, entries);
     let conflictName = null;
     let reloadedActive = false;
-    const seenPaths = new Set();
-    const merged = entries.map((entry) => {
-      seenPaths.add(entry.relPath);
-      const previous = previousByPath.get(entry.relPath);
-      if (!previous) return fileFromSnapshot(entry, changedVaultId);
-      const prevHash = previous.meta && previous.meta.hash;
-      const diskHash = entry.meta && entry.meta.hash;
-      // Authoritative when both baselines exist: compare on-disk identity, NOT the
-      // (possibly dirty) in-memory buffer — an unchanged disk copy must never be a
-      // conflict just because the editor has unsaved edits. Fall back to a logical
-      // content compare only when a hash baseline is missing (browser/legacy paths).
-      const diskChanged = (prevHash != null && diskHash != null)
-        ? diskHash !== prevHash
-        : normalizeText(previous.content) !== normalizeText(entry.content);
-      if (!diskChanged) return previous; // app-owned save / unchanged disk → keep in-memory state (incl. dirty edits)
-      if (previous.dirty) {
-        if (entry.relPath === activePath) conflictName = previous.name;
-        return { ...previous, conflict: true, diskContent: entry.content, diskMeta: entry.meta };
+    if (previousActive) {
+      const nextActive = state.files.find((file) => file.vaultId === changedVaultId && file.path === activePath);
+      if (nextActive && nextActive !== previousActive) {
+        if (nextActive.conflict && !previousActive.conflict) conflictName = nextActive.name;
+        else if (!nextActive.conflict && nextActive.content !== previousActive.content) reloadedActive = true;
       }
-      if (entry.relPath === activePath) reloadedActive = true;
-      return {
-        ...previous,
-        content: entry.content,
-        meta: entry.meta || previous.meta,
-        documentId: entry.documentId || previous.documentId,
-        conflict: false,
-        diskContent: null,
-      };
-    });
-    const keptAbsent = [...previousByPath.values()].filter((file) => !seenPaths.has(file.path));
-    const otherVaultFiles = state.files.filter((file) => file.vaultId !== changedVaultId);
-    state.files = [...otherVaultFiles, ...merged, ...keptAbsent];
-    if (activePath != null) {
-      const activeIndex = state.files.findIndex((file) => file.vaultId === changedVaultId && file.path === activePath);
-      state.activeFile = activeIndex >= 0 ? activeIndex : state.activeFile;
     }
+    // T14 (F1): re-point the active tab after the merge by identity — the old code only
+    // covered an active tab in the CHANGED vault; a merge of any OTHER open vault
+    // reshuffled the array just the same, leaving State.activeFile aimed at a foreign
+    // file (cross-file write on the next keystroke, autosaved to disk).
+    resolveActiveAfterMerge(state, activeFile);
     renderTree(state.files);
     if (reloadedActive || conflictName) renderFile(state.activeFile);
     else renderTabs();
     if (conflictName) {
-      showToast(`"${conflictName}" changed on disk — your edits are kept; resolve in the editor.`, 'error');
+      showToast(L('toast.diskChanged', '"{name}" changed on disk — your edits are kept; resolve in the editor.', { name: conflictName }), 'error');
     }
   }
 
-  // B2 (multi-folder workspaces): lastSession moved from a flat { vaultId, ... } to a
-  // forest-ready { vaults: [{vaultId, ...}], activeVaultId, ... }. Reads either shape so
-  // an old settings.json still restores. Only vaults[0] is restored today -- Track B3/B4
-  // give the renderer somewhere to put more than one open folder at once.
+  // B2/B4 (multi-folder workspaces): lastSession moved from a flat { vaultId, ... } to a
+  // forest-ready { vaults: [{vaultId, openPaths}], activeVaultId, ... }. Reads either shape
+  // so an old settings.json still restores. audit UX-04: EVERY vault in the list is
+  // restored and merged (not just vaults[0]), and the tabs each vault had open are re-opened.
   async function restoreLastSession(lastSession) {
-    const restoreVaultId = lastSession
-      && (typeof lastSession.vaultId === 'string' ? lastSession.vaultId : lastSession.vaults?.[0]?.vaultId);
-    if (typeof restoreVaultId !== 'string' || !restoreVaultId) return;
+    const vaultList = lastSession && Array.isArray(lastSession.vaults) && lastSession.vaults.length
+      ? lastSession.vaults.slice(0, 10)
+      : (lastSession && typeof lastSession.vaultId === 'string'
+        ? [{ vaultId: lastSession.vaultId, openPaths: lastSession.openPaths || [] }]
+        : []);
+    if (!vaultList.length) return;
     const electronAPI = api();
     if (!electronAPI || typeof electronAPI.readVault !== 'function') return;
     const restoreEpoch = workspaceEpoch;
-    let read;
-    try {
-      read = normalizeVaultRead(
-        await electronAPI.readVault(restoreVaultId),
-        { id: restoreVaultId, name: 'folder' },
-      );
-    } catch (_) {
-      return;
+    let anyRestored = false;
+    let truncatedAny = false;
+    let lastTruncatedCount = 0;
+    let skippedAny = 0; // audit QA-07: summed across every restored vault, reported once
+    for (const vaultEntry of vaultList) {
+      const vaultId = vaultEntry && vaultEntry.vaultId;
+      if (typeof vaultId !== 'string' || !vaultId) continue;
+      let read;
+      try {
+        read = normalizeVaultRead(
+          await electronAPI.readVault(vaultId),
+          { id: vaultId, name: 'folder' },
+        );
+      } catch (_) { continue; }
+      if (!read || !read.entries.length) continue;
+      if (restoreEpoch !== workspaceEpoch || state.files.some((file) => file.dirty)) return;
+      const folderName = read.vault?.name || 'folder';
+      // Merge (not replace) so several folders accumulate exactly like openVault does.
+      const activeBeforeMerge = state.activeFile === null ? null : state.files[state.activeFile];
+      state.files = mergeVaultSlice(state.files, vaultId, read.entries);
+      resolveActiveAfterMerge(state, activeBeforeMerge);
+      setVaultIdentity(vaultId, read.vault?.generation || 0, folderName);
+      state.vaultName = folderName; // status bar; getOpenVaults() drives the N-folders display
+      setVaultUi(folderName);
+      // Reopen the tabs this vault had open (audit UX-04: tab state used to be lost).
+      const openSet = new Set(Array.isArray(vaultEntry.openPaths) ? vaultEntry.openPaths : []);
+      if (openSet.size) {
+        for (const f of state.files) {
+          if ((f.vaultId || null) === vaultId && openSet.has(f.path)) f.open = true;
+        }
+      }
+      anyRestored = true;
+      if (read.truncated) { truncatedAny = true; lastTruncatedCount = read.entries.length; }
+      skippedAny += skippedCount(read);
     }
-    if (!read || !read.entries.length || restoreEpoch !== workspaceEpoch
-      || state.files.some((file) => file.dirty)) return;
-    const folderName = read.vault?.name || 'folder';
-    state.vaultName = folderName;
-    setVaultIdentity(restoreVaultId, read.vault?.generation || 0, folderName);
-    state.files = read.entries.map((entry) => fileFromSnapshot(entry, restoreVaultId));
-    setVaultUi(folderName);
+    if (!anyRestored || restoreEpoch !== workspaceEpoch) return;
     renderTree(state.files);
-    renderFile(pickActiveIndex(state.files, lastSession.activePath));
+    renderFile(pickActiveIndex(state.files, lastSession.activePath, lastSession.activeVaultId));
     // v1.2: the >5000-file cap used to truncate the restore listing SILENTLY — files
     // beyond the cap just vanished from the tree on relaunch. Name the fact.
-    if (read.truncated) {
-      showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: read.entries.length }), 'info');
+    if (truncatedAny) {
+      showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: lastTruncatedCount }), 'info');
+    }
+    // audit QA-07: same for skipped files — a restore that silently lost notes is worse
+    // than one that says how many it could not show.
+    if (skippedAny > 0) {
+      showToast(L('toast.vaultSkipped', '{n} file(s) could not be shown (unreadable, oversized, or unsafe links)', { n: skippedAny }), 'info');
     }
   }
 
@@ -847,6 +1088,7 @@ export function createWorkspaceController({
     writeThrough,
     pushRecent,
     renderRecents,
+    renderContinue,
     openRecent,
     openExternalFile,
     handleVaultChanged,
@@ -859,7 +1101,7 @@ export function createWorkspaceController({
     getOpenVaults,
     setVaultIdentity,
     clearVaultIdentity: () => { openVaultGenerations.clear(); openVaultNames.clear(); setVaultIdentity(null, 0); },
-    buildSession: () => buildSession(vaultId, state.files, state.activeFile),
+    buildSession: () => buildSession(state.files, state.activeFile),
     getVaultId: () => vaultId,
     getVaultGeneration: () => vaultGeneration,
     getWorkspaceEpoch: () => workspaceEpoch,

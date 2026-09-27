@@ -15,7 +15,7 @@
  * with default-correct per-block direction.
  */
 
-import { resolveDirection, resolveBlockDirection, needsIsolation, isolate } from './bidi.js';
+import { resolveBlockDirection, needsIsolation, isolate } from './bidi.js';
 
 const ARABIC = /\p{Script=Arabic}/u;
 const BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, .callout';
@@ -23,10 +23,24 @@ const BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, .call
 // The number group keeps separator-joined sequences (dates 2026-06-01, ranges
 // 10-20, times 12:30, decimals 3.14) as ONE run, so a single <bdi> isolates the
 // whole number — splitting it would let the parts reorder under the RTL base.
-const RUN = /#[\p{L}\p{N}_-]+|\d+(?:[.,:\/-]\d+)*/gu;
+const RUN = /#[\p{L}\p{N}_-]+|\d+(?:[.,:/-]\d+)*/gu;
 const HAS_RUN = /#[\p{L}\p{N}_-]|\d/u;
-// Text-node parents whose contents must never be re-isolated.
-const SKIP_PARENT = new Set(['CODE', 'PRE', 'A', 'BDI', 'SCRIPT', 'STYLE']);
+// Text-node parents whose contents must never be re-isolated. Anchors are deliberately
+// NOT skipped wholesale: a wikilink whose text is a neutral date (`[[2026-06-01]]`)
+// needs its digit run isolated like any other number — only URL-named anchors are
+// rejected below, so visible URLs are never fragmented.
+const SKIP_PARENT = new Set(['CODE', 'PRE', 'BDI', 'SCRIPT', 'STYLE']);
+// Container blocks (li/blockquote/.callout/td/th) whose text is measured for direction
+// must not count the letters inside fenced code / inline code / diagrams / math: an
+// Arabic callout explaining a 4-line snippet used to compute as "mostly Latin" and
+// flipped to dir="ltr" (audit UX-02). The pre/code elements themselves stay LTR via CSS.
+const CODEISH = 'pre, code, .mermaid, .katex';
+function blockText(el) {
+  if (!el.querySelector(CODEISH)) return el.textContent || '';
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll(CODEISH).forEach((node) => node.remove());
+  return clone.textContent || '';
+}
 
 /**
  * Per-block direction + Arabic script tagging (T-R1, EC-C6). When `forceDir` is set
@@ -38,7 +52,7 @@ const SKIP_PARENT = new Set(['CODE', 'PRE', 'A', 'BDI', 'SCRIPT', 'STYLE']);
 export function applyBlockDirection(root, baseDir = 'ltr', forceDir = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
   root.querySelectorAll(BLOCK_SELECTOR).forEach((el) => {
-    const text = el.textContent || '';
+    const text = blockText(el);
     // Forced direction wins for the dir attribute; otherwise dominant-script (T-R1 fix): an
     // Arabic heading/para that opens with an English word/number must stay RTL.
     const autoDir = resolveBlockDirection(text, baseDir);
@@ -63,15 +77,19 @@ export function applyBlockDirection(root, baseDir = 'ltr', forceDir = null) {
 export function applyTableDirection(root, baseDir = 'ltr', forceDir = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
   root.querySelectorAll('table').forEach((t) => {
-    const dir = forceDir || resolveBlockDirection(t.textContent || '', baseDir);
+    // RTL-M1: count the SAME text the per-block pass counts — blockText strips
+    // pre/code/.mermaid/.katex, so a Latin identifier in one cell no longer flips an
+    // otherwise-Arabic table to LTR (unmirrored columns, unswapped arrow traversal).
+    const dir = forceDir || resolveBlockDirection(blockText(t) || t.textContent || '', baseDir);
     t.setAttribute('dir', dir);
     t.setAttribute('data-dir', dir);
   });
   return root;
 }
 
-function wrapInBdi(el) {
+function wrapInBdi(el, dir = null) {
   const bdi = el.ownerDocument.createElement('bdi');
+  if (dir) bdi.setAttribute('dir', dir);
   el.parentNode.insertBefore(bdi, el);
   bdi.appendChild(el);
 }
@@ -83,9 +101,12 @@ function isolateElements(root, baseDir) {
     const block = el.closest(BLOCK_SELECTOR);
     const blockDir = (block && block.getAttribute('dir')) || baseDir;
     if (blockDir !== 'rtl') return;                              // only neutralise foreign runs in RTL context
-    // Inline code is conventionally LTR/neutral → always isolate; links only when
-    // their text runs opposite the block (uses the tested needsIsolation core).
-    if (el.nodeName === 'CODE' || needsIsolation(el.textContent || '', blockDir)) wrapInBdi(el);
+    // Inline code is conventionally LTR/neutral → always isolate, with an explicit
+    // dir so neutral-only snippets (a bare date) cannot inherit the RTL base; links
+    // only when their text runs opposite the block (their own strong character then
+    // drives dir="auto" correctly, so no explicit dir is needed).
+    if (el.nodeName === 'CODE') wrapInBdi(el, 'ltr');
+    else if (needsIsolation(el.textContent || '', blockDir)) wrapInBdi(el);
   });
 }
 
@@ -96,7 +117,9 @@ function isolateTextRuns(root, escape) {
     acceptNode(node) {
       const p = node.parentNode;
       if (!p || SKIP_PARENT.has(p.nodeName) || typeof p.closest !== 'function') return NodeFilter.FILTER_REJECT;
+      if (p.closest('bdi')) return NodeFilter.FILTER_REJECT;     // already isolated — never re-isolate
       if (p.closest('.katex, .mermaid')) return NodeFilter.FILTER_REJECT; // never isolate inside KaTeX/Mermaid (T-F9/F16)
+      if (p.nodeName === 'A' && /:\/\//i.test(p.textContent || '')) return NodeFilter.FILTER_REJECT; // a visible URL is one identifier
       const block = p.closest(BLOCK_SELECTOR);
       if (!block || block.getAttribute('dir') !== 'rtl') return NodeFilter.FILTER_REJECT;
       return HAS_RUN.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
@@ -113,7 +136,10 @@ function isolateTextRuns(root, escape) {
     RUN.lastIndex = 0;
     while ((m = RUN.exec(text))) {
       html += escape(text.slice(last, m.index));
-      html += isolate(m[0], escape);          // <bdi>…</bdi> from the pure core
+      // RTL-H1: a digit group carries no strong character, so a bare <bdi>'s dir="auto"
+      // would inherit the RTL base and reorder its separators. #tags keep the bare
+      // isolate — their # and letters anchor the auto direction.
+      html += m[0].startsWith('#') ? isolate(m[0], escape) : isolate(m[0], escape, 'ltr');
       last = m.index + m[0].length;
     }
     html += escape(text.slice(last));

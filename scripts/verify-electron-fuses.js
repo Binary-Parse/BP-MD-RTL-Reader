@@ -7,6 +7,9 @@ const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const REQUIRED = {
   runAsNode: false,
+  // T14 (post-review LOW-7): the seventh security fuse was configured in package.json but
+  // never asserted here, so a packaging regression could ship it flipped with no gate noise.
+  enableCookieEncryption: true,
   enableNodeOptionsEnvironmentVariable: false,
   enableNodeCliInspectArguments: false,
   enableEmbeddedAsarIntegrityValidation: true,
@@ -146,8 +149,16 @@ async function main() {
   const required = process.env.VERIFY_FUSES_REQUIRED === '1';
   const binaries = walkExecutables(DIST);
   if (binaries.length === 0) {
+    // A config-only pass over an empty dist/ verifies nothing; reading no binary must be a
+    // deliberate opt-out, not an accident of skipping the build.
     if (required) throw new Error('No packaged Electron binary under dist/ to read fuses from');
-    console.log('electronFuses config verified; no dist/ binary present (skip runtime fuse read)');
+    if (process.env.VERIFY_FUSES_ALLOW_NO_BINARIES !== '1') {
+      throw new Error(
+        'No packaged Electron binary under dist/ to read fuses from. '
+        + 'Build the packages first, or set VERIFY_FUSES_ALLOW_NO_BINARIES=1 to check the config alone.',
+      );
+    }
+    console.log('electronFuses config verified; no dist/ binary present (VERIFY_FUSES_ALLOW_NO_BINARIES=1)');
     return;
   }
   let fuses;

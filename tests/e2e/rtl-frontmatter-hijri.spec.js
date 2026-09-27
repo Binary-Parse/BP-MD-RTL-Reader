@@ -27,13 +27,11 @@ test.describe('[T-R6] front-matter direction', () => {
 
   test('direction: rtl renders the document RTL even with English content', async ({ page }) => {
     await inject(page, '---\ndirection: rtl\n---\n# English Title\n\nAn English body paragraph.\n');
-    await page.waitForTimeout(150);
     expect(await editorDir(page)).toBe('rtl');
   });
 
   test('the front-matter block is not rendered as body text', async ({ page }) => {
     await inject(page, '---\ndirection: rtl\ntitle: Secret\n---\n# Body Heading\n\nBody text.\n');
-    await page.waitForTimeout(150);
     const text = await page.locator('#noteContent').textContent();
     expect(text).not.toContain('direction:');
     expect(text).not.toContain('title:');
@@ -45,13 +43,11 @@ test.describe('[T-R6] front-matter direction', () => {
 
   test('direction: ltr overrides Arabic content (container LTR)', async ({ page }) => {
     await inject(page, '---\ndirection: ltr\n---\n# عنوان عربي\n\nنص عربي للقراءة.\n');
-    await page.waitForTimeout(150);
     expect(await editorDir(page)).toBe('ltr');
   });
 
   test('the direction indicator + inspector reflect the front-matter direction', async ({ page }) => {
     await inject(page, '---\ndirection: rtl\n---\n# English Title\n\nbody\n');
-    await page.waitForTimeout(150);
     expect(await page.locator('#dirIndicator').textContent()).toBe('RTL');
     expect(await page.locator('#propDir').textContent()).toBe('RTL');
     await expect(page.locator('#rtlBtn')).toHaveClass(/active/);
@@ -59,7 +55,6 @@ test.describe('[T-R6] front-matter direction', () => {
 
   test('direction: auto falls through to content first-strong (per-block, no container flip)', async ({ page }) => {
     await inject(page, '---\ndirection: auto\n---\n# عنوان عربي\n\nنص عربي.\n');
-    await page.waitForTimeout(150);
     expect(await editorDir(page)).toBe('ltr'); // container neutral
     await expect(page.locator('#noteContent h1')).toHaveAttribute('dir', 'rtl'); // block self-resolves
     const text = await page.locator('#noteContent').textContent();
@@ -68,10 +63,8 @@ test.describe('[T-R6] front-matter direction', () => {
 
   test('manual ⇄ toggle still wins over front matter', async ({ page }) => {
     await inject(page, '---\ndirection: ltr\n---\n# Title\n\nbody\n');
-    await page.waitForTimeout(150);
     expect(await editorDir(page)).toBe('ltr');
     await page.click('#rtlBtn'); // manual RTL override
-    await page.waitForTimeout(150);
     expect(await editorDir(page)).toBe('rtl');
   });
 });
@@ -84,7 +77,6 @@ test.describe('[T-R8] Hijri daily notes', () => {
 
   test('the calendar toggle is in the View menu', async ({ page }) => {
     await page.click('.tb-menu-item[data-menu="view"]');
-    await page.waitForTimeout(150);
     const dd = await page.locator('#dropdown').textContent();
     expect(dd).toContain('Gregorian');
     expect(dd).toContain('Hijri');

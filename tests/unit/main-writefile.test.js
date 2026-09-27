@@ -69,10 +69,41 @@ describe('fs:writeFile (T-B1)', () => {
 
   test('ignores renderer path fields and binds the write to the granted exact document', async () => {
     const document = await grantDocument();
-    const r = await writeFile({}, { documentId: document.documentId, folderPath: '/etc', relPath: '../escape.md', content: 'safe' });
+    const r = await writeFile({}, { documentId: document.documentId, folderPath: '/etc', relPath: '../escape.md', content: 'safe', baseHash: document.meta.hash });
     expect(r.ok).toBe(true);
     expect(files[path.join('/vault', 'note.md')]).toBe('safe\n');
     expect(files[path.join('/etc', '../escape.md')]).toBeUndefined();
+  });
+
+  // audit SEC-02: main's own last-read hash is authoritative. The real client always sends
+  // meta.hash; an omitted one is no longer a way to skip the conflict check entirely.
+  test('an OMITTED baseHash for a document main already read is a conflict, not an overwrite', async () => {
+    const document = await grantDocument();
+    expect(await writeFile({}, { documentId: document.documentId, content: 'changed' }))
+      .toEqual({ error: 'conflict' });
+    // The file on disk is untouched.
+    expect(fsMock._files[path.join('/vault', 'note.md')]).toBe('old\n');
+  });
+
+  test('a TAMPERED baseHash is refused as a conflict', async () => {
+    const document = await grantDocument('tamper.md');
+    expect(await writeFile({}, { documentId: document.documentId, content: 'changed', baseHash: 'forged' }))
+      .toEqual({ error: 'conflict' });
+    expect(fsMock._files[path.join('/vault', 'tamper.md')]).toBe('old\n');
+  });
+
+  test('the hash returned by a successful write becomes the next accepted baseline', async () => {
+    const document = await grantDocument();
+    const first = await writeFile({}, { documentId: document.documentId, content: 'one', baseHash: document.meta.hash, eol: '\n' });
+    expect(first.ok).toBe(true);
+    expect(first.meta.hash).toBeTruthy();
+    // The pre-write baseline is now stale…
+    expect(await writeFile({}, { documentId: document.documentId, content: 'two', baseHash: document.meta.hash, eol: '\n' }))
+      .toEqual({ error: 'conflict' });
+    // …and the hash main just returned is accepted.
+    const second = await writeFile({}, { documentId: document.documentId, content: 'two', baseHash: first.meta.hash, eol: '\n' });
+    expect(second.ok).toBe(true);
+    expect(fsMock._files[path.join('/vault', 'note.md')]).toBe('two\n');
   });
 
   // L285: `typeof content !== 'string'` — an authorized folder + valid relPath but a
@@ -109,7 +140,7 @@ describe('fs:readVault recursion (T-B2) + writeFile invalid folder', () => {
       if (p.endsWith('sub')) return [dirent('inner.md', 'f')];
       return [];
     });
-    fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, size: 10 }));
+    fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, isFile: () => true, size: 10 }));
     fsMock.promises.readFile = (async () => 'content');
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
     bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'src/main/index.js']) });
@@ -148,7 +179,7 @@ describe('fs:readVault recursion guard branches (mutation kills)', () => {
     // keys (always written with /) match regardless of platform.
     const norm = (p) => String(p).replace(/\\/g, '/');
     fsMock.promises.readdir = (async (p, opts) => { readdirCalls.push({ p: norm(p), opts }); return tree[norm(p)] || []; });
-    fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, size: lstatSize }));
+    fsMock.promises.lstat = (async () => ({ isSymbolicLink: () => false, isFile: () => true, size: lstatSize }));
     fsMock.promises.readFile = (async () => 'content');
     el.dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: ['/vault'] }));
     bootstrap({ electron: el, fs: fsMock, proc: buildMockProc(['node', 'src/main/index.js']) });

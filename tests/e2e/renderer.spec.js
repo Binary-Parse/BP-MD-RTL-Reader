@@ -137,9 +137,11 @@ test.describe('index.html — ALL exported functions', () => {
       window.cycleTheme(); t.push(document.documentElement.getAttribute('data-theme'));
       window.cycleTheme(); t.push(document.documentElement.getAttribute('data-theme'));
       window.cycleTheme(); t.push(document.documentElement.getAttribute('data-theme'));
+      window.cycleTheme(); t.push(document.documentElement.getAttribute('data-theme'));
       return t;
     });
-    expect(themes).toEqual(['paper', 'ink', 'sepia', 'paper']);
+    // T1.1: four themes now — the cycle wraps after oasis.
+    expect(themes).toEqual(['paper', 'ink', 'sepia', 'oasis', 'paper']);
   });
 
   // === RTL FUNCTIONS ===

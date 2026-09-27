@@ -94,6 +94,19 @@ describe('transformCallouts (T-F14)', () => {
     expect(root.querySelector('.callout').getAttribute('dir')).toBe('ltr');
   });
 
+  test('NEUTRAL content inside a forced-RTL note inherits rtl, not a hardcoded ltr base', () => {
+    const root = frag('<div dir="rtl"><blockquote><p>[!NOTE] 12\n34 56</p></blockquote></div>');
+    transformCallouts(root, opts);
+    // no strong character in title or body → the INHERITED base (rtl) must win
+    expect(root.querySelector('.callout').getAttribute('dir')).toBe('rtl');
+  });
+
+  test('the closest [dir] ancestor wins over a farther one, and no ancestor falls back to ltr', () => {
+    const root = frag('<div dir="rtl"><div dir="ltr"><blockquote><p>[!NOTE]\n123</p></blockquote></div></div>');
+    transformCallouts(root, opts);
+    expect(root.querySelector('.callout').getAttribute('dir')).toBe('ltr');
+  });
+
   test('without injected resolveDirection, wrapper falls back to dir="auto"', () => {
     const root = frag('<blockquote><p>[!NOTE] t\nbody</p></blockquote>');
     transformCallouts(root, { parseCalloutHeader }); // resolveDirection omitted

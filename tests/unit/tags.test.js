@@ -87,3 +87,41 @@ describe('Tag extraction', () => {
     expect(byFile.__proto__).toEqual([0]);
   });
 });
+
+// audit PERF-05: the per-file tag list is cached on the file object, keyed by CONTENT (so a
+// mutated buffer re-extracts) — a tree repaint must not re-regex the whole vault.
+describe('extractTagsFromFiles caching (audit PERF-05)', () => {
+  test('repeated calls over the same file objects return identical results', () => {
+    const files = [
+      { content: 'File one #reading #prose' },
+      { content: 'File two #reading #draft' },
+    ];
+    const first = extractTagsFromFiles(files);
+    const second = extractTagsFromFiles(files);
+    expect(second).toEqual(first);
+    expect(second.reading).toEqual([0, 1]);
+  });
+
+  test('the cache is keyed on content, not object identity: an edited buffer is re-scanned', () => {
+    const files = [{ content: 'nothing here' }];
+    expect(extractTagsFromFiles(files)).toEqual({});
+    files[0].content = 'now with #fresh';
+    expect(extractTagsFromFiles(files)).toEqual({ fresh: [0] });
+    files[0].content = 'nothing here';
+    expect(extractTagsFromFiles(files)).toEqual({});
+  });
+
+  test('a repeated tag still yields ONE index per file, even with the cached list', () => {
+    const files = [
+      { content: '#reading #reading and #reading' },
+      { content: '#reading' },
+    ];
+    expect(extractTagsFromFiles(files).reading).toEqual([0, 1]);
+    expect(extractTagsFromFiles(files).reading).toEqual([0, 1]);
+  });
+
+  test('files with missing/empty content share the empty result and never collide', () => {
+    const files = [{ name: 'a.md' }, { content: '' }, { content: '#x' }, { name: 'b.md' }];
+    expect(extractTagsFromFiles(files)).toEqual({ x: [2] });
+  });
+});

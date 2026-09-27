@@ -128,8 +128,9 @@ describe('sanitizer guards — every absent/invalid DOMPurify → empty string',
     const marked = { parse: (m) => `<p>${m}</p>` };
     expect(renderTrusted('hi', { marked, DOMPurify: null })).toBe('');
   });
-  test('renderTrusted with no escapeHtml stringifies md when marked missing', () => {
-    expect(renderTrusted('<b>', {})).toBe('<b>');
+  test('renderTrusted with no escapeHtml escapes md when marked missing (never a raw sink)', () => {
+    expect(renderTrusted('<b>', {})).toBe('&lt;b&gt;');
+    expect(renderTrusted('<img src=x onerror=alert(1)>', {})).not.toContain('<img');
     expect(renderTrusted(null, {})).toBe('');
     expect(renderTrusted(undefined, { marked: { parse: 'x' } })).toBe(''); // marked.parse not a fn
   });
@@ -139,6 +140,7 @@ describe('isAllowedHref', () => {
   test('allows relative image paths and safe schemes', () => {
     expect(isAllowedHref('./pic.png')).toBe(true);
     expect(isAllowedHref('images/a.png')).toBe(true);
+    expect(isAllowedHref('/images/a.png')).toBe(true);
     expect(isAllowedHref('https://example.com')).toBe(true);
     expect(isAllowedHref('bpmd://vault/a.png')).toBe(true);
   });
@@ -146,6 +148,14 @@ describe('isAllowedHref', () => {
     expect(isAllowedHref('javascript:alert(1)')).toBe(false);
     expect(isAllowedHref('//evil.example/x')).toBe(false);
     expect(isAllowedHref('data:text/html,x')).toBe(false);
+  });
+  // Browsers normalize `\` to `/` in special URLs, so every backslash spelling of a
+  // protocol-relative URL must be blocked exactly like its `//` form.
+  test('blocks backslash protocol-relative spellings (regexp + guard)', () => {
+    for (const h of ['\\\\evil.com', '/\\evil.com', '\\/evil.com', '\\\\evil.com/x']) {
+      expect(isAllowedHref(h), h).toBe(false);
+    }
+    expect(isAllowedHref('images\\\\evil')).toBe(true); // interior backslash is a plain path char
   });
 });
 
@@ -219,5 +229,65 @@ describe('sanitizeSvg survives the Trusted Types default policy (T-F19)', () => 
     // so sanitizeSvg staying stricter is what keeps the composed result safe.
     expect(rec[0].cfg.FORBID_TAGS).toContain('script');
     expect(rec[0].cfg.FORBID_TAGS).toContain('foreignObject');
+  });
+});
+
+// ── data: URIs are image payloads, not navigation targets (audit 1b) ──────────
+// A hook-aware fake: sanitize() runs the registered afterSanitizeAttributes hook
+// against the given fake nodes (as real DOMPurify does), so the strip-non-media
+// data rule is observable in Node.
+function hookingDOMPurify(nodes) {
+  const hooks = { afterSanitizeAttributes: [] };
+  return {
+    hooks,
+    addHook(type, fn) { hooks[type].push(fn); },
+    removeHook(type, fn) { const i = hooks[type].indexOf(fn); if (i !== -1) hooks[type].splice(i, 1); },
+    sanitize(input) {
+      for (const hook of hooks.afterSanitizeAttributes) {
+        for (const node of nodes || []) hook(node);
+      }
+      return String(input);
+    },
+  };
+}
+function fakeNode(name, attrs = {}) {
+  const live = { ...attrs };
+  return {
+    nodeType: 1,
+    nodeName: name,
+    getAttribute: (a) => (a in live ? live[a] : null),
+    removeAttribute: (a) => { delete live[a]; },
+    attrs: live,
+  };
+}
+
+describe('data: URIs are stripped from non-media elements (audit 1b)', () => {
+  test('an <a href="data:..."> loses the href; <img src="data:..."> keeps it', () => {
+    const anchor = fakeNode('A', { href: 'data:text/html,<script>x()</script>' });
+    const img = fakeNode('IMG', { src: 'data:image/png;base64,AA' });
+    sanitizeHtml('<a href="data:text/html,x">y</a>', hookingDOMPurify([anchor, img]));
+    expect(anchor.attrs.href).toBeUndefined();
+    expect(img.attrs.src).toBe('data:image/png;base64,AA');
+  });
+
+  test('embedded media (source/audio/video) keep their src; other src is stripped', () => {
+    const source = fakeNode('SOURCE', { src: 'data:image/svg+xml,<svg/>' });
+    const audio = fakeNode('AUDIO', { src: 'data:audio/wav,AA' });
+    const div = fakeNode('DIV', { src: 'data:text/html,x' });
+    sanitizeHtml('<div></div>', hookingDOMPurify([source, audio, div]));
+    expect(source.attrs.src).toBe('data:image/svg+xml,<svg/>');
+    expect(audio.attrs.src).toBe('data:audio/wav,AA');
+    expect(div.attrs.src).toBeUndefined();
+  });
+
+  test('the hook is removed after the sanitize call (no lingering registration)', () => {
+    const purify = hookingDOMPurify([fakeNode('A', { href: 'data:text/html,x' })]);
+    sanitizeHtml('<p>x</p>', purify);
+    expect(purify.hooks.afterSanitizeAttributes).toHaveLength(0);
+  });
+
+  test('a DOMPurify without hook support still sanitizes (rule silently skipped)', () => {
+    const rec = [];
+    expect(sanitizeHtml('<p>x</p>', fakeDOMPurify(rec))).toBe('<p>x</p>');
   });
 });

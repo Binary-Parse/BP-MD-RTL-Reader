@@ -6,11 +6,15 @@
 /**
  * Extract the {vaultId, rel} pair from a bpmd://vault/<vaultId>/<rel> URL, or null.
  * The id is split off the raw URL BEFORE any decoding, so a %2F inside rel can never
- * shift the segment boundary and forge a different vaultId.
+ * shift the segment boundary and forge a different vaultId. A literal `?`/`#` is URL
+ * syntax (query/fragment), stripped per standard URL semantics before the path is
+ * matched — otherwise it decodes into the filename and the request can never resolve
+ * on Windows (PROT-01). An ENCODED %3F/%23 is data and survives as part of the name.
  */
 function parseBpmdUrl(url) {
   if (typeof url !== 'string') return null;
-  const m = /^bpmd:\/\/vault\/([^/]+)\/(.+)$/i.exec(url);
+  const bare = url.split(/[?#]/, 1)[0];
+  const m = /^bpmd:\/\/vault\/([^/]+)\/(.+)$/i.exec(bare);
   if (!m) return null;
   const vaultId = m[1];
   let rel;
@@ -34,8 +38,8 @@ function resolveAsset(url, root, pathmod) {
   const full = pathmod.resolve(root, rel);
   const back = pathmod.relative(root, full);
   // Reject anything not strictly INSIDE root: '' = root itself (a directory, not a file);
-  // a leading '..' = escapes the vault; an absolute back-path = a different drive/root.
-  if (back === '' || back.startsWith('..') || pathmod.isAbsolute(back)) {
+  // a '..' SEGMENT = escapes the vault; an absolute back-path = a different drive/root.
+  if (back === '' || back.split(pathmod.sep).includes('..') || pathmod.isAbsolute(back)) {
     return { error: 'unauthorized-path' };
   }
   return { path: full };
@@ -62,7 +66,7 @@ async function validateAsset(candidate, root, fs, pathmod, maxBytes = ASSET_MAX_
       fs.promises.realpath(candidate),
     ]);
     const rel = pathmod.relative(canonicalRoot, canonicalFile);
-    if (rel === '' || rel.startsWith('..') || pathmod.isAbsolute(rel)) return { error: 'unauthorized-path' };
+    if (rel === '' || rel.split(pathmod.sep).includes('..') || pathmod.isAbsolute(rel)) return { error: 'unauthorized-path' };
     const stat = await fs.promises.stat(canonicalFile);
     if (!stat.isFile()) return { error: 'not-regular-file' };
     if (stat.size > maxBytes) return { error: 'file-too-large' };
@@ -101,19 +105,37 @@ function parseAppUrl(url) {
   return rel || null;
 }
 
-function resolveAppAsset(url, root, pathmod) {
+function resolveAppAsset(url, root, pathmod, fs) {
   const rel = parseAppUrl(url);
   if (rel == null) return { error: 'bad-url' };
   if (!root || typeof root !== 'string') return { error: 'unauthorized-path' };
   if (pathmod.isAbsolute(rel)) return { error: 'unauthorized-path' };
   const full = pathmod.resolve(root, rel);
   const back = pathmod.relative(root, full);
-  if (back === '' || back.startsWith('..') || pathmod.isAbsolute(back)) {
+  if (back === '' || back.split(pathmod.sep).includes('..') || pathmod.isAbsolute(back)) {
     return { error: 'unauthorized-path' };
   }
   const posixRel = back.replace(/\\/g, '/');
   if (!posixRel.startsWith('src/renderer/') && !posixRel.startsWith('resources/vendor/')) {
     return { error: 'unauthorized-path' };
+  }
+  // audit SEC-08: the prefix check above is purely textual, so a symlink inside an
+  // allowed directory could point anywhere on disk. Mirror validateAsset's approach and
+  // require the REAL paths to be contained too. Skipped when no fs is injected (the pure
+  // 3-arg unit contract); the Electron caller always passes it.
+  if (fs && typeof fs.realpathSync === 'function') {
+    let realRoot;
+    let realTarget;
+    try {
+      realRoot = fs.realpathSync(root);
+      realTarget = fs.realpathSync(full);
+    } catch (_) {
+      return { error: 'unauthorized-path' }; // unreadable/absent target
+    }
+    const realBack = pathmod.relative(realRoot, realTarget);
+    if (realBack === '' || realBack.split(pathmod.sep).includes('..') || pathmod.isAbsolute(realBack)) {
+      return { error: 'unauthorized-path' };
+    }
   }
   const type = APP_MIME[pathmod.extname(full).toLowerCase()];
   if (!type) return { error: 'unsupported-type' };

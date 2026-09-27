@@ -96,10 +96,19 @@ export function buildMockFs(overrides = {}) {
       lstat: vi.fn(() => Promise.resolve({ isSymbolicLink: () => false, isFile: () => true, size: 100 })),
       realpath: vi.fn((p) => Promise.resolve(p)),
       stat: vi.fn(() => Promise.resolve({ isFile: () => true, size: 100 })),
-      readFile: vi.fn(() => Promise.resolve('content')),
+      // readAsync's vault lane decodes whatever this returns, so the default must serve
+      // the SAME bytes readFileSync would — per-test readFileSync overrides then stay
+      // coherent across both lanes automatically.
+      readFile: vi.fn((p) => Promise.resolve(fs.readFileSync(p))),
       mkdir: vi.fn(() => Promise.resolve()),
       writeFile: vi.fn(() => Promise.resolve()), // T-B6 temp html + PDF bytes → disk
       unlink: vi.fn(() => Promise.resolve()),    // T-B6 temp html cleanup
+      // audit SEC-04: export:pdf creates its temp html through an exclusive file handle
+      // (`open(path, 'wx')`) instead of a predictable writeFile target.
+      open: vi.fn(() => Promise.resolve({
+        writeFile: vi.fn(() => Promise.resolve()),
+        close: vi.fn(() => Promise.resolve()),
+      })),
     },
     appendFileSync: vi.fn(), mkdirSync: vi.fn(),
     existsSync: vi.fn(() => false), renameSync: vi.fn(),

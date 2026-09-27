@@ -19,7 +19,6 @@ async function injectFile(page, name, content) {
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     window.renderFile(0);
   }, { name, content });
-  await page.waitForTimeout(150);
 }
 
 /** px number from a computed style string like "22px". */
@@ -27,8 +26,14 @@ const px = (v) => parseFloat(v);
 
 /** Rendered gap between the visible toast and the bottom edge of .app. */
 async function toastGap(page) {
-  await page.evaluate(() => window.showToast('measure', 'info'));
-  await page.waitForTimeout(350);
+  await page.evaluate(() => new Promise((resolve) => {
+    window.showToast('measure', 'info');
+    const t = document.querySelector('.toast');
+    const dur = t ? parseFloat(getComputedStyle(t).transitionDuration) : 0;
+    if (!dur) return resolve();
+    t.addEventListener('transitionend', () => resolve(), { once: true });
+    setTimeout(resolve, 1000);
+  }));
   const gap = await page.evaluate(() => {
     const t = document.querySelector('.toast').getBoundingClientRect();
     const app = document.querySelector('.app').getBoundingClientRect();
@@ -171,7 +176,6 @@ test.describe('[T-F19] compact chrome geometry', () => {
     await injectFile(page, 'zoning2.md', '# Zoning\n');
     const before = await page.evaluate(() => document.getElementById('viewModeBtn').getBoundingClientRect().left);
     await page.click('#inspectorToggleBtn');
-    await page.waitForTimeout(200);
     const after = await page.evaluate(() => document.getElementById('viewModeBtn').getBoundingClientRect().left);
     expect(after).toBeCloseTo(before, 0);
   });

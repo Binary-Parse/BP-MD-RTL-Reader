@@ -4,9 +4,10 @@ import {
   fileFromSnapshot,
   normalizeVaultRead,
   mergeVaultSlice,
+  resolveActiveAfterMerge,
 } from '../../src/renderer/components/workspace-controller.js';
 
-function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard } = {}) {
+function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard, confirmEncodingUpgrade } = {}) {
   const activeState = state || { files: [], activeFile: null, vaultName: null, recents: [] };
   const calls = {
     addFile: [], renderFile: [], renderTree: [], renderTabs: 0, vaultUi: [],
@@ -23,6 +24,7 @@ function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard 
     showToast: (...args) => calls.toasts.push(args),
     showWelcome: () => { calls.welcome++; },
     confirmDiscard: confirmDiscard || vi.fn(() => true),
+    confirmEncodingUpgrade,
     addFile: (file) => calls.addFile.push(file),
     renderFile: (index) => calls.renderFile.push(index),
     renderTree: (files) => calls.renderTree.push(files),
@@ -65,7 +67,10 @@ describe('workspace controller', () => {
     expect(() => createWorkspaceController()).toThrow('workspace controller requires state');
     const confirmDiscard = vi.fn(() => false);
     const activeState = {
-      files: [{ name: 'a.md', path: 'a.md', dirty: true }, { name: 'b.md', path: 'b.md', dirty: true }],
+      files: [
+        { name: 'a.md', path: 'a.md', dirty: true, vaultId: 'cap-vault' },
+        { name: 'b.md', path: 'b.md', dirty: true, vaultId: 'cap-vault' },
+      ],
       activeFile: 1, vaultName: 'Vault', recents: [],
     };
     const { controller } = harness({ state: activeState, confirmDiscard });
@@ -211,6 +216,23 @@ describe('workspace controller', () => {
     expect(failed.calls.toasts).toContainEqual(['Could not open folder', 'error']);
   });
 
+  test('an {error} open result reports the failure; a missing vault id stays silent', async () => {
+    const denied = harness({ electronAPI: {
+      openFolder: vi.fn(async () => ({ error: 'denied' })),
+      readVault: vi.fn(),
+    } });
+    await denied.controller.openVault();
+    expect(denied.calls.toasts).toContainEqual(['Could not open folder', 'error']);
+    expect(denied.calls.renderFile).toEqual([]);
+
+    const noId = harness({ electronAPI: {
+      openFolder: vi.fn(async () => ({})),
+      readVault: vi.fn(),
+    } });
+    await noId.controller.openVault();
+    expect(noId.calls.toasts).toEqual([]);
+  });
+
   test('uses fallback folder metadata and singular wording for one Electron note', async () => {
     const current = harness({ electronAPI: {
       openFolder: vi.fn(async () => ({ vault: { id: 'v' } })),
@@ -219,6 +241,36 @@ describe('workspace controller', () => {
     await current.controller.openVault();
     expect(current.state.vaultName).toBe('folder');
     expect(current.calls.toasts).toContainEqual(['Opened "folder" — 1 note']);
+  });
+
+  // audit QA-07: main counts every file a vault read had to skip; the renderer used to
+  // drop the counts, so a partially-readable folder looked complete.
+  test('reports skipped files after a vault read, and stays silent when none were skipped (QA-07)', async () => {
+    const withSkips = harness({ electronAPI: {
+      openFolder: vi.fn(async () => ({ vault: { id: 'v', name: 'Vault' } })),
+      readVault: vi.fn(async () => ({
+        vault: { id: 'v', name: 'Vault', generation: 1 },
+        entries: [{ name: 'ok.md', relPath: 'ok.md', content: 'ok' }],
+        truncated: false,
+        skipped: { unreadable: 1, oversized: 2, escaped: 0, special: 1 },
+      })),
+    } });
+    await withSkips.controller.openVault();
+    expect(withSkips.calls.toasts).toContainEqual([
+      '4 file(s) could not be shown (unreadable, oversized, or unsafe links)', 'info',
+    ]);
+
+    const clean = harness({ electronAPI: {
+      openFolder: vi.fn(async () => ({ vault: { id: 'v', name: 'Vault' } })),
+      readVault: vi.fn(async () => ({
+        vault: { id: 'v', name: 'Vault', generation: 1 },
+        entries: [{ name: 'ok.md', relPath: 'ok.md', content: 'ok' }],
+        truncated: false,
+        skipped: { unreadable: 0, oversized: 0, escaped: 0, special: 0 },
+      })),
+    } });
+    await clean.controller.openVault();
+    expect(clean.calls.toasts).not.toContainEqual(expect.arrayContaining([expect.stringContaining('could not be shown')]));
   });
 
   test('opens a File System Access vault, filters Markdown, and reports picker errors', async () => {
@@ -388,9 +440,8 @@ describe('workspace controller', () => {
     expect(second.controller.getVaultId()).toBe('vault-1');
   });
 
-  // B2 (multi-folder workspaces): lastSession moved to a forest-ready
-  // { vaults: [{vaultId,...}], activeVaultId } shape — restoreLastSession must read it
-  // (restoring vaults[0], the only slot Track B3/B4 wire more than one entry into).
+  // B2/B4 (multi-folder workspaces): lastSession moved to a forest-ready
+  // { vaults: [{vaultId,...}], activeVaultId } shape — restoreLastSession must read it.
   test('restores the last session from the new forest-shaped lastSession (vaults[0])', async () => {
     const readVault = vi.fn(async () => ({
       vault: { id: 'cap-a', name: 'Alpha', generation: 1 },
@@ -405,6 +456,99 @@ describe('workspace controller', () => {
     expect(readVault).toHaveBeenCalledWith('cap-a');
     expect(state.files.map((file) => file.path)).toEqual(['a.md']);
     expect(controller.getVaultId()).toBe('cap-a');
+  });
+
+  // audit UX-04: EVERY folder in lastSession is restored and merged, and the tabs each
+  // vault had open are re-opened — restoring vaults[0] alone silently dropped the rest.
+  test('restores every vault in lastSession and merges their files', async () => {
+    const readVault = vi.fn(async (vaultId) => ({
+      vault: { id: vaultId, name: vaultId === 'cap-a' ? 'Alpha' : 'Beta', generation: 1 },
+      entries: vaultId === 'cap-a'
+        ? [{ name: 'a.md', relPath: 'a.md', content: 'a' }, { name: 'shut.md', relPath: 'shut.md', content: 'x' }]
+        : [{ name: 'b.md', relPath: 'b.md', content: 'b' }],
+    }));
+    const { controller, state, calls } = harness({ electronAPI: { readVault } });
+    await controller.restoreLastSession({
+      vaults: [
+        { vaultId: 'cap-a', openPaths: ['a.md'] },
+        { vaultId: 'cap-b', openPaths: ['b.md'] },
+      ],
+      activeVaultId: 'cap-b',
+      activePath: 'b.md',
+    });
+    expect(readVault).toHaveBeenCalledTimes(2);
+    expect(readVault.mock.calls.map((c) => c[0])).toEqual(['cap-a', 'cap-b']);
+    expect(state.files.map((file) => file.vaultId)).toEqual(['cap-a', 'cap-a', 'cap-b']);
+    expect(state.files.map((file) => file.path)).toEqual(['a.md', 'shut.md', 'b.md']);
+    // Only the paths lastSession listed are re-opened as tabs.
+    expect(state.files.map((file) => file.open)).toEqual([true, false, true]);
+    // The active tab is the (path, vaultId) match from lastSession.
+    expect(calls.renderFile).toEqual([2]);
+    expect(controller.getVaultId()).toBe('cap-b');
+  });
+
+  test('a vault that fails or returns nothing does not abort the other vaults', async () => {
+    const readVault = vi.fn(async (vaultId) => {
+      if (vaultId === 'cap-gone') throw new Error('missing');
+      if (vaultId === 'cap-empty') return { vault: { id: vaultId, name: 'Empty', generation: 1 }, entries: [] };
+      return { vault: { id: vaultId, name: 'Kept', generation: 1 }, entries: [{ name: 'k.md', relPath: 'k.md', content: 'k' }] };
+    });
+    const { controller, state } = harness({ electronAPI: { readVault } });
+    await controller.restoreLastSession({
+      vaults: [
+        { vaultId: 'cap-gone', openPaths: [] },
+        { vaultId: 'cap-empty', openPaths: [] },
+        { vaultId: 'cap-kept', openPaths: ['k.md'] },
+      ],
+      activePath: 'k.md',
+    });
+    expect(state.files.map((file) => file.path)).toEqual(['k.md']);
+    expect(controller.getVaultId()).toBe('cap-kept');
+  });
+
+  test('restoreLastSession re-resolves the active file after each merge (T14 contract)', async () => {
+    let releaseSecond;
+    const secondRead = new Promise((resolve) => { releaseSecond = resolve; });
+    const readVault = vi.fn()
+      .mockImplementationOnce(async () => ({
+        vault: { id: 'cap-a', name: 'Alpha', generation: 1 },
+        entries: [{ name: 'a.md', relPath: 'a.md', content: 'a' }],
+      }))
+      .mockImplementationOnce(() => secondRead);
+    const state = {
+      files: [
+        { name: 'a.md', path: 'a.md', content: 'a', meta: {}, vaultId: 'cap-a', open: true },
+        { name: 'untitled.md', path: 'untitled.md', content: '' },
+      ],
+      activeFile: 0, vaultName: null, recents: [],
+    };
+    const { controller } = harness({ state, electronAPI: { readVault } });
+    const restoring = controller.restoreLastSession({
+      vaults: [
+        { vaultId: 'cap-a', openPaths: ['a.md'] },
+        { vaultId: 'cap-b', openPaths: [] },
+      ],
+      activePath: 'a.md', activeVaultId: 'cap-a',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.files.map((f) => f.path)).toEqual(['untitled.md', 'a.md']);
+    expect(state.files[state.activeFile].path).toBe('a.md');
+    releaseSecond({ vault: { id: 'cap-b', name: 'Beta', generation: 1 }, entries: [] });
+    await restoring;
+  });
+
+  test('the dirty guard still aborts the whole restore', async () => {
+    const readVault = vi.fn(async (vaultId) => ({
+      vault: { id: vaultId, name: 'V', generation: 1 },
+      entries: [{ name: 'a.md', relPath: 'a.md', content: 'a' }],
+    }));
+    const state = { files: [{ name: 'd.md', path: 'd.md', dirty: true }], activeFile: 0, vaultName: null, recents: [] };
+    const { controller, calls } = harness({ state, electronAPI: { readVault } });
+    await controller.restoreLastSession({ vaults: [{ vaultId: 'cap-a', openPaths: ['a.md'] }], activePath: 'a.md' });
+    expect(state.files).toHaveLength(1);
+    expect(state.files[0].path).toBe('d.md');
+    expect(calls.renderTree).toHaveLength(0);
+    expect(calls.renderFile).toHaveLength(0);
   });
 
   test('keeps dirty edits and marks a conflict when a watched vault file changes', async () => {
@@ -489,6 +633,33 @@ describe('workspace controller', () => {
     expect(state.files[0].dirty).toBe(false);
     expect(state.files[0].meta.hash).toBe('next');
     expect(calls.renderTabs).toBe(1);
+  });
+
+  test('saving a vault file deleted on disk reports its recreation and clears the flag', async () => {
+    const writeFile = vi.fn(async () => ({ ok: true, meta: { hash: 'h2' } }));
+    const file = {
+      name: 'a.md', path: 'a.md', content: 'body', dirty: true, revision: 1,
+      documentId: 'doc-1', vaultId: 'cap-a', missing: true, meta: { hash: 'h1' },
+    };
+    const current = harness({ state: { files: [file], activeFile: 0, recents: [] }, electronAPI: { writeFile } });
+    const outcome = await current.controller.writeThrough(file);
+    expect(outcome).toBe('ok');
+    expect(file.missing).toBe(false);
+    expect(current.calls.toasts).toContainEqual([
+      '"a.md" was deleted on disk — saving recreated it', 'info',
+    ]);
+  });
+
+  test('a failed write keeps the missing flag and stays silent about recreation', async () => {
+    const writeFile = vi.fn(async () => ({ ok: false, error: 'denied' }));
+    const file = {
+      name: 'a.md', path: 'a.md', content: 'body', dirty: true, revision: 1,
+      documentId: 'doc-1', vaultId: 'cap-a', missing: true, meta: { hash: 'h1' },
+    };
+    const current = harness({ state: { files: [file], activeFile: 0, recents: [] }, electronAPI: { writeFile } });
+    expect(await current.controller.writeThrough(file)).toBe('error');
+    expect(file.missing).toBe(true);
+    expect(current.calls.toasts).toEqual([]);
   });
 
   test('keeps an authorized Electron document dirty when edits advance during its save', async () => {
@@ -655,6 +826,43 @@ describe('workspace controller', () => {
     expect(await canceled.controller.saveAllDirty({ promptUntitled: true })).toBe(false);
     expect(canceled.state.files[0].dirty).toBe(true);
     expect(canceled.calls.toasts).toContainEqual(['Save canceled — the note is still unsaved', 'info']);
+  });
+
+  // F8 (2026-09-26 audit): a failed Save-All during the close flow used to abort with
+  // zero feedback — no toast, no conflict banner, window silently staying open.
+  test('close-flow Save-All reports every failed outcome instead of aborting silently (F8)', async () => {
+    const conflictState = {
+      files: [{ name: 'a.md', path: 'a.md', documentId: 'doc-1', meta: {}, content: 'mine', dirty: true, revision: 0 }],
+      activeFile: 0, recents: [],
+    };
+    const conflict = harness({ state: conflictState, electronAPI: {
+      writeFile: vi.fn(async () => ({ error: 'conflict' })),
+      readFile: vi.fn(async () => ({ content: 'disk', meta: {} })),
+    } });
+    expect(await conflict.controller.saveAllDirty({ promptUntitled: true })).toBe(false);
+    expect(conflict.calls.renderFile).toEqual([0]);
+    expect(conflict.calls.toasts).toContainEqual(['Could not save a.md (conflict)', 'error']);
+    expect(conflictState.files[0].conflict).toBe(true);
+
+    const errorState = {
+      files: [{ name: 'b.md', path: 'b.md', documentId: 'doc-2', meta: {}, content: 'x', dirty: true, revision: 0 }],
+      activeFile: 0, recents: [],
+    };
+    const errored = harness({ state: errorState, electronAPI: {
+      writeFile: vi.fn(async () => ({ error: 'nope' })),
+    } });
+    expect(await errored.controller.saveAllDirty()).toBe(false);
+    expect(errored.calls.toasts).toContainEqual(['Could not save b.md (nope)', 'error']);
+
+    const declinedState = {
+      files: [{ name: 'c.md', path: 'c.md', documentId: 'doc-3', meta: { encoding: 'windows-1256' }, content: 'x', dirty: true, revision: 0 }],
+      activeFile: 0, recents: [],
+    };
+    const declined = harness({ state: declinedState, electronAPI: {
+      writeFile: vi.fn(async () => ({ error: 'unmappable-character', count: 1, samples: ['؟'] })),
+    }, confirmEncodingUpgrade: vi.fn(async () => false) });
+    expect(await declined.controller.saveAllDirty()).toBe(false);
+    expect(declined.calls.toasts).toContainEqual(['Save canceled — the note is still unsaved', 'info']);
   });
 
   test('saves with the browser picker and downloads when no writable API exists', async () => {
@@ -856,6 +1064,30 @@ describe('workspace controller', () => {
     expect(current.calls.toasts).toEqual([]);
   });
 
+  // audit UX-13: a failed watcher re-read is now reported (once per failure streak),
+  // and a later successful read resets the flag so a NEW streak reports again.
+  test('a failed watcher re-read reports once and resets after a successful read (UX-13)', async () => {
+    const state = { files: [], activeFile: null, vaultName: 'Vault', recents: [] };
+    let fail = true;
+    const current = harness({ state, electronAPI: {
+      readVault: vi.fn(async () => {
+        if (fail) throw new Error('boom');
+        return { vault: { id: 'v', name: 'Vault', generation: 2 }, entries: [] };
+      }),
+    } });
+    const watchToasts = () => current.calls.toasts.filter(([m]) => /re-reading it failed/.test(m));
+    current.controller.setVaultIdentity('v', 1);
+    await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+    await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+    expect(watchToasts()).toHaveLength(1); // a flapping watcher must not spam
+
+    fail = false;
+    await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 }); // succeeds → resets
+    fail = true;
+    await current.controller.handleVaultChanged({ vaultId: 'v', generation: 2 });
+    expect(watchToasts()).toHaveLength(2); // a NEW failure streak reports again
+  });
+
   test('marks non-active dirty changes without showing an active-file conflict toast', async () => {
     const state = {
       files: [
@@ -1005,26 +1237,122 @@ describe('mergeVaultSlice', () => {
     expect(merged[0]).toMatchObject({ content: 'mine', conflict: true, diskContent: 'theirs', dirty: true });
   });
 
-  test('a file missing from the fresh read is kept (not silently closed)', () => {
+  test('a file missing from the fresh read is kept (not silently closed) and marked missing', () => {
     const existing = [{ name: 'gone.md', path: 'gone.md', vaultId: 'cap-a', content: 'x' }];
     const merged = mergeVaultSlice(existing, 'cap-a', []);
-    expect(merged).toEqual(existing);
+    expect(merged[0]).not.toBe(existing[0]);
+    expect(merged[0]).toEqual({ ...existing[0], missing: true });
   });
 
-  test('a brand-new file with no previous match is added fresh', () => {
+  test('a brand-new file with no previous match is added fresh, not flagged missing', () => {
     const merged = mergeVaultSlice([], 'cap-a', [{ name: 'new.md', relPath: 'new.md', content: 'x' }]);
-    expect(merged).toEqual([expect.objectContaining({ path: 'new.md', vaultId: 'cap-a', content: 'x' })]);
+    expect(merged).toEqual([expect.objectContaining({ path: 'new.md', vaultId: 'cap-a', content: 'x', missing: false })]);
+  });
+
+  test('missing-flag lifecycle: a missing file reappearing unchanged clears the flag', () => {
+    const gone = { name: 'g.md', path: 'g.md', vaultId: 'cap-a', content: 'x', dirty: false, meta: { hash: 'h1' }, missing: true };
+    const merged = mergeVaultSlice([gone], 'cap-a', [{ name: 'g.md', relPath: 'g.md', content: 'x', meta: { hash: 'h1' } }]);
+    expect(merged[0]).not.toBe(gone);
+    expect(merged[0]).toMatchObject({ content: 'x', missing: false });
+  });
+
+  test('missing-flag lifecycle: a missing file reappearing changed reloads cleanly', () => {
+    const gone = { name: 'g.md', path: 'g.md', vaultId: 'cap-a', content: 'stale', dirty: false, meta: { hash: 'old' }, missing: true };
+    const merged = mergeVaultSlice([gone], 'cap-a', [{ name: 'g.md', relPath: 'g.md', content: 'fresh', meta: { hash: 'new' } }]);
+    expect(merged[0]).toMatchObject({ content: 'fresh', conflict: false, missing: false });
+  });
+
+  test('missing-flag lifecycle: a missing dirty file reappearing changed becomes a conflict with the flag cleared', () => {
+    const gone = { name: 'g.md', path: 'g.md', vaultId: 'cap-a', content: 'mine', dirty: true, meta: { hash: 'old' }, missing: true };
+    const merged = mergeVaultSlice([gone], 'cap-a', [{ name: 'g.md', relPath: 'g.md', content: 'theirs', meta: { hash: 'new' } }]);
+    expect(merged[0]).toMatchObject({
+      content: 'mine', dirty: true, conflict: true, diskContent: 'theirs', missing: false,
+    });
+  });
+});
+
+describe('resolveActiveAfterMerge (T14 F1)', () => {
+  test('a foreign vault\'s watch tick keeps the active tab pointing at its own file', () => {
+    // B2 is open in the editor; a watch tick on vault A reshuffles the array. Pre-fix,
+    // State.activeFile kept its index and the next keystroke wrote B2's editor content
+    // into A's file object — dirtying it for autosave to write over A's file on disk.
+    const b1 = { name: 'b1.md', path: 'b1.md', vaultId: 'cap-b', content: 'b1', dirty: false };
+    const b2 = { name: 'b2.md', path: 'b2.md', vaultId: 'cap-b', content: 'b2', dirty: false };
+    const state = {
+      files: [
+        { name: 'a.md', path: 'a.md', vaultId: 'cap-a', content: 'a', dirty: false },
+        b1,
+        b2,
+      ],
+      activeFile: 2,
+      recents: [],
+    };
+    state.files = mergeVaultSlice(state.files, 'cap-a', [
+      { name: 'a.md', relPath: 'a.md', content: 'a' },
+      { name: 'a2.md', relPath: 'a2.md', content: 'a2' },
+    ]);
+    resolveActiveAfterMerge(state, b2);
+    expect(state.files[state.activeFile]).toBe(b2);
+    expect(state.files[state.activeFile].vaultId).toBe('cap-b');
+  });
+
+  test('a merge that re-granted the capability still re-finds the active tab', () => {
+    // A disk change on a clean file replaces the object AND may carry a re-granted
+    // documentId — vaultId+path is what still identifies the tab.
+    const note = {
+      name: 'n.md', path: 'n.md', vaultId: 'cap-a', content: 'mine',
+      dirty: false, documentId: 'cap-old', meta: { hash: 'old' },
+    };
+    const state = { files: [note], activeFile: 0, recents: [] };
+    state.files = mergeVaultSlice(state.files, 'cap-a', [
+      { name: 'n.md', relPath: 'n.md', content: 'theirs', documentId: 'cap-new', meta: { hash: 'new' } },
+    ]);
+    resolveActiveAfterMerge(state, note);
+    expect(state.files[state.activeFile]).toMatchObject({ path: 'n.md', documentId: 'cap-new' });
+  });
+
+  test('no active tab stays no active tab', () => {
+    const state = { files: [{ name: 'a.md', path: 'a.md', vaultId: 'cap-a', content: 'a' }], activeFile: null, recents: [] };
+    resolveActiveAfterMerge(state, null);
+    expect(state.activeFile).toBeNull();
   });
 });
 
 describe('openRecent / pushRecent vault scoping (B3)', () => {
+  test('pushRecent skips notes with no on-disk identity (pristine untitled notes)', () => {
+    const state = { files: [], activeFile: null, recents: [] };
+    const hostDocument = { getElementById: vi.fn(() => null), createElement: vi.fn() };
+    const { controller } = harness({ state, hostDocument });
+    controller.setVaultIdentity('cap-ambient', 1);
+    controller.pushRecent({ name: 'Untitled.md', path: null }); // neither documentId nor vaultId
+    expect(state.recents).toEqual([]);
+  });
+
   test('pushRecent never stamps the ambient vault onto a loose file', () => {
     const state = { files: [], activeFile: null, recents: [] };
     const hostDocument = { getElementById: vi.fn(() => null), createElement: vi.fn() };
     const { controller } = harness({ state, hostDocument });
     controller.setVaultIdentity('cap-ambient', 1); // some OTHER vault is the "most recent" identity
-    controller.pushRecent({ name: 'loose.md', path: 'loose.md' }); // no vaultId of its own
+    controller.pushRecent({ name: 'loose.md', path: 'loose.md', documentId: 'doc-1' }); // no vaultId of its own
     expect(state.recents[0].vaultId).toBeNull();
+  });
+
+  test('pushRecent dedupes by (path, vaultId), keeping a different folder\'s entry', () => {
+    const state = {
+      files: [],
+      activeFile: null,
+      recents: [{ name: 'todo.md', path: 'notes/todo.md', vaultId: 'cap-a', documentId: 'd1' }],
+    };
+    const hostDocument = { getElementById: vi.fn(() => null), createElement: vi.fn() };
+    const { controller } = harness({ state, hostDocument });
+    controller.pushRecent({ name: 'todo.md', path: 'notes/todo.md', vaultId: 'cap-b', documentId: 'd2' });
+    expect(state.recents).toHaveLength(2);
+    expect(state.recents[0]).toMatchObject({ vaultId: 'cap-b' });
+    expect(state.recents[1]).toMatchObject({ vaultId: 'cap-a' });
+
+    controller.pushRecent({ name: 'todo.md', path: 'notes/todo.md', vaultId: 'cap-b', documentId: 'd3' });
+    expect(state.recents).toHaveLength(2); // same identity replaces, never duplicates
+    expect(state.recents[0]).toMatchObject({ vaultId: 'cap-b', documentId: 'd3' });
   });
 
   test('openRecent does not resolve a loose recent to a same-path file from a different vault', async () => {
@@ -1143,5 +1471,293 @@ describe('closeVault / getOpenVaults (B4)', () => {
     const { controller, state } = harness();
     expect(await controller.closeVault('cap-never-opened')).toBe(false);
     expect(state.files).toEqual([]);
+  });
+
+  test('the status bar never keeps a closed folder\'s name', async () => {
+    const { controller, state, calls } = openTwoFolders();
+    await controller.openVault();
+    await controller.openVault();
+    expect(state.vaultName).toBe('Beta');
+    await controller.closeVault('cap-b');
+    expect(state.vaultName).toBe('Alpha'); // re-pointed at the surviving folder
+    expect(calls.vaultUi.at(-1)).toBe('Alpha');
+
+    const only = harness({ electronAPI: {
+      openFolder: vi.fn(async () => ({ vault: { id: 'cap-a', name: 'Alpha' } })),
+      readVault: vi.fn(async () => ({
+        vault: { id: 'cap-a', name: 'Alpha', generation: 1 },
+        entries: [{ name: 'a.md', relPath: 'a.md', content: 'a' }],
+      })),
+    } });
+    await only.controller.openVault();
+    await only.controller.closeVault('cap-a');
+    expect(only.state.vaultName).toBe(''); // no folder left to name
+    expect(only.calls.vaultUi.at(-1)).toBe('');
+  });
+});
+
+// v1.3.0: the Windows-1256 encoding-upgrade flow (Sublime/Visual-Studio pattern).
+describe('encoding upgrade on unmappable-character saves', () => {
+  function legacyFile(overrides = {}) {
+    return {
+      name: 'legacy.md', path: 'legacy.md', handle: null,
+      content: 'نص 😀', dirty: true, revision: 3,
+      documentId: 'doc-1', vaultId: null,
+      meta: { hash: 'h1', bom: false, eol: '\n', finalNewline: true, encoding: 'windows-1256' },
+      ...overrides,
+    };
+  }
+
+  test('an interactive write offers the UTF-8 upgrade and retries in place', async () => {
+    const writeFile = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', char: '😀', count: 2, samples: ['😀'] })
+      .mockResolvedValueOnce({ ok: true, meta: { hash: 'h2', encoding: 'utf8', bom: false, eol: '\n', finalNewline: true } });
+    const prompt = vi.fn(async () => true);
+    const { controller } = harness({
+      electronAPI: { writeFile, readFile: vi.fn() },
+      confirmEncodingUpgrade: prompt,
+    });
+    const file = legacyFile();
+    const outcome = await controller.writeThrough(file, { interactive: true });
+    expect(outcome).toBe('ok');
+    expect(prompt).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'legacy.md', encoding: 'windows-1256', count: 2, samples: ['😀'],
+    }));
+    expect(writeFile).toHaveBeenCalledTimes(2);
+    const retry = writeFile.mock.calls[1][0];
+    expect(retry).toMatchObject({ documentId: 'doc-1', encoding: 'utf8', bom: false, baseHash: 'h1', content: 'نص 😀' });
+    expect(file.dirty).toBe(false);
+    expect(file.meta.encoding).toBe('utf8');
+  });
+
+  test('concurrent saves of one file serialize instead of racing the baseline hash', async () => {
+    let settleFirst;
+    const firstWrite = new Promise((resolve) => { settleFirst = resolve; });
+    const writeFile = vi.fn()
+      .mockImplementationOnce(() => firstWrite)
+      .mockResolvedValueOnce({ ok: true, meta: { hash: 'h2', encoding: 'utf8', bom: false, eol: '\n', finalNewline: true } });
+    const { controller } = harness({ electronAPI: { writeFile, readFile: vi.fn() } });
+    const file = legacyFile({
+      content: 'draft',
+      meta: { hash: 'h1', bom: false, eol: '\n', finalNewline: true, encoding: 'utf8' },
+    });
+    const first = controller.writeThrough(file);
+    const second = controller.writeThrough(file);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(writeFile.mock.calls[0][0].baseHash).toBe('h1');
+    settleFirst({ ok: true, meta: { hash: 'h2', encoding: 'utf8', bom: false, eol: '\n', finalNewline: true } });
+    expect(await first).toBe('ok');
+    expect(await second).toBe('ok');
+    expect(writeFile).toHaveBeenCalledTimes(2);
+    expect(writeFile.mock.calls[1][0].baseHash).toBe('h2');
+    expect(file.conflict).toBeUndefined();
+  });
+
+  test('declining keeps the note dirty and stops after the first attempt', async () => {
+    const writeFile = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', count: 1, samples: ['😀'] });
+    const prompt = vi.fn(async () => false);
+    const { controller } = harness({
+      electronAPI: { writeFile, readFile: vi.fn() },
+      confirmEncodingUpgrade: prompt,
+    });
+    const file = legacyFile();
+    const outcome = await controller.writeThrough(file, { interactive: true });
+    expect(outcome).toBe('encoding-declined');
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(file.dirty).toBe(true);
+    expect(file.meta.encoding).toBe('windows-1256');
+  });
+
+  test('a non-interactive write (the auto-save timer) never prompts and stays an error', async () => {
+    const writeFile = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', count: 1, samples: ['😀'] });
+    const prompt = vi.fn(async () => true);
+    const { controller } = harness({
+      electronAPI: { writeFile, readFile: vi.fn() },
+      confirmEncodingUpgrade: prompt,
+    });
+    const file = legacyFile();
+    const outcome = await controller.writeThrough(file);
+    expect(outcome).toBe('error');
+    expect(prompt).not.toHaveBeenCalled();
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(file._lastWriteError).toBe('unmappable-character');
+  });
+
+  test('declining inside Ctrl+S shows the save-canceled toast, not a failure', async () => {
+    const writeFile = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', count: 1, samples: ['😀'] });
+    const { controller, calls } = harness({
+      electronAPI: { writeFile, readFile: vi.fn() },
+      confirmEncodingUpgrade: vi.fn(async () => false),
+    });
+    await controller.saveCurrent(legacyFile());
+    expect(calls.toasts.some(([msg]) => String(msg).includes('Save canceled'))).toBe(true);
+    expect(calls.toasts.some(([msg]) => String(msg).includes('Could not save'))).toBe(false);
+  });
+
+  test('Save As offers the upgrade and retries with UTF-8 through the same channel', async () => {
+    const saveFileAs = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', count: 1, samples: ['😀'] })
+      .mockResolvedValueOnce({ ok: true, documentId: 'doc-9', name: 'copy.md', meta: { hash: 'h9', encoding: 'utf8', bom: false, eol: '\n', finalNewline: true } });
+    const prompt = vi.fn(async () => true);
+    const { controller } = harness({
+      electronAPI: { saveFileAs },
+      confirmEncodingUpgrade: prompt,
+    });
+    const file = legacyFile();
+    await controller.saveAs(file);
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(saveFileAs).toHaveBeenCalledTimes(2);
+    expect(saveFileAs.mock.calls[1][0]).toMatchObject({ encoding: 'utf8', bom: false, content: 'نص 😀' });
+    expect(file.meta.encoding).toBe('utf8');
+    expect(file.meta.bom).toBe(false);
+    expect(file.name).toBe('copy.md');
+    expect(file.documentId).toBe('doc-9');
+    expect(file.dirty).toBe(false);
+  });
+
+  test('accepting the upgrade then canceling the destination rolls the encoding back', async () => {
+    const saveFileAs = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', count: 1, samples: ['😀'] })
+      .mockResolvedValueOnce({ canceled: true });
+    const prompt = vi.fn(async () => true);
+    const { controller } = harness({
+      electronAPI: { saveFileAs },
+      confirmEncodingUpgrade: prompt,
+    });
+    const file = legacyFile();
+    await controller.saveAs(file);
+    expect(saveFileAs).toHaveBeenCalledTimes(2);
+    expect(saveFileAs.mock.calls[1][0]).toMatchObject({ encoding: 'utf8', bom: false });
+    expect(file.meta.encoding).toBe('windows-1256');
+    expect(file.documentId).toBe('doc-1');
+    expect(file.dirty).toBe(true);
+  });
+});
+
+// ── GATE-01 (2026-09-26): continue-shelf rendering, external-file delivery, recent
+// re-validation, vault-change reconciliation, and session restore.
+describe('renderContinue + openRecent + delivery lanes (GATE-01)', () => {
+  const stubDoc = () => {
+    const byId = {};
+    const el = () => {
+      const node = {
+        children: [], attrs: {}, listeners: {}, style: {}, textContent: '', hidden: false,
+        setAttribute: (k, v) => { node.attrs[k] = v; },
+        appendChild: (c) => { node.children.push(c); return c; },
+        append: (...cs) => { cs.forEach((c) => node.children.push(c)); },
+        addEventListener: (t, fn) => { node.listeners[t] = fn; },
+      };
+      return node;
+    };
+    for (const id of ['continueWrap', 'continueList', 'recentList', 'recentEmpty']) byId[id] = el();
+    return { createElement: vi.fn(el), getElementById: (id) => byId[id] || null, _byId: byId };
+  };
+
+  test('renderContinue: empty progress hides the shelf; entries render shelf buttons', () => {
+    const hostDocument = stubDoc();
+    const c = harness({ state: { files: [], activeFile: null, readingProgress: [] }, hostDocument });
+    c.controller.renderContinue();
+    expect(hostDocument._byId.continueWrap.hidden).toBe(true);
+    c.state.readingProgress = [
+      { key: 'vault:v a.md', name: 'a.md', path: 'a.md', ratio: 0.5, at: Date.now() - 5000 },
+      { key: 'vault:v b.md', name: 'b.md', path: 'b.md', ratio: 1, at: Date.now() },
+    ];
+    c.controller.renderContinue();
+    expect(hostDocument._byId.continueWrap.hidden).toBe(false);
+    const buttons = hostDocument._byId.continueList.children;
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].children.some((n) => n.textContent === 'a.md')).toBe(true);
+  });
+
+  test('openExternalFile: failures toast with the file name; success opens the file', () => {
+    const c = harness({ state: { files: [], activeFile: null } });
+    c.controller.openExternalFile({ error: 'read-failed', name: 'a.md' });
+    c.controller.openExternalFile({ error: 'read-failed' });
+    expect(c.calls.toasts).toContainEqual(['Could not open “a.md”', 'error']);
+    expect(c.calls.toasts).toContainEqual(['Could not open file', 'error']);
+    c.controller.openExternalFile({ name: 'b.md', content: 'hello', meta: {} });
+    expect(c.calls.addFile).toHaveLength(1);
+    expect(c.calls.addFile[0]).toMatchObject({ name: 'b.md', content: 'hello' });
+  });
+
+  test('openRecent: a document recent re-validates then opens; a failed re-validation toasts', async () => {
+    const readFile = vi.fn(async () => ({ name: 'a.md', content: 'x', meta: {}, documentId: 'doc-1' }));
+    const ok = harness({
+      state: { files: [], activeFile: null, recents: [] },
+      electronAPI: { reopenDocument: vi.fn(async () => ({ ok: true })), readFile },
+    });
+    await ok.controller.openRecent({ name: 'a.md', path: 'a.md', documentId: 'doc-1', vaultId: null });
+    expect(readFile).toHaveBeenCalledWith('doc-1');
+    expect(ok.calls.addFile).toHaveLength(1);
+    const failed = harness({
+      state: { files: [], activeFile: null, recents: [] },
+      electronAPI: {
+        reopenDocument: vi.fn(async () => ({ error: 'missing-file' })),
+        readFile: vi.fn(async () => ({ error: 'missing-file' })),
+      },
+    });
+    await failed.controller.openRecent({ name: 'a.md', path: 'a.md', documentId: 'doc-1', vaultId: null });
+    expect(failed.calls.toasts).toContainEqual(['Could not re-open "a.md" — the file may have moved', 'error']);
+  });
+
+  test('openRecent: a vault recent re-opens the folder and activates its note', async () => {
+    const readVault = vi.fn(async () => ({
+      vault: { id: 'cap-v', name: 'Notes', generation: 2 },
+      entries: [{ name: 'a.md', relPath: 'a.md', content: 'x', documentId: 'cap-d', meta: {} }],
+      skipped: {},
+    }));
+    const c = harness({
+      state: { files: [], activeFile: null, recents: [] },
+      electronAPI: { reopenVault: vi.fn(async () => ({ ok: true })), readVault },
+    });
+    await c.controller.openRecent({ name: 'Notes', path: 'a.md', documentId: null, vaultId: 'cap-v' });
+    expect(c.calls.renderTree).toHaveLength(1);
+    expect(c.calls.renderFile).toHaveLength(1);
+    expect(c.calls.vaultUi).toContain('Notes');
+    const failed = harness({
+      state: { files: [], activeFile: null, recents: [] },
+      electronAPI: { reopenVault: vi.fn(async () => ({ error: 'missing-folder' })) },
+    });
+    await failed.controller.openRecent({ name: 'Notes', path: 'a.md', vaultId: 'cap-v' });
+    expect(failed.calls.toasts).toContainEqual(['Could not re-open "Notes" — the folder may have moved', 'error']);
+  });
+
+  test('handleVaultChanged: a failed re-read warns once; a stale generation is ignored', async () => {
+    let handlers = {};
+    const electronAPI = { readVault: vi.fn(async () => { throw new Error('x'); }), onVaultChanged: (cb) => { handlers.changed = cb; } };
+    const c = harness({ state: { files: [], activeFile: null }, electronAPI });
+    c.controller.bindExternalEvents();
+    c.controller.setVaultIdentity('cap-v', 3, 'Notes');
+    await handlers.changed({ vaultId: 'cap-v', generation: 3 });
+    expect(c.calls.toasts).toContainEqual(['Folder changed on disk but re-reading it failed — the tree may be stale', 'info']);
+    await handlers.changed({ vaultId: 'cap-v', generation: 3 });
+    expect(c.calls.toasts).toHaveLength(1); // once per failure streak
+    electronAPI.readVault.mockResolvedValue({ vault: { generation: 4 }, entries: [], skipped: {} });
+    await handlers.changed({ vaultId: 'cap-v', generation: 3 });
+    expect(c.calls.toasts).toHaveLength(1); // stale generation → no further toasts
+  });
+
+  test('restoreLastSession re-opens vaults and their tabs', async () => {
+    const readVault = vi.fn(async () => ({
+      vault: { id: 'cap-v', name: 'Notes', generation: 2 },
+      entries: [{ name: 'a.md', relPath: 'a.md', content: 'one', documentId: 'cap-d1', meta: {} }],
+      skipped: {},
+    }));
+    const c = harness({
+      state: { files: [], activeFile: null, recents: [] },
+      electronAPI: { readVault },
+    });
+    await c.controller.restoreLastSession({
+      vaults: [{ vaultId: 'cap-v', openPaths: ['a.md'] }],
+      activeVaultId: 'cap-v',
+      activePath: 'a.md',
+    });
+    expect(readVault).toHaveBeenCalledWith('cap-v');
+    expect(c.calls.renderFile).toHaveLength(1);
+    expect(c.state.files[0]).toMatchObject({ path: 'a.md', open: true });
   });
 });

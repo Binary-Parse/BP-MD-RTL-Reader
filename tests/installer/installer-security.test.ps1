@@ -48,7 +48,7 @@ Describe 'Verified installer build chain' {
     }
 
     It 'commits an exact Electron payload inventory and blocks direct Inno compilation' {
-        $SourcePolicy.electronVersion | Should -Be '42.7.0'
+        $SourcePolicy.electronVersion | Should -Be $Package.devDependencies.electron -Because 'the Inno payload pin must track package.json, not a hand-synced literal'
         $SourcePolicy.files.Count | Should -Be 75
         @($SourcePolicy.files | Select-Object -Unique).Count | Should -Be 75
         $SourcePolicy.files | Should -Contain 'resources/app.asar'
@@ -134,22 +134,65 @@ Describe 'Elevated installer command boundaries' {
 
     It 'NSIS v1.2.1 upgrade prompt reads versions read-only and routes removal through Windows settings' {
         # Detection exists and reads only the DisplayVersion value of the two known keys.
-        $Nsis | Should -Match 'Function BpmdDetectInstalledVersion'
+        # (T12: the detect block is an !macro, not a Function, and the runtime language
+        # selection is $LANGUAGE == 1025 inside customInit — per the file's own note.)
+        $Nsis | Should -Match '!macro BpmdDetectInstalledVersion'
         $Nsis | Should -Match 'DisplayVersion'
         $Nsis | Should -Match 'BPMD_EB_UNINSTALL_KEY'
         $Nsis | Should -Match 'BPMD_INNO_UNINSTALL_KEY'
         # The same-version prompt guides removal to the Windows settings page by text.
         $Nsis | Should -Match 'Installed apps'
-        # Localized prompts ship in both UI languages.
-        $Nsis | Should -Match 'LangString BpmdUpgFound\s+1033'
-        $Nsis | Should -Match 'LangString BpmdUpgFound\s+1025'
+        # Localized prompts ship in both UI languages, selected at runtime.
+        $Nsis | Should -Match '\$LANGUAGE == 1025'
+        $Nsis | Should -Match '\$LANGUAGE == 1025[\s\S]*\$LANGUAGE == 1025'
     }
 
     It 'both installers present a license page' {
         $PkgJson = Get-Content -Raw (Join-Path $RepoRoot 'package.json') | ConvertFrom-Json
-        $PkgJson.build.nsis.license | Should -Be 'installer/LICENSE-INSTALLER.txt'
+        $PkgJson.build.nsis.license | Should -Be 'installer/LICENSE-INSTALLER.rtf'
         $Inno | Should -Match '(?m)^LicenseFile='
-        Test-Path (Join-Path $RepoRoot 'build\installer\LICENSE-INSTALLER.txt') | Should -BeTrue
+        Test-Path (Join-Path $RepoRoot 'build\installer\LICENSE-INSTALLER.rtf') | Should -BeTrue
+    }
+
+    It 'PATH opt-in is checkbox-gated, idempotent via EnVar, and removed on uninstall' {
+        # The page sits in electron-builder's after-directory slot; the Git-style
+        # radio pair defaults to "leave PATH unchanged" (BpmdAddToPath "0").
+        $Nsis | Should -Match '!macro customPageAfterChangeDir'
+        $Nsis | Should -Match 'Page custom BpmdPathPageCreate BpmdPathPageLeave'
+        $Nsis | Should -Match 'BpmdAddToPath "0"'
+        $Nsis | Should -Match 'BpmdPathRadioAdd'
+        $Nsis | Should -Match '\$\{NSD_Check\} \$BpmdPathRadioSkip'
+        # Machine-level writes go through the EnVar plugin (preserves REG_EXPAND_SZ,
+        # appends only when absent, broadcasts WM_SETTINGCHANGE) — never raw registry
+        # string surgery, and never an ExecWait.
+        $Nsis | Should -Match 'EnVar::SetHKLM'
+        $Nsis | Should -Match 'EnVar::AddValueEx "PATH" "\$INSTDIR"'
+        $Nsis | Should -Match 'EnVar::DeleteValue "PATH" "\$INSTDIR"'
+        # The install-time write is gated on the user's choice; silent installs use /add-path.
+        $Nsis | Should -Match '\$\{If\} \$BpmdAddToPath == "1"'
+        $Nsis | Should -Match '"/add-path"'
+        # The PATH page must abort in silent mode like every other custom page.
+        ($Nsis -split 'Function BpmdPathPageCreate')[1] | Should -Match '\$\{If\} \$\{Silent\}'
+        # T14: the Leave callback resets BEFORE reading the radio — Next → Back → Next
+        # re-enters Leave with the default radio re-checked, and without the reset the
+        # stale "1" from the first pass would install onto PATH anyway.
+        ($Nsis -split 'Function BpmdPathPageLeave')[1] | Should -Match 'StrCpy \$BpmdAddToPath "0"'
+    }
+
+    It 'existing installations get a maintenance wizard page, never a modal MessageBox (T13)' {
+        # The absolute contract: no MessageBox anywhere in the installer script —
+        # version state is a wizard page with radio choices (Python/MSI maintenance
+        # pattern; Git-style radio + sub-caption), never a wall of text.
+        $Nsis | Should -Not -Match '(?m)^\s*MessageBox\b'
+        $Nsis | Should -Match '!macro customWelcomePage'
+        $Nsis | Should -Match 'Page custom BpmdMaintenancePageCreate BpmdMaintenancePageLeave'
+        # The page skips itself on fresh installs and in silent mode.
+        ($Nsis -split 'Function BpmdMaintenancePageCreate')[1] | Should -Match '\$\{If\} \$\{Silent\}'
+        # The remove choice opens the Windows settings page — a shell constant,
+        # never an uninstall command read from the registry.
+        $Nsis | Should -Match 'ExecShell "open" "ms-settings:appsfeatures"'
+        # Arabic wizard pages are truly RTL (the documented nsDialogs API).
+        $Nsis | Should -Match 'nsDialogs::SetRTL 1'
     }
 
     It 'same-version setup offers repair or cancel without an elevated Remove action' {

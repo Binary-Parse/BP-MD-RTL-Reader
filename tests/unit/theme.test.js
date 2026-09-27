@@ -26,7 +26,7 @@ function cycleTheme() {
 }
 
 function foucPreventionLogic(storedTheme) {
-  const VALID_THEMES = ['paper', 'ink', 'sepia'];
+  const VALID_THEMES = ['paper', 'ink', 'sepia', 'oasis'];
   if (storedTheme && VALID_THEMES.includes(storedTheme)) {
     return storedTheme;
   }
@@ -53,18 +53,24 @@ describe('cycleTheme', () => {
     expect(localStorage.getItem('bpmdrtlreader-theme')).toBe('sepia');
   });
 
-  test('sepia -> paper (wraps)', () => {
-    currentTheme = 'sepia';
+  test('oasis -> paper (wraps)', () => {
+    currentTheme = 'oasis';
     const next = cycleTheme();
     expect(next).toBe('paper');
+  });
+
+  test('sepia -> oasis', () => {
+    currentTheme = 'sepia';
+    expect(cycleTheme()).toBe('oasis');
   });
 });
 
 describe('getNextTheme pure logic', () => {
-  test('cycles through all 3 themes', () => {
+  test('cycles through all 4 themes', () => {
     expect(getNextTheme('paper')).toBe('ink');
     expect(getNextTheme('ink')).toBe('sepia');
-    expect(getNextTheme('sepia')).toBe('paper');
+    expect(getNextTheme('sepia')).toBe('oasis');
+    expect(getNextTheme('oasis')).toBe('paper');
   });
 
   test('handles unknown theme by falling back via indexOf', () => {
@@ -89,8 +95,8 @@ describe('FOUC prevention', () => {
 });
 
 describe('theme constants', () => {
-  test('exact 3 themes in correct order', () => {
-    expect(THEMES).toEqual(['paper', 'ink', 'sepia']);
+  test('exact 4 themes in correct order', () => {
+    expect(THEMES).toEqual(['paper', 'ink', 'sepia', 'oasis']);
   });
 });
 

@@ -14,8 +14,14 @@ const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 
 /** Rendered gap between the visible toast and the bottom edge of .app. */
 async function toastGap(page) {
-  await page.evaluate(() => window.showToast('measure', 'info'));
-  await page.waitForTimeout(350);
+  await page.evaluate(() => new Promise((resolve) => {
+    window.showToast('measure', 'info');
+    const t = document.querySelector('.toast');
+    const dur = t ? parseFloat(getComputedStyle(t).transitionDuration) : 0;
+    if (!dur) return resolve();
+    t.addEventListener('transitionend', () => resolve(), { once: true });
+    setTimeout(resolve, 1000);
+  }));
   const gap = await page.evaluate(() => {
     const t = document.querySelector('.toast').getBoundingClientRect();
     const app = document.querySelector('.app').getBoundingClientRect();
@@ -38,7 +44,6 @@ test.describe('[T-F19] chrome visibility states', () => {
       S.hideStatusBar = flags.includes('nostatus');
       window.applyChromeLayout();
     }, flags);
-    await page.waitForTimeout(120);
     return page.evaluate(() => {
       const app = document.querySelector('.app');
       const rows = getComputedStyle(app).gridTemplateRows.trim();
@@ -157,15 +162,13 @@ test.describe('[T-F19] chrome visibility states', () => {
     const barTop = () => page.evaluate(() =>
       Math.round(document.querySelector('.titlebar').getBoundingClientRect().top));
 
-    expect(await barTop(), 'starts lifted out of view').toBeLessThan(appTop);
+    await expect.poll(barTop, { message: 'starts lifted out of view' }).toBeLessThan(appTop);
 
     await page.mouse.move(700, appTop + 2);
-    await page.waitForTimeout(350);
-    expect(await barTop(), 'hot edge reveals it').toBe(appTop);
+    await expect.poll(barTop, { message: 'hot edge reveals it' }).toBe(appTop);
 
     await page.mouse.move(700, appTop + 400);
-    await page.waitForTimeout(400);
-    expect(await barTop(), 'moving into the body retracts it').toBeLessThan(appTop);
+    await expect.poll(barTop, { message: 'moving into the body retracts it' }).toBeLessThan(appTop);
   });
 
   test('keyboard focus reveals the bar, so no control is stranded off-screen', async ({ page }) => {
@@ -173,7 +176,6 @@ test.describe('[T-F19] chrome visibility states', () => {
     const appTop = await page.evaluate(() =>
       Math.round(document.querySelector('.app').getBoundingClientRect().top));
     await page.focus('#sidebarToggleBtn');
-    await page.waitForTimeout(300);
     const top = await page.evaluate(() =>
       Math.round(document.querySelector('.titlebar').getBoundingClientRect().top));
     expect(top, ':focus-within must reveal the bar').toBe(appTop);
@@ -198,11 +200,9 @@ test.describe('[T-F19] chrome visibility states', () => {
   test('an open dialog is never covered by the revealed bar', async ({ page }) => {
     await chrome(page, ['autohide']);
     await page.evaluate(() => window.showShortcuts());
-    await page.waitForTimeout(200);
     const appTop = await page.evaluate(() =>
       Math.round(document.querySelector('.app').getBoundingClientRect().top));
     await page.mouse.move(700, appTop + 2);
-    await page.waitForTimeout(350);
     const covered = await page.evaluate(() => {
       const bar = document.querySelector('.titlebar').getBoundingClientRect();
       const dlg = document.querySelector('#modalOverlay .modal').getBoundingClientRect();
@@ -250,7 +250,6 @@ test.describe('[T-F19] launching with chrome already hidden', () => {
 
   test('stays quiet when nothing is hidden', async ({ page }) => {
     await bootWith(page, '');
-    await page.waitForTimeout(600);
     // #toast is always in the DOM; `.show` is what makes it a visible toast.
     await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
   });

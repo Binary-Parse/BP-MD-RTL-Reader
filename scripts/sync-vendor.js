@@ -35,8 +35,12 @@ const iconMap = {
   'zoom-in': 'zoom-in', 'zoom-out': 'zoom-out', command: 'command', keyboard: 'keyboard',
   'refresh-cw': 'refresh-cw', info: 'info', 'panel-left': 'panel-left',
   'panel-right': 'panel-right', languages: 'languages', 'align-justify': 'text-align-justify',
-  sun: 'sun', moon: 'moon', 'book-open': 'book-open', 'rotate-ccw': 'rotate-ccw',
+  sun: 'sun', moon: 'moon', palette: 'palette', 'book-open': 'book-open', 'rotate-ccw': 'rotate-ccw',
   'sun-medium': 'sun-medium', pencil: 'pencil', expand: 'expand', shrink: 'shrink',
+  flame: 'flame',
+  // T6.1c: the closed-book glyph for the "Export EPUB…" menu/palette entry (book-open already
+  // belongs to the Reading/Edit toggle).
+  book: 'book',
 };
 
 function packageDir(name, from = ROOT) {
@@ -167,6 +171,9 @@ function generateManifest() {
     'resources/vendor/highlight/highlight.min.js',
     ...fs.readdirSync(path.join(packageDir('katex'), 'dist/fonts')).filter((file) => file.endsWith('.woff2'))
       .sort().map((file) => 'resources/vendor/katex/fonts/' + file),
+    ...fs.readdirSync(path.join(ROOT, 'resources/vendor/fonts')).filter((file) => file.endsWith('.woff2'))
+      .sort().map((file) => 'resources/vendor/fonts/' + file),
+    'build/x86-unicode/EnVar.dll',
   ];
   for (const target of targets.sort()) {
     const file = path.join(ROOT, target);

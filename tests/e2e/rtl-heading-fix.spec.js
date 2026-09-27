@@ -105,12 +105,10 @@ async function hasRtlMode(page) {
  */
 async function activateRTL(page) {
   await page.click('#rtlBtn');
-  await page.waitForTimeout(100);
   const active = await hasRtlMode(page);
   if (!active) {
     // Was already RTL and we toggled it off -- click again to re-enable
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
   }
 }
 
@@ -156,7 +154,6 @@ test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode',
 
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const result = await page.evaluate(() => {
       const bodyEl = document.getElementById('body');
@@ -178,7 +175,6 @@ test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode',
 
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h2 = document.querySelector('#noteContent h2');
@@ -195,7 +191,6 @@ test.describe('[AC1+AC2] Computed-style: headings text-align right in RTL mode',
 
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h3 = document.querySelector('#noteContent h3');
@@ -220,7 +215,6 @@ test.describe('[AC3] .doc-meta computed-style in RTL mode', () => {
 
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const computed = await page.evaluate(() => {
       const dm = document.querySelector('#noteContent .doc-meta');
@@ -252,7 +246,6 @@ test.describe('[AC4] Physical geometry: h1 flush-right in RTL mode', () => {
 
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const geo = await getTextGeometry(page, '#noteContent h1');
     expect(geo).not.toBeNull();
@@ -280,7 +273,6 @@ test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode
 
     // Do NOT activate RTL -- stay in LTR default
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const result = await page.evaluate(() => {
       const bodyEl = document.getElementById('body');
@@ -303,7 +295,6 @@ test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h2 = document.querySelector('#noteContent h2');
@@ -321,7 +312,6 @@ test.describe('[AC5] LTR regression: headings stay left-aligned without rtl-mode
     await page.waitForLoadState('networkidle');
 
     await injectMarkdown(page, ENGLISH_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     const textAlign = await page.evaluate(() => {
       const h3 = document.querySelector('#noteContent h3');
@@ -349,7 +339,6 @@ test.describe('[AC6] Toggle reversibility: RTL on then off restores LTR alignmen
     // Step 1: Activate RTL
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(200);
 
     // Verify RTL is active and h1 is right-aligned
     const rtlState = await page.evaluate(() => {
@@ -365,7 +354,6 @@ test.describe('[AC6] Toggle reversibility: RTL on then off restores LTR alignmen
 
     // Step 2: Toggle RTL off (click once -- removes rtl-mode)
     await page.click('#rtlBtn');
-    await page.waitForTimeout(100);
 
     // Verify div#body no longer has rtl-mode and h1 is left-aligned
     const ltrState = await page.evaluate(() => {
@@ -403,7 +391,6 @@ test.describe('[AC7] Theme cross-product: RTL heading alignment across all theme
 
       await activateRTL(page);
       await injectMarkdown(page, RTL_HEADINGS_MD);
-      await page.waitForTimeout(300);
 
       const result = await page.evaluate(() => {
         const h1 = document.querySelector('#noteContent h1');
@@ -446,7 +433,6 @@ test.describe('[AC7] Theme cross-product: RTL heading alignment across all theme
 
       await activateRTL(page);
       await injectMarkdown(page, RTL_HEADINGS_MD);
-      await page.waitForTimeout(300);
 
       // AC4: physical flush-right + semantic right-alignment (cross-platform robust).
       const geo = await getTextGeometry(page, '#noteContent h1');
@@ -479,7 +465,6 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     });
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const h1 = page.locator('#noteContent h1');
     await expect(h1).toHaveScreenshot('h1-rtl-paper.png');
@@ -495,7 +480,6 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     });
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const h1 = page.locator('#noteContent h1');
     await expect(h1).toHaveScreenshot('h1-rtl-ink.png');
@@ -511,7 +495,6 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     });
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const h1 = page.locator('#noteContent h1');
     await expect(h1).toHaveScreenshot('h1-rtl-sepia.png');
@@ -527,7 +510,6 @@ test.describe('[AC8] Visual baselines: RTL headings per theme', () => {
     });
     await activateRTL(page);
     await injectMarkdown(page, RTL_HEADINGS_MD);
-    await page.waitForTimeout(300);
 
     const docMeta = page.locator('#noteContent .doc-meta');
     await expect(docMeta).toHaveScreenshot('doc-meta-rtl-paper.png');

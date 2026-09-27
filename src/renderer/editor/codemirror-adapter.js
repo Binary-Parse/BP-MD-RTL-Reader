@@ -8,6 +8,7 @@
 
 // escapeReg is shared with the find box in i18n.js; a private copy here drifted from it.
 import { escapeReg } from '../i18n.js';
+import { arabicFindMatches } from '../components/text-normalize.js';
 import { createLivePreview, livePreviewTheme } from './live-preview.js';
 import { createLineDirection } from './line-direction.js';
 import { createBlockPreview } from './block-preview.js';
@@ -127,7 +128,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       ...(proseHighlight ? [syntaxHighlighting(proseHighlight)] : []),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
-      ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock)] : []), // T-F13: render BLOCKS (tables…) off the active line
+      ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock, () => `${liveDir}|${liveForce || ''}`)] : []), // T-F13: render BLOCKS (tables…) off the active line; dirKey rebuilds widgets on a direction flip
       ...(livePreview && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
       ...(livePreview ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
       ...(livePreview ? [createInlineMarksPreview(CM6)] : []), // ==highlight==/<u>/~sub~/^sup^ rendered off the active line
@@ -158,7 +159,13 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       fire();
     },
     getValue() { return view.state.doc.toString(); },
-    getSelection() { const r = view.state.selection.main; return { start: r.from, end: r.to }; },
+    // `ranges` feeds edit-commands' multi-selection cut/copy (the clipboard must carry
+    // every range replaceSelection will delete); start/end stay the main-range shape
+    // every existing consumer reads.
+    getSelection() {
+      const s = view.state.selection;
+      return { start: s.main.from, end: s.main.to, ranges: s.ranges.map((r) => ({ start: r.from, end: r.to })) };
+    },
     setSelection({ start, end }) {
       const len = view.state.doc.length;
       const s = clamp(start, len);
@@ -171,6 +178,11 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       const matches = [];
       if (!query) return matches;
       const text = view.state.doc.toString();
+      // RTL-M3: Arabic queries search the NORMALIZED document (tashkeel folded), with
+      // match offsets mapped back to source positions — the same model as the Reading
+      // pane, so 'محمد' finds 'مُحَمَّد' in Edit mode too instead of silently missing it.
+      const arabicMatches = arabicFindMatches(text, query);
+      if (arabicMatches) return arabicMatches;
       const re = new RegExp(escapeReg(query), caseSensitive ? 'g' : 'gi');
       let m;
       while ((m = re.exec(text)) !== null) {
@@ -217,11 +229,23 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       liveDir = d === 'rtl' ? 'rtl' : 'ltr';
       liveForce = (force === 'rtl' || force === 'ltr') ? force : null;
       view.dom.setAttribute('dir', liveForce || liveDir);
-      // Fire a no-op transaction so the per-line direction plugin's update() runs and re-reads
-      // the new direction (no doc/viewport change happened on its own).
-      view.dispatch({});
+      // Fire a transaction so the per-line direction plugin's update() runs and re-reads
+      // the new direction. The selection is set EXPLICITLY (an equal, fresh object): that
+      // marks the transaction selectionSet, which is what recomputes the block-widget
+      // decorations facet — without it the widgets kept the pre-flip direction until the
+      // next edit. The equal selection means no cursor movement.
+      view.dispatch({ selection: view.state.selection });
     },
     focus() { view.focus(); },
+    // audit PERF-08: the caret line/column straight from CM6's own line index. The app
+    // used to derive these with `val.slice(0, pos).split('\n')` — an O(doc) copy on every
+    // keystroke. Clamped, so an out-of-range pos can never throw.
+    lineAt(pos) {
+      const len = view.state.doc.length;
+      const p = Math.max(0, Math.min(pos == null ? 0 : pos, len));
+      const line = view.state.doc.lineAt(p);
+      return { line: line.number, col: p - line.from + 1 };
+    },
     // Scroll a document position into view (outline navigation). `select:true` also places the
     // caret there. Used by the outline now that CM6 is the sole surface (the old preview pane is
     // hidden in cm-single mode, so scrolling it did nothing).

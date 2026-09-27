@@ -84,19 +84,35 @@ npm run dist
 
 The packaged renderer is served over `app://ui/…`, not `file://` inside `app.asar`. Proof that a build paints is a PrintWindow / live `#app` on `dist/win-unpacked/BP MD RTL Reader.exe` with a fresh `--user-data-dir`, not Playwright `file://` or unpackaged `electron .`.
 
-**Installer UX contract (v1.2.1).** Both installers present a license page before any
-files are copied: NSIS via `nsis.license` (`build/installer/LICENSE-INSTALLER.txt`,
-bilingual MIT text), Inno via `LicenseFile` (the repo-root `LICENSE`). The NSIS
-assisted installer also detects an existing installation — read-only inspection of
-the `DisplayVersion` value under the electron-builder key (APP_GUID) and the Inno
-key, both HKLM and HKCU — and tells the user which of three flows is happening:
-**upgrade** (older → newer, notes and settings preserved), **maintenance** (same
-version: repair in place, or open Windows "Installed apps" to remove), or a loud
-**downgrade warning**. The security boundary is unchanged and enforced by
-`tests/installer/installer-security.test.ps1`: the setup only ever READS those
-registry values and never executes an uninstall command string from the registry;
-the "Remove" choice opens `ms-settings:appsfeatures` instead. Silent installs
-(`/S`) skip the prompts and keep electron-builder's protected in-place upgrade.
+**Installer UX contract (v1.2.1, extended T12).** Both installers present a license page
+before any files are copied: NSIS via `nsis.license`
+(`build/installer/LICENSE-INSTALLER.rtf`, bilingual MIT text), Inno via `LicenseFile`
+(the repo-root `LICENSE`). Encoding contract (T11/T12): electron-builder passes an
+explicit `nsis.license` to the Unicode NSIS compiler raw, so the file's own format is
+the contract — it is **plain-ASCII RTF** (NSIS renders RTF natively) with every Arabic
+character written as a `\uN?` escape and the Arabic section right-aligned via `\rtlpar`;
+no ANSI codepage can touch it. `setup.iss` itself carries a UTF-8 BOM (Inno reads a
+BOM-less script as ANSI). `tests/unit/installer-license.test.js` pins the RTF contracts.
+The optional **Add to PATH** choice is a Git-for-Windows-style radio pair on the page
+after the directory page (`customPageAfterChangeDir`): "add to PATH" vs "leave PATH
+unchanged" (default), each with a sub-caption; silent installs opt in via `/add-path`.
+It is implemented exclusively through the vendored
+[EnVar plug-in](https://nsis.sourceforge.io/EnVar_plug-in) (`build/x86-unicode/`, SHA-256
+recorded in THIRD-PARTY-NOTICES) — `AddValueEx`/`DeleteValue` only, because script-level
+PATH rewriting truncates and flattens `REG_EXPAND_SZ` values. Uninstall removes exactly
+the `$INSTDIR` entry. An existing installation gets a **maintenance wizard page**
+(T13, the `customWelcomePage` slot — the first page): read-only inspection of the
+`DisplayVersion` value under the electron-builder key (APP_GUID) and the Inno
+key, both HKLM and HKCU, a colored version-state line, and radio choices —
+**upgrade** (default), **repair** (same version), or **remove**, which opens
+`ms-settings:appsfeatures`; a **downgrade** defaults to exiting with a warning color.
+Arabic wizard pages (installer and uninstaller) are mirrored through the documented
+`nsDialogs::SetRTL 1` API. `MessageBox` is banned outright from the script — a
+Pester contract fails if one ever returns. The security boundary is unchanged and
+enforced by `tests/installer/installer-security.test.ps1`: the setup only ever READS
+those registry values and never executes an uninstall command string from the
+registry; the remove choice opens `ms-settings:appsfeatures` instead. Silent installs
+(`/S`) skip the pages and keep electron-builder's protected in-place upgrade.
 
 **Inno Setup** standalone installer (x64):
 
@@ -109,8 +125,15 @@ This is the only supported Inno entry point. It does not use PATH or a pre-exist
 Authenticode publisher, and SHA-256; produces a fresh x64 electron-builder directory;
 checks it against `build/installer/source-manifest-policy.json`; hashes/copies the exact files
 to clean staging; then writes
-`dist/BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.exe` and
-`dist/BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.source-manifest.json`.
+`dist/BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.exe` and
+`dist/BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.source-manifest.json`.
+
+`source-manifest-policy.json` also pins the **Electron version** and the script fails
+closed when it disagrees with `package.json` — an Electron bump that forgets this pin
+kills the Inno lane (that exact gap broke every Inno build between the 42.11.6 update and
+the 1.3.0 release). The pin is additionally asserted against `package.json` by
+`tests/installer/installer-security.test.ps1`, so drift now fails the installer test lane
+at the change that introduces it, not at the next Inno build.
 
 Local Inno builds may be unsigned. A release build is fail-closed and requires a
 Binary Parse code-signing certificate already imported into `Cert:\CurrentUser\My`, a
@@ -131,21 +154,21 @@ unsigned output.
 
 ### Public artifact contract
 
-Version 1.2.1 publishes exactly these 12 files before the generated checksum manifest:
+Version 1.3.0 publishes exactly these 12 files before the generated checksum manifest:
 
 ```text
-BP-MD-RTL-Reader-1.2.1-Windows-NSIS-multiarch.exe
-BP-MD-RTL-Reader-1.2.1-Windows-Portable-multiarch.exe
-BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.exe
-BP-MD-RTL-Reader-1.2.1-Windows-Inno-x64.source-manifest.json
-BP-MD-RTL-Reader-1.2.1-macOS-x64.dmg
-BP-MD-RTL-Reader-1.2.1-macOS-arm64.dmg
-BP-MD-RTL-Reader-1.2.1-macOS-x64.zip
-BP-MD-RTL-Reader-1.2.1-macOS-arm64.zip
-BP-MD-RTL-Reader-1.2.1-Linux-x64.AppImage
-BP-MD-RTL-Reader-1.2.1-Linux-arm64.AppImage
-BP-MD-RTL-Reader-1.2.1-Linux-x64.deb
-BP-MD-RTL-Reader-1.2.1-Linux-arm64.deb
+BP-MD-RTL-Reader-1.3.0-Windows-NSIS-multiarch.exe
+BP-MD-RTL-Reader-1.3.0-Windows-Portable-multiarch.exe
+BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.exe
+BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.source-manifest.json
+BP-MD-RTL-Reader-1.3.0-macOS-x64.dmg
+BP-MD-RTL-Reader-1.3.0-macOS-arm64.dmg
+BP-MD-RTL-Reader-1.3.0-macOS-x64.zip
+BP-MD-RTL-Reader-1.3.0-macOS-arm64.zip
+BP-MD-RTL-Reader-1.3.0-Linux-x64.AppImage
+BP-MD-RTL-Reader-1.3.0-Linux-arm64.AppImage
+BP-MD-RTL-Reader-1.3.0-Linux-x64.deb
+BP-MD-RTL-Reader-1.3.0-Linux-arm64.deb
 ```
 
 Copy those 12 files into `dist/release`, then run `npm run package:checksums` (it rejects
@@ -214,15 +237,30 @@ Before publishing, run in order:
 ```bash
 npm test                              # unit, browser e2e, Electron boundary
 npm run lint:security                 # SAST against the reviewed baseline
-node scripts/release-preflight.js     # version, changelog, and repository checks
+npm run tls:verify                    # TLS pins vs the LIVE api.github.com chain (T14)
+syft . -o cyclonedx-json=.secreports/sbom.json    # SBOM + OSV must be NEWER than the
+osv-scanner scan --format markdown . > .secreports/osv-scanner.txt    # lockfile (preflight gate)
+node scripts/release-preflight.js     # version, changelog, repository checks,
+                                      # and — once dist/release exists — the exact
+                                      # 12-artifact allowlist + SHA256SUMS.txt.
+                                      # Before the release dir is assembled, pass
+                                      # --skip-artifact-check explicitly.
 npm run dist                          # Windows NSIS + portable installers
 pwsh -File build/installer/build-installer.ps1   # Inno x64 installer
 npm run package:verify                # archive contents + Electron fuses
+                                      # (reads the built binaries; with no dist/ it
+                                      # FAILS unless VERIFY_FUSES_ALLOW_NO_BINARIES=1)
 ```
 
 `release-preflight.js` requires `package.json`'s version to be stable SemVer and
-`CHANGELOG.md` to hold exactly one non-empty section for it. `package:verify` reads a fuse
-wire out of each packaged binary rather than trusting configuration.
+`CHANGELOG.md` to hold exactly one non-empty section for it, and it treats a missing
+`dist/release` directory (or an artifact set that drifts from `scripts/release-artifacts.js`'s
+allowlist, or checksums that do not match the bytes) as a hard failure — `--skip-artifact-check`
+is the explicit opt-out for pre-build runs. `package:verify` reads a fuse
+wire out of each packaged binary rather than trusting configuration, and no longer passes
+vacuously when nothing was built. `tls:verify` exists
+because the 1.3.0-rc pin shipped unverified and matched no live certificate — never skip it:
+a pin that looks fine but matches nothing silently kills the update check (fail-closed).
 
 Code signing is not automated. For signed Windows builds, set `WIN_CSC_LINK` (or
 `WIN_CSC_LINK_B64` decoded to a PFX) and `WIN_CSC_KEY_PASSWORD` in the environment before
@@ -234,8 +272,8 @@ key, applied through electron-builder's own environment variables.
 Tag the release once the artifacts verify:
 
 ```bash
-git tag -a v1.2.1 -m "BP MD RTL Reader 1.2.1"
-git push origin v1.2.1
+git tag -a v1.3.0 -m "BP MD RTL Reader 1.3.0"
+git push origin v1.3.0
 ```
 
 Then attach the installers and `SHA256SUMS.txt` to a GitHub Release manually. Generate the

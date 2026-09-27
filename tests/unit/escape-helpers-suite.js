@@ -36,10 +36,15 @@ export function describeEscapeHtml() {
       expect(escapeHtml('say "hi"')).toBe('say &quot;hi&quot;');
     });
 
-    test('all four entities in one pass, escape order matters', () => {
+    test("preserves ' as &#39;", () => {
+      expect(escapeHtml("'")).toBe('&#39;');
+      expect(escapeHtml("it's")).toBe('it&#39;s');
+    });
+
+    test('all five entities in one pass, escape order matters', () => {
       // & must be escaped FIRST so its &amp; doesn't get re-escaped
-      expect(escapeHtml('<a href="x">&y</a>'))
-        .toBe('&lt;a href=&quot;x&quot;&gt;&amp;y&lt;/a&gt;');
+      expect(escapeHtml('<a href="x">&\'y</a>'))
+        .toBe('&lt;a href=&quot;x&quot;&gt;&amp;&#39;y&lt;/a&gt;');
     });
 
     test('coerces non-string input via String()', () => {

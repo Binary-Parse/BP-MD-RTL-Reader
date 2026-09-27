@@ -5,7 +5,9 @@
 
 export function parseFrontMatter(md) {
   const src = md == null ? '' : String(md);
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(src);
+  // An optional single leading UTF-8 BOM must not defeat the fence match: a BOM-prefixed
+  // note would otherwise render its metadata as body text and ignore direction:/lang:.
+  const m = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(src);
   if (!m) return { data: {}, body: src };
   const data = {};
   for (const raw of m[1].split(/\r?\n/)) {

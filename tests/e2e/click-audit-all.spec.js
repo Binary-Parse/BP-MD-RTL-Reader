@@ -46,7 +46,6 @@ async function injectSample(page) {
     ];
     window.renderFile(0);
   });
-  await page.waitForTimeout(200);
 }
 
 // ===========================================================================
@@ -171,7 +170,6 @@ test.describe('[CA2] Welcome screen entry cards', () => {
   test('wbLoadDemo populates State.files', async ({ page }) => {
     await goto(page);
     await page.click('#wbLoadDemo');
-    await page.waitForTimeout(200);
     const count = await page.evaluate(() => window._appState.files.length);
     expect(count).toBeGreaterThan(0);
   });
@@ -337,13 +335,11 @@ test.describe('[CA7] Find bar controls', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.evaluate(() => window.openFind());
     await page.fill('#findInput', 'body');
-    await page.waitForTimeout(300);
     // T-F13: matches tracked over the CM6 surface in findSourceMatches (no preview <mark>s).
     const hitCount = await page.evaluate(() => window._appState.findSourceMatches.length);
     expect(hitCount).toBeGreaterThan(1);
     const initial = await page.evaluate(() => window._appState.findIdx);
     await page.click('#findNextBtn');
-    await page.waitForTimeout(100);
     const afterNext = await page.evaluate(() => window._appState.findIdx);
     expect(afterNext).not.toBe(initial);
   });
@@ -365,7 +361,6 @@ test.describe('[CA8] File menu items', () => {
   test('every File menu item exists and has an onclick handler', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="file"]');
-    await page.waitForTimeout(100);
     const items = await page.$$eval('.dd-item:not(.disabled)', els =>
       els.map(el => ({ label: el.textContent.trim(), hasHandler: typeof el.onclick === 'function' }))
     );
@@ -383,7 +378,6 @@ test.describe('[CA9] Edit menu items', () => {
   test('every Edit menu item exists and has an onclick handler', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="edit"]');
-    await page.waitForTimeout(100);
     const items = await page.$$eval('.dd-item:not(.disabled)', els =>
       els.map(el => ({ label: el.textContent.trim().toLowerCase(), hasHandler: typeof el.onclick === 'function' }))
     );
@@ -458,7 +452,6 @@ test.describe('[CA11] Help menu items', () => {
   test('every Help menu item exists and has an onclick handler', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="help"]');
-    await page.waitForTimeout(100);
     const items = await page.$$eval('.dd-item:not(.disabled)', els =>
       els.map(el => ({ label: el.textContent.trim(), hasHandler: typeof el.onclick === 'function' }))
     );
@@ -488,13 +481,11 @@ test.describe('[CA12] File tab clicks', () => {
   test('clicking tab close X reduces tab count by 1', async ({ page }) => {
     await goto(page);
     await injectSample(page);
-    await page.waitForTimeout(100);
     const before = await page.evaluate(() => window._appState.files.length);
     // Click the close button on the first tab (skip dirty prompt by not editing)
     const closeBtns = await page.$$('.tab .close');
     expect(closeBtns.length).toBeGreaterThan(0);
     await closeBtns[0].click();
-    await page.waitForTimeout(100);
     const after = await page.evaluate(() => window._appState.files.length);
     expect(after).toBe(before - 1);
   });
@@ -520,11 +511,9 @@ test.describe('[CA14] Tags pane', () => {
     await goto(page);
     await injectSample(page);
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
     const tags = await page.$$('.tag');
     expect(tags.length).toBeGreaterThan(0);
     await tags[0].click();
-    await page.waitForTimeout(200);
     const sv = await page.$eval('#sbSearchInput', el => el.value);
     expect(sv.startsWith('#')).toBe(true);
   });
@@ -539,13 +528,9 @@ test.describe('[CA15] Search results', () => {
     await injectSample(page);
     await page.click('.sb-tab[data-pane="search"]');
     await page.fill('#sbSearchInput', 'body');
-    await page.waitForTimeout(300);
-    const results = await page.$$('.search-result');
-    expect(results.length).toBeGreaterThan(0);
-    await results[0].click();
-    await page.waitForTimeout(200);
-    const visibleTab = await page.evaluate(() => window._appState.activeFile);
-    expect(visibleTab).not.toBeNull();
+    const results = page.locator('.search-result');
+    await results.first().click();
+    await expect.poll(async () => page.evaluate(() => window._appState.activeFile)).not.toBeNull();
   });
 });
 
@@ -591,7 +576,6 @@ test.describe('[CA17] Modal close buttons', () => {
   test('modalCloseBtn closes the open modal', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => window.showAbout && window.showAbout());
-    await page.waitForTimeout(100);
     const isOpenBefore = await page.evaluate(() => document.getElementById('modalOverlay').classList.contains('open'));
     if (!isOpenBefore) {
       // showAbout may not be globally exposed; try direct

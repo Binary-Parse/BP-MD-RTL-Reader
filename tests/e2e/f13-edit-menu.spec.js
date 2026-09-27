@@ -43,7 +43,6 @@ test.describe('[T-F13] Edit menu / commands act on the CM6 editor', () => {
     await mockClipboard(page);
     await cmSelect(page, 0, 7);
     await page.evaluate(() => window.execEditCmd('copy'));
-    await page.waitForTimeout(50);
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('copy me');
   });
 
@@ -53,7 +52,6 @@ test.describe('[T-F13] Edit menu / commands act on the CM6 editor', () => {
     await mockClipboard(page);
     await cmSelect(page, 4, 8);
     await page.evaluate(() => window.execEditCmd('cut'));
-    await page.waitForTimeout(50);
     expect(await cmValue(page)).toBe('cut  text');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('THIS');
   });
@@ -64,7 +62,6 @@ test.describe('[T-F13] Edit menu / commands act on the CM6 editor', () => {
     await mockClipboard(page, 'MIDDLE');
     await cmSelect(page, 6, 6); // between "before" and "after"
     await page.evaluate(() => window.execEditCmd('paste'));
-    await page.waitForTimeout(100);
     expect(await cmValue(page)).toBe('beforeMIDDLEafter');
   });
 
@@ -74,10 +71,8 @@ test.describe('[T-F13] Edit menu / commands act on the CM6 editor', () => {
     await page.keyboard.type(' X');
     expect(await cmValue(page)).toBe('base X');
     await page.evaluate(() => window.execEditCmd('undo'));
-    await page.waitForTimeout(50);
     expect(await cmValue(page)).toBe('base');
     await page.evaluate(() => window.execEditCmd('redo'));
-    await page.waitForTimeout(50);
     expect(await cmValue(page)).toBe('base X');
   });
 });

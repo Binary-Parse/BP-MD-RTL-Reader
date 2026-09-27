@@ -38,36 +38,82 @@ runVitest([
   ...thresholdOverrides,
 ]);
 
-const directTests = [
-  'tests/unit/main-logic.test.js', 'tests/unit/capabilities.test.js',
-  'tests/unit/context-menu.test.js', 'tests/unit/document-store.test.js',
-  'tests/unit/navigation.test.js', 'tests/unit/protocol.test.js',
-  'tests/unit/settings.test.js', 'tests/unit/version.test.js',
+// GATE-01 (2026-09-26): modules whose direct unit tests collide with a transitive load
+// (through src/main/index.js OR through each other) get their own ISOLATED shard run —
+// a shared shard still lets one test file's instance overwrite another's counts.
+const directShards = [
+  {
+    tests: [
+      'tests/unit/main-logic.test.js', 'tests/unit/capabilities.test.js',
+      'tests/unit/context-menu.test.js', 'tests/unit/document-store.test.js',
+      'tests/unit/navigation.test.js', 'tests/unit/protocol.test.js',
+      'tests/unit/settings.test.js', 'tests/unit/version.test.js',
+    ],
+    sources: [
+      'src/main/main-logic.js', 'src/main/capabilities.js', 'src/main/context-menu.js',
+      'src/main/document-store.js', 'src/main/navigation.js', 'src/main/protocol.js',
+      'src/main/settings.js', 'src/main/version.js',
+    ],
+  },
+  {
+    tests: ['tests/unit/json-store.test.js'],
+    sources: ['src/main/json-store.js'],
+  },
+  {
+    tests: ['tests/unit/annotations-store.test.js'],
+    sources: ['src/main/annotations-store.js'],
+  },
+  {
+    tests: ['tests/unit/reading-stats-store.test.js'],
+    sources: ['src/main/reading-stats-store.js'],
+  },
+  {
+    tests: ['tests/unit/github-tls.test.js'],
+    sources: ['src/main/github-tls.js'],
+  },
+  {
+    tests: ['tests/unit/preload-bridge.test.js'],
+    sources: ['src/preload/index.js'],
+  },
+  {
+    tests: ['tests/unit/main-ipc-gate-coverage.test.js'],
+    sources: ['src/main/ipc-controller.js'],
+  },
+  {
+    tests: ['tests/unit/main-window-gate-coverage.test.js'],
+    sources: ['src/main/window-controller.js'],
+  },
+  {
+    tests: ['tests/unit/workspace-controller.test.js'],
+    sources: ['src/renderer/components/workspace-controller.js'],
+  },
 ];
-runVitest([
-  'run', ...directTests, '--config', 'vitest.config.js', '--coverage',
-  '--coverage.reportsDirectory=' + directOutput, '--coverage.reporter=json',
-  '--no-file-parallelism', ...thresholdOverrides,
-]);
+for (const [index, shard] of directShards.entries()) {
+  const shardOutput = path.join(root, 'coverage', `direct-unit-${index}`);
+  fs.rmSync(shardOutput, { recursive: true, force: true });
+  runVitest([
+    'run', ...shard.tests, '--config', 'vitest.config.js', '--coverage',
+    `--coverage.reportsDirectory=${shardOutput}`, '--coverage.reporter=json',
+    '--no-file-parallelism', ...thresholdOverrides,
+  ]);
+  shard.dir = shardOutput;
+}
 
 const coveragePath = path.join(output, 'coverage-final.json');
 if (!fs.existsSync(coveragePath)) throw new Error('Vitest did not produce coverage-final.json');
-const directCoveragePath = path.join(directOutput, 'coverage-final.json');
-if (!fs.existsSync(directCoveragePath)) throw new Error('Vitest did not produce isolated CommonJS coverage');
 const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
-const directCoverage = JSON.parse(fs.readFileSync(directCoveragePath, 'utf8'));
 if (Object.keys(coverage).length === 0) throw new Error('Vitest produced an empty coverage map');
 
-const directSources = [
-  'src/main/main-logic.js', 'src/main/capabilities.js', 'src/main/context-menu.js',
-  'src/main/document-store.js', 'src/main/navigation.js', 'src/main/protocol.js',
-  'src/main/settings.js', 'src/main/version.js',
-];
 const coverageMap = libCoverage.createCoverageMap(coverage);
-for (const suffix of directSources) {
-  const file = Object.keys(directCoverage).find(candidate => candidate.replaceAll('\\', '/').endsWith(suffix));
-  if (!file) throw new Error('Missing direct-module coverage for ' + suffix);
-  coverageMap.merge({ [file]: directCoverage[file] });
+for (const shard of directShards) {
+  const directCoveragePath = path.join(shard.dir, 'coverage-final.json');
+  if (!fs.existsSync(directCoveragePath)) throw new Error('Vitest did not produce isolated shard coverage for ' + shard.tests.join(', '));
+  const directCoverage = JSON.parse(fs.readFileSync(directCoveragePath, 'utf8'));
+  for (const suffix of shard.sources) {
+    const file = Object.keys(directCoverage).find(candidate => candidate.replaceAll('\\', '/').endsWith(suffix));
+    if (!file) throw new Error('Missing direct-module coverage for ' + suffix);
+    coverageMap.merge({ [file]: directCoverage[file] });
+  }
 }
 
 const summary = coverageMap.getCoverageSummary().toJSON();
@@ -83,7 +129,7 @@ fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(output, { recursive: true });
 const context = libReport.createContext({ dir: output, coverageMap });
 for (const reporter of ['text', 'json', 'html', 'lcovonly']) reports.create(reporter).execute(context);
-fs.rmSync(directOutput, { recursive: true, force: true });
+for (const shard of directShards) fs.rmSync(shard.dir, { recursive: true, force: true });
 writeCoverageMetadata(output, 'unit', {
   sourceFiles: coverageMap.files().length,
   statements: summary.statements.pct,

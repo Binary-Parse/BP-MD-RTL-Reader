@@ -911,6 +911,47 @@ describe('cmEdit — CM6 is the active editor (T-F13)', () => {
     expect(cm._state.value).toBe('cut  text');
   });
 
+  // Audit 6: replaceSelection deletes ALL ranges, so the clipboard must carry every
+  // range's slice — joined in document order ('\n'-separated), not just selection.main.
+  test('multi-selection copy writes ALL ranges in document order', () => {
+    const cm = makeCmAdapter({ value: 'one two three four' });
+    // main range is LAST in document order; ranges arrive unsorted
+    cm.getSelection = vi.fn(() => ({
+      start: 14, end: 18, // "four"
+      ranges: [
+        { start: 14, end: 18 }, // "four"
+        { start: 0, end: 3 },   // "one"
+        { start: 8, end: 13 },  // "three"
+      ],
+    }));
+    const clipboard = makeClipboard();
+    expect(execEditCmd('copy', cmDeps(cm, { clipboard }))).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith('one\nthree\nfour');
+  });
+
+  test('multi-selection cut writes every range the delete will cover', () => {
+    const cm = makeCmAdapter({ value: 'AA bb CC dd' });
+    cm.getSelection = vi.fn(() => ({
+      start: 6, end: 8, // main = "CC"
+      ranges: [{ start: 6, end: 8 }, { start: 0, end: 2 }], // "CC" + "AA"
+    }));
+    const clipboard = makeClipboard();
+    expect(execEditCmd('cut', cmDeps(cm, { clipboard }))).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith('AA\nCC');
+    expect(cm.replaceSelection).toHaveBeenCalledWith('');
+  });
+
+  test('an empty MAIN range with a non-empty other range still copies', () => {
+    const cm = makeCmAdapter({ value: 'keep this' });
+    cm.getSelection = vi.fn(() => ({
+      start: 9, end: 9,
+      ranges: [{ start: 9, end: 9 }, { start: 5, end: 9 }], // "" + "this"
+    }));
+    const clipboard = makeClipboard();
+    expect(execEditCmd('copy', cmDeps(cm, { clipboard }))).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith('this');
+  });
+
   test('copy/cut clipboard rejection surfaces an error toast (no throw)', async () => {
     const cm = makeCmAdapter({ value: 'abcdef', start: 0, end: 3 });
     const clipboard = makeClipboard({ writeOk: false });
@@ -949,5 +990,48 @@ describe('cmEdit — CM6 is the active editor (T-F13)', () => {
   test('_internal.cmEdit is exported and returns null when no adapter', () => {
     expect(typeof _internal.cmEdit).toBe('function');
     expect(_internal.cmEdit('copy', makeDeps({ getCmAdapter: () => null }))).toBeNull();
+  });
+});
+
+// UX-04 (2026-09-26): Edit-menu Copy/Cut/Paste used to act on the HIDDEN CM6 editor in
+// Reading mode — copy stole focus and copied a stale selection, paste/cut mutated a
+// document nobody could see. Copy now targets the rendered selection; cut/paste refuse.
+describe('cmEdit in Reading mode (UX-04)', () => {
+  test('copy uses the rendered selection and never focuses CM6', () => {
+    const cm = makeCmAdapter();
+    const clipboard = makeClipboard();
+    const deps = makeDeps({
+      getViewMode: () => 'reading',
+      getCmAdapter: () => cm,
+      getSelection: () => ({ toString: () => 'rendered words' }),
+      clipboard,
+    });
+    expect(execEditCmd('copy', deps)).toEqual({ ok: true });
+    expect(cm.focus).not.toHaveBeenCalled();
+    expect(clipboard.writeText).toHaveBeenCalledWith('rendered words');
+  });
+
+  test('cut and paste are refused with a toast (the pane is read-only)', () => {
+    const cm = makeCmAdapter();
+    const clipboard = makeClipboard();
+    const deps = makeDeps({
+      getViewMode: () => 'reading',
+      getCmAdapter: () => cm,
+      clipboard,
+    });
+    expect(execEditCmd('cut', deps)).toEqual({ ok: false, reason: 'reading-readonly' });
+    expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'reading-readonly' });
+    expect(deps.showToast).toHaveBeenCalledTimes(2);
+    expect(cm.focus).not.toHaveBeenCalled();
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  test('edit mode still focuses CM6 and copies its own selection', () => {
+    const cm = makeCmAdapter({ value: 'hello world', start: 0, end: 5 });
+    const clipboard = makeClipboard();
+    const deps = makeDeps({ getViewMode: () => 'edit', getCmAdapter: () => cm, clipboard });
+    expect(execEditCmd('copy', deps)).toEqual({ ok: true });
+    expect(cm.focus).toHaveBeenCalled();
+    expect(clipboard.writeText).toHaveBeenCalledWith('hello');
   });
 });

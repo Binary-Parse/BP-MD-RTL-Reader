@@ -25,7 +25,6 @@ test.describe('[T-F14] callouts', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await inject(page, DOC);
-    await page.waitForTimeout(200);
   });
 
   test('all five GFM callout types (+info) render as styled callouts; no raw blockquotes left', async ({ page }) => {
@@ -70,7 +69,6 @@ test.describe('[T-F7] document outline', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await inject(page, DOC);
-    await page.waitForTimeout(200);
   });
 
   test('outline lists all h1–h6 with depth classes', async ({ page }) => {
@@ -90,7 +88,6 @@ test.describe('[T-F7] document outline', () => {
     // marked.lexer reports only top-level headings, but the DOM has all of them.
     // The outline is DOM-derived, so each heading keeps its own correct id.
     await inject(page, '# Alpha\n\n> ## Quoted Heading\n\n## Beta\n');
-    await page.waitForTimeout(200);
     await expect(page.locator('#noteContent h1')).toHaveAttribute('id', 'alpha');
     await expect(page.locator('#noteContent #beta')).toHaveCount(1);          // top-level Beta keeps its id
     await expect(page.locator('#noteContent blockquote #quoted-heading')).toHaveCount(1);
@@ -99,7 +96,6 @@ test.describe('[T-F7] document outline', () => {
 
   test('outline label uses clean rendered text (no raw markdown punctuation)', async ({ page }) => {
     await inject(page, '# Use `code` and **bold** here\n');
-    await page.waitForTimeout(200);
     await expect(page.locator('#tocList .toc-item').first()).toHaveText('Use code and bold here');
   });
 
@@ -111,22 +107,20 @@ test.describe('[T-F7] document outline', () => {
     await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
     const before = await page.evaluate(() => window.getActiveCmAdapter()._view.scrollDOM.scrollTop);
     await page.locator('#tocList .toc-item.h5').click(); // "Deeper heading five" — Latin, far down
-    await page.waitForTimeout(400);
-    const after = await page.evaluate(() => {
+    await expect.poll(() => page.evaluate((b) => {
       const a = window.getActiveCmAdapter();
-      return { scroll: a._view.scrollDOM.scrollTop, caretLine: a._view.state.doc.lineAt(a.getSelection().start).text };
-    });
-    expect(after.scroll).toBeGreaterThan(before);
-    expect(after.caretLine).toContain('Deeper heading five');
+      const scroll = a._view.scrollDOM.scrollTop;
+      const caretLine = a._view.state.doc.lineAt(a.getSelection().start).text;
+      return scroll > b && caretLine.includes('Deeper heading five');
+    }, before)).toBe(true);
   });
 
   test('scroll-sync highlights the active heading as the editor scrolls', async ({ page }) => {
     await page.evaluate(() => { document.getElementById('editorArea').classList.add('cm-single'); window.buildTOC && window.buildTOC(); });
     await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
     // at the top, the first heading is active
-    const firstActive = await page.evaluate(() =>
-      [...document.querySelectorAll('#tocList .toc-item')].findIndex((i) => i.classList.contains('active')));
-    expect(firstActive).toBe(0);
+    await expect.poll(async () => page.evaluate(() =>
+      [...document.querySelectorAll('#tocList .toc-item')].findIndex((i) => i.classList.contains('active')))).toBe(0);
 
     // Put the h3 heading ("### Subsection 2.1", a mid-doc heading that can reach the viewport
     // top) at the top of the CM6 scroller → it becomes the active outline item (index 2).
@@ -136,15 +130,12 @@ test.describe('[T-F7] document outline', () => {
       v.scrollDOM.scrollTop = v.lineBlockAt(idx).top;
       v.scrollDOM.dispatchEvent(new Event('scroll'));
     });
-    await page.waitForTimeout(150);
-    const active = await page.evaluate(() =>
-      [...document.querySelectorAll('#tocList .toc-item')].findIndex((i) => i.classList.contains('active')));
-    expect(active).toBe(2); // h3 is the third of the six headings
+    await expect.poll(async () => page.evaluate(() =>
+      [...document.querySelectorAll('#tocList .toc-item')].findIndex((i) => i.classList.contains('active')))).toBe(2);
   });
 
   test('[Visual] callouts + outline render at 1440x900 @visual', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.waitForTimeout(200);
     await expect(page).toHaveScreenshot('callouts-outline-1440x900.png', {
       maxDiffPixels: 5000,
       threshold: 0.2,

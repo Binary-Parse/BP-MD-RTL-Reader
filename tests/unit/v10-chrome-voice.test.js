@@ -17,6 +17,12 @@ const components = readFileSync(
   'utf8',
 );
 
+// T3.1: the radius SCALE lives in base.css :root.
+const base = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'styles', 'base.css'),
+  'utf8',
+);
+
 /** Body of the first rule whose selector list is exactly `selector` (after trimming). */
 function ruleBody(css, selector) {
   const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/,\s*/g, '\\s*,\\s*');
@@ -100,19 +106,30 @@ describe('the four individually-tuned chrome-voice selectors (design §12)', () 
 });
 
 describe('the three v10 radii the first pass missed (design §12 area)', () => {
-  test('.modal-close: border-radius 8px (was 4px)', () => {
+  // T3.1: these are TOKENS now. Each test pins the token usage AND the token's declared
+  // value, so a change to either the rule or the scale still fails here.
+  const radiusToken = (name) => {
+    const root = ruleBody(base, ':root') || '';
+    const m = root.match(new RegExp('--' + name + ':\\s*(\\d+px)'));
+    return m && m[1];
+  };
+
+  test('.modal-close: the medium radius token (9px; the v10 literal was 8px)', () => {
     const body = ruleBody(components, '.modal-close') || '';
-    expect(body).toMatch(/border-radius:\s*8px/);
+    expect(body).toMatch(/border-radius:\s*var\(--r-md\)/);
+    expect(radiusToken('r-md')).toBe('9px');
   });
 
-  test('.shortcut-keys .kbd: border-radius 6px (was 3px)', () => {
+  test('.shortcut-keys .kbd: the small radius token (6px)', () => {
     const body = ruleBody(components, '.shortcut-keys .kbd') || '';
-    expect(body).toMatch(/border-radius:\s*6px/);
+    expect(body).toMatch(/border-radius:\s*var\(--r-sm\)/);
+    expect(radiusToken('r-sm')).toBe('6px');
   });
 
-  test('.set-desc .kbd: border-radius 6px (was 3px)', () => {
+  test('.set-desc .kbd: the small radius token (6px)', () => {
     const body = ruleBody(components, '.set-desc .kbd') || '';
-    expect(body).toMatch(/border-radius:\s*6px/);
+    expect(body).toMatch(/border-radius:\s*var\(--r-sm\)/);
+    expect(radiusToken('r-sm')).toBe('6px');
   });
 });
 

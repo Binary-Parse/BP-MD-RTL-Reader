@@ -101,7 +101,7 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     expect(got.editorMode).toBe('live'); // invalid → default
     expect(got.zoomFactor).toBe(2.0);    // clamped to max
     expect('evil' in got).toBe(false);   // unknown key dropped
-    expect(got.version).toBe(4); // T-F19 bumped the schema
+    expect(got.version).toBe(5); // T0.1 bumped the schema
   });
 
   test('settings:set merges successive partial patches', async () => {

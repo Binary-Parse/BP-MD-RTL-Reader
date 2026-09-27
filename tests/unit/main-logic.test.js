@@ -12,11 +12,10 @@ import pathModule from 'path';
 //  though mutation score on this file is 100 %.)
 import {
   parseFileArg,
+  parseFileArgs,
   shouldResetChrome,
   isAuthorizedPath,
   isNetworkPath,
-  collectAuthorizedFolders,
-  collectAuthorizedFiles,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,
@@ -231,83 +230,6 @@ describe('isNetworkPath() [JB2]', () => {
   });
 });
 
-describe('collectAuthorizedFolders() — re-authorize previously-opened vaults on launch', () => {
-  test('returns [] for missing / non-object settings', () => {
-    expect(collectAuthorizedFolders(null)).toEqual([]);
-    expect(collectAuthorizedFolders(undefined)).toEqual([]);
-    expect(collectAuthorizedFolders('nope')).toEqual([]);
-    expect(collectAuthorizedFolders(42)).toEqual([]);
-  });
-
-  test('includes lastSession.vaultPath', () => {
-    expect(collectAuthorizedFolders({ lastSession: { vaultPath: 'C:\\vault' } })).toEqual(['C:\\vault']);
-  });
-
-  test('includes each recents[].vaultRoot', () => {
-    const got = collectAuthorizedFolders({ recents: [{ vaultRoot: '/a' }, { vaultRoot: '/b' }] });
-    expect(got).toEqual(['/a', '/b']);
-  });
-
-  test('de-duplicates across lastSession + recents', () => {
-    const got = collectAuthorizedFolders({
-      lastSession: { vaultPath: '/v' },
-      recents: [{ vaultRoot: '/v' }, { vaultRoot: '/w' }, { vaultRoot: '/v' }],
-    });
-    expect(got).toEqual(['/v', '/w']);
-  });
-
-  test('excludes network paths (JB2)', () => {
-    const got = collectAuthorizedFolders({
-      lastSession: { vaultPath: '\\\\server\\share' },
-      recents: [{ vaultRoot: '//nas/x' }, { vaultRoot: 'C:\\ok' }],
-    });
-    expect(got).toEqual(['C:\\ok']);
-  });
-
-  test('ignores null / non-string / missing vaultRoot entries', () => {
-    const got = collectAuthorizedFolders({
-      lastSession: { vaultPath: null },
-      recents: [null, { name: 'a.md', path: 'a.md' }, { vaultRoot: '' }, { vaultRoot: 5 }, { vaultRoot: '/good' }],
-    });
-    expect(got).toEqual(['/good']);
-  });
-
-  test('tolerates non-array recents and non-object lastSession', () => {
-    expect(collectAuthorizedFolders({ recents: 'nope', lastSession: 'nope' })).toEqual([]);
-    expect(collectAuthorizedFolders({})).toEqual([]);
-  });
-});
-
-describe('collectAuthorizedFiles() — re-authorize previously-opened single files on launch', () => {
-  test('returns [] for missing / non-object settings', () => {
-    expect(collectAuthorizedFiles(null)).toEqual([]);
-    expect(collectAuthorizedFiles(undefined)).toEqual([]);
-    expect(collectAuthorizedFiles('nope')).toEqual([]);
-  });
-
-  test('collects recents[].abs absolute file paths', () => {
-    const got = collectAuthorizedFiles({ recents: [{ abs: 'C:\\docs\\a.md' }, { abs: '/home/b.md' }] });
-    expect(got).toEqual(['C:\\docs\\a.md', '/home/b.md']);
-  });
-
-  test('de-duplicates and ignores null / non-string / empty abs', () => {
-    const got = collectAuthorizedFiles({
-      recents: [{ abs: '/a.md' }, { vaultRoot: '/v' }, { abs: '' }, { abs: 7 }, null, { abs: '/a.md' }],
-    });
-    expect(got).toEqual(['/a.md']);
-  });
-
-  test('excludes network paths (JB2)', () => {
-    const got = collectAuthorizedFiles({ recents: [{ abs: '\\\\nas\\a.md' }, { abs: '//srv/b.md' }, { abs: 'D:\\ok.md' }] });
-    expect(got).toEqual(['D:\\ok.md']);
-  });
-
-  test('non-array recents → []', () => {
-    expect(collectAuthorizedFiles({ recents: 'nope' })).toEqual([]);
-    expect(collectAuthorizedFiles({})).toEqual([]);
-  });
-});
-
 describe('isTooManyFiles() [JB3]', () => {
   test('returns true above cap', () => {
     expect(isTooManyFiles(MAX_FILES_PER_DIR + 1)).toBe(true);
@@ -363,6 +285,11 @@ describe('isSymlinkEscape() [JB4]', () => {
 
   test('detects escape via ..', () => {
     expect(isSymlinkEscape('/outside', '/vault', path)).toBe(true);
+  });
+
+  test('a NAME starting with dots inside the folder is not an escape', () => {
+    expect(isSymlinkEscape('/vault/..notes.md', '/vault', path)).toBe(false);
+    expect(isSymlinkEscape('/vault/..hidden/file.md', '/vault', path)).toBe(false);
   });
 
   test('allows symlink inside folder', () => {
@@ -515,5 +442,44 @@ describe('shouldResetChrome (T-F19 recovery switch)', () => {
     expect(shouldResetChrome({ 0: 'electron', 1: '--reset-chrome', length: 2 })).toBe(true);
     expect(shouldResetChrome(['electron', null, 42, undefined])).toBe(false);
     expect(shouldResetChrome([])).toBe(false);
+  });
+});
+
+describe('parseFileArgs batch caps (argv / open-with / second-instance)', () => {
+  const fsOfSize = (perFileBytes) => ({
+    realpathSync: (p) => p,
+    statSync: () => ({ isFile: () => true, size: perFileBytes }),
+  });
+
+  test('returns every valid candidate, deduplicated, when under both caps', () => {
+    const argv = ['electron', '/a.md', '/b.md', '/a.md', '--flag', '/c.markdown'];
+    expect(parseFileArgs(argv, fsOfSize(1024))).toEqual(['/a.md', '/b.md', '/c.markdown']);
+  });
+
+  test('stops at the cumulative byte cap instead of reading a multi-GB selection', () => {
+    const fiveMb = 5 * 1024 * 1024;
+    const argv = ['electron', ...Array.from({ length: 40 }, (_, i) => `/f${i}.md`)];
+    const picked = parseFileArgs(argv, fsOfSize(fiveMb));
+    expect(picked.length * fiveMb).toBeLessThanOrEqual(MAX_CUMULATIVE_BYTES);
+    expect(picked.length).toBe(Math.floor(MAX_CUMULATIVE_BYTES / fiveMb));
+  });
+
+  test('stops at the file-count cap even with tiny files', () => {
+    const argv = ['electron', ...Array.from({ length: MAX_FILES_PER_DIR + 500 }, (_, i) => `/t${i}.md`)];
+    expect(parseFileArgs(argv, fsOfSize(10))).toHaveLength(MAX_FILES_PER_DIR);
+  });
+
+  test('per-file size and non-file rejections still apply inside a batch', () => {
+    const fs = {
+      realpathSync: (p) => p,
+      statSync: (p) => (
+        p === '/big.md'
+          ? { isFile: () => true, size: MAX_OPEN_FILE_BYTES + 1 }
+          : p === '/dir.md'
+            ? { isFile: () => false, size: 1 }
+            : { isFile: () => true, size: 16 }
+      ),
+    };
+    expect(parseFileArgs(['electron', '/big.md', '/dir.md', '/ok.md'], fs)).toEqual(['/ok.md']);
   });
 });

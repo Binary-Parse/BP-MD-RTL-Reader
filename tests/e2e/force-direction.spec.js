@@ -30,10 +30,12 @@ test.describe('force-direction toggle (Auto → RTL → LTR)', () => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
     await inject(page, FIXTURE);
-    await page.waitForTimeout(120);
-    expect(await blockDirs(page)).toEqual(['ltr', 'ltr', 'rtl']); // heading, half-half para, arabic para
-    expect(await page.locator('#dirIndicator').textContent()).toBe('LTR');
+    await expect.poll(() => blockDirs(page)).toEqual(['ltr', 'ltr', 'rtl']); // heading, half-half para, arabic para
+    // RTL-M2: the indicator follows the doc's dominant script (Arabic-majority → RTL) in Auto,
+    // while blocks keep their own resolution and the button is not "pressed" (no user force).
+    expect(await page.locator('#dirIndicator').textContent()).toBe('RTL');
     expect(await page.locator('#rtlBtn').getAttribute('aria-pressed')).toBe('false');
+    await expect(page.locator('#rtlBtn')).toHaveClass(/active/);
   });
 
   test('one click forces RTL on EVERY block (including the half-and-half English-led paragraph)', async ({ page }) => {
@@ -41,7 +43,6 @@ test.describe('force-direction toggle (Auto → RTL → LTR)', () => {
     await page.waitForLoadState('networkidle');
     await inject(page, FIXTURE);
     await page.click('#rtlBtn'); // Auto → RTL
-    await page.waitForTimeout(120);
     expect(await blockDirs(page)).toEqual(['rtl', 'rtl', 'rtl']);
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
     expect(await page.locator('#dirIndicator').textContent()).toBe('RTL');
@@ -55,8 +56,7 @@ test.describe('force-direction toggle (Auto → RTL → LTR)', () => {
     await inject(page, FIXTURE);
     await page.click('#rtlBtn'); // RTL
     await page.click('#rtlBtn'); // LTR
-    await page.waitForTimeout(120);
-    expect(await blockDirs(page)).toEqual(['ltr', 'ltr', 'ltr']); // every block forced ltr (incl. the Arabic one)
+    await expect.poll(() => blockDirs(page)).toEqual(['ltr', 'ltr', 'ltr']); // every block forced ltr (incl. the Arabic one)
     // Forced LTR leaves the container neutral (ltr is the default); the per-block forcing is what matters.
     await expect(page.locator('#editor')).not.toHaveAttribute('dir');
     expect(await getEditorComputedDirection(page)).toBe('ltr');
@@ -71,11 +71,11 @@ test.describe('force-direction toggle (Auto → RTL → LTR)', () => {
     await page.click('#rtlBtn'); // RTL
     await page.click('#rtlBtn'); // LTR
     await page.click('#rtlBtn'); // Auto
-    await page.waitForTimeout(120);
-    expect(await blockDirs(page)).toEqual(['ltr', 'ltr', 'rtl']); // back to per-block
+    await expect.poll(() => blockDirs(page)).toEqual(['ltr', 'ltr', 'rtl']); // back to per-block
     await expect(page.locator('#editor')).not.toHaveAttribute('dir', 'rtl');
-    expect(await page.locator('#rtlBtn').getAttribute('aria-pressed')).toBe('false');
-    await expect(page.locator('#rtlBtn')).not.toHaveClass(/active/);
+    await expect(page.locator('#rtlBtn')).toHaveAttribute('aria-pressed', 'false');
+    // RTL-M2: back in Auto, the effective direction of this Arabic-majority fixture still lights the button.
+    await expect(page.locator('#rtlBtn')).toHaveClass(/active/);
   });
 
   test('forcing RTL also flips the live CM6 editor lines (stale-base + rebuild fix)', async ({ page }) => {

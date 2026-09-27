@@ -222,7 +222,6 @@ test('[T2] toggleInspector() leaves appBody with two-column grid after collapse'
 
   // Collapse inspector
   await page.evaluate(() => window.toggleInspector());
-  await page.waitForTimeout(50);
 
   const after = await page.evaluate(() => {
     return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
@@ -240,7 +239,6 @@ test('[T2] toggleInspector() leaves appBody with two-column grid after collapse'
 
   // Re-expand restores three columns
   await page.evaluate(() => window.toggleInspector());
-  await page.waitForTimeout(50);
 
   const restored = await page.evaluate(() => {
     return getComputedStyle(document.getElementById('appBody')).gridTemplateColumns;
@@ -262,7 +260,6 @@ test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async
 
   // Toggle RTL on
   await page.evaluate(() => window.toggleRTL());
-  await page.waitForTimeout(50);
 
   // html element must NOT receive dir — scoping is to #srcTextarea and #editor only
   const htmlDir = await page.locator('html').getAttribute('dir');
@@ -279,7 +276,6 @@ test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async
 
   // Toggle RTL off
   await page.evaluate(() => window.toggleRTL());
-  await page.waitForTimeout(50);
 
   const htmlDir2 = await page.locator('html').getAttribute('dir');
   expect(htmlDir2).toBeNull();
@@ -297,7 +293,6 @@ test('[AC5] Ctrl+= increases State.zoomFactor', async ({ page }) => {
 
   const before = await page.evaluate(() => window._appState.zoomFactor);
   await page.keyboard.press('Control+=');
-  await page.waitForTimeout(50);
 
   const after = await page.evaluate(() => window._appState.zoomFactor);
   expect(after).toBeGreaterThan(before);
@@ -310,11 +305,9 @@ test('[AC5] Ctrl+0 resets zoom to 1', async ({ page }) => {
   // Zoom in first
   await page.keyboard.press('Control+=');
   await page.keyboard.press('Control+=');
-  await page.waitForTimeout(50);
 
   // Reset
   await page.keyboard.press('Control+0');
-  await page.waitForTimeout(50);
 
   const factor = await page.evaluate(() => window._appState.zoomFactor);
   expect(factor).toBe(1);
@@ -326,7 +319,6 @@ test('[AC5] #statusbar zoom is unaffected after Ctrl+= zoom', async ({ page }) =
 
   await page.keyboard.press('Control+=');
   await page.keyboard.press('Control+=');
-  await page.waitForTimeout(50);
 
   const sbZoom = await page.evaluate(() => {
     const sb = document.querySelector('.statusbar');
@@ -353,7 +345,6 @@ test('[AC8] Ctrl+A in the CM6 editor selects all its text, not the page body', a
   // T-F13: CM6 is the sole editor — no source mode.
   await page.locator('.cm-mount .cm-content').click();
   await page.keyboard.press('Control+a');
-  await page.waitForTimeout(100);
 
   const sel = await page.evaluate(() => {
     const cm = window.getActiveCmAdapter();
@@ -380,14 +371,12 @@ test('[T4] findNext advances to the second match (CM6 selection nav)', async ({ 
     if (typeof window.openFind === 'function') window.openFind();
     window.runFind('hello');
   });
-  await page.waitForTimeout(100);
 
   // T-F13: find runs over the CM6 surface — three matches in findSourceMatches.
   const hitCount = await page.evaluate(() => window._appState.findSourceMatches.length);
   expect(hitCount).toBe(3);
 
   await page.click('#findNextBtn');
-  await page.waitForTimeout(50);
 
   expect(await page.evaluate(() => window._appState.findIdx)).toBe(1);
   expect(await page.evaluate(() => document.getElementById('findInfo').textContent)).toBe('2/3');

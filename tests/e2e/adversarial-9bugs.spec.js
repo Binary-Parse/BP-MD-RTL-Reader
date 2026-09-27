@@ -31,7 +31,6 @@ async function injectFile(page, name, content) {
     S.files = [{ name, path: name, handle: null, content, dirty: false }];
     window.renderFile(0);
   }, { name, content });
-  await page.waitForTimeout(150);
 }
 
 async function injectFiles(page, files) {
@@ -40,12 +39,10 @@ async function injectFiles(page, files) {
     S.files = files.map(f => ({ name: f.name, path: f.name, handle: null, content: f.content, dirty: false }));
     window.renderFile(0);
   }, files);
-  await page.waitForTimeout(150);
 }
 
 async function switchToSearch(page) {
   await page.click('.sb-tab[data-pane="search"]');
-  await page.waitForTimeout(100);
 }
 
 async function dropFiles(page, fileList) {
@@ -59,7 +56,6 @@ async function dropFiles(page, fileList) {
     document.body.dispatchEvent(ev);
     await new Promise(r => setTimeout(r, 300));
   }, fileList);
-  await page.waitForTimeout(300);
 }
 
 // ===========================================================================
@@ -68,16 +64,30 @@ async function dropFiles(page, fileList) {
 
 test.describe('[AC1] openVault feature-detect', () => {
 
-  test('[AC1-happy] vaultSearch() is exported on window', async ({ page }) => {
+  test('[AC1-happy] vaultSearch() returns matches for a seeded vault', async ({ page }) => {
     await goto(page);
-    const exported = await page.evaluate(() => typeof window.vaultSearch === 'function');
-    expect(exported).toBe(true);
+    await injectFile(page, 'needle.md', 'contact the haystack probe here');
+    const results = await page.evaluate(() => window.vaultSearch('haystack probe'));
+    expect(Array.isArray(results)).toBe(true);
+    expect(results).toHaveLength(1);
+    expect(results[0].name).toBe('needle.md');
   });
 
-  test('[AC1-boundary] openVault exists and is a function', async ({ page }) => {
+  test('[AC1-boundary] openVault() loads .md entries from the picked folder and skips non-md', async ({ page }) => {
     await goto(page);
-    const exported = await page.evaluate(() => typeof window.openVault === 'function');
-    expect(exported).toBe(true);
+    await page.evaluate(() => {
+      window.showDirectoryPicker = async () => ({
+        name: 'ProbeFolder',
+        values: async function* () {
+          yield { kind: 'file', name: 'probe-note.md' };
+          yield { kind: 'file', name: 'skipped.txt' };
+        }
+      });
+    });
+    await page.evaluate(() => window.openVault());
+
+    const names = await page.evaluate(() => window._appState.files.map(f => f.name));
+    expect(names).toEqual(['probe-note.md']);
   });
 
   test('[AC1-error] AbortError is silently swallowed — no error toast', async ({ page }) => {
@@ -96,7 +106,6 @@ test.describe('[AC1] openVault feature-detect', () => {
 
     // Call openVault — should silently swallow
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(300);
 
     // No error toast (AbortError must be swallowed)
     const toastError = await page.evaluate(() => {
@@ -107,8 +116,7 @@ test.describe('[AC1] openVault feature-detect', () => {
 
     // No JS errors
     const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr') &&
-      !e.includes('Failed to load resource') && !e.includes('net::ERR')
+      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
     );
     expect(jsErrors).toHaveLength(0);
   });
@@ -125,7 +133,6 @@ test.describe('[AC1] openVault feature-detect', () => {
     });
 
     await page.evaluate(() => window.openVault());
-    await page.waitForTimeout(400);
 
     // State.files should be empty
     const fileCount = await page.evaluate(() => window._appState.files.length);
@@ -172,8 +179,7 @@ test.describe('[AC1] openVault feature-detect', () => {
     expect(threw).toBe(false);
 
     const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr') &&
-      !e.includes('Failed to load resource') && !e.includes('net::ERR')
+      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
     );
     expect(jsErrors).toHaveLength(0);
   });
@@ -194,15 +200,12 @@ test.describe('[AC2] Vault-wide search', () => {
 
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'bpmd');
-    await page.waitForTimeout(200);
 
-    const resultCount = await page.locator('.search-result').count();
-    expect(resultCount).toBeGreaterThanOrEqual(2);
+    await expect(page.locator('.search-result')).toHaveCount(2);
 
-    const markCount = await page.evaluate(() =>
+    await expect.poll(async () => page.evaluate(() =>
       document.querySelectorAll('.sr-snip mark').length
-    );
-    expect(markCount).toBeGreaterThanOrEqual(2);
+    )).toBeGreaterThanOrEqual(2);
   });
 
   test('[AC2-boundary] single-char query shows "Type to search." placeholder', async ({ page }) => {
@@ -210,7 +213,6 @@ test.describe('[AC2] Vault-wide search', () => {
     await injectFile(page, 'test.md', '# Test\n\nSome content here.');
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'a');
-    await page.waitForTimeout(100);
 
     const emptyMsg = page.locator('#searchResults .search-empty');
     await expect(emptyMsg).toBeVisible();
@@ -223,7 +225,6 @@ test.describe('[AC2] Vault-wide search', () => {
     // State.files is empty by default
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'anything');
-    await page.waitForTimeout(100);
 
     // Should show some empty/no-match state
     const out = await page.evaluate(() => {
@@ -240,12 +241,13 @@ test.describe('[AC2] Vault-wide search', () => {
     await injectFile(page, 'many.md', content);
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'target');
-    await page.waitForTimeout(200);
 
+    await expect.poll(async () => page.evaluate(() =>
+      document.querySelectorAll('.sr-snip').length
+    )).toBeGreaterThan(0);
     const snippetCount = await page.evaluate(() =>
       document.querySelectorAll('.sr-snip').length
     );
-    expect(snippetCount).toBeGreaterThan(0);
     expect(snippetCount).toBeLessThanOrEqual(5);
   });
 
@@ -258,18 +260,14 @@ test.describe('[AC2] Vault-wide search', () => {
 
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'searchword');
-    await page.waitForTimeout(200);
 
     // Click the second result
     const results = page.locator('.search-result');
-    const count = await results.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expect(results).toHaveCount(2);
 
     await results.nth(1).click();
-    await page.waitForTimeout(200);
 
-    const activeIdx = await page.evaluate(() => window._appState.activeFile);
-    expect(activeIdx).toBe(1);
+    await expect.poll(async () => page.evaluate(() => window._appState.activeFile)).toBe(1);
   });
 });
 
@@ -309,7 +307,6 @@ test.describe('[AC3] Outline-click: statusbar position invariance', () => {
       };
     });
 
-    await page.waitForTimeout(200);
 
     // Click the h2 TOC item (second item)
     const tocItems = page.locator('.toc-item');
@@ -350,7 +347,6 @@ test.describe('[AC3] Outline-click: statusbar position invariance', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'headings.md', '# H1\n\nContent.\n\n## H2\n\nMore content.\n\n## H3\n\nEven more.');
-    await page.waitForTimeout(200);
 
     const appGridRowsBefore = await page.evaluate(() =>
       getComputedStyle(document.querySelector('.app')).gridTemplateRows
@@ -360,7 +356,6 @@ test.describe('[AC3] Outline-click: statusbar position invariance', () => {
     const tocCount = await tocItems.count();
     if (tocCount > 1) {
       await tocItems.nth(1).click();
-      await page.waitForTimeout(600);
     }
 
     const appGridRowsAfter = await page.evaluate(() =>
@@ -375,7 +370,6 @@ test.describe('[AC3] Outline-click: statusbar position invariance', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goto(page);
     await injectFile(page, 'h1only.md', '# Only Heading\n\nParagraph.');
-    await page.waitForTimeout(200);
 
     const sbHeight = await page.evaluate(() =>
       document.querySelector('.statusbar').getBoundingClientRect().height
@@ -396,7 +390,6 @@ test.describe('[AC4] Side-panel font-size >= 13px', () => {
     await goto(page);
     await injectFile(page, 'tags.md', '# Test\n\nA note with #reading tag.');
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     const fontSize = await page.evaluate(() => {
       const el = document.querySelector('.tag');
@@ -413,19 +406,16 @@ test.describe('[AC4] Side-panel font-size >= 13px', () => {
     ]);
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'hello');
-    await page.waitForTimeout(200);
 
-    const fontSize = await page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(() => {
       const el = document.querySelector('.sr-snip');
       return el ? parseFloat(getComputedStyle(el).fontSize) : 0;
-    });
-    expect(fontSize).toBeGreaterThanOrEqual(13);
+    })).toBeGreaterThanOrEqual(13);
   });
 
   test('[AC4-happy] .toc-item.h2 computed font-size >= 13px', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'outline.md', '# H1\n\n## H2 Section\n\nContent.');
-    await page.waitForTimeout(200);
 
     const fontSize = await page.evaluate(() => {
       const el = document.querySelector('.toc-item.h2');
@@ -438,7 +428,6 @@ test.describe('[AC4] Side-panel font-size >= 13px', () => {
     await goto(page);
     await injectFile(page, 'src.md', '# Source\n\nContent.');
     await page.evaluate(() => window.setEditorMode('source'));
-    await page.waitForTimeout(100);
 
     const fontSize = await page.evaluate(() => {
       const el = document.querySelector('.source-textarea');
@@ -462,7 +451,6 @@ test.describe('[AC4] Side-panel font-size >= 13px', () => {
     await goto(page);
     await injectFile(page, 'tags.md', '# Test\n\nA note with #reading tag.');
     await page.click('.sb-tab[data-pane="tags"]');
-    await page.waitForTimeout(200);
 
     // Sidebar tab buttons (.sb-tab) should NOT inherit .tag font-size
     const sbTabSize = await page.evaluate(() => {
@@ -492,7 +480,6 @@ test.describe('[AC5] Zoom controls', () => {
     await goto(page);
     await page.evaluate(() => window.zoomReset());
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
 
     const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeGreaterThan(1);
@@ -503,7 +490,6 @@ test.describe('[AC5] Zoom controls', () => {
     await goto(page);
     await page.evaluate(() => window.zoomReset());
     await page.keyboard.press('Control+-');
-    await page.waitForTimeout(50);
 
     const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeLessThan(1);
@@ -513,9 +499,7 @@ test.describe('[AC5] Zoom controls', () => {
     await goto(page);
     await page.keyboard.press('Control+=');
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
     await page.keyboard.press('Control+0');
-    await page.waitForTimeout(50);
 
     const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBe(1);
@@ -563,7 +547,6 @@ test.describe('[AC5] Zoom controls', () => {
     );
 
     await page.evaluate(() => window.setZoom(2.0));
-    await page.waitForTimeout(50);
 
     const topAfter = await page.evaluate(() =>
       document.querySelector('.statusbar').getBoundingClientRect().top
@@ -576,7 +559,6 @@ test.describe('[AC5] Zoom controls', () => {
   test('[AC5-menu] View menu contains Zoom In, Zoom Out, Reset Zoom', async ({ page }) => {
     await goto(page);
     await page.click('.tb-menu-item[data-menu="view"]');
-    await page.waitForTimeout(100);
 
     const text = await page.locator('#dropdown').textContent();
     expect(text).toContain('Zoom In');
@@ -589,7 +571,6 @@ test.describe('[AC5] Zoom controls', () => {
   test('[AC5-palette] command palette contains Zoom In/Out/Reset entries', async ({ page }) => {
     await goto(page);
     await page.keyboard.press('Control+k');
-    await page.waitForTimeout(100);
 
     const text = await page.locator('#palOverlay').textContent();
     expect(text).toContain('Zoom In');
@@ -706,7 +687,6 @@ test.describe('[AC7] Drag-drop file loading', () => {
       document.body.dispatchEvent(ev);
       await new Promise(r => setTimeout(r, 300));
     });
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
@@ -797,7 +777,6 @@ test.describe('[AC7] Drag-drop file loading', () => {
       document.body.dispatchEvent(ev);
       await new Promise(r => setTimeout(r, 300));
     });
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1); // Only good.md loaded
@@ -817,7 +796,6 @@ test.describe('[AC8] Edit menu commands (CM6 — T-F13)', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.press('Control+a');
-    await page.waitForTimeout(100);
     const selLen = await page.evaluate(() => { const s = window.getSelection(); return s ? s.toString().length : 0; });
     expect(selLen).toBeGreaterThan(0);
   });
@@ -829,7 +807,6 @@ test.describe('[AC8] Edit menu commands (CM6 — T-F13)', () => {
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
     await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.press('Control+a');
-    await page.waitForTimeout(100);
     const info = await page.evaluate(() => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return { withinSidebar: false, withinEditor: false };
@@ -853,7 +830,6 @@ test.describe('[AC8] Edit menu commands (CM6 — T-F13)', () => {
     await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.press('Control+a');
     await page.evaluate(() => window.execEditCmd('cut'));
-    await page.waitForTimeout(150);
     const content = await page.evaluate(() => window._appState.files[window._appState.activeFile].content);
     expect(content).toBe('');
     const isError = await page.evaluate(() => { const t = document.getElementById('toast'); return !!(t && t.classList.contains('error')); });
@@ -867,7 +843,6 @@ test.describe('[AC8] Edit menu commands (CM6 — T-F13)', () => {
     await page.evaluate(() => { try { Object.defineProperty(navigator, 'clipboard', { value: { readText: () => Promise.resolve('PASTED'), writeText: () => Promise.resolve() }, configurable: true }); } catch (_) {} });
     await page.locator('.cm-mount .cm-content').click();
     await page.evaluate(() => window.execEditCmd('paste'));
-    await page.waitForTimeout(200);
     const content = await page.evaluate(() => window._appState.files[window._appState.activeFile].content);
     expect(content).toContain('PASTED');
   });
@@ -896,20 +871,23 @@ test.describe('[ADV] Adversarial tests', () => {
     await switchToSearch(page);
     // Search for text adjacent to the injection
     await page.fill('#sbSearchInput', 'normal text');
-    await page.waitForTimeout(300);
-
-    // The snippet must be rendered but not execute JS
-    const xssTriggered = await page.evaluate(() => window.__advXss);
-    expect(xssTriggered).toBeFalsy();
 
     // The snippet should appear (with escaped HTML)
+    await expect.poll(async () => page.evaluate(() => {
+      const snips = document.querySelectorAll('.sr-snip');
+      return Array.from(snips).map(s => s.innerHTML).join('');
+    })).toContain('<mark>');
+
     const snippetText = await page.evaluate(() => {
       const snips = document.querySelectorAll('.sr-snip');
       return Array.from(snips).map(s => s.innerHTML).join('');
     });
     // raw <img> tag must not appear in rendered HTML
     expect(snippetText).not.toContain('<img ');
-    expect(snippetText).toContain('<mark>');
+
+    // The snippet must be rendered but not execute JS
+    const xssTriggered = await page.evaluate(() => window.__advXss);
+    expect(xssTriggered).toBeFalsy();
   });
 
   // CWE-79: XSS via search snippet — content contains <script> tag
@@ -923,16 +901,18 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'hello');
-    await page.waitForTimeout(300);
 
-    const xssTriggered = await page.evaluate(() => window.__scriptExec);
-    expect(xssTriggered).toBeFalsy();
+    await expect.poll(async () => page.evaluate(() =>
+      document.querySelector('.sr-snip') ? document.querySelector('.sr-snip').innerHTML : ''
+    )).toContain('&lt;script');
 
     const snipHtml = await page.evaluate(() =>
       document.querySelector('.sr-snip') ? document.querySelector('.sr-snip').innerHTML : ''
     );
     expect(snipHtml).not.toContain('<script>');
-    expect(snipHtml).toContain('&lt;script');
+
+    const xssTriggered = await page.evaluate(() => window.__scriptExec);
+    expect(xssTriggered).toBeFalsy();
   });
 
   // CWE-79: XSS via search snippet — query itself contains <mark> injection attempt
@@ -946,7 +926,6 @@ test.describe('[ADV] Adversarial tests', () => {
     await switchToSearch(page);
     // A naive query containing HTML
     await page.fill('#sbSearchInput', '<mark>');
-    await page.waitForTimeout(300);
 
     // If query shorter than 2 chars of meaningful text, may show "Type to search"
     // Either way, no raw <mark> injection in result
@@ -981,8 +960,7 @@ test.describe('[ADV] Adversarial tests', () => {
     expect(fileCount).toBe(1); // Empty file is still a valid file
 
     const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr') &&
-      !e.includes('Failed to load resource') && !e.includes('net::ERR')
+      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
     );
     expect(jsErrors).toHaveLength(0);
   });
@@ -998,7 +976,6 @@ test.describe('[ADV] Adversarial tests', () => {
 
     const start = Date.now();
     await page.fill('#sbSearchInput', 'target');
-    await page.waitForTimeout(500);
     const elapsed = Date.now() - start;
 
     // Should complete in < 2 seconds
@@ -1020,16 +997,13 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'نص');
-    await page.waitForTimeout(200);
 
-    const results = await page.locator('.search-result').count();
-    expect(results).toBeGreaterThanOrEqual(1);
+    await expect(page.locator('.search-result')).toHaveCount(1);
 
-    const snipHtml = await page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(() => {
       const el = document.querySelector('.sr-snip');
       return el ? el.innerHTML : '';
-    });
-    expect(snipHtml).toContain('<mark>');
+    })).toContain('<mark>');
   });
 
   // Adversarial: Filename with HTML chars in tree/tabs does not XSS
@@ -1043,7 +1017,6 @@ test.describe('[ADV] Adversarial tests', () => {
       S.files = [{ name: '<img src=x onerror="window.__filenameXss=true">.md', path: 'evil.md', handle: null, content: '# Evil', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
 
     const xssTriggered = await page.evaluate(() => window.__filenameXss);
     expect(xssTriggered).toBeFalsy();
@@ -1091,7 +1064,6 @@ test.describe('[ADV] Adversarial tests', () => {
       document.body.dispatchEvent(ev);
       await new Promise(r => setTimeout(r, 300));
     });
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1);
@@ -1110,7 +1082,6 @@ test.describe('[ADV] Adversarial tests', () => {
       document.body.dispatchEvent(ev);
       await new Promise(r => setTimeout(r, 300));
     });
-    await page.waitForTimeout(300);
 
     // At exactly 10MB (not exceeding), behavior depends on implementation.
     // The spec says "> 10 MB" triggers rejection (file.size > MAX_SIZE).
@@ -1128,18 +1099,15 @@ test.describe('[ADV] Adversarial tests', () => {
     await page.evaluate(() => {
       if (typeof window.openFind === 'function') window.openFind();
     });
-    await page.waitForTimeout(100);
 
     // Focus find input
     const findInput = page.locator('#findInput');
     await findInput.fill('some text');
     await findInput.click();
-    await page.waitForTimeout(50);
 
     // The keyboard dispatcher checks e.target for INPUT/TEXTAREA
     // Ctrl+A here should select the input text, not trigger execEditCmd on the document
     await page.keyboard.press('Control+a');
-    await page.waitForTimeout(100);
 
     // Find input should have its text selected (browser native behavior)
     // The execEditCmd handler calls ae.select() for INPUT — correct
@@ -1158,11 +1126,9 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'he');
-    await page.waitForTimeout(200);
 
     // "he" appears in "The" — case-insensitive match
-    const results = await page.locator('.search-result').count();
-    expect(results).toBeGreaterThanOrEqual(1);
+    await expect(page.locator('.search-result')).toHaveCount(1);
   });
 
   // Adversarial: search query with special regex chars that could break indexOf logic
@@ -1172,11 +1138,9 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await switchToSearch(page);
     await page.fill('#sbSearchInput', '$5');
-    await page.waitForTimeout(200);
 
     // Should find "$5" without treating $ as regex metachar (uses indexOf, not regex)
-    const results = await page.locator('.search-result').count();
-    expect(results).toBeGreaterThanOrEqual(1);
+    await expect(page.locator('.search-result')).toHaveCount(1);
   });
 
   // Adversarial: drop file with no extension — should be rejected
@@ -1190,7 +1154,6 @@ test.describe('[ADV] Adversarial tests', () => {
       document.body.dispatchEvent(ev);
       await new Promise(r => setTimeout(r, 300));
     });
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
@@ -1207,7 +1170,6 @@ test.describe('[ADV] Adversarial tests', () => {
       document.body.dispatchEvent(ev);
       await new Promise(r => setTimeout(r, 300));
     });
-    await page.waitForTimeout(300);
 
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(0);
@@ -1255,7 +1217,6 @@ test.describe('[MUT] Mutation detection tests', () => {
     await injectFile(page, 'test.md', '# Test\n\nContent with a.');
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'a');
-    await page.waitForTimeout(100);
 
     // Should show "Type to search." not results
     const emptyEl = page.locator('#searchResults .search-empty');
@@ -1273,7 +1234,6 @@ test.describe('[MUT] Mutation detection tests', () => {
     const start = Date.now();
     await switchToSearch(page);
     await page.fill('#sbSearchInput', 'zzznotfound');
-    await page.waitForTimeout(500);
     const elapsed = Date.now() - start;
 
     expect(elapsed).toBeLessThan(3000);
@@ -1293,7 +1253,6 @@ test.describe('[MUT] Mutation detection tests', () => {
 
     // Press Ctrl+= without Shift
     await page.keyboard.press('Control+=');
-    await page.waitForTimeout(50);
 
     const after = await page.evaluate(() => window._appState.zoomFactor);
     expect(after).toBeGreaterThan(before);

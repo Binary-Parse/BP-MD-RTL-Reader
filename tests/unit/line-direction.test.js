@@ -145,3 +145,20 @@ describe('createLineDirection', () => {
     expect(inst.decorations).toBe(before);
   });
 });
+
+// RTL-M6 (2026-09-26): inline code spans are stripped before the dominant-script count
+// so an editor line resolves exactly like the rendered preview of the same text.
+describe('createLineDirection inline-code stripping (RTL-M6)', () => {
+  test('an Arabic line carrying a Latin inline-code span stays RTL', () => {
+    const CM6 = fakeCM6();
+    const view = fakeView('استخدم `Array.prototype.flatMap.call(arguments)` هنا');
+    const { inst } = build(CM6, view, () => 'ltr');
+    expect(inst.decorations.ranges[0].spec.attributes.dir).toBe('rtl');
+  });
+  test('a genuinely English line (no code) still resolves LTR', () => {
+    const CM6 = fakeCM6();
+    const view = fakeView('call the API endpoint for details');
+    const { inst } = build(CM6, view, () => 'ltr');
+    expect(inst.decorations.ranges[0].spec.attributes.dir).toBe('ltr');
+  });
+});

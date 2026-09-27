@@ -173,12 +173,78 @@ describe('createBlockPreview (state-derived facet) + widget identity', () => {
     expect(ext[1].fn(fakeView(DOC, [], 0)).ranges).toEqual([]); // no nodes → empty
   });
 
-  test('widget eq() compares type+source; ignoreEvent() is false', () => {
+  test('widget eq() compares type+source+dirKey; ignoreEvent() is false', () => {
     const r = build(fakeCM6(), fakeView(DOC, NODES, 0)).decorations.ranges[0];
     const w = r.spec.widget;
     expect(w.ignoreEvent()).toBe(false);
-    expect(w.eq({ type: w.type, source: w.source })).toBe(true);
-    expect(w.eq({ type: 'mermaid', source: w.source })).toBe(false);
-    expect(w.eq({ type: w.type, source: 'different' })).toBe(false);
+    expect(w.eq({ type: w.type, source: w.source, dirKey: w.dirKey })).toBe(true);
+    expect(w.eq({ type: 'mermaid', source: w.source, dirKey: w.dirKey })).toBe(false);
+    expect(w.eq({ type: w.type, source: 'different', dirKey: w.dirKey })).toBe(false);
+    expect(w.eq({ type: w.type, source: w.source, dirKey: 'flipped' })).toBe(false);
+  });
+});
+
+describe('block widgets carry direction identity (RTL-H4)', () => {
+  const DOC = '| A | B |\n| - | - |\n| 1 | 2 |\noutro';
+  const NODES = [{ name: 'Table', from: 0, to: DOC.indexOf('\noutro') }];
+
+  test('a direction flip changes widget identity even for an unchanged block', () => {
+    const CM6 = fakeCM6();
+    const view = fakeView(DOC, NODES, DOC.length, DOC.length);
+    const before = buildBlockDecorations(CM6, () => null, view.state, 'ltr|');
+    const after = buildBlockDecorations(CM6, () => null, view.state, 'rtl|');
+    const w1 = before.ranges[0].spec.widget;
+    const w2 = after.ranges[0].spec.widget;
+    expect(w2.dirKey).toBe('rtl|');
+    expect(w1.eq(w2)).toBe(false); // old DOM must not be reused after the flip
+    const same = buildBlockDecorations(CM6, () => null, view.state, 'rtl|');
+    expect(w2.eq(same.ranges[0].spec.widget)).toBe(true); // unchanged direction still reuses
+  });
+});
+
+// Audit 8: the full-document syntax-tree walk used to run TWICE per keystroke (the
+// decorations facet AND atomicRanges). Both facets must now share one computation
+// per EditorState — public API and decoration semantics unchanged.
+describe('createBlockPreview — per-state memoization (audit 8)', () => {
+  const DOC = 'intro\n| A | B |\n| - | - |\n| 1 | 2 |\noutro';
+  const NODES = [{ name: 'Table', from: DOC.indexOf('| A | B |'), to: DOC.indexOf('\noutro') }];
+
+  function countingCM6() {
+    const CM6 = fakeCM6();
+    CM6.EditorView.decorations = { compute: (deps, fn) => ({ facet: 'decorations', deps, fn }) };
+    let walks = 0;
+    const inner = CM6.syntaxTree;
+    CM6.syntaxTree = (state) => { walks += 1; return inner(state); };
+    return { CM6, walks: () => walks };
+  }
+
+  test('both facets share one computation per state (tree walked once, same DecorationSet)', () => {
+    const { CM6, walks } = countingCM6();
+    const ext = createBlockPreview(CM6, () => null);
+    const view = fakeView(DOC, NODES, 0);
+    const first = ext[0].fn(view.state); // decorations.compute callback
+    const second = ext[1].fn(view);      // atomicRanges callback (same state)
+    expect(walks()).toBe(1);
+    expect(second).toBe(first);
+  });
+
+  test('a NEW state recomputes, and a dirKey flip rebuilds even for the SAME state', () => {
+    let dirKey = 'ltr|';
+    const { CM6, walks } = countingCM6();
+    const ext = createBlockPreview(CM6, () => null, () => dirKey);
+    const view = fakeView(DOC, NODES, 0);
+    const a = ext[0].fn(view.state);
+    expect(ext[1].fn(view)).toBe(a);
+    expect(walks()).toBe(1);
+
+    const otherState = fakeView(DOC, NODES, DOC.length).state; // selection moved → new state
+    ext[0].fn(otherState);
+    expect(walks()).toBe(2);
+
+    dirKey = 'rtl|'; // same state as `a`, flipped direction → must rebuild, not reuse cache
+    const c = ext[0].fn(view.state);
+    expect(walks()).toBe(3);
+    expect(c).not.toBe(a);
+    expect(c.ranges[0].spec.widget.eq(a.ranges[0].spec.widget)).toBe(false);
   });
 });

@@ -39,10 +39,45 @@
      regression, 2026-08-25. */
   --ink-mute: #755A38;
   --rule: #CDB584;
-  --accent: #3E5A7E;
+  /* audit UX-05 follow-up: #3E5A7E measured 4.28:1 as the .wikilink pill text on sepia's
+     --paper-edge (#DBC898) — the full-page axe scan never ran in sepia, so this shipped
+     unseen. #3A5577 measures 4.64:1 there (6.22 on --paper, 5.67 on --paper-deep). */
+  --accent: #3A5577;
   --accent-fill: #3E5A7E;
   --accent-soft: #D3D6C8;
   --hl-bg: rgba(146, 110, 40, 0.22);
+  --gold: #7A5C1B; /* audit UX-05: sepia's warmer deep surface needs its own gold — 5.06 / 4.61 */
+  /* v1.2 design tokens (see base.css) — audit UX-06: explicitly owned, was inherited from :root */
+  --backdrop: #2A2620;
+  --caution: #B25A38;
+}
+
+/* T1.1 "Oasis" — the warm-dark theme. Palette sampled from design/nebula-prototype.html's
+   oasis theme (COLOURS ONLY; that prototype loads CDN fonts and must never be copied).
+   Every text-on-surface pair below is pinned by tests/unit/theme-contrast.test.js. */
+[data-theme="oasis"] {
+  color-scheme: dark;
+  --paper: #110B08;
+  --paper-deep: #1A130D;
+  --paper-edge: #2A1E14;
+  --ink: #F0E5D5;
+  --ink-soft: #CBB9A3;
+  --ink-mute: #A2907B;
+  --rule: #342818;
+  --accent: #F0B95C;
+  --accent-fill: #8A5F1E;
+  --accent-soft: #3A2C16;
+  --hl-bg: rgba(240, 185, 92, 0.16);
+  --gold: #E8C468;
+  /* T1.1: the accent family MUST be redeclared for a dark surface, exactly like ink's.
+     Inheriting :root's light-theme values fails AA badly (--plum #7C4A6B = 2.84:1 on
+     --paper, caught by the full-page axe scan); these measure 8.59 / 10.01 / 9.31 on
+     --paper and 8.08 / 9.42 / 8.76 on --paper-deep. */
+  --plum: #CF9FB0;
+  --green: #9CC58A;
+  --teal: #7FC0A8;
+  --backdrop: #0A0605;
+  --caution: #E39A6F;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

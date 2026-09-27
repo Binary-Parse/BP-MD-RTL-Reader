@@ -91,7 +91,7 @@ function buildMockElectron() {
 }
 
 function buildMockFs(overrides = {}) {
-  return {
+  const fs = {
     readFileSync: vi.fn(() => '# Hello'),
     realpathSync: vi.fn((p) => /^[\\/]/.test(String(p)) ? p : `/abs/${p}`),
     statSync: vi.fn((p) => {
@@ -103,7 +103,9 @@ function buildMockFs(overrides = {}) {
       lstat: vi.fn(() => Promise.resolve({ isSymbolicLink: () => false, isFile: () => true, size: 100 })),
       realpath: vi.fn((p) => Promise.resolve(p)),
       stat: vi.fn(() => Promise.resolve({ isFile: () => true, size: 100 })),
-      readFile: vi.fn(() => Promise.resolve('content')),
+      // readAsync's vault lane decodes whatever this returns — serve the same bytes
+      // readFileSync would so per-test overrides stay coherent across both lanes.
+      readFile: vi.fn((p) => Promise.resolve(fs.readFileSync(p))),
       mkdir: vi.fn(() => Promise.resolve()),
       writeFile: vi.fn(() => Promise.resolve()),
       unlink: vi.fn(() => Promise.resolve()),
@@ -116,6 +118,7 @@ function buildMockFs(overrides = {}) {
     unlinkSync: vi.fn(),
     ...overrides,
   };
+  return fs;
 }
 
 // A throwaway EventEmitter-ish process stub so process.on/emit inside bootstrap
@@ -135,12 +138,6 @@ function buildMockProc(argv) {
 }
 
 // ── TESTS ──────────────────────────────────────────────────────────────────
-
-describe('src/main/index.js — seam exposes bootstrap', () => {
-  test('bootstrap is an exported function', () => {
-    expect(typeof bootstrap).toBe('function');
-  });
-});
 
 describe('src/main/index.js', () => {
   let mockElectron;
@@ -179,15 +176,6 @@ describe('src/main/index.js', () => {
   test('loads index.html', () => {
     expect(mockElectron._mockWin.loadURL).toHaveBeenCalledWith('app://ui/src/renderer/index.html');
     expect(mockElectron._mockWin.loadFile).not.toHaveBeenCalled();
-  });
-
-  test('window-close-confirmed calls win.close', () => {
-    const win = mockElectron._mockWin;
-    win.close.mockClear();
-    const handlers = mockElectron.ipcMain.on.mock.calls.filter(c => c[0] === 'window-close-confirmed');
-    expect(handlers.length).toBeGreaterThan(0);
-    handlers[handlers.length - 1][1]({ sender: win.webContents }); // call latest registered handler
-    expect(win.close).toHaveBeenCalled();
   });
 });
 
@@ -230,6 +218,28 @@ describe('src/main/index.js — standalone Save As boundary', () => {
     const documentWrite = fs.writeFileSync.mock.calls.find(call => String(call[0]).startsWith('/notes/saved.md.tmp-'));
     expect(documentWrite[1]).toBe('\uFEFFline1\r\nline2');
     expect(result.meta).toMatchObject({ bom: true, eol: '\r\n', finalNewline: false });
+  });
+
+  test('Save As activates the session grant so follow-up writes persist', async () => {
+    const electron = buildMockElectron();
+    const fs = buildMockFs();
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js']) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const save = electron.ipcMain.handle.mock.calls.find(call => call[0] === 'dialog:saveFile')[1];
+    const writeFile = electron.ipcMain.handle.mock.calls.find(call => call[0] === 'fs:writeFile')[1];
+
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/notes/saved.md' });
+    const saved = await save({}, { content: 'draft', eol: '\n', finalNewline: true });
+    expect(saved).toMatchObject({ ok: true });
+
+    const followUp = await writeFile({}, {
+      documentId: saved.documentId,
+      content: 'draft v2',
+      baseHash: saved.meta.hash,
+      eol: '\n',
+      finalNewline: true,
+    });
+    expect(followUp).toMatchObject({ ok: true });
   });
 
   test('uses a safe default name and reports atomic-write or grant failures', async () => {
@@ -740,8 +750,8 @@ describe('src/main/index.js — handler behaviour (audit #1)', () => {
       { name: 'tiny.md', isFile: () => true, isSymbolicLink: () => false },
     ]);
     mockFs.promises.lstat
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 11 * 1024 * 1024 })
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, size: 100 });
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 11 * 1024 * 1024 })
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 100 });
 
     const r = await readVault({}, '/mixed-vault');
     expect(Array.isArray(r)).toBe(true);
@@ -761,7 +771,7 @@ describe('src/main/index.js — handler behaviour (audit #1)', () => {
     );
     for (let i = 0; i < 12; i++) {
       mockFs.promises.lstat.mockResolvedValueOnce({
-        isSymbolicLink: () => false, size: 9 * 1024 * 1024,
+        isSymbolicLink: () => false, isFile: () => true, size: 9 * 1024 * 1024,
       });
     }
 

@@ -196,6 +196,9 @@ test.describe('renderer-drawn context menu @electron', () => {
     await expect(ctx).toBeVisible();
     // menu.newNote's Arabic string (locale.js) — the same catalog the View/File menus use.
     await expect(ctx.locator('.dd-item', { hasText: 'ملاحظة جديدة' })).toBeVisible();
+    // audit QA-14: the native ROLE items (Select All here — the welcome surface is
+    // non-editable) resolve through the same menu.* keys, so they follow the UI too.
+    await expect(ctx.locator('.dd-item', { hasText: 'تحديد الكل' })).toBeVisible();
     await page.keyboard.press('Escape');
     await page.evaluate(() => window.toggleArabicUI());
   });

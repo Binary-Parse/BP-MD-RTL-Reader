@@ -100,6 +100,25 @@ describe('src/main/index.js lifecycle — second-instance', () => {
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
 
+  test('files delivered while no window exists are queued for the next delivery', async () => {
+    const { electron, fs, listeners } = await drive();
+    const win = electron._mockWin;
+    win.webContents.send.mockClear();
+    electron.BrowserWindow.getAllWindows.mockReturnValueOnce([]);
+    listeners['second-instance']({}, ['node', 'src/main/index.js', 'queued.md']);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+
+    fs.readFileSync.mockReturnValueOnce('# queued body');
+    electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+    listeners['second-instance']({}, ['node', 'src/main/index.js']);
+
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).toHaveBeenCalledWith(
+      'open-external-file',
+      expect.objectContaining({ name: 'queued.md', content: '# queued body' })
+    );
+  });
+
   test('minimized window → restore() called AND focus() called', async () => {
     const { electron, listeners } = await drive();
     const win = electron._mockWin;

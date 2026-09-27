@@ -20,10 +20,11 @@
 <script src="../../resources/vendor/marked/marked.umd.js"></script>
 <script src="../../resources/vendor/dompurify/purify.min.js"></script>
 <script type="module" src="trusted-types-boot.js"></script>
-<!-- Math (KaTeX) + code highlighting (highlight.js), vendored locally (T-F9): no CDN. -->
+<!-- Math (KaTeX) is vendored locally (T-F9): no CDN. highlight.js (1.08 MB) is NOT
+     loaded here — app.js's loadHighlightJs() pulls it in on the first fenced code block
+     (audit PERF-07). -->
 <link rel="stylesheet" href="../../resources/vendor/katex/katex.min.css">
 <script src="../../resources/vendor/katex/katex.min.js"></script>
-<script src="../../resources/vendor/highlight/highlight.min.js"></script>
 <link rel="stylesheet" href="styles/base.css">
 <link rel="stylesheet" href="styles/themes.css">
 <link rel="stylesheet" href="styles/components.css">
@@ -337,11 +338,11 @@
     <path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
     </symbol>
     <symbol id="ic-palette" viewBox="0 0 24 24">
-    <circle cx="13.5" cy="6.5" r=".5" />
-    <circle cx="17.5" cy="10.5" r=".5" />
-    <circle cx="8.5" cy="7.5" r=".5" />
-    <circle cx="6.5" cy="12.5" r=".5" />
-    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+    <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" />
+    <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+    <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+    <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+    <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
     </symbol>
     <symbol id="ic-book-open" viewBox="0 0 24 24">
     <path d="M12 7v14" />
@@ -381,6 +382,12 @@
     <path d="M9 19.8V15m0 0H4.2M9 15l-6 6" />
     <path d="M15 4.2V9m0 0h4.8M15 9l6-6" />
     <path d="M9 4.2V9m0 0H4.2M9 9 3 3" />
+    </symbol>
+    <symbol id="ic-flame" viewBox="0 0 24 24">
+    <path d="M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4" />
+    </symbol>
+    <symbol id="ic-book" viewBox="0 0 24 24">
+    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
     </symbol>
   </defs>
 </svg>
@@ -452,12 +459,11 @@
 
     <div class="tb-actions">
       <button type="button" class="tb-search" id="searchBtn" aria-label="Search files" data-i18n-aria-label="titlebar.search">
-        <span id="searchModKey" style="font-family: var(--serif); font-style: italic;">⌘</span>
         <span data-i18n="titlebar.search">Search files…</span>
         <span class="kbd-inline">Ctrl+K</span>
       </button>
-      <button class="tb-btn" id="viewModeBtn" data-tip="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="true"><svg class="ic"><use href="#ic-book-open"/></svg></button>
-      <button class="tb-btn" id="rtlBtn" data-tip="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
+      <button class="tb-btn" id="viewModeBtn" data-tip="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="false"><svg class="ic"><use href="#ic-book-open"/></svg></button>
+      <button class="tb-btn" id="rtlBtn" data-tip="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" data-i18n-tip="tip.direction" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
       <button class="tb-btn" id="themeBtn" data-tip="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-sun"/></svg></button>
       <!-- v10 redesign (2026-08-25): fullscreen toggle, between theme and inspector. -->
       <button type="button" class="tb-btn" id="fullscreenBtn"
@@ -525,7 +531,7 @@
               <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> Try Demo Notes</button>
             </div>
           </div>
-          <div class="tree" id="tree" role="tree" aria-label="Files" style="display: none;"></div>
+          <div class="tree" id="tree" role="tree" aria-label="Files" data-i18n-aria-label="panel.files" style="display: none;"></div>
         </div>
 
         <div class="sb-pane" data-pane="tags">
@@ -662,6 +668,16 @@
                     <div class="wb-sub" data-i18n="welcome.tryDemoSub">Sample notes in English and Arabic.</div>
                   </button>
                 </div>
+                <!-- T8.1: one line of reading stats (streak + today) above the shelf.
+                     Populated by renderStreakLine(); hidden while the goal is off or there is
+                     nothing to report yet, so a brand-new install shows no empty chrome. -->
+                <div class="streak-line" id="streakLine" dir="auto" hidden></div>
+                <!-- T4.1: "Continue reading" — populated by renderContinue(); hidden until a
+                     note actually has a stored reading position. -->
+                <div class="continue-list" id="continueWrap" hidden>
+                  <div class="recent-label" data-i18n="welcome.continue">Continue reading</div>
+                  <div id="continueList"></div>
+                </div>
                 <div class="recent-list">
                   <div class="recent-label" data-i18n="welcome.recent">Recent</div>
                   <div class="recent-empty" id="recentEmpty" data-i18n="welcome.recentEmpty">No recent files yet.</div>
@@ -683,10 +699,10 @@
       <div class="find-bar" id="findBar">
         <label class="visually-hidden" for="findInput">Find in note</label>
         <input type="text" id="findInput" placeholder="Find in note…" data-i18n-placeholder="find.placeholder">
-        <span class="find-info" id="findInfo">0/0</span>
-        <button class="find-btn" id="findPrevBtn" data-tip="Previous" aria-label="Previous match" data-i18n-tip="find.prev">↑</button>
-        <button class="find-btn" id="findNextBtn" data-tip="Next" aria-label="Next match" data-i18n-tip="find.next">↓</button>
-        <button class="find-btn" id="findCloseBtn" data-tip="Close" aria-label="Close find" data-i18n-tip="find.close">×</button>
+        <span class="find-info" id="findInfo" aria-live="polite">0/0</span>
+        <button class="find-btn" id="findPrevBtn" data-tip="Previous" aria-label="Previous match" data-i18n-tip="find.prev" data-i18n-aria-label="find.prev">↑</button>
+        <button class="find-btn" id="findNextBtn" data-tip="Next" aria-label="Next match" data-i18n-tip="find.next" data-i18n-aria-label="find.next">↓</button>
+        <button class="find-btn" id="findCloseBtn" data-tip="Close" aria-label="Close find" data-i18n-tip="find.close" data-i18n-aria-label="find.close">×</button>
       </div>
     </main>
 
@@ -708,6 +724,11 @@
           <div class="prop-row"><span class="prop-key" data-i18n="prop.direction">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.mode">Mode</span><span class="prop-val" id="propMode">Live</span></div>
         </div>
+        <!-- T5.1c: highlights + margin notes for the ACTIVE note (delete + jump-to-highlight). -->
+        <div class="insp-section">
+          <h4 data-i18n="panel.notes">Notes</h4>
+          <div id="noteList" class="note-list"></div>
+        </div>
       </div>
     </aside>
 
@@ -721,13 +742,12 @@
     <span class="sb-spacer"></span>
     <span class="sb-stat" id="cursorPos">— · —</span>
     <span class="sb-stat" id="wordCount">0 words</span>
-    <span class="sb-stat ok" id="sbSync">ready</span>
     <span class="sb-stat" id="themeLabel">paper</span>
   </div>
 
   <!-- COMMAND PALETTE -->
   <div class="palette-overlay" id="palOverlay">
-    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette" data-i18n-aria-label="menu.commandPalette">
       <div class="pal-input-wrap">
         <label class="visually-hidden" for="palInput">Command or file</label>
         <input class="pal-input" id="palInput" role="combobox" aria-autocomplete="list" aria-controls="palResults" aria-expanded="true" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">

@@ -31,7 +31,6 @@ test.describe('[FA] File association — open .md from Explorer', () => {
         content: '# Hello from Explorer\n\nThis came in via file association.'
       });
     });
-    await page.waitForTimeout(200);
     const state = await page.evaluate(() => {
       const s = window._appState;
       return {
@@ -56,7 +55,6 @@ test.describe('[FA] File association — open .md from Explorer', () => {
         content: '# BP MD RTL Reader external open works\n\nbody text here'
       });
     });
-    await page.waitForTimeout(300);
     const previewText = await page.$eval('#noteContent', el => el.textContent);
     expect(previewText).toContain('BP MD RTL Reader external open works');
   });
@@ -66,11 +64,9 @@ test.describe('[FA] File association — open .md from Explorer', () => {
     await page.evaluate(() => {
       window.openExternalFile({ name: 'one.md', path: '/p/one.md', content: '# One' });
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => {
       window.openExternalFile({ name: 'two.md', path: '/p/two.md', content: '# Two' });
     });
-    await page.waitForTimeout(150);
     const names = await page.evaluate(() => window._appState.files.map(f => f.name));
     expect(names).toEqual(['one.md', 'two.md']);
     const active = await page.evaluate(() => window._appState.activeFile);
@@ -82,11 +78,9 @@ test.describe('[FA] File association — open .md from Explorer', () => {
     await page.evaluate(() => {
       window.openExternalFile({ name: 'x.md', path: '/p/x.md', content: '# First' });
     });
-    await page.waitForTimeout(150);
     await page.evaluate(() => {
       window.openExternalFile({ name: 'x.md', path: '/p/x.md', content: '# Updated' });
     });
-    await page.waitForTimeout(150);
     const result = await page.evaluate(() => ({
       count: window._appState.files.length,
       content: window._appState.files[0].content
@@ -102,7 +96,6 @@ test.describe('[FA] File association — open .md from Explorer', () => {
     await page.evaluate(() => {
       window.openExternalFile({ name: 'bad.md' }); // no content
     });
-    await page.waitForTimeout(150);
     const count = await page.evaluate(() => window._appState.files.length);
     expect(count).toBe(0);
     expect(errors).toEqual([]);

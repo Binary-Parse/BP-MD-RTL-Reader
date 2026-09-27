@@ -2,13 +2,15 @@
  * main-export-pdf.test.js — T-B6 `export:pdf` IPC handler.
  *
  * Renders the caller-supplied standalone note HTML in a HIDDEN, sandboxed, JS-disabled
- * window on an ISOLATED OFFLINE session (every non-local request hard-blocked — SC2),
- * via a temp file (no data:-URL size cliff), prints to PDF, writes the bytes to a chosen
- * path, and always cleans up the temp + window.
+ * window on an ISOLATED OFFLINE session (every request blocked except data:, about:, and
+ * the export's OWN temp document — SC2, tightened by T14: file: used to be allowed
+ * wholesale), via a temp file (no data:-URL size cliff), prints to PDF, writes the bytes
+ * to a chosen path, and always cleans up the temp + window.
  *
  * Drives the real bootstrap({ electron, fs, proc }) via the shared harness seam.
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { pathToFileURL } from 'node:url';
 import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
@@ -37,12 +39,44 @@ describe('export:pdf (T-B6)', () => {
     expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled();
   });
 
+  test('oversized html → { error: "file-too-large" }, no dialog, no temp file (SEC-04)', async () => {
+    electron.dialog.showSaveDialog.mockClear();
+    const res = await handler({}, { html: 'x'.repeat(10 * 1024 * 1024 + 1) });
+    expect(res).toEqual({ error: 'file-too-large' });
+    expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(fs.promises.open).not.toHaveBeenCalled();
+  });
+
+  test('sweeps hour-old bpmd-export temp orphans on every export (HYG-01)', async () => {
+    const tempDir = '/mock/userData/temp';
+    const now = Date.now();
+    const onDisk = new Map([
+      [`${tempDir}/bpmd-export-11111111-1111-1111-1111-111111111111.html`, now - 2 * 60 * 60 * 1000],
+      [`${tempDir}/bpmd-export-22222222-2222-2222-2222-222222222222.html`, now],
+      [`${tempDir}/unrelated.txt`, 1],
+    ]);
+    const unlinked = [];
+    const seeded = buildMockFs({
+      readdirSync: vi.fn(() => [...onDisk.keys()].map((k) => k.split('/').pop())),
+      statSync: vi.fn((p) => ({ mtimeMs: onDisk.get(String(p).replace(/\\/g, '/')) || 0 })),
+      unlinkSync: vi.fn((p) => unlinked.push(String(p).replace(/\\/g, '/'))),
+    });
+    const el = buildMockElectron();
+    bootstrap({ electron: el, fs: seeded, proc: buildMockProc(['node', 'src/main/index.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+    el.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+    const res = await getHandle(el, 'export:pdf')({}, { html: HTML });
+    expect(res).toEqual({ canceled: true });
+    expect(unlinked).toEqual([`${tempDir}/bpmd-export-11111111-1111-1111-1111-111111111111.html`]);
+  });
+
   test('canceled save dialog → { canceled: true }; nothing printed or written', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
     const res = await handler({}, { html: HTML, defaultName: 'note.pdf' });
     expect(res).toEqual({ canceled: true });
     expect(electron._mockWin.webContents.printToPDF).not.toHaveBeenCalled();
     expect(fs.promises.writeFile).not.toHaveBeenCalled();
+    expect(fs.promises.open).not.toHaveBeenCalled();
   });
 
   test('passes defaultName + a PDF filter to the save dialog', async () => {
@@ -69,10 +103,14 @@ describe('export:pdf (T-B6)', () => {
     expect(opts.webPreferences.javascript).toBe(false);
     expect(electron._mockWin.webContents.setWindowOpenHandler).toHaveBeenCalled();
 
-    // The html is written to a temp .html and loaded from there (no data: URL).
-    const [tmpPath, tmpHtml] = fs.promises.writeFile.mock.calls[0];
+    // The html is written to a temp .html through an EXCLUSIVE handle and loaded from
+    // there (no data: URL). audit SEC-04: random name + O_EXCL, never a predictable path.
+    const [tmpPath, tmpFlags] = fs.promises.open.mock.calls[0];
     expect(tmpPath).toMatch(/bpmd-export-.*\.html$/);
-    expect(tmpHtml).toBe(HTML);
+    expect(tmpFlags).toBe('wx');
+    const handle = await fs.promises.open.mock.results[0].value;
+    expect(handle.writeFile).toHaveBeenCalledWith(HTML, 'utf8');
+    expect(handle.close).toHaveBeenCalled();
     expect(electron._mockWin.loadFile).toHaveBeenCalledWith(tmpPath);
     expect(electron._mockWin.loadURL).toHaveBeenCalledWith('app://ui/src/renderer/index.html');
 
@@ -87,18 +125,30 @@ describe('export:pdf (T-B6)', () => {
     expect(fs.promises.unlink).toHaveBeenCalledWith(tmpPath);
   });
 
-  test('SC2: renders on an isolated session whose webRequest blocks every non-local request', async () => {
+  test('SC2: the export session blocks everything except data:, about:, and its own temp document', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
-    await handler({}, { html: HTML, defaultName: 'note.pdf' });
+    // Hold the export mid-flight (loadFile gated) so the transient allowlist still holds
+    // this run's temp URL — T14 narrowed `file:` from wholesale to exactly that URL.
+    let releaseLoad;
+    electron._mockWin.loadFile.mockReturnValueOnce(new Promise((resolve) => { releaseLoad = resolve; }));
+    const pending = handler({}, { html: HTML, defaultName: 'note.pdf' });
+    await vi.waitFor(() => expect(electron._pdfSession.webRequest.onBeforeRequest).toHaveBeenCalled());
 
-    expect(electron.session.fromPartition).toHaveBeenCalledWith('pdf-export');
-    expect(electron._pdfSession.webRequest.onBeforeRequest).toHaveBeenCalledTimes(1);
     const filter = electron._pdfSession.webRequest.onBeforeRequest.mock.calls.at(-1)[0];
     const cancels = (url) => { let out; filter({ url }, (x) => { out = x; }); return out.cancel; };
+    expect(electron.session.fromPartition).toHaveBeenCalledWith('pdf-export');
+    const tmpUrl = pathToFileURL(fs.promises.open.mock.calls.at(-1)[0]).href;
     expect(cancels('https://evil.example/beacon.png?leak=1')).toBe(true); // remote beacon blocked
     expect(cancels('http://tracker.test/x')).toBe(true);
-    expect(cancels('file:///tmp/bpmd-export.html')).toBe(false);          // the local doc loads
+    expect(cancels('file:///etc/passwd')).toBe(true);                     // other local files blocked
+    expect(cancels(tmpUrl)).toBe(false);                                  // only THIS export's doc loads
     expect(cancels('data:image/png;base64,AAAA')).toBe(false);            // inline data allowed
+    expect(cancels('about:blank')).toBe(false);
+
+    releaseLoad();
+    await pending;
+    // The allowance is transient: once the export ends, its temp URL is no longer loadable.
+    expect(cancels(tmpUrl)).toBe(true);
   });
 
   test('printToPDF failure → { error: "export-failed" }; window closed; PDF not written', async () => {
@@ -107,8 +157,9 @@ describe('export:pdf (T-B6)', () => {
     const res = await handler({}, { html: HTML, defaultName: 'note.pdf' });
     expect(res).toEqual({ error: 'export-failed' });
     expect(electron._mockWin.close).toHaveBeenCalled();
-    // Only the temp html write happened — the PDF write to the chosen path did not.
-    expect(fs.promises.writeFile.mock.calls.some((c) => c[0] === '/out/note.pdf')).toBe(false);
+    // The temp html handle was opened, but the PDF write to the chosen path never happened.
+    expect(fs.promises.open).toHaveBeenCalledTimes(1);
+    expect(fs.promises.open.mock.calls.some((c) => c[0] === '/out/note.pdf')).toBe(false);
   });
 
   test('writeFile(PDF) failure (e.g. ENOSPC) → { error: "export-failed" }; window STILL closed', async () => {
@@ -168,12 +219,13 @@ describe('export:pdf (T-B6)', () => {
     expect(electron._mockWin.webContents.printToPDF).not.toHaveBeenCalled();
   });
 
-  // L341: the temp html is written with the 'utf8' encoding.
-  test('temp html is written with utf8 encoding', async () => {
+  // L341: the temp html is written with the 'utf8' encoding — now through the exclusive
+  // file handle (audit SEC-04) rather than fs.promises.writeFile.
+  test('temp html is written with utf8 encoding through the exclusive handle', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
     await handler({}, { html: HTML, defaultName: 'n.pdf' });
-    const tmpWrite = fs.promises.writeFile.mock.calls[0];
-    expect(tmpWrite[2]).toBe('utf8');
+    const handle = await fs.promises.open.mock.results[0].value;
+    expect(handle.writeFile.mock.calls[0][1]).toBe('utf8');
   });
 
   // L344: contextIsolation:true on the offscreen window (not asserted elsewhere here).
@@ -228,25 +280,39 @@ describe('export:pdf (T-B6)', () => {
     }
   });
 
-  // L338: the temp filename embeds a monotonically-INCREASING export sequence
-  // (pdfExportSeq++). Two exports → two distinct temp paths whose seq suffix grows.
-  test('each export uses a distinct temp filename (sequence increments, not decrements)', async () => {
+  // L338 / audit SEC-04: the temp filename is now a random UUID, so the old
+  // Date.now()+counter sequence is gone. Two exports must still draw DIFFERENT
+  // unguessable names, and every create must be exclusive ('wx').
+  test('each export uses a distinct random temp filename, always created with wx', async () => {
     electron.dialog.showSaveDialog
       .mockResolvedValueOnce({ canceled: false, filePath: '/out/a.pdf' })
       .mockResolvedValueOnce({ canceled: false, filePath: '/out/b.pdf' });
     await handler({}, { html: HTML, defaultName: 'a.pdf' });
-    const tmp1 = fs.promises.writeFile.mock.calls.find((c) => /bpmd-export-.*\.html$/.test(String(c[0])))[0];
-    fs.promises.writeFile.mockClear();
+    const tmp1 = fs.promises.open.mock.calls[0][0];
+    expect(fs.promises.open.mock.calls[0][1]).toBe('wx');
+    fs.promises.open.mockClear();
     await handler({}, { html: HTML, defaultName: 'b.pdf' });
-    const tmp2 = fs.promises.writeFile.mock.calls.find((c) => /bpmd-export-.*\.html$/.test(String(c[0])))[0];
+    const tmp2 = fs.promises.open.mock.calls[0][0];
+    expect(fs.promises.open.mock.calls[0][1]).toBe('wx');
+
+    expect(tmp1).toMatch(/bpmd-export-.*\.html$/);
+    expect(tmp2).toMatch(/bpmd-export-.*\.html$/);
     expect(tmp1).not.toBe(tmp2);
-    // Capture the SIGNED trailing sequence (a `--` mutant would make it negative).
-    const seqOf = (p) => Number(String(p).match(/-(-?\d+)\.html$/)[1]);
-    expect(seqOf(tmp1)).toBeGreaterThanOrEqual(0);
-    // pdfExportSeq++ → the 2nd seq is strictly greater AND non-negative;
-    // a `--` mutant yields a negative 2nd seq → this fails.
-    expect(seqOf(tmp2)).toBeGreaterThan(seqOf(tmp1));
-    expect(seqOf(tmp2)).toBeGreaterThanOrEqual(0);
+    // A random UUID (RFC 4122 v4 shape) — not a timestamp/counter an attacker could guess.
+    const uuid = /bpmd-export-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.html$/;
+    expect(tmp1).toMatch(uuid);
+    expect(tmp2).toMatch(uuid);
     expect(electron._pdfSession.webRequest.onBeforeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  // audit SEC-04: a pre-planted temp name must not be openable — the 'wx' (O_EXCL) create
+  // fails and the export reports export-failed instead of writing through the squatter.
+  test('an unwritable/pre-planted temp path → export-failed, nothing rendered', async () => {
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
+    fs.promises.open.mockRejectedValueOnce(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
+    electron._mockWin.webContents.printToPDF.mockClear();
+    const res = await handler({}, { html: HTML, defaultName: 'n.pdf' });
+    expect(res).toEqual({ error: 'export-failed' });
+    expect(electron._mockWin.webContents.printToPDF).not.toHaveBeenCalled();
   });
 });

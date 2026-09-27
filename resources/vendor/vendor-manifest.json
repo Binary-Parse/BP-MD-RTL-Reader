@@ -31,7 +31,7 @@
     },
     {
       "package": "dompurify",
-      "version": "3.4.13"
+      "version": "3.4.16"
     },
     {
       "package": "highlight.js",
@@ -39,7 +39,7 @@
     },
     {
       "package": "katex",
-      "version": "0.17.0"
+      "version": "0.18.9"
     },
     {
       "package": "lucide-static",
@@ -56,16 +56,60 @@
   ],
   "assets": [
     {
+      "file": "build/x86-unicode/EnVar.dll",
+      "sha256": "dbb0040cd73c83aac965319eaafe81a962154668eb2e7773d79a6a8040b446b0"
+    },
+    {
       "file": "resources/vendor/codemirror/codemirror.min.js",
-      "sha256": "d2fab7608a5608b48f317e11ecdf5cf794b88336440ff5cd094a3021fefdf73f"
+      "sha256": "72deae2fcd58dcb818cf7c4d8ecac5662ea582137cf965a05eb515dfb08c6823"
     },
     {
       "file": "resources/vendor/dompurify/purify.min.js",
-      "sha256": "9ab3d44d73c3e3947f9ab72e0f0bc15c7f1931d60b365ba261fc85fe59013c56"
+      "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+    },
+    {
+      "file": "resources/vendor/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2",
+      "sha256": "6010e7fd0dce5d527583951750728cbe3c895efbd16aa0f809ab8c824878c9d8"
+    },
+    {
+      "file": "resources/vendor/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2",
+      "sha256": "90aef64fea9794f232332e907d45810ab268d1a11721340025eba2a2cdb36d5c"
+    },
+    {
+      "file": "resources/vendor/fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2",
+      "sha256": "16734a5adb27b0f363e566cbbeacec480da0dc0baa19c8f0053251c2e2bc0eac"
+    },
+    {
+      "file": "resources/vendor/fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2",
+      "sha256": "04c730b4292731ccedadd5bd80756124364ae4923895145d9cd7b1f28e443de1"
+    },
+    {
+      "file": "resources/vendor/fonts/inter-latin-wght-italic.woff2",
+      "sha256": "7291b5970da2237441273c03b424a504b70b18f09791473fab99687dcc314720"
+    },
+    {
+      "file": "resources/vendor/fonts/inter-latin-wght-normal.woff2",
+      "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
+    },
+    {
+      "file": "resources/vendor/fonts/jetbrains-mono-latin-wght-italic.woff2",
+      "sha256": "a8afa085e9ca5e53434e2ee918ba6b65c7dd4dda56509976b36591478c99d62e"
+    },
+    {
+      "file": "resources/vendor/fonts/jetbrains-mono-latin-wght-normal.woff2",
+      "sha256": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e"
+    },
+    {
+      "file": "resources/vendor/fonts/literata-latin-opsz-italic.woff2",
+      "sha256": "97bc5aa317653eb249d66782c8533e5f1bd7d27a97b5265155a3d1700e785b7b"
+    },
+    {
+      "file": "resources/vendor/fonts/literata-latin-opsz-normal.woff2",
+      "sha256": "29de894c768689feef6ab4ef274a9a16d19bfc5b0c3cbfcdac80ef220816210c"
     },
     {
       "file": "resources/vendor/highlight/highlight.min.js",
-      "sha256": "d6b0c3b35ee9fb6c5a14dc7d1ef7f15967d8a3751467656ea596841b42c938f6"
+      "sha256": "d042497b5b944da11192a9ba186b1dbac1aba4d12c40f3085d6cc542cfa2ac68"
     },
     {
       "file": "resources/vendor/katex/fonts/KaTeX_AMS-Regular.woff2",
@@ -149,11 +193,11 @@
     },
     {
       "file": "resources/vendor/katex/katex.min.css",
-      "sha256": "a34ad8fc188e8f5a3af7ceaa2a58d7210c6c9171335a15bff2b48ebcd6a6f5b0"
+      "sha256": "b9ce0e8ce93f0c18c4986fe1f1c3c269d921b56a69e6c97f83a507916b38aab5"
     },
     {
       "file": "resources/vendor/katex/katex.min.js",
-      "sha256": "45fbe318fea878fdc0a111913dc1f87894b2c439360d0228c086ef313f213efc"
+      "sha256": "155f6c2d673c5912e3b48f45d8830eaad18ae1953915939ceb648ea8b9c3e7e2"
     },
     {
       "file": "resources/vendor/marked/marked.umd.js",

@@ -134,7 +134,9 @@ describe('applyBlockDirection (T-R1)', () => {
 
 describe('isolateInlineRuns (T-R2)', () => {
   test('English inline code inside an RTL block is wrapped in <bdi>', () => {
-    const root = frag('<p>شغّل الأمر <code>src/main/index.js</code> الآن</p>');
+    // audit UX-01: the surrounding prose must stay a strict Arabic majority for the block
+    // itself to resolve rtl (18 Arabic vs 14 Latin letters here).
+    const root = frag('<p>شغّل الأمر التالي <code>src/main/index.js</code> الآن</p>');
     applyBidi(root, { escape: escapeHtml });
     const code = root.querySelector('code');
     expect(code.parentNode.nodeName).toBe('BDI');
@@ -172,6 +174,53 @@ describe('isolateInlineRuns (T-R2)', () => {
     const root = frag('<p>انظر <a href="https://x">GitHub</a> هنا</p>');
     applyBidi(root, { escape: escapeHtml });
     expect(root.querySelector('a').parentNode.nodeName).toBe('BDI');
+  });
+
+  test('RTL-H1: digit runs carry dir="ltr" — a bare auto bdi would inherit RTL and flip separators', () => {
+    const root = frag('<p>التاريخ 2026-06-01 والوقت 12:30</p>');
+    applyBidi(root, { escape: escapeHtml });
+    const bdis = [...root.querySelectorAll('bdi')];
+    expect(bdis.map(b => [b.textContent, b.getAttribute('dir')])).toEqual([
+      ['2026-06-01', 'ltr'],
+      ['12:30', 'ltr'],
+    ]);
+  });
+
+  test('RTL-H1: #tags keep the bare auto isolate (their letters anchor the direction)', () => {
+    const root = frag('<p>الوسم #note_2026 مهم</p>');
+    applyBidi(root, { escape: escapeHtml });
+    const tag = [...root.querySelectorAll('bdi')].find(b => (b.textContent || '').startsWith('#'));
+    expect(tag.getAttribute('dir')).toBeNull();
+  });
+
+  test('RTL-H1: inline code isolation carries dir="ltr" so a neutral-only snippet cannot inherit RTL', () => {
+    const root = frag('<p>الوقت <code>12:30</code> الآن</p>');
+    applyBidi(root, { escape: escapeHtml });
+    const bdi = root.querySelector('bdi');
+    expect(bdi.getAttribute('dir')).toBe('ltr');
+    expect(bdi.querySelector('code')).toBeTruthy();
+  });
+
+  test('RTL-H2: a neutral-text link (wikilink date) gets its digit run isolated inside the anchor', () => {
+    const root = frag('<p>الموعد <a data-target="2026-06-01">2026-06-01</a> ثابت</p>');
+    applyBidi(root, { escape: escapeHtml });
+    const inner = root.querySelector('a bdi');
+    expect(inner.getAttribute('dir')).toBe('ltr');
+    expect(inner.textContent).toBe('2026-06-01');
+  });
+
+  test('RTL-H2: a URL-named link is never fragmented — its digits are one identifier', () => {
+    const root = frag('<p>راجع <a href="https://example.com/2026/06/01">https://example.com/2026/06/01</a> التقرير</p>');
+    applyBidi(root, { escape: escapeHtml });
+    expect(root.querySelector('a').querySelector('bdi')).toBeNull();
+  });
+
+  test('RTL-H2: a link already isolated as opposite-direction is not re-isolated inside', () => {
+    const root = frag('<p>انظر <a href="https://x">GitHub 2026</a> هنا</p>');
+    applyBidi(root, { escape: escapeHtml });
+    const outer = root.querySelector('a').closest('bdi');
+    expect(outer).toBeTruthy();
+    expect(outer.querySelector('bdi')).toBeNull();
   });
 
   test('an Arabic (same-direction) link inside an RTL block is NOT wrapped', () => {
@@ -244,7 +293,7 @@ describe('applyBidi (combined)', () => {
   test('mixed AR/EN document: each block gets its own direction', () => {
     const root = frag(`
       <h1>مرحبا</h1>
-      <p>فقرة عربية مع 42 و <code>src/main/index.js</code></p>
+      <p>فقرة عربية طويلة مع 42 و <code>src/main/index.js</code></p>
       <p>An English paragraph</p>
     `);
     applyBidi(root, { baseDir: 'rtl', escape: escapeHtml });
@@ -273,8 +322,8 @@ describe('forced direction (toggle / front-matter overrides per-block auto)', ()
     expect(root.querySelector('p').getAttribute('dir')).toBe('ltr');
   });
 
-  test('forceDir="rtl" forces a ~50/50 English-led block to rtl (the reported bug at DOM layer)', () => {
-    const root = frag('<p>Name قيمة one واحد</p>'); // auto would keep this ltr (English-first, 53% RTL)
+  test('forceDir="rtl" forces a 50/50 English-led block to rtl (the reported bug at DOM layer)', () => {
+    const root = frag('<p>Name قيمة</p>'); // auto: exact tie → inherits ltr (audit UX-01)
     applyBlockDirection(root, 'ltr');
     expect(root.querySelector('p').getAttribute('dir')).toBe('ltr'); // sanity: auto
     applyBlockDirection(root, 'ltr', 'rtl');
@@ -313,5 +362,49 @@ describe('forced direction (toggle / front-matter overrides per-block auto)', ()
     applyBidi(root, { forceDir: 'rtl' });
     expect(root.querySelector('.callout').getAttribute('dir')).toBe('rtl');
     expect(root.querySelector('.callout-title').closest('[dir]').getAttribute('dir')).toBe('rtl');
+  });
+});
+
+// audit UX-02: container blocks measure only their PROSE — the letters inside fenced code,
+// inline code, diagrams and math are identifiers, not prose, and used to out-number (and so
+// wrongly flip) a genuinely Arabic callout/list item/table cell.
+describe('code/math text is excluded from container-block direction (audit UX-02)', () => {
+  const CODEISH_SNIPPET = 'const payload = { enable: true, retries: 3 };';
+
+  test('an Arabic callout containing a Latin-dense snippet stays dir=rtl', () => {
+    const root = frag(`<blockquote class="callout">
+      <p>ملاحظة عربية قصيرة</p>
+      <pre><code>${CODEISH_SNIPPET}</code></pre>
+    </blockquote>`);
+    // Sanity: the raw text IS Latin-dominant (15 Arabic vs 29 Latin letters) — the old
+    // measurement would have flipped this callout to dir="ltr".
+    expect(root.querySelector('blockquote').textContent).toContain(CODEISH_SNIPPET);
+
+    applyBlockDirection(root, 'ltr');
+
+    const blockquote = root.querySelector('blockquote');
+    expect(blockquote.getAttribute('dir')).toBe('rtl');
+    expect(blockquote.getAttribute('data-script')).toBe('arabic');
+    expect(blockquote.querySelector('pre code')).not.toBeNull(); // the snippet is untouched
+  });
+
+  test('a plain Arabic paragraph with no code is unchanged', () => {
+    const root = frag('<p>ملاحظة عربية قصيرة</p>');
+    applyBlockDirection(root, 'ltr');
+    const p = root.querySelector('p');
+    expect(p.getAttribute('dir')).toBe('rtl');
+    expect(p.getAttribute('data-script')).toBe('arabic');
+  });
+});
+
+// RTL-M1 (2026-09-26): the table-level pass counts the same text the per-block pass
+// counts — code cells are stripped, so a Latin identifier in one cell no longer leaves
+// an otherwise-Arabic table unmirrored.
+describe('applyTableDirection code-cell stripping (RTL-M1)', () => {
+  test('an Arabic table with a code-heavy cell keeps dir="rtl"', () => {
+    const root = frag('<table><thead><tr><th>الاسم</th><th>الوصف</th></tr></thead><tbody><tr><td>دالة</td><td><code>Array.prototype.flatMap.call(arguments, thisArg)</code></td></tr></tbody></table>');
+    applyBidi(root, { baseDir: 'ltr', escape: escapeHtml });
+    expect(root.querySelector('table').getAttribute('dir')).toBe('rtl');
+    expect(root.querySelector('th').getAttribute('dir')).toBe('rtl');
   });
 });

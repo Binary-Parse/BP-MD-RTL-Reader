@@ -18,6 +18,13 @@ describe('parseBpmdUrl', () => {
   test('null when no vaultId/rel segment split exists', () => {
     expect(parseBpmdUrl('bpmd://vault/onlyonesegment')).toBeNull();
   });
+  test('strips a literal query/fragment before resolving so cache-busted image srcs work (PROT-01)', () => {
+    expect(parseBpmdUrl('bpmd://vault/cap-a/pic.png?v=2')).toEqual({ vaultId: 'cap-a', rel: 'pic.png' });
+    expect(parseBpmdUrl('bpmd://vault/cap-a/pic.png#crop')).toEqual({ vaultId: 'cap-a', rel: 'pic.png' });
+    expect(parseBpmdUrl('bpmd://vault/cap-a/sub/pic.png?a=1#b')).toEqual({ vaultId: 'cap-a', rel: 'sub/pic.png' });
+    expect(parseBpmdUrl('bpmd://vault/cap-a/pic%3Fv%3D2')).toEqual({ vaultId: 'cap-a', rel: 'pic?v=2' });
+    expect(resolveAsset('bpmd://vault/cap-a/pic.png?v=2', ROOT, path.posix)).toEqual({ path: '/vault/pic.png' });
+  });
 });
 
 describe('resolveAsset', () => {
@@ -128,6 +135,10 @@ describe('resolveAsset — every guard branch (mutation kills)', () => {
   test('encoded ".." traversal is decoded then rejected', () => {
     expect(resolveAsset('bpmd://vault/cap-a/%2e%2e/etc/passwd', ROOT, P)).toEqual({ error: 'unauthorized-path' });
   });
+  test('a file or folder whose NAME starts with dots is inside, not an escape', () => {
+    expect(resolveAsset('bpmd://vault/cap-a/..notes/img.png', ROOT, P)).toEqual({ path: '/vault/..notes/img.png' });
+    expect(resolveAsset('bpmd://vault/cap-a/..readme.md', ROOT, P)).toEqual({ path: '/vault/..readme.md' });
+  });
   test('relPath that resolves to the root dir itself ("" back) → unauthorized', () => {
     expect(resolveAsset('bpmd://vault/cap-a/.', ROOT, P)).toEqual({ error: 'unauthorized-path' });
     expect(resolveAsset('bpmd://vault/cap-a/img/..', ROOT, P)).toEqual({ error: 'unauthorized-path' });
@@ -167,6 +178,47 @@ describe('resolveAppAsset', () => {
 
   test('rejects encoded traversal even when URL-normalized under root', () => {
     expect(resolveAppAsset('app://ui/src/%2e%2e/%2e%2e/etc/passwd', APP, P)).toEqual({ error: 'unauthorized-path' });
+  });
+
+  // audit SEC-08: the prefix/allow-list checks are textual. With an injected fs the
+  // resolver must ALSO require the real paths to be contained, so a symlink planted under
+  // src/renderer/ cannot serve a file from outside the app root.
+  describe('realpath containment (audit SEC-08)', () => {
+    // An escaping link: /app/src/renderer/leak.js really lives at /etc/leak.js.
+    const escapingFs = { realpathSync: (p) => (p === '/app/src/renderer/leak.js' ? '/etc/leak.js' : p) };
+
+    test('a target whose realpath escapes the renderer root is rejected', () => {
+      expect(resolveAppAsset('app://ui/src/renderer/leak.js', APP, P, escapingFs))
+        .toEqual({ error: 'unauthorized-path' });
+    });
+
+    test('a target that is a real file inside the root still resolves', () => {
+      expect(resolveAppAsset('app://ui/src/renderer/app.js', APP, P, escapingFs))
+        .toEqual({ path: '/app/src/renderer/app.js', type: 'text/javascript; charset=utf-8' });
+      expect(resolveAppAsset('app://ui/resources/vendor/fonts/x.woff2', APP, P, escapingFs))
+        .toEqual({ path: '/app/resources/vendor/fonts/x.woff2', type: 'font/woff2' });
+    });
+
+    test('a root that is itself a symlink does not false-positive its own contents', () => {
+      // The packaged root may be a link: realpath(root) = /real/app, realpath(target) =
+      // /real/app/src/... → still contained.
+      const linkedRoot = {
+        realpathSync: (p) => p.replace(/^\/app\b/, '/real/app'),
+      };
+      expect(resolveAppAsset('app://ui/src/renderer/index.html', APP, P, linkedRoot))
+        .toEqual({ path: '/app/src/renderer/index.html', type: 'text/html; charset=utf-8' });
+    });
+
+    test('an unreadable/absent target (realpath throws) is refused, not served', () => {
+      const throwing = { realpathSync: (p) => { if (p !== APP) throw new Error('ENOENT'); return p; } };
+      expect(resolveAppAsset('app://ui/src/renderer/index.html', APP, P, throwing))
+        .toEqual({ error: 'unauthorized-path' });
+    });
+
+    test('without an injected fs the textual 3-arg contract still holds', () => {
+      expect(resolveAppAsset('app://ui/src/renderer/index.html', APP, P))
+        .toEqual({ path: '/app/src/renderer/index.html', type: 'text/html; charset=utf-8' });
+    });
   });
 });
 
@@ -212,5 +264,71 @@ describe('appResponseHeaders', () => {
     for (const type of ['text/html; charset=utf-8', 'application/json', 'font/woff2']) {
       expect(appResponseHeaders(type)['content-type']).toBe(type);
     }
+  });
+});
+
+// GATE-01 (2026-09-26): every validateAsset and resolveAppAsset refusal lane, and the
+// response-header MIME gate.
+describe('validateAsset refusal lanes (GATE-01)', () => {
+  const okFs = (over = {}) => ({
+    promises: {
+      realpath: async (p) => p,
+      stat: async () => ({ isFile: () => true, size: 10 }),
+      ...over,
+    },
+  });
+  test('a realpath failure is not-found; an escaping target is unauthorized', async () => {
+    const throwing = okFs({ realpath: async () => { throw new Error('x'); } });
+    expect(await validateAsset('/v/a.png', '/v', throwing, path.posix)).toEqual({ error: 'not-found' });
+    const escaping = okFs({ realpath: async (p) => (p === '/v/a.png' ? '/outside/a.png' : p) });
+    expect(await validateAsset('/v/a.png', '/v', escaping, path.posix)).toEqual({ error: 'unauthorized-path' });
+  });
+  test('a directory and an oversized file are refused', async () => {
+    const dirFs = okFs({ stat: async () => ({ isFile: () => false, isDirectory: () => true, size: 5 }) });
+    expect(await validateAsset('/v/a.png', '/v', dirFs, path.posix)).toEqual({ error: 'not-regular-file' });
+    const bigFs = okFs({ stat: async () => ({ isFile: () => true, size: 6 * 1024 * 1024 }) });
+    expect(await validateAsset('/v/a.png', '/v', bigFs, path.posix)).toEqual({ error: 'file-too-large' });
+    expect(await validateAsset('/v/a.png', '/v', bigFs, path.posix, 10 * 1024 * 1024))
+      .toMatchObject({ path: '/v/a.png', type: 'image/png' });
+  });
+  test('the root itself is not an asset', async () => {
+    expect(await validateAsset('/v', '/v', okFs(), path.posix)).toEqual({ error: 'unsupported-type' });
+  });
+});
+
+describe('resolveAppAsset refusal lanes (GATE-01)', () => {
+  test('bad url, missing root, absolute rel, traversal, and foreign prefixes are refused', () => {
+    expect(resolveAppAsset('not a url', '/app', path.posix)).toEqual({ error: 'bad-url' });
+    expect(resolveAppAsset('https://ui/x.js', '/app', path.posix)).toEqual({ error: 'bad-url' });
+    expect(resolveAppAsset('app://evil/src/renderer/index.html', '/app', path.posix)).toEqual({ error: 'bad-url' });
+    expect(resolveAppAsset('app://ui/', '/app', path.posix)).toEqual({ error: 'bad-url' });
+    expect(resolveAppAsset('app://ui/src/renderer/a.js', '', path.posix)).toEqual({ error: 'unauthorized-path' });
+    expect(resolveAppAsset('app://ui//etc/passwd', '/app', path.posix)).toEqual({ error: 'unauthorized-path' });
+    expect(resolveAppAsset('app://ui/../../etc/passwd', '/app', path.posix)).toEqual({ error: 'unauthorized-path' });
+    expect(resolveAppAsset('app://ui/docs/README.md', '/app', path.posix)).toEqual({ error: 'unauthorized-path' });
+  });
+  test('with an injected fs, an unreadable or escaping realpath is refused', () => {
+    const throwing = { realpathSync: () => { throw new Error('x'); } };
+    expect(resolveAppAsset('app://ui/src/renderer/a.js', '/app', path.posix, throwing))
+      .toEqual({ error: 'unauthorized-path' });
+    const escaping = { realpathSync: (p) => (p.endsWith('a.js') ? '/elsewhere/a.js' : p) };
+    expect(resolveAppAsset('app://ui/src/renderer/a.js', '/app', path.posix, escaping))
+      .toEqual({ error: 'unauthorized-path' });
+  });
+  test('an allowed, contained asset resolves with its MIME type', () => {
+    expect(resolveAppAsset('app://ui/src/renderer/index.html', '/app', path.posix))
+      .toEqual({ path: '/app/src/renderer/index.html', type: 'text/html; charset=utf-8' });
+    expect(resolveAppAsset('app://ui/resources/vendor/x.woff2', '/app', path.posix))
+      .toEqual({ path: '/app/resources/vendor/x.woff2', type: 'font/woff2' });
+  });
+});
+
+describe('appResponseHeaders MIME gate (GATE-01)', () => {
+  test('only HTML responses carry frame-ancestors', () => {
+    const html = appResponseHeaders('text/html; charset=utf-8');
+    expect(html['content-security-policy']).toContain("frame-ancestors 'none'");
+    const js = appResponseHeaders('text/javascript; charset=utf-8');
+    expect(js['content-security-policy']).toBeUndefined();
+    expect(js['content-type']).toBe('text/javascript; charset=utf-8');
   });
 });

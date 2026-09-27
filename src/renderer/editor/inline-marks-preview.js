@@ -16,7 +16,7 @@ const MARKS = [
   { re: /<u>([\s\S]*?)<\/u>/gi, open: '<u>', close: '</u>', cls: 'cm-u' },
   // single-tilde subscript, NOT ~~strikethrough~~ (negative lookarounds)
   { re: /(?<!~)~(?!~)([^~\s][^~\n]*?)~(?!~)/g, open: '~', close: '~', cls: 'cm-sub' },
-  { re: /\^([^\^\s]+?)\^/g, open: '^', close: '^', cls: 'cm-sup' },
+  { re: /\^([^^\s]+?)\^/g, open: '^', close: '^', cls: 'cm-sup' },
 ];
 
 export function createInlineMarksPreview(CM6) {

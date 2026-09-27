@@ -17,7 +17,6 @@ async function openHelpMenu(page) {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
   await page.click('.tb-menu-item[data-menu="help"]');
-  await page.waitForTimeout(80);
 }
 async function helpItemNames(page) {
   return page.$$eval('#dropdown .dd-item .dd-name', els => els.map(e => e.textContent.trim()));

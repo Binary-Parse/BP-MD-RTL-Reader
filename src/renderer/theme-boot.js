@@ -9,8 +9,20 @@
 (function () {
   try {
     var t = localStorage.getItem('bpmdrtlreader-theme');
-    if (t) document.documentElement.setAttribute('data-theme', t);
-  } catch (e) { /* storage unavailable — restoreSettings() still applies the real value */ }
+    // Allow-list the mirrored value against the real theme tokens (THEMES in theme.js,
+    // re-declared here because this boot script cannot be a module without deferring past
+    // first paint) — the data-chrome mirror below applies the same rigor. A corrupt value
+    // is treated as no stored choice, so the T2.1 system-scheme fallback still runs.
+    if (t && /^(paper|ink|sepia|oasis)$/.test(t)) {
+      document.documentElement.setAttribute('data-theme', t);
+    }
+    // T2.1: no mirror at all means either a first run or a profile where the user never
+    // chose a theme manually. Follow the OS scheme for that one frame so a dark-system user
+    // does not see light-then-dark; settings.json (restoreSettings) remains authoritative.
+    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.setAttribute('data-theme', 'ink');
+    }
+  } catch { /* storage unavailable — restoreSettings() still applies the real value */ }
   try {
     var c = localStorage.getItem('bpmdrtlreader-chrome');
     // Allow-list before use. setAttribute cannot be escaped and the CSS selectors use ~=
@@ -20,7 +32,22 @@
     if (c && /^(autohide|nostatus|autohide nostatus|nostatus autohide)$/.test(c)) {
       document.documentElement.setAttribute('data-chrome', c);
     }
-  } catch (e) { /* as above */ }
+  } catch { /* as above */ }
+  // Mirror the persisted UI locale onto <html lang/dir> as early as possible so an Arabic
+  // user does not spend the whole boot in English/LTR chrome. The app's only locale
+  // persistence is settings.json via the async settings bridge (uiLocale in
+  // settings-controller.js) — there is no localStorage mirror to read synchronously, so
+  // the earliest honest hook is this fire-and-forget getSettings() call, which lands
+  // before app.js's own restoreSettings() and stays subordinate to it. Validated against
+  // 'en'/'ar' exactly like restoreSettings/setUiLocale; a miss applies nothing.
+  if (window.electronAPI && typeof window.electronAPI.getSettings === 'function') {
+    window.electronAPI.getSettings().then(function (saved) {
+      if (!saved || typeof saved !== 'object') return;
+      if (saved.uiLocale !== 'ar' && saved.uiLocale !== 'en') return;
+      document.documentElement.setAttribute('lang', saved.uiLocale);
+      document.documentElement.setAttribute('dir', saved.uiLocale === 'ar' ? 'rtl' : 'ltr');
+    }).catch(function () { /* the bridge stays optional; restoreSettings() will report */ });
+  }
   // T-F19: the same signal app.js uses, just earlier. The preload's contextBridge has
   // already run by the time this file executes, and html.electron is what makes .app
   // flush to the window edge and gives the title bar its drag region -- so setting it

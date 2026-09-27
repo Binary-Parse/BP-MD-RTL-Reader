@@ -1,4 +1,4 @@
-; ============================================================================
+﻿; ============================================================================
 ;  BP MD RTL Reader — pinned Inno Setup 6.3.3 installer
 ;  Compiler: ISCC.exe   |   Output: dist\BP MD RTL Reader Setup.exe   |   x64-only
 ;
@@ -9,9 +9,9 @@
 ;  published by Binary Parse.
 ; ============================================================================
 
-; ---- Version (overridable from the build script: /DAppVersion=x.y.z) --------
+; ---- Version (mandatory from the build script: /DAppVersion=x.y.z) ----------
 #ifndef AppVersion
-  #define AppVersion "1.2.1"
+  #error The installer version must be supplied via /DAppVersion by build\installer\build-installer.ps1.
 #endif
 
 ; ---- Verified source --------------------------------------------------------

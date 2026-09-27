@@ -35,6 +35,9 @@ CODEOWNERS    text eol=lf
 *.pas         text eol=lf
 *.nsh         text eol=lf
 *.plist       text eol=lf
+# The RTF license page is the one installer text that MUST be CRLF: the T11 byte
+# contract pins CRLF line endings, so checkouts must not normalize them away.
+*.rtf         text eol=crlf
 
 # ── Windows-only scripts: keep CRLF (matches .editorconfig) ────────
 *.bat         text eol=crlf

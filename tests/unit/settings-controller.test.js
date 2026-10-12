@@ -10,7 +10,7 @@ function state() {
   return {
     theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'edit',
     sidebarVisible: true, inspectorVisible: true, recents: [], calendar: 'gregorian',
-    arabicKashida: false, italicRecolor: true,
+    arabicKashida: false, italicRecolor: true, marginNotesCollapsed: false,
     uiLocale: 'en', uiDirection: 'ltr', readerTextScale: 1, readerWidthCh: 72,
     // T-F19 chrome settings
     windowTitleMode: 'file', autoHideTitlebar: false, hideStatusBar: false,
@@ -55,6 +55,8 @@ describe('settings controller', () => {
       'autosave',
       // v5 (T0.1)
       'readingProgress', 'themeFollowSystem', 'updateCheck', 'readingGoalMin',
+      // margin notes folded to gutter markers
+      'marginNotesCollapsed',
     ]);
   });
 
@@ -81,6 +83,7 @@ describe('settings controller', () => {
       calendar: 'gregorian',
       arabicKashida: false,
       italicRecolor: true,
+      marginNotesCollapsed: false,
       uiLocale: 'en',
       uiDirection: 'ltr',
       lastSession: { vaultId: 'v', activePath: 'a.md' },

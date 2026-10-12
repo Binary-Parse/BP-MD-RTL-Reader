@@ -415,79 +415,128 @@
     <path d="M15 3v18" />
     <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4z" fill="currentColor" stroke="none" />
     </symbol>
+    <symbol id="ic-bar-top" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 9h18" />
+    </symbol>
+    <symbol id="ic-bar-bottom" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 15h18" />
+    </symbol>
+    <symbol id="ic-gear" viewBox="0 0 24 24">
+    <path d="M3 7h9" />
+    <path d="M16 7h5" />
+    <circle cx="14" cy="7" r="2" />
+    <path d="M3 17h5" />
+    <path d="M12 17h9" />
+    <circle cx="10" cy="17" r="2" />
+    </symbol>
+    <symbol id="ic-lock" viewBox="0 0 24 24">
+    <rect width="14" height="10" x="5" y="11" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </symbol>
+    <symbol id="ic-tabs-other" viewBox="0 0 24 24">
+    <rect width="18" height="13" x="3" y="6" rx="2" />
+    <path d="M9 12.5h6" />
+    </symbol>
+    <symbol id="ic-tabs-close" viewBox="0 0 24 24">
+    <rect width="18" height="13" x="3" y="6" rx="2" />
+    <path d="m9.5 10 5 5" />
+    <path d="m14.5 10-5 5" />
+    </symbol>
   </defs>
 </svg>
 
 <div class="app" id="app">
 
-  <!-- TITLEBAR -->
   <div class="titlebar">
-    <!-- T-F18: panel toggle at the extreme start of the bar (Cursor/VS Code placement).
-         It stays reachable when the sidebar is collapsed, which the old in-sidebar
-         chevron could not. Disclosure semantics: aria-expanded + aria-controls.
-         aria-expanded starts "false" to match the `no-sidebar` first paint below. -->
-    <div class="tb-lead">
-      <button type="button" class="tb-btn" id="sidebarToggleBtn"
-        data-tip="Toggle sidebar (Ctrl+\)" data-i18n-tip="titlebar.toggleSidebar"
-        aria-label="Toggle sidebar" data-i18n-aria-label="titlebar.toggleSidebar"
-        aria-controls="sidebarPanel" aria-expanded="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-panel-left-filled"/></svg></button>
-      <!-- v10 redesign (2026-08-25): the painted brand mark (.tb-brand, the diamond)
-           is removed per the spec's titlebar constraints. The accessible name moves
-           here rather than disappearing — textContent still reports it (help-about.spec.js
-           and a11y-markup.test.js both assert this), and the app keeps its name in the
-           accessibility tree even though nothing is painted for it. -->
-      <span class="tb-brand-name"><span class="visually-hidden">BP MD RTL Reader</span></span>
-    </div>
+    <div class="tb-row">
+      <div class="tb-lead">
+        <button type="button" class="tb-btn" id="sidebarToggleBtn"
+          data-tip="Toggle sidebar (Ctrl+\)" data-i18n-tip="titlebar.toggleSidebar"
+          aria-label="Toggle sidebar" data-i18n-aria-label="titlebar.toggleSidebar"
+          aria-controls="sidebarPanel" aria-expanded="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-panel-left-filled"/></svg></button>
+        <button type="button" class="tb-mark" id="markBtn"
+          data-tip="About BP MD RTL Reader" data-i18n-tip="menu.about"
+          aria-label="About BP MD RTL Reader" data-i18n-aria-label="menu.about"
+          aria-haspopup="dialog">BP</button>
+        <span class="tb-brand-name"><span class="visually-hidden">BP MD RTL Reader</span></span>
+      </div>
 
-    <div class="tb-menubar">
-      <button class="tb-menu-item" data-menu="file" data-i18n="menu.file"><u>F</u>ile</button>
-      <button class="tb-menu-item" data-menu="edit" data-i18n="menu.edit"><u>E</u>dit</button>
-      <button class="tb-menu-item" data-menu="view" data-i18n="menu.view"><u>V</u>iew</button>
-      <button class="tb-menu-item" data-menu="help" data-i18n="menu.help"><u>H</u>elp</button>
+      <div class="tb-menubar">
+        <button class="tb-menu-item" data-menu="file" data-i18n="menu.file"><u>F</u>ile</button>
+        <button class="tb-menu-item" data-menu="edit" data-i18n="menu.edit"><u>E</u>dit</button>
+        <button class="tb-menu-item" data-menu="view" data-i18n="menu.view"><u>V</u>iew</button>
+        <button class="tb-menu-item" data-menu="help" data-i18n="menu.help"><u>H</u>elp</button>
+      </div>
+
+      <button type="button" class="tb-search" id="searchBtn" aria-label="Search files" data-i18n-aria-label="titlebar.search">
+        <svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-search"/></svg>
+        <span class="crumbs" id="crumbs"><span class="crumb-ph" data-i18n="titlebar.search">Search files…</span></span>
+        <span class="kbd-inline">Ctrl+K</span>
+      </button>
+
+      <div class="tb-actions">
+        <button class="tb-seg" id="viewModeBtn" data-tip="Reading / Edit (Ctrl+E)" data-i18n-tip="tip.viewMode" aria-label="Reading / Edit" data-i18n-aria-label="aria.viewMode" aria-pressed="false">
+          <span class="seg-o" data-o="reading"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-book-open"/></svg><span class="seg-l" data-i18n="seg.read">Read</span></span>
+          <span class="seg-o" data-o="edit"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-pencil"/></svg><span class="seg-l" data-i18n="seg.edit">Edit</span></span>
+        </button>
+        <button class="tb-seg tb-dir" id="rtlBtn" data-mode="auto" data-tip="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" data-i18n-tip="tip.direction" aria-label="Cycle text direction: Auto, RTL, LTR" data-i18n-aria-label="aria.direction" aria-pressed="false">
+          <span class="seg-o" data-o="auto" data-i18n="dir.auto">Auto</span>
+          <span class="seg-o" data-o="rtl" data-i18n="dir.rtl">RTL</span>
+          <span class="seg-o" data-o="ltr" data-i18n="dir.ltr">LTR</span>
+        </button>
+        <button class="tb-btn" id="themeBtn" data-tip="Cycle theme (Ctrl+Shift+D)" data-i18n-tip="tip.cycleTheme" aria-label="Cycle theme" data-i18n-aria-label="aria.cycleTheme"><svg class="ic"><use href="#ic-sun"/></svg></button>
+          <div class="reader-controls" id="readerControls" hidden>
+            <button type="button" class="reader-controls-trigger" id="readerControlsButton"
+              data-tip="Reader settings" data-i18n-tip="readerControls.toggle"
+              aria-label="Reader settings" data-i18n-aria-label="readerControls.toggle"
+              aria-haspopup="dialog" aria-controls="readerControlsPopover" aria-expanded="false">Aa</button>
+            <div class="reader-controls-popover" id="readerControlsPopover" role="dialog" aria-modal="false" aria-labelledby="readerControlsTitle" hidden>
+              <div class="reader-controls-title" id="readerControlsTitle" data-i18n="readerControls.title">Reader settings</div>
+              <div class="reader-control-row">
+                <span class="reader-control-label" data-i18n="readerControls.textSize">Text size</span>
+                <div class="reader-scale-actions">
+                  <button type="button" id="readerTextScaleDecrease" data-tip="Decrease text size" data-i18n-tip="readerControls.decreaseText" aria-label="Decrease text size" data-i18n-aria-label="readerControls.decreaseText">A−</button>
+                  <button type="button" id="readerTextScaleReset" data-tip="Reset text size" data-i18n-tip="readerControls.resetText" aria-label="Reset text size" data-i18n-aria-label="readerControls.resetText">100%</button>
+                  <button type="button" id="readerTextScaleIncrease" data-tip="Increase text size" data-i18n-tip="readerControls.increaseText" aria-label="Increase text size" data-i18n-aria-label="readerControls.increaseText">A+</button>
+                </div>
+              </div>
+              <div class="reader-control-row reader-width-row">
+                <label class="reader-control-label" id="readerWidthLabel" for="readerWidthSlider" data-i18n="readerControls.contentWidth">Content width</label>
+                <output id="readerWidthValue" for="readerWidthSlider" aria-live="polite">72ch</output>
+                <input id="readerWidthSlider" type="range" min="48" max="120" step="2" value="72" aria-labelledby="readerWidthLabel readerWidthValue">
+              </div>
+            </div>
+          </div>
+        <button type="button" class="tb-btn" id="fullscreenBtn"
+          data-tip="Full screen" data-i18n-tip="titlebar.fullscreen"
+          aria-label="Full screen" data-i18n-aria-label="titlebar.fullscreen"
+          aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-expand"/></svg></button>
+        <button type="button" class="tb-btn" id="inspectorToggleBtn"
+          data-tip="Toggle inspector (Ctrl+Shift+I)" data-i18n-tip="titlebar.toggleInspector"
+          aria-label="Toggle inspector" data-i18n-aria-label="titlebar.toggleInspector"
+          aria-controls="inspectorPanel" aria-expanded="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-panel-right-filled"/></svg></button>
+      </div>
+
+      <div class="win-controls">
+        <button class="win-btn" id="winMinBtn" data-tip="Minimize" data-i18n-tip="win.minimize" aria-label="Minimize window" data-i18n-aria-label="win.minimize">
+          <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
+        </button>
+        <button class="win-btn" id="winMaxBtn" data-tip="Maximize" data-i18n-tip="win.maximize" aria-label="Maximize window" data-i18n-aria-label="win.maximize">
+          <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+        </button>
+        <button class="win-btn close" id="winCloseBtn" data-tip="Close" data-i18n-tip="win.close" aria-label="Close window" data-i18n-aria-label="win.close">
+          <svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="tabs" id="tabs">
-      <div class="tab-list" id="tabList" role="tablist" aria-label="Open documents"></div>
+      <div class="tab-list" id="tabList" role="tablist" aria-label="Open documents" data-i18n-aria-label="aria.openDocuments"></div>
       <button class="tab-add" id="tabAddBtn" data-tip="New tab (Ctrl+N)" data-i18n-tip="tb.newTab" aria-label="New tab" data-i18n-aria-label="tb.newTabName">+</button>
     </div>
-    <!-- v10 redesign (2026-08-25): .tabs clips vertically (overflow-y: hidden), which
-         would clip a [data-tip]::after tooltip on a .tab -- verified: the tab's own
-         bottom edge sits flush with .tabs' clip boundary, so a below-anchored tooltip
-         renders 100% outside the visible box. A single shared fixed-position tooltip,
-         positioned in JS, escapes that clip; see positionFloatingTip() in app.js. -->
     <div id="floatingTip" role="tooltip" hidden></div>
-
-    <div class="tb-actions">
-      <button type="button" class="tb-search" id="searchBtn" aria-label="Search files" data-i18n-aria-label="titlebar.search">
-        <span data-i18n="titlebar.search">Search files…</span>
-        <span class="kbd-inline">Ctrl+K</span>
-      </button>
-      <button class="tb-btn" id="viewModeBtn" data-tip="Reading / Edit (Ctrl+E)" aria-label="Reading / Edit" aria-pressed="false"><svg class="ic"><use href="#ic-book-open"/></svg></button>
-      <button class="tb-btn" id="rtlBtn" data-tip="Text direction: Auto → RTL → LTR (Ctrl+Shift+L)" data-i18n-tip="tip.direction" aria-label="Cycle text direction: Auto, RTL, LTR" aria-pressed="false"><svg class="ic"><use href="#ic-flip"/></svg></button>
-      <button class="tb-btn" id="themeBtn" data-tip="Cycle theme (Ctrl+Shift+D)" aria-label="Cycle theme"><svg class="ic"><use href="#ic-sun"/></svg></button>
-      <!-- v10 redesign (2026-08-25): fullscreen toggle, between theme and inspector. -->
-      <button type="button" class="tb-btn" id="fullscreenBtn"
-        data-tip="Full screen" data-i18n-tip="titlebar.fullscreen"
-        aria-label="Full screen" data-i18n-aria-label="titlebar.fullscreen"
-        aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-expand"/></svg></button>
-      <!-- T-F18: mirror of the sidebar toggle, parked at the extreme end of the bar. -->
-      <button type="button" class="tb-btn" id="inspectorToggleBtn"
-        data-tip="Toggle inspector (Ctrl+Shift+I)" data-i18n-tip="titlebar.toggleInspector"
-        aria-label="Toggle inspector" data-i18n-aria-label="titlebar.toggleInspector"
-        aria-controls="inspectorPanel" aria-expanded="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-panel-right-filled"/></svg></button>
-    </div>
-
-    <div class="win-controls">
-      <button class="win-btn" id="winMinBtn" data-tip="Minimize" data-i18n-tip="win.minimize" aria-label="Minimize window" data-i18n-aria-label="win.minimize">
-        <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
-      </button>
-      <button class="win-btn" id="winMaxBtn" data-tip="Maximize" data-i18n-tip="win.maximize" aria-label="Maximize window" data-i18n-aria-label="win.maximize">
-        <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
-      </button>
-      <button class="win-btn close" id="winCloseBtn" data-tip="Close" data-i18n-tip="win.close" aria-label="Close window" data-i18n-aria-label="win.close">
-        <svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
-      </button>
-    </div>
   </div>
 
   <!-- DROPDOWN MENU -->
@@ -551,6 +600,12 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="sb-foot">
+        <button type="button" id="sbFootOpenFolder"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-folder"/></svg><span data-i18n="menu.openFolder">Open Folder…</span></button>
+        <button type="button" id="sbFootOpenFile"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-file"/></svg><span data-i18n="menu.openFile">Open File…</span></button>
+        <button type="button" id="sbFootNewNote"><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-file-plus"/></svg><span data-i18n="menu.newNote">New Note</span></button>
       </div>
     </aside>
 
@@ -616,38 +671,19 @@
            visible (the rendered #noteContent is hidden behind the CM6 surface, T-F13). -->
       <div id="conflictBar"></div>
 
-      <div class="reader-controls" id="readerControls" hidden>
-        <button type="button" class="reader-controls-trigger" id="readerControlsButton"
-          data-tip="Reader settings" data-i18n-tip="readerControls.toggle"
-          aria-label="Reader settings" data-i18n-aria-label="readerControls.toggle"
-          aria-haspopup="dialog" aria-controls="readerControlsPopover" aria-expanded="false">Aa</button>
-        <div class="reader-controls-popover" id="readerControlsPopover" role="dialog" aria-modal="false" aria-labelledby="readerControlsTitle" hidden>
-          <div class="reader-controls-title" id="readerControlsTitle" data-i18n="readerControls.title">Reader settings</div>
-          <div class="reader-control-row">
-            <span class="reader-control-label" data-i18n="readerControls.textSize">Text size</span>
-            <div class="reader-scale-actions">
-              <button type="button" id="readerTextScaleDecrease" data-tip="Decrease text size" data-i18n-tip="readerControls.decreaseText" aria-label="Decrease text size" data-i18n-aria-label="readerControls.decreaseText">A−</button>
-              <button type="button" id="readerTextScaleReset" data-tip="Reset text size" data-i18n-tip="readerControls.resetText" aria-label="Reset text size" data-i18n-aria-label="readerControls.resetText">100%</button>
-              <button type="button" id="readerTextScaleIncrease" data-tip="Increase text size" data-i18n-tip="readerControls.increaseText" aria-label="Increase text size" data-i18n-aria-label="readerControls.increaseText">A+</button>
-            </div>
-          </div>
-          <div class="reader-control-row reader-width-row">
-            <label class="reader-control-label" id="readerWidthLabel" for="readerWidthSlider" data-i18n="readerControls.contentWidth">Content width</label>
-            <output id="readerWidthValue" for="readerWidthSlider" aria-live="polite">72ch</output>
-            <input id="readerWidthSlider" type="range" min="48" max="120" step="2" value="72" aria-labelledby="readerWidthLabel readerWidthValue">
-          </div>
-        </div>
-      </div>
       <div class="editor-area" id="editorArea">
         <div class="source-pane">
           <label class="visually-hidden" for="srcTextarea" data-i18n="src.label">Markdown source</label>
           <textarea class="source-textarea" id="srcTextarea" placeholder="# Start writing…"></textarea>
         </div>
         <div class="preview-pane">
+          <aside class="margin-notes" id="marginNotes" aria-label="Margin notes" hidden></aside>
           <article class="editor" id="editor">
             <div class="editor-welcome" id="welcome">
               <div class="welcome-card">
-                <div class="logo">BP</div>
+                <div class="wl-col">
+                <div class="logo" aria-hidden="true"><span class="la">A<span>a</span></span><i class="rule"></i><span class="ar">أب</span></div>
+                <div class="wk">BP MD RTL Reader · <span id="welcomeVersion">2.0.0</span></div>
                 <h1 data-i18n-html="welcome.title">Welcome to <em>BP MD RTL Reader</em></h1>
                 <p class="lede" data-i18n-html="welcome.lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
                 <div class="welcome-actions">
@@ -668,10 +704,13 @@
                     <div class="wb-sub" data-i18n="welcome.tryDemoSub">Sample notes in English and Arabic.</div>
                   </button>
                 </div>
+                </div>
+                <div class="wr-col">
                 <!-- T8.1: one line of reading stats (streak + today) above the shelf.
                      Populated by renderStreakLine(); hidden while the goal is off or there is
                      nothing to report yet, so a brand-new install shows no empty chrome. -->
                 <div class="streak-line" id="streakLine" dir="auto" hidden></div>
+                <div class="streak-grid" id="streakGrid" role="img" hidden></div>
                 <!-- T4.1: "Continue reading" — populated by renderContinue(); hidden until a
                      note actually has a stored reading position. -->
                 <div class="continue-list" id="continueWrap" hidden>
@@ -682,6 +721,15 @@
                   <div class="recent-label" data-i18n="welcome.recent">Recent</div>
                   <div class="recent-empty" id="recentEmpty" data-i18n="welcome.recentEmpty">No recent files yet.</div>
                   <div id="recentList"></div>
+                </div>
+                </div>
+                <div class="wfoot">
+                  <div class="pv">
+                    <span><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-lock"/></svg><span data-i18n="welcome.offline">Local-first · no account · no telemetry</span></span>
+                    <span><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-file"/></svg><span data-i18n="welcome.plain">Plain .md files on disk</span></span>
+                    <span><svg class="ic" aria-hidden="true" focusable="false"><use href="#ic-flip"/></svg><span data-i18n="welcome.bidi">Per-block direction</span></span>
+                  </div>
+                  <div>Binary Parse · MIT</div>
                 </div>
               </div>
             </div>
@@ -712,6 +760,15 @@
         <span class="insp-title" data-i18n="panel.inspector">Inspector</span>
       </div>
       <div class="insp-content">
+        <header class="insp-doc" id="inspDoc" hidden>
+          <h2 class="insp-doc-title" id="inspDocTitle" dir="auto"></h2>
+          <div class="insp-doc-path" id="inspDocPath"></div>
+          <div class="insp-stats">
+            <div><b id="statWords">0</b><span data-i18n="prop.words">Words</span></div>
+            <div><b id="statMin">—</b><span data-i18n="stat.min">min read</span></div>
+            <div><b id="statProgress">0%</b><span data-i18n="stat.progress">Read</span></div>
+          </div>
+        </header>
         <div class="insp-section">
           <h4 data-i18n="panel.outline">Outline</h4>
           <div id="tocList" class="toc-empty">No document opened.</div>
@@ -723,6 +780,8 @@
           <div class="prop-row"><span class="prop-key" data-i18n="prop.read">Read</span><span class="prop-val" id="propRead">—</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.direction">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.mode">Mode</span><span class="prop-val" id="propMode">Live</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.encoding">Encoding</span><span class="prop-val mono" id="propEncoding">—</span></div>
+          <div class="prop-row"><span class="prop-key" data-i18n="prop.eol">Line endings</span><span class="prop-val mono" id="propEol">—</span></div>
         </div>
         <!-- T5.1c: highlights + margin notes for the ACTIVE note (delete + jump-to-highlight). -->
         <div class="insp-section">
@@ -732,16 +791,26 @@
       </div>
     </aside>
 
+    <div class="drop-overlay" id="dropOverlay" aria-hidden="true">
+      <div>
+        <div class="di"><span>.md</span><span>.markdown</span><span>.txt</span></div>
+        <div class="dt" data-i18n="drop.title">Drop to open</div>
+        <div class="ds" data-i18n="drop.sub">Drop .md, .markdown or .txt files to open them as tabs (up to 10 MB each).</div>
+      </div>
+    </div>
+
   </div>
 
   <div class="statusbar">
+    <span class="sb-prog" id="sbProgress" aria-hidden="true" hidden></span>
     <span class="sb-stat ok" id="sbVault">no folder</span>
-    <span class="sb-stat">utf-8</span>
+    <span class="sb-stat" id="encodingStat">UTF-8</span>
     <span class="sb-stat" data-i18n="status.markdown">markdown</span>
     <span class="sb-stat dir" id="dirIndicator">LTR</span>
     <span class="sb-spacer"></span>
     <span class="sb-stat" id="cursorPos">— · —</span>
     <span class="sb-stat" id="wordCount">0 words</span>
+    <button type="button" class="sb-stat sb-zoom" id="zoomBtn" aria-label="Reset zoom to 100%" data-i18n-aria-label="status.zoomReset">100%</button>
     <span class="sb-stat" id="themeLabel">paper</span>
   </div>
 
@@ -749,10 +818,10 @@
   <div class="palette-overlay" id="palOverlay">
     <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette" data-i18n-aria-label="menu.commandPalette">
       <div class="pal-input-wrap">
-        <label class="visually-hidden" for="palInput">Command or file</label>
+        <label class="visually-hidden" for="palInput" data-i18n="aria.paletteInput">Command or file</label>
         <input class="pal-input" id="palInput" role="combobox" aria-autocomplete="list" aria-controls="palResults" aria-expanded="true" placeholder="Type a command, search files…" data-i18n-placeholder="palette.placeholder">
       </div>
-      <div class="pal-results" id="palResults" role="listbox" aria-label="Commands and files"></div>
+      <div class="pal-results" id="palResults" role="listbox" aria-label="Commands and files" data-i18n-aria-label="aria.paletteResults"></div>
       <div class="pal-footer">
         <span><span class="kbd">↑↓</span> <span data-i18n="palette.navigate">navigate</span></span>
         <span><span class="kbd">↵</span> <span data-i18n="palette.openHint">open</span></span>
@@ -766,7 +835,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <span class="modal-title" id="modalTitle">Modal</span>
-        <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
+        <button class="modal-close" id="modalCloseBtn" aria-label="Close dialog" data-i18n-aria-label="aria.closeDialog">×</button>
       </div>
       <div class="modal-body" id="modalBody" tabindex="0"></div>
     </div>

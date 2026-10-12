@@ -255,6 +255,63 @@ test.describe('Reading highlights + margin notes (T5.1c)', () => {
       .toContain('Lorem ipsum dolor sit amet.');
   });
 
+  test('M15: deleting a highlight offers Undo, which puts the highlight and its note back', async ({ page }) => {
+    await bootWithAnnotations(page);
+    await injectNote(page, HL_NOTE);
+    await selectInNote(page, 'quick brown fox');
+    await page.click('#hlBtn');
+    await selectInNote(page, 'second paragraph');
+    await page.click('#hlBtn');
+    await expect(page.locator('#noteList .note-row')).toHaveCount(2);
+    const stored = await page.evaluate(() => JSON.stringify(window.__annotations['loose:r.md']));
+
+    await page.locator('#noteList .note-row').first().locator('.note-del').click();
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__annotations['loose:r.md'].length)).toBe(1);
+
+    const undo = page.locator('#toast .toast-action');
+    await expect(undo).toBeVisible();
+    await expect(undo).toHaveText('Undo');
+    await undo.click();
+
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(2);
+    await expect(page.locator('#noteList .note-row')).toHaveCount(2);
+    // Same entries, same order, as before the delete.
+    expect(await page.evaluate(() => JSON.stringify(window.__annotations['loose:r.md']))).toBe(stored);
+    await expect(page.locator('#toast .toast-action')).toHaveCount(0);
+  });
+
+  test('M13: a selection over 5000 characters is refused and the next highlight still saves', async ({ page }) => {
+    await bootWithAnnotations(page);
+    const long = 'x'.repeat(5001);
+    await injectNote(page, `# Heading\n\n${long}\n\nA short second paragraph.\n`);
+
+    await selectInNote(page, long);
+    await page.click('#hlBtn');
+    await expect(page.locator('#toast')).toHaveClass(/error/);
+    await expect(page.locator('#toast')).toContainText('5000');
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(0);
+    expect(await page.evaluate(() => Object.keys(window.__annotations))).toEqual([]);
+
+    await selectInNote(page, 'short second');
+    await page.click('#hlBtn');
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__annotations['loose:r.md'].length)).toBe(1);
+  });
+
+  test('M13: a highlight the store refuses is taken back and the failure stays on screen', async ({ page }) => {
+    await bootWithAnnotations(page);
+    await injectNote(page, HL_NOTE);
+    await page.evaluate(() => { window.electronAPI.annotationsPut = async () => ({ error: 'invalid-highlight' }); });
+
+    await selectInNote(page, 'quick brown fox');
+    await page.click('#hlBtn');
+    await expect(page.locator('#toast')).toHaveClass(/error/);
+    await expect(page.locator('#toast')).toHaveText('Could not save the highlight.');
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(0);
+    await expect(page.locator('#noteList .note-row')).toHaveCount(0);
+  });
+
   test('the Note button opens the modal and stores the note with the highlight', async ({ page }) => {
     await bootWithAnnotations(page);
     await injectNote(page, HL_NOTE);
@@ -328,6 +385,41 @@ test.describe('Reading highlights + margin notes (T5.1c)', () => {
     expect(await page.evaluate(() => Object.keys(window.__annotations))).toEqual([]);
     await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(0);
     await expect(page.locator('#noteList .note-empty')).toBeVisible();
+  });
+
+  // audit M34: HTML and PDF export appended the reader's highlights without saying so.
+  test('M34: export asks before it includes highlights, and only when there are some', async ({ page }) => {
+    await bootWithAnnotations(page);
+    await injectNote(page, HL_NOTE);
+
+    // nothing highlighted yet: no question, and no Notes section
+    const plain = await page.evaluate(() => window.exportHTML());
+    await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
+    expect(plain).not.toContain('<section class="export-annotations"');
+
+    await selectInNote(page, 'lazy dog');
+    await page.click('#hlBtn');
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
+
+    // "Export without them" is the default button, and the file has no Notes section
+    let pending = page.evaluate(() => window.exportHTML());
+    await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+    await expect(page.locator('#exportWithoutNotesBtn')).toBeFocused();
+    await page.click('#exportWithoutNotesBtn');
+    expect(await pending).not.toContain('<section class="export-annotations"');
+
+    // "Include them" adds it
+    pending = page.evaluate(() => window.exportHTML());
+    await page.click('#exportWithNotesBtn');
+    const withNotes = await pending;
+    expect(withNotes).toContain('<section class="export-annotations"');
+    expect(withNotes).toContain('lazy dog');
+
+    // Escape cancels the export
+    pending = page.evaluate(() => window.exportHTML().then((html) => (html === undefined ? 'cancelled' : 'exported')));
+    await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+    await page.keyboard.press('Escape');
+    expect(await pending).toBe('cancelled');
   });
 
   test('a cancelled note stores nothing, and Escape dismisses the bar', async ({ page }) => {

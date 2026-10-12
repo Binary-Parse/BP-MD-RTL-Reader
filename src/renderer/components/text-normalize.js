@@ -11,9 +11,25 @@
 const DIACRITIC = /[\u064B-\u065F\u0670\u0640]/; // tashkeel, superscript-alef, tatweel
 // أ إ آ ٱ → ا ; ة → ه ; ى → ي
 const FOLD = { '\u0623': '\u0627', '\u0625': '\u0627', '\u0622': '\u0627', '\u0671': '\u0627', '\u0629': '\u0647', '\u0649': '\u064A' };
+// audit M26: the same word typed on a Persian or Urdu keyboard, and the same number in any
+// of the three digit sets, must match. One character folds to one character, so the index
+// map below is unchanged.
+//   ک (U+06A9) → ك ; ی (U+06CC), ے (U+06D2) → ي ; ە (U+06D5), ۀ (U+06C0) → ه
+Object.assign(FOLD, { '\u06A9': '\u0643', '\u06CC': '\u064A', '\u06D2': '\u064A', '\u06D5': '\u0647', '\u06C0': '\u0647' });
+//   ٠–٩ (Arabic-Indic) and ۰–۹ (Persian) → 0–9
+for (let d = 0; d < 10; d += 1) {
+  FOLD[String.fromCharCode(0x0660 + d)] = String(d);
+  FOLD[String.fromCharCode(0x06F0 + d)] = String(d);
+}
 
 /** True when a query/haystack contains Arabic-block characters (gates the slow path). */
 export const HAS_ARABIC = /[\u0600-\u06FF]/;
+
+/**
+ * True when a query must be searched in the folded text: it holds Arabic-block characters,
+ * or ASCII digits, which also have to find `٢٠٢٤` and `۲۰۲۴` (audit M26).
+ */
+export const NEEDS_FOLD = /[\u0600-\u06FF0-9]/;
 
 /** Plain normalized string (no map) — for queries and name matching. */
 export function normalizeArabic(s) {
@@ -56,11 +72,12 @@ export function mapEnd(s, m, j) {
  * All normalized matches of an Arabic `query` in `text`, as original-space ranges
  * (RTL-M3): Edit-mode search and any raw-source find surface share the Reading pane's
  * fold — `محمد` finds `مُحَمَّد` — with offsets mapped back so selections land on the
- * vocalized source. Returns null when the query is not Arabic or normalizes to ''
- * (an emptied normalization is a miss for everything, not a match for everything).
+ * vocalized source. Returns null when the query needs no folding (no Arabic, no digit);
+ * a query that normalizes to '' matches nothing (an emptied normalization is a miss for
+ * everything, not a match for everything).
  */
 export function arabicFindMatches(text, query) {
-  if (typeof text !== 'string' || !query || !HAS_ARABIC.test(query)) return null;
+  if (typeof text !== 'string' || !query || !NEEDS_FOLD.test(query)) return null;
   const normQuery = normalizeArabic(query).toLowerCase();
   if (!normQuery) return [];
   const ar = normalizeArabicWithMap(text);

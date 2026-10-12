@@ -5,6 +5,7 @@
 
 import { sanitizeHtml } from './trusted.js';
 import { footnoteExtension } from './footnotes.js';
+import { installRenderGuard, cachedStart, beginRender, endRender, markLimited } from './render-guard.js';
 
 // audit SEC-11: a wikilink alias is author-controlled text rendered into element content.
 // The TARGET already had its quotes stripped (an attribute-value guard); the alias needs
@@ -39,7 +40,7 @@ export function configureMarked(marked) {
     extensions: [{
       name: 'wikilink',
       level: 'inline',
-      start(src) { return src.indexOf('[['); },
+      start: cachedStart((src) => src.indexOf('[[')),
       tokenizer(src) {
         const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
         if (m) return { type: 'wikilink', raw: m[0], target: m[1].trim(), alias: m[2]?.trim() || m[1].trim() };
@@ -52,7 +53,7 @@ export function configureMarked(marked) {
       // Highlight ==text== → <mark> (Typora/Obsidian). Inner is inline-parsed so **bold** etc.
       // still work inside. Requires non-space right after == so "a == b" stays literal text.
       name: 'highlight', level: 'inline',
-      start(src) { return src.indexOf('=='); },
+      start: cachedStart((src) => src.indexOf('==')),
       tokenizer(src) {
         const m = /^==(?=\S)([\s\S]*?\S)==/.exec(src);
         if (m) return { type: 'highlight', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
@@ -62,7 +63,8 @@ export function configureMarked(marked) {
       // Subscript ~text~ (single tilde) → <sub>. The negative lookarounds keep GFM
       // strikethrough ~~text~~ working (handed off to the core tokenizer).
       name: 'subscript', level: 'inline',
-      start(src) { const i = src.search(/(?<![~\\])~(?!~)/); return i < 0 ? undefined : i; },
+      // 2: the pattern looks one character back, so the first two are tested on their own.
+      start: cachedStart((src) => { const i = src.search(/(?<![~\\])~(?!~)/); return i < 0 ? undefined : i; }, 2),
       tokenizer(src) {
         const m = /^(?<![~])~(?!~)([^~\s][^~\n]*?)~(?!~)/.exec(src);
         if (m) return { type: 'subscript', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
@@ -71,7 +73,7 @@ export function configureMarked(marked) {
     }, {
       // Superscript ^text^ → <sup> (no spaces inside, e.g. X^2^).
       name: 'superscript', level: 'inline',
-      start(src) { return src.indexOf('^'); },
+      start: cachedStart((src) => src.indexOf('^')),
       tokenizer(src) {
         const m = /^\^([^^\s]+?)\^/.exec(src);
         if (m) return { type: 'superscript', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
@@ -82,6 +84,8 @@ export function configureMarked(marked) {
   // Footnotes (R11): marked core doesn't support GFM footnotes — add them as a
   // separate extension+hooks bundle ([^id] refs + [^id]: defs → end-of-doc list).
   marked.use(footnoteExtension());
+  // audit M4: a time budget for the inline tokenizers, and cached `start` hints.
+  installRenderGuard(marked);
 }
 
 // ── Callouts (T-F14): GitHub/Obsidian `> [!NOTE]` admonitions ───────────────
@@ -101,11 +105,28 @@ export function parseCalloutHeader(line) {
   return { type, title };
 }
 
+let renderLimited = false;
+/** True when the last parseMarkdown call emitted part of the note as literal text (audit M4). */
+export function lastRenderLimited() { return renderLimited; }
+
 export function parseMarkdown(md, { marked, DOMPurify, escapeHtml } = {}) {
   if (!marked || typeof marked.parse !== 'function') {
     return escapeHtml ? escapeHtml(md) : String(md);
   }
-  const raw = marked.parse(md || '');
+  const text = md || '';
+  let raw;
+  // audit M4: one render may not stall the window (see render-guard.js).
+  beginRender(text.length);
+  try {
+    raw = marked.parse(text);
+  } catch (error) {
+    // Thousands of nested `>` overflow marked's recursion: show the text instead of failing.
+    if (!(error instanceof RangeError)) throw error;
+    markLimited();
+    raw = `<pre>${esc(text)}</pre>`;
+  } finally {
+    renderLimited = endRender();
+  }
   if (DOMPurify && typeof DOMPurify.sanitize === 'function') {
     return sanitizeHtml(raw, DOMPurify);
   }

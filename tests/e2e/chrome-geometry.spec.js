@@ -100,17 +100,17 @@ test.describe('[T-F19] compact chrome geometry', () => {
         dropdownTop: cs('#dropdown').top,
       };
     });
-    // v10 redesign (2026-08-25): titlebar 35->38px, statusbar 22->24px, statusFont
-    // 12->11.5px (still above the 11px legibility floor). See chrome-tokens.test.js.
-    expect(m.titlebar).toBeCloseTo(38, 0);
-    expect(m.statusbar).toBeCloseTo(24, 0);
-    expect(m.winControls).toBeCloseTo(38, 0);
+    // Marginalia redesign: a 44px command row over a 34px tab row (78px in all), a 30px
+    // folio. See chrome-tokens.test.js.
+    expect(m.titlebar).toBeCloseTo(78, 0);
+    expect(m.statusbar).toBeCloseTo(30, 0);
+    expect(m.winControls).toBeCloseTo(44, 0);
     expect(m.menuFont).toBe('13px');
     expect(m.statusFont).toBe('11.5px');
     expect(m.iconW).toBe('16px');
     expect(m.iconH).toBe('16px');
-    // the dropdown hangs off the bar, so it must track the same token
-    expect(px(m.dropdownTop)).toBeCloseTo(38, 0);
+    // the dropdown hangs off the command row, so it must track the same token
+    expect(px(m.dropdownTop)).toBeCloseTo(44, 0);
   });
 
   test('every interactive title-bar control clears the 24x24 target minimum', async ({ page }) => {
@@ -127,52 +127,34 @@ test.describe('[T-F19] compact chrome geometry', () => {
     expect(small, `controls under 24x24: ${JSON.stringify(small)}`).toEqual([]);
   });
 
-  // v10 redesign (2026-08-25): acceptance item 1 — the tab strip starts exactly at
-  // the sidebar's right edge, so the titlebar zoning visually continues the sidebar
-  // column beneath it. .tb-menubar's min-inline-size is derived from this app's own
-  // measured .tb-lead width (35px = 8px lead padding + the 27px .tb-btn) via the
-  // --sidebar-w/--tb-lead-w tokens (tests/unit/chrome-zoning.test.js), not copied
-  // from the reference, whose assumed .tb-lead width differs.
-  //
-  // The trailing edge — the action cluster's first icon landing on the inspector's
-  // left edge — previously could not be met at all: the reference's ±5px target
-  // assumed 38px window-control buttons (3x38=114, trailing content 287px against a
-  // 280px inspector); this app's .win-btn is 46px (pinned by chrome-tokens.test.js),
-  // making the trailing content 285px, 19px past a 280px inspector with NO padding
-  // left to absorb it. Fixed by widening the inspector to 300px instead (D1) — the
-  // only option that keeps every pinned dimension (46px window buttons, 27px icons,
-  // 3px gaps) and lands the alignment exactly, not approximately.
-  test('[v10] the title-bar zones align with the panel columns', async ({ page }) => {
-    // A fresh profile opens both panels by default; only toggle a panel that is
-    // actually collapsed, rather than assuming either starting state.
-    if ((await page.getAttribute('#sidebarToggleBtn', 'aria-expanded')) !== 'true') {
-      await page.click('#sidebarToggleBtn');
-    }
-    if ((await page.getAttribute('#inspectorToggleBtn', 'aria-expanded')) !== 'true') {
-      await page.click('#inspectorToggleBtn');
-    }
-    await page.waitForSelector('#sidebarPanel', { state: 'visible' });
-    await page.waitForSelector('#inspectorPanel', { state: 'visible' });
-    await injectFile(page, 'zoning.md', '# Zoning\n');
-    const m = await page.evaluate(() => ({
-      sidebarRight: document.getElementById('sidebarPanel').getBoundingClientRect().right,
-      firstTabLeft: document.querySelector('.tab-list .tab')?.getBoundingClientRect().left,
-      inspectorLeft: document.getElementById('inspectorPanel').getBoundingClientRect().left,
-      firstActionLeft: document.getElementById('viewModeBtn')?.getBoundingClientRect().left,
-    }));
-    expect(m.firstTabLeft, 'expected a rendered tab').not.toBeUndefined();
-    expect(m.firstActionLeft, 'expected #viewModeBtn').not.toBeUndefined();
-    expect(m.firstTabLeft).toBeCloseTo(m.sidebarRight, 0);
-    expect(m.firstActionLeft).toBeCloseTo(m.inspectorLeft, 0);
+  // Marginalia redesign: the command row reads start to end as sidebar toggle, mark, menus,
+  // a flexible command bar centred in the free space, then the action cluster and the
+  // window controls. The command bar is capped at 34rem so it never swallows the row.
+  test('[marginalia] the command row reads in order and the command bar is capped', async ({ page }) => {
+    const m = await page.evaluate(() => {
+      const left = (sel) => document.querySelector(sel).getBoundingClientRect().left;
+      const box = document.querySelector('#searchBtn').getBoundingClientRect();
+      return {
+        toggle: left('#sidebarToggleBtn'),
+        mark: left('#markBtn'),
+        menus: left('.tb-menubar'),
+        search: left('#searchBtn'),
+        searchWidth: box.width,
+        mode: left('#viewModeBtn'),
+        dir: left('#rtlBtn'),
+        theme: left('#themeBtn'),
+        inspector: left('#inspectorToggleBtn'),
+        win: left('#winMinBtn'),
+      };
+    });
+    const order = [m.toggle, m.mark, m.menus, m.search, m.mode, m.dir, m.theme, m.inspector, m.win];
+    expect(order, 'command row order').toEqual([...order].sort((a, b) => a - b));
+    expect(m.searchWidth).toBeLessThanOrEqual(34 * 16 + 1);
   });
 
-  // The alignment above is a zoning device: the action cluster reads as the header of
-  // the inspector column. With the inspector collapsed there is no column to head, so
-  // re-aligning would mean crowding the window-control buttons and making the icons
-  // jump on every toggle — the leading edge already behaves this way (.tb-menubar's
-  // min-inline-size is a fixed floor; the tab strip does not slide left when the
-  // sidebar collapses). This pins that the icons deliberately stay put.
-  test('[v10] the action cluster does not move when the inspector collapses', async ({ page }) => {
+  // The action cluster is anchored to the window controls, so it must not jump when the
+  // inspector panel collapses and the pane widths change.
+  test('[marginalia] the action cluster does not move when the inspector collapses', async ({ page }) => {
     await injectFile(page, 'zoning2.md', '# Zoning\n');
     const before = await page.evaluate(() => document.getElementById('viewModeBtn').getBoundingClientRect().left);
     await page.click('#inspectorToggleBtn');
@@ -180,21 +162,54 @@ test.describe('[T-F19] compact chrome geometry', () => {
     expect(after).toBeCloseTo(before, 0);
   });
 
-  // v10 redesign: at <=1100px the sidebar narrows (responsive.css), and the title bar
-  // must track it — one --sidebar-w override now drives both the body grid and the
-  // .tb-menubar floor, instead of the two silently disagreeing.
-  test('[v10] the tab strip tracks the narrowed sidebar at <=1100px', async ({ page }) => {
-    await page.setViewportSize({ width: 1000, height: 800 });
+  // The sidebar is 19.5rem wide, and 16rem at <=1100px (responsive.css overrides the token).
+  test('[marginalia] the sidebar is 312px wide and narrows to 256px at <=1100px', async ({ page }) => {
     if ((await page.getAttribute('#sidebarToggleBtn', 'aria-expanded')) !== 'true') {
       await page.click('#sidebarToggleBtn');
     }
     await page.waitForSelector('#sidebarPanel', { state: 'visible' });
-    await injectFile(page, 'zoning3.md', '# Zoning\n');
-    const m = await page.evaluate(() => ({
-      sidebarRight: document.getElementById('sidebarPanel').getBoundingClientRect().right,
-      firstTabLeft: document.querySelector('.tab-list .tab')?.getBoundingClientRect().left,
-    }));
-    expect(m.firstTabLeft, 'expected a rendered tab').not.toBeUndefined();
-    expect(m.firstTabLeft).toBeCloseTo(m.sidebarRight, 0);
+    const wide = await page.evaluate(() => document.getElementById('sidebarPanel').getBoundingClientRect().width);
+    expect(wide).toBeCloseTo(312, 0);
+    await page.setViewportSize({ width: 1000, height: 800 });
+    const narrow = await page.evaluate(() => document.getElementById('sidebarPanel').getBoundingClientRect().width);
+    expect(narrow).toBeCloseTo(256, 0);
+  });
+
+  test('[marginalia] the tab row sits directly under the command row', async ({ page }) => {
+    await injectFile(page, 'rows.md', '# Rows\n');
+    const m = await page.evaluate(() => {
+      const bar = document.querySelector('.titlebar').getBoundingClientRect();
+      const row = document.querySelector('.tb-row').getBoundingClientRect();
+      const tabs = document.querySelector('.tabs').getBoundingClientRect();
+      return { barTop: bar.top, rowTop: row.top, rowBottom: row.bottom, tabsTop: tabs.top, tabsBottom: tabs.bottom, barBottom: bar.bottom };
+    });
+    expect(m.rowTop).toBeCloseTo(m.barTop, 0);
+    expect(m.tabsTop).toBeCloseTo(m.rowBottom, 0);
+    expect(m.tabsBottom).toBeCloseTo(m.barBottom, 0);
+  });
+});
+
+test.describe('[Marginalia] status bar folio extras', () => {
+  test('the zoom button shows the zoom level and resets it on click', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('.app', { state: 'visible' });
+    await expect(page.locator('#zoomBtn')).toHaveText('100%');
+    await page.evaluate(() => window.zoomIn());
+    await expect(page.locator('#zoomBtn')).toHaveText('110%');
+    await page.click('#zoomBtn');
+    await expect(page.locator('#zoomBtn')).toHaveText('100%');
+    expect(await page.evaluate(() => window._appState.zoomFactor)).toBe(1);
+  });
+
+  test('the reading bar follows the open note and hides on the welcome screen', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('.app', { state: 'visible' });
+    await expect(page.locator('#sbProgress')).toBeHidden();
+    await page.evaluate(() => {
+      window._appState.files = [{ name: 'a.md', path: 'a.md', handle: null, content: '# a\n\nbody\n', dirty: false }];
+      window.renderFile(0);
+    });
+    await expect(page.locator('#sbProgress')).toHaveCount(1);
+    expect(await page.evaluate(() => document.getElementById('sbProgress').hidden)).toBe(false);
   });
 });

@@ -3,10 +3,33 @@
  * No Electron dependencies — can be unit-tested in Node.js.
  */
 
+const { fileURLToPath } = require('url');
+
 const MAX_OPEN_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_FILES_PER_DIR = 5000;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_CUMULATIVE_BYTES = 100 * 1024 * 1024;
+
+/**
+ * H14: Linux desktop entries end in "%U", so a file manager's "Open with" passes a
+ * `file://` URL instead of a path. Turn such an argument into a plain path so the existing
+ * extension / network-path / realpath / size checks run on the real path. Anything that is
+ * not a string or does not START with `file://` is returned unchanged. A URL Node cannot
+ * convert (malformed, remote host on posix, encoded separator) yields null, which the callers'
+ * `typeof === 'string'` filter drops. On Windows a host in the URL becomes a UNC path, which
+ * isNetworkPath then rejects.
+ * @param {*} arg
+ * @param {boolean} [windows] - force Windows/posix conversion (tests); default = host platform
+ * @returns {*}
+ */
+function fileArgToPath(arg, windows = process.platform === 'win32') {
+  if (typeof arg !== 'string' || !/^file:\/\//i.test(arg)) return arg;
+  try {
+    return fileURLToPath(arg, { windows });
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * Extract the first valid markdown file path from process.argv.
@@ -17,7 +40,7 @@ const MAX_CUMULATIVE_BYTES = 100 * 1024 * 1024;
 function parseFileArg(argv, fs) {
   // Array.from normalises array-like objects (e.g. Electron second-instance
   // argv); honours .length so out-of-bounds indices are not visited.
-  const candidates = Array.from(argv).slice(1).filter(a =>
+  const candidates = Array.from(argv).slice(1).map(a => fileArgToPath(a)).filter(a =>
     typeof a === 'string' &&
     !a.startsWith('-') &&
     !isNetworkPath(a) &&
@@ -42,7 +65,7 @@ function parseFileArg(argv, fs) {
  * @returns {string[]}
  */
 function parseFileArgs(argv, fs) {
-  const candidates = Array.from(argv).slice(1).filter(a =>
+  const candidates = Array.from(argv).slice(1).map(a => fileArgToPath(a)).filter(a =>
     typeof a === 'string' &&
     !a.startsWith('-') &&
     !isNetworkPath(a) &&
@@ -68,6 +91,18 @@ function parseFileArgs(argv, fs) {
     } catch (_) { /* try next candidate */ }
   }
   return out;
+}
+
+/**
+ * H13 (macOS): `open-file` can fire BEFORE `ready` and queue a path; the later argv parse
+ * must ADD to that queue, not replace it. Order is kept (queued first), duplicates dropped,
+ * and the batch stays under the same read cap the second-instance path enforces.
+ * @param {string[]} pending - already queued paths
+ * @param {string[]} incoming - newly parsed paths
+ * @returns {string[]}
+ */
+function mergePendingFiles(pending, incoming) {
+  return Array.from(new Set([...pending, ...incoming])).slice(0, MAX_FILES_PER_DIR);
 }
 
 // ==== SECURITY CHECKS (JB1-JB4) ====
@@ -190,6 +225,8 @@ function shouldResetChrome(argv) {
 module.exports = {
   parseFileArg,
   parseFileArgs,
+  fileArgToPath,
+  mergePendingFiles,
   shouldResetChrome,
   isVaultFile,
   isDroppableFile,

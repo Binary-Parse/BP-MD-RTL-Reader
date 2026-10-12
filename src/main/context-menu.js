@@ -19,7 +19,6 @@ const DEFAULT_LABELS = {
   'copy-image': 'Copy Image',
   'copy-image-address': 'Copy Image Address',
   'save-image': 'Save Image',
-  'add-to-dictionary': 'Add to Dictionary',
 };
 
 const AR_LABELS = {
@@ -28,7 +27,6 @@ const AR_LABELS = {
   'copy-image': 'نسخ الصورة',
   'copy-image-address': 'نسخ عنوان الصورة',
   'save-image': 'حفظ الصورة',
-  'add-to-dictionary': 'إضافة إلى القاموس',
 };
 
 /**
@@ -42,8 +40,7 @@ function labelsForLocale(locale) {
 
 /**
  * @param {object} params  Electron context-menu params (linkURL, mediaType, srcURL,
- *                          selectionText, isEditable, editFlags, misspelledWord,
- *                          dictionarySuggestions)
+ *                          selectionText, isEditable, editFlags)
  * @param {object} deps    { isExternallyOpenable(url):boolean, labels?:Record<string,string> }
  * @returns {Array<object>} ordered descriptors (never empty unless truly nothing)
  */
@@ -72,14 +69,8 @@ function buildContextMenuTemplate(params = {}, deps = {}) {
   }
 
   if (params.isEditable) {
-    // ── Spellcheck suggestions ─────────────────────────────────
-    const suggestions = Array.isArray(params.dictionarySuggestions) ? params.dictionarySuggestions : [];
-    if (params.misspelledWord) {
-      for (const s of suggestions) items.push({ kind: 'action', id: 'replace-misspelling', label: s, replacement: s });
-      if (suggestions.length) items.push({ kind: 'separator' });
-      items.push({ kind: 'action', id: 'add-to-dictionary', label: labels['add-to-dictionary'], word: params.misspelledWord });
-      items.push({ kind: 'separator' });
-    }
+    // audit M38: the spellchecker is off (window-controller.js), so a misspelled word and
+    // its suggestions are never offered, whatever the params say.
     // ── Edit roles ─────────────────────────────────────────────
     items.push({ kind: 'role', role: 'undo', enabled: !!f.canUndo });
     items.push({ kind: 'role', role: 'redo', enabled: !!f.canRedo });

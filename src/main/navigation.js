@@ -1,28 +1,25 @@
 /**
  * navigation.js — pure link/navigation policy (T-B11 / T-B12).
- * No Electron, no DOM. Decides whether a URL may load in the app, open
- * externally, or be blocked, and which schemes are safe for shell.openExternal.
+ * No Electron, no DOM. Decides whether a URL opens externally or is blocked,
+ * and which schemes are safe for shell.openExternal.
  */
 
 // Schemes we are willing to hand to the OS (shell.openExternal).
 const OPENABLE_SCHEME = /^(https?|mailto|tel):/i;
 
 /**
- * Classify a top-level navigation request.
+ * Classify a top-level navigation request made after the app page loaded.
+ * Nothing is ever allowed to load in the renderer: the app page is loaded once
+ * by the main process (`loadURL`, which raises no navigation event), and a
+ * note link that resolves to the app's own URL would reload it and lose
+ * unsaved work (B5). In-document anchors raise no `will-navigate` either.
  * @param {string} url        the navigation target
- * @param {string} appUrl     the app's own page URL (exact match allowed)
- * @returns {{action:'allow'|'external'|'block'}}
+ * @returns {{action:'external'|'block'}}
  */
-function classifyNavigation(url, appUrl) {
+function classifyNavigation(url) {
   if (typeof url !== 'string') return { action: 'block' };
-  // Only the app's exact page may load in the renderer (EC-B6: exact, not substring).
-  // `url` is already a string, so strict equality also proves `appUrl` is the
-  // same non-empty string; repeating those predicates creates equivalent mutants.
-  if (url === appUrl) {
-    return { action: 'allow' };
-  }
   if (OPENABLE_SCHEME.test(url)) return { action: 'external' };
-  return { action: 'block' }; // file:// elsewhere, data:, blob:, javascript:, custom
+  return { action: 'block' }; // the app page, file://, data:, blob:, javascript:, custom
 }
 
 /**

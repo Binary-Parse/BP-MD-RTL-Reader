@@ -49,7 +49,11 @@ export function buildMockElectron() {
   const ipcMain = { handle: vi.fn(), on: vi.fn() };
   // Isolated offline session for the T-B6 offscreen PDF window: records the registered
   // onBeforeRequest filter so tests can drive it with sample URLs.
-  const pdfSession = { webRequest: { onBeforeRequest: vi.fn() } };
+  const pdfSession = {
+    webRequest: { onBeforeRequest: vi.fn() },
+    setSpellCheckerLanguages: vi.fn(),
+    setSpellCheckerEnabled: vi.fn(),
+  };
   const session = { fromPartition: vi.fn(() => pdfSession), _pdfSession: pdfSession };
   const ipcRenderer = { send: vi.fn(), invoke: vi.fn(() => Promise.resolve()), on: vi.fn() };
   const contextBridge = { exposeInMainWorld: vi.fn() };

@@ -35,10 +35,21 @@ const SKIP_PARENT = new Set(['CODE', 'PRE', 'BDI', 'SCRIPT', 'STYLE']);
 // Arabic callout explaining a 4-line snippet used to compute as "mostly Latin" and
 // flipped to dir="ltr" (audit UX-02). The pre/code elements themselves stay LTR via CSS.
 const CODEISH = 'pre, code, .mermaid, .katex';
+// What else a container must not count when it measures ITS OWN text:
+//  - a list item leaves out its nested lists (audit H6): English sub-items used to out-number a
+//    short Arabic parent and flip it to ltr. Each nested item resolves its own direction.
+//  - a callout leaves out its DEFAULT title (audit H7): "Warning" is a label the app adds, not
+//    content; a custom title is content and still counts.
+function excludedFromText(el) {
+  if (el.nodeName === 'LI') return `${CODEISH}, ul, ol`;
+  if (el.classList.contains('callout')) return `${CODEISH}, .callout-title[data-default-title]`;
+  return CODEISH;
+}
 function blockText(el) {
-  if (!el.querySelector(CODEISH)) return el.textContent || '';
+  const excluded = excludedFromText(el);
+  if (!el.querySelector(excluded)) return el.textContent || '';
   const clone = el.cloneNode(true);
-  clone.querySelectorAll(CODEISH).forEach((node) => node.remove());
+  clone.querySelectorAll(excluded).forEach((node) => node.remove());
   return clone.textContent || '';
 }
 
@@ -64,7 +75,27 @@ export function applyBlockDirection(root, baseDir = 'ltr', forceDir = null) {
     if (autoDir === 'rtl' && ARABIC.test(text)) el.setAttribute('data-script', 'arabic');
     else el.removeAttribute('data-script');
   });
+  applyListDirection(root, baseDir, forceDir);
   return root;
+}
+
+/**
+ * List containers follow their items (audit H5). Only the <li> carried a dir, so an Arabic
+ * <ul>/<ol> stayed LTR: its padding-inline-start (the marker gutter) sat on the wrong side and the
+ * bullets landed outside the text column. The marker side follows the container's direction.
+ * A list takes the direction of the majority of its DIRECT items (they were just resolved by the
+ * block pass); an exact tie takes the base direction; a forced direction wins.
+ */
+function applyListDirection(root, baseDir, forceDir) {
+  root.querySelectorAll('ul, ol').forEach((list) => {
+    const items = [...list.children].filter((child) => child.nodeName === 'LI');
+    if (items.length === 0) return;
+    let rtl = 0;
+    for (const item of items) if (item.getAttribute('dir') === 'rtl') rtl++;
+    const ltr = items.length - rtl;
+    const dir = forceDir || (rtl > ltr ? 'rtl' : rtl < ltr ? 'ltr' : baseDir);
+    list.setAttribute('dir', dir);
+  });
 }
 
 /**

@@ -26,10 +26,20 @@ export function tableFrameLabel(locale = 'en') {
 /** Update the focus affordance from the frame's real horizontal overflow. */
 export function updateTableFrameOverflow(frame) {
   if (!frame) return false;
-  const overflows = frame.scrollWidth > frame.clientWidth + 1;
+  const overflows = frameOverflows(frame);
+  setFrameFocusable(frame, overflows);
+  return overflows;
+}
+
+// Reading (layout) and writing (attribute) are separate steps so that a caller with many
+// frames can do all the reads before the first write.
+function frameOverflows(frame) {
+  return frame.scrollWidth > frame.clientWidth + 1;
+}
+
+function setFrameFocusable(frame, overflows) {
   if (overflows) frame.setAttribute('tabindex', '0');
   else frame.removeAttribute('tabindex');
-  return overflows;
 }
 
 function untrackFrame(frame) {
@@ -60,7 +70,9 @@ function scheduleDisconnectedFrameCleanup() {
 
 function refreshTrackedFrameOverflow() {
   cleanupDisconnectedFrames();
-  trackedFrames.forEach((_, frame) => updateTableFrameOverflow(frame));
+  const frames = [...trackedFrames.keys()];
+  const overflows = frames.map(frameOverflows);
+  frames.forEach((frame, i) => setFrameFocusable(frame, overflows.at(i)));
 }
 
 function ensureWindowResizeListener() {
@@ -98,6 +110,10 @@ export function wrapTablesInFrames(root, { locale = 'en' } = {}) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
   scheduleDisconnectedFrameCleanup();
 
+  // audit M16: wrap every table first, then measure them all, then write. Measuring inside the
+  // wrapping loop made the browser lay the whole note out again for each table: 1,400 tables
+  // in a 2.5 MB note took 80 seconds.
+  const frames = [];
   root.querySelectorAll('table').forEach((table) => {
     let frame = table.parentElement;
     if (!frame || !frame.classList.contains(FRAME_CLASS)) {
@@ -111,7 +127,11 @@ export function wrapTablesInFrames(root, { locale = 'en' } = {}) {
 
     frame.setAttribute('role', 'region');
     frame.setAttribute('aria-label', tableFrameLabel(locale));
-    updateTableFrameOverflow(frame);
+    frames.push(frame);
+  });
+  const overflows = frames.map(frameOverflows);
+  frames.forEach((frame, i) => {
+    setFrameFocusable(frame, overflows.at(i));
     observeOverflow(frame);
   });
 

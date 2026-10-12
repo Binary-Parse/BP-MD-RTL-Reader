@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>BP MD RTL Reader file icon, family 2 qalam</title>
+  <defs>
+    <linearGradient id="q2f-paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFCF5"/>
+      <stop offset="1" stop-color="#F5EEDF"/>
+    </linearGradient>
+    <linearGradient id="q2f-curl" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8DCC2"/>
+      <stop offset="1" stop-color="#C9B794"/>
+    </linearGradient>
+    <linearGradient id="q2f-reed" gradientUnits="userSpaceOnUse" x1="0" y1="-22" x2="0" y2="22">
+      <stop offset="0" stop-color="#F3DDB0"/>
+      <stop offset="0.55" stop-color="#DDB57A"/>
+      <stop offset="1" stop-color="#AE7F45"/>
+    </linearGradient>
+  </defs>
+  <path d="M132 40 H380 A28 28 0 0 1 408 68 V444 A28 28 0 0 1 380 472 H196 L104 380 V68 A28 28 0 0 1 132 40 Z" fill="url(#q2f-paper)" stroke="#D6C9AE" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M104 380 Q170 372 196 472 Q150 420 104 380 Z" fill="#000000" fill-opacity="0.08"/>
+  <path d="M104 380 Q186 360 196 472 Q178 404 104 380 Z" fill="url(#q2f-curl)" stroke="#C2AF8A" stroke-width="5" stroke-linejoin="round"/>
+  <g transform="translate(252 236) scale(0.66) translate(-256 -256) translate(-26 18)">
+    <path d="M412 330 Q296 312 178 336 L156 384 Q274 362 390 378 Z" fill="#1B2556"/>
+    <g transform="translate(168 358) rotate(-47.3)">
+      <path d="M84 -22 L28 -14 L0 -6 L8 9 L84 22 Z" fill="#1B2556"/>
+      <rect x="80" y="-22" width="268" height="44" rx="10" fill="url(#q2f-reed)" stroke="#9C7038" stroke-width="4"/>
+      <rect x="168" y="-22" width="9" height="44" fill="#9C7038"/>
+      <rect x="268" y="-22" width="9" height="44" fill="#9C7038"/>
+    </g>
+  </g>
+</svg>

@@ -51,14 +51,15 @@ describe('buildContextMenuTemplate', () => {
     expect(t.find(i => i.role === 'selectAll').enabled).toBe(true);
   });
 
-  test('spellcheck → suggestions + add to dictionary', () => {
+  // audit M38: the spellchecker is off, so a misspelled word adds nothing to the menu.
+  test('a misspelled word adds no suggestion and no dictionary item', () => {
+    const plain = buildContextMenuTemplate({ isEditable: true, editFlags: {} }, deps);
     const t = buildContextMenuTemplate({
       isEditable: true, misspelledWord: 'helo',
       dictionarySuggestions: ['hello', 'help'], editFlags: {},
     }, deps);
-    const acts = t.filter(i => i.kind === 'action');
-    expect(acts.some(i => i.id === 'replace-misspelling' && i.replacement === 'hello')).toBe(true);
-    expect(acts.some(i => i.id === 'add-to-dictionary' && i.word === 'helo')).toBe(true);
+    expect(t).toEqual(plain);
+    expect(t.some(i => i.id === 'replace-misspelling' || i.id === 'add-to-dictionary')).toBe(false);
   });
 
   test('no dangling separators', () => {
@@ -107,18 +108,13 @@ describe('buildContextMenuTemplate — image context (exact)', () => {
   });
 });
 
-describe('buildContextMenuTemplate — editable: spellcheck + edit roles (exact enabled)', () => {
-  test('misspelled word WITH suggestions → replace items (label=suggestion) + add-to-dictionary', () => {
-    const m = buildContextMenuTemplate({ isEditable: true, misspelledWord: 'teh', dictionarySuggestions: ['the', 'tea'] }, D);
-    const repl = m.filter((i) => i.id === 'replace-misspelling');
-    expect(repl.map((i) => i.label)).toEqual(['the', 'tea']);
-    expect(repl[0]).toEqual({ kind: 'action', id: 'replace-misspelling', label: 'the', replacement: 'the' });
-    expect(m.find((i) => i.id === 'add-to-dictionary')).toEqual({ kind: 'action', id: 'add-to-dictionary', label: 'Add to Dictionary', word: 'teh' });
-  });
-  test('misspelled word with NO suggestions → no replace items, add-to-dictionary present', () => {
-    const m = buildContextMenuTemplate({ isEditable: true, misspelledWord: 'zzz', dictionarySuggestions: [] }, D);
-    expect(m.filter((i) => i.id === 'replace-misspelling')).toEqual([]);
-    expect(m.find((i) => i.id === 'add-to-dictionary')).toBeTruthy();
+describe('buildContextMenuTemplate — editable: edit roles (exact enabled)', () => {
+  test('a misspelled word, with or without suggestions, starts the menu at Undo (audit M38)', () => {
+    for (const dictionarySuggestions of [['the', 'tea'], []]) {
+      const m = buildContextMenuTemplate({ isEditable: true, misspelledWord: 'teh', dictionarySuggestions }, D);
+      expect(m[0]).toEqual({ kind: 'role', role: 'undo', enabled: false });
+      expect(m.filter((i) => i.kind === 'action')).toEqual([]);
+    }
   });
   test('edit roles reflect editFlags EXACTLY (each enabled flag pinned true AND false)', () => {
     const all = buildContextMenuTemplate({ isEditable: true, editFlags: { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canSelectAll: true } }, D);

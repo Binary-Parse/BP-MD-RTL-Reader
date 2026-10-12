@@ -75,6 +75,7 @@ describe('preload bridge surface', () => {
     await api.statsAddMinutes(1);
     await api.exportPDF({ html: '<p>x</p>' });
     await api.exportEpub({ bytes: new Uint8Array([2]) });
+    await api.exportHtml({ html: '<p>x</p>', defaultName: 'x.html' });
     await api.checkForUpdate();
     await api.autoUpdateCheck();
     await api.openReleasePage();
@@ -86,10 +87,16 @@ describe('preload bridge surface', () => {
       'fs:readFile', 'fs:writeFile', 'dialog:saveFile', 'text:decode',
       'settings:get', 'settings:set', 'annotations:get', 'annotations:put',
       'stats:get', 'stats:addMinutes', 'export:pdf', 'export:epub',
-      'update:check', 'update:auto-check', 'update:release-page', 'app:version',
+      'export:html', 'update:check', 'update:auto-check', 'update:release-page', 'app:version',
     ]);
     expect(ipcRenderer.invoke.mock.calls[0][1]).toEqual([{ name: 'a.md', content: 'x' }]);
     expect(ipcRenderer.invoke.mock.calls[14][1]).toEqual(new Uint8Array([1]));
+  });
+
+  test('readVaultChanges forwards the vault id and the path list to fs:readVaultChanges (H15)', async () => {
+    await api.readVaultChanges('cap-v', ['a.md', 'sub/b.md']);
+    expect(ipcRenderer.invoke).toHaveBeenCalledTimes(1);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('fs:readVaultChanges', 'cap-v', ['a.md', 'sub/b.md']);
   });
 
   test('non-exact typed-array views are right-sized before crossing (SEC-02)', () => {
@@ -128,21 +135,27 @@ describe('preload bridge surface', () => {
     api.onOpenFile((d) => { seen.file = d; });
     api.onVaultChanged((d) => { seen.vault = d; });
     api.onCloseRequested(() => { seen.close = true; });
+    api.onFlushRecovery(() => { seen.flush = true; });
     api.onUpdateAvailable((d) => { seen.update = d; });
+    api.onUpdateUnverified((...args) => { seen.unverified = args; });
     handlers['window-fullscreen-changed']({}, true);
     handlers['context-menu:show']({}, { items: [] });
     handlers['app:command']({}, 'selectAll');
     handlers['open-external-file']({}, { name: 'a.md' });
     handlers['vault:changed']({}, { entries: [] });
     handlers['app:request-close']();
+    handlers['app:flush-recovery']();
     handlers['update:available']({}, { latest: '1.4.0' });
+    handlers['update:unverified']({}, 'ignored');
     expect(seen).toEqual({
+      unverified: [], // no payload reaches the page
       full: true,
       menu: { items: [] },
       cmd: 'selectAll',
       file: { name: 'a.md' },
       vault: { entries: [] },
       close: true,
+      flush: true,
       update: { latest: '1.4.0' },
     });
   });

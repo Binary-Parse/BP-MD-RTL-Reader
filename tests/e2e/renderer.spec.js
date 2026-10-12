@@ -47,11 +47,87 @@ test.describe('index.html — ALL exported functions', () => {
     expect(out).toMatch(/align="right"/);
   });
 
-  test('window.parseMarkdown keeps heading id (outline anchors) + dir/lang (bidi)', async ({ page }) => {
+  test('window.parseMarkdown prefixes an id from the note (M1) and keeps dir/lang (bidi)', async ({ page }) => {
     const out = await page.evaluate(() => window.parseMarkdown('<h2 id="sec" dir="rtl" lang="ar">عنوان</h2>'));
-    expect(out).toMatch(/id="sec"/);
+    expect(out).toMatch(/id="user-content-sec"/);
     expect(out).toMatch(/dir="rtl"/);
     expect(out).toMatch(/lang="ar"/);
+  });
+
+  // audit M2: app CSS is global, so a class written in a note used to borrow app styles.
+  test('M2: a note cannot draw app chrome or borrow app tooltips; code keeps its colours', async ({ page }) => {
+    await page.evaluate(() => {
+      window.newNote();
+      const index = window._appState.activeFile;
+      window._appState.files[index].content = [
+        '<div class="update-bar" data-tip="fake tip">Update available <a href="https://example.com">Install</a></div>', '',
+        '<div class="ctx">fake menu</div>', '',
+        '```js', 'const answer = 42;', '```', '',
+        'A [[Wiki Note]] link.',
+      ].join('\n');
+      window.renderFile(index);
+    });
+    await page.waitForFunction(() => !!document.querySelector('#noteContent pre code.hljs'));
+    const state = await page.evaluate(() => {
+      const note = document.getElementById('noteContent');
+      const fake = [...note.querySelectorAll('div')].filter((el) => /Update available|fake menu/.test(el.textContent));
+      return {
+        fakeCount: fake.length,
+        positions: fake.map((el) => getComputedStyle(el).position),
+        classes: fake.map((el) => el.className),
+        tip: fake.some((el) => el.hasAttribute('data-tip')),
+        tokens: note.querySelectorAll('pre code [class^="hljs-"]').length,
+        wikilink: !!note.querySelector('a.wikilink[data-target="Wiki Note"]'),
+      };
+    });
+    expect(state.fakeCount).toBe(2);
+    expect(state.positions).toEqual(['static', 'static']);
+    expect(state.classes).toEqual(['', '']);
+    expect(state.tip).toBe(false);
+    expect(state.tokens).toBeGreaterThan(0);
+    expect(state.wikilink).toBe(true);
+  });
+
+  // audit M1: the note sits before the find bar and the dialogs in the page, so an id
+  // written in a note used to answer the app's own lookups.
+  test('M1: a note cannot take the place of the find bar, a dialog button or an app element', async ({ page }) => {
+    await page.evaluate(() => {
+      window.newNote();
+      const index = window._appState.activeFile;
+      window._appState.files[index].content = [
+        '# Toast', '',
+        '<div id="findBar">fake find bar</div>',
+        '<button id="dlgSaveBtn">fake save</button>', '',
+        'Text with a note[^1] and a [jump](#toast-heading).', '',
+        '[^1]: The footnote.',
+      ].join('\n');
+      window.renderFile(index);
+    });
+    const state = await page.evaluate(() => {
+      const note = document.getElementById('noteContent');
+      window.openFind();
+      const bar = document.getElementById('findBar');
+      const ref = note.querySelector('.fn-ref a');
+      return {
+        fakeIds: [...note.querySelectorAll('[id]')].map((el) => el.id),
+        realBarOpen: bar.classList.contains('find-bar') && bar.classList.contains('open') && !note.contains(bar),
+        heading: note.querySelector('h1').id,
+        toastIsApp: !note.contains(document.getElementById('toast')),
+        footnoteTarget: !!ref && !!note.querySelector(`[id="${ref.getAttribute('href').slice(1)}"]`),
+      };
+    });
+    expect(state.fakeIds).toContain('user-content-findBar');
+    expect(state.fakeIds).toContain('user-content-dlgSaveBtn');
+    expect(state.fakeIds).not.toContain('findBar');
+    expect(state.realBarOpen).toBe(true);
+    expect(state.heading).toBe('toast-heading');
+    expect(state.toastIsApp).toBe(true);
+    expect(state.footnoteTarget).toBe(true);
+
+    // the Save button of the unsaved-changes dialog is the app's, and it answers
+    const choice = page.evaluate(() => window._askSaveChanges('note.md'));
+    await page.locator('#modalOverlay #dlgSaveBtn').click();
+    expect(await choice).toBe('save');
   });
 
   test('window.isArabicHeavy — Arabic text', async ({ page }) => {

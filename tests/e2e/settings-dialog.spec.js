@@ -148,17 +148,16 @@ test.describe('[T-F19] Settings dialog', () => {
   // the "one chrome voice" pass (design §12) had only reached two of its fourteen
   // selectors. This is the one dialog in this file's own scope; the sidebar/inspector/
   // palette/about half of the same fix is covered by tests/unit/v10-chrome-voice.test.js.
-  test('the section labels render in the chrome voice (Inter, not mono)', async ({ page }) => {
+  test('the section labels render in the chrome voice (JetBrains Mono caps)', async ({ page }) => {
     await open(page);
     const style = await page.evaluate(() => {
       const label = document.querySelector('.set-group-label');
       const cs = getComputedStyle(label);
       return { fontFamily: cs.fontFamily, letterSpacing: cs.letterSpacing, fontSize: cs.fontSize };
     });
-    expect(style.fontFamily).toMatch(/Inter/);
-    expect(style.fontFamily).not.toMatch(/JetBrains/);
-    // 0.09em at the computed font-size, converted to px (jsdom/Chromium report letter-spacing in px).
-    const expectedPx = parseFloat(style.fontSize) * 0.09;
+    expect(style.fontFamily).toMatch(/JetBrains/);
+    // 0.12em at the computed font-size, converted to px (jsdom/Chromium report letter-spacing in px).
+    const expectedPx = parseFloat(style.fontSize) * 0.12;
     expect(parseFloat(style.letterSpacing)).toBeCloseTo(expectedPx, 1);
   });
 

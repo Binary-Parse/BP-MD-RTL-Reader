@@ -12,6 +12,9 @@
  * to a token drops out of both T-T4 and T-T5 coverage. The token-value assertions
  * below re-apply the same floor one level up, at the declaration site.
  *
+ * Marginalia redesign: the title bar is two rows (--top-h 44px command row + --tabs-h 34px
+ * tab row), so --titlebar-h is their 78px sum and --statusbar-h is 30px.
+ *
  * v10 redesign (2026-08-25): titlebar-h 35->38px, statusbar-h 22->24px,
  * statusbar-font 0.75->0.71875rem. --titlebar-mark is dropped from EXPECTED here in
  * the same commit that removes its sole consumer (.tb-brand-name::before, the
@@ -45,10 +48,12 @@ const FLOOR_REM = 11 * REM_PER_PX; // 0.6875rem — same floor as typography-rem
 
 describe('compact chrome tokens (T-F19)', () => {
   const EXPECTED = {
-    '--titlebar-h': '38px',
+    '--titlebar-h': '78px',
+    '--top-h': '44px',
+    '--tabs-h': '34px',
     '--titlebar-font': '0.8125rem',
     '--titlebar-icon': '16px',
-    '--statusbar-h': '24px',
+    '--statusbar-h': '30px',
     '--statusbar-font': '0.71875rem',
   };
 
@@ -96,7 +101,19 @@ describe('chrome rules consume the tokens, not literals (T-F19)', () => {
   test('.win-btn keeps its explicit 46px width alongside the token height', () => {
     const body = ruleBody(components, '.win-btn');
     expect(body).toMatch(/width:\s*46px/);
-    expect(body).toMatch(/height:\s*var\(--titlebar-h\)/);
+    expect(body).toMatch(/height:\s*var\(--top-h\)/);
+  });
+
+  test('--titlebar-h is the sum of the two bar rows', () => {
+    const num = (token) => parseFloat((rootBlock.match(new RegExp(`${token}\\s*:\\s*([\\d.]+)px`)) || [, '0'])[1]);
+    expect(num('--titlebar-h')).toBe(num('--top-h') + num('--tabs-h'));
+  });
+
+  test('.titlebar stacks the command row over the tab row from the two tokens', () => {
+    expect(ruleBody(components, '.titlebar'))
+      .toMatch(/grid-template-rows:\s*var\(--top-h\)\s+var\(--tabs-h\)/);
+    expect(ruleBody(components, '.tb-row')).toMatch(/height:\s*var\(--top-h\)/);
+    expect(ruleBody(components, '.tabs')).toMatch(/height:\s*var\(--tabs-h\)/);
   });
 
   test('the title-bar icon size and both bar fonts come from tokens', () => {

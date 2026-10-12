@@ -75,8 +75,10 @@ function textNodesOf(elements) {
 export function sectionFor(root, headingSlug) {
   if (!root) return [];
   if (!headingSlug) return [root];
-  const heading = docOf(root).getElementById(headingSlug);
-  if (!heading || !root.contains(heading)) return [root];
+  // Looked up inside the note and among headings only (audit M1): a document-wide id lookup
+  // could be answered by an element outside the note, or by a non-heading with the same id.
+  const heading = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6')].find((el) => el.id === headingSlug);
+  if (!heading) return [root];
   const nodes = [heading];
   let node = heading.nextElementSibling;
   // ANY following heading re-scopes: the anchor for what comes after it is that heading

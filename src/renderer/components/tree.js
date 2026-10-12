@@ -111,3 +111,23 @@ export function buildForest(entries = [], roots = new Map()) {
   forestRoot.children.sort((a, b) => a.name.localeCompare(b.name));
   return forestRoot;
 }
+
+function countInto(node, out) {
+  let total = 0;
+  for (const child of node.children) {
+    if (child.type === 'file') {
+      total += 1;
+    } else {
+      const inner = countInto(child, out);
+      out.set(child.path, inner);
+      total += inner;
+    }
+  }
+  return total;
+}
+
+export function treeFileCounts(root) {
+  const out = new Map();
+  countInto(root, out);
+  return out;
+}

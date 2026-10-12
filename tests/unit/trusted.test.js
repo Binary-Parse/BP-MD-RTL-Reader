@@ -3,6 +3,8 @@
  * Uses a recording fake DOMPurify to assert configs and a tiny real strip for SVG.
  */
 import { describe, test, expect } from 'vitest';
+import { JSDOM } from 'jsdom';
+import createDOMPurify from 'dompurify';
 import { sanitizeHtml, sanitizeSvg, sanitizeMath, katexOptions, isSafeHref, isAllowedHref, renderTrusted } from '../../src/renderer/markdown/trusted.js';
 
 function fakeDOMPurify(records) {
@@ -91,7 +93,8 @@ describe('sanitizer config — exact arrays (kills element-drop mutants)', () =>
   test('sanitizeHtml passes the full forbid/add lists verbatim', () => {
     const rec = []; sanitizeHtml('<p>x</p>', fakeDOMPurify(rec));
     expect(rec[0].cfg.ADD_ATTR).toEqual(['id', 'data-target', 'dir', 'lang']);
-    expect(rec[0].cfg.FORBID_TAGS).toEqual(['script', 'style', 'iframe', 'object', 'embed']);
+    expect(rec[0].cfg.ALLOW_DATA_ATTR).toBe(false);
+    expect(rec[0].cfg.FORBID_TAGS).toEqual(['script', 'style', 'iframe', 'object', 'embed', 'form']);
     expect(rec[0].cfg.FORBID_ATTR).toEqual(['style', 'onerror', 'onload', 'onclick']);
     expect(rec[0].cfg.ALLOWED_URI_REGEXP).toBeInstanceOf(RegExp);
   });
@@ -289,5 +292,92 @@ describe('data: URIs are stripped from non-media elements (audit 1b)', () => {
   test('a DOMPurify without hook support still sanitizes (rule silently skipped)', () => {
     const rec = [];
     expect(sanitizeHtml('<p>x</p>', fakeDOMPurify(rec))).toBe('<p>x</p>');
+  });
+});
+
+// The cases below run the real DOMPurify (the version the app ships) over a real DOM,
+// because the id prefix lives in a hook the recording fake above never calls.
+const realPurify = () => createDOMPurify(new JSDOM('<!doctype html>').window);
+const clean = (html) => sanitizeHtml(html, realPurify());
+
+describe('M1: an id or name written in a note cannot take the place of an app element', () => {
+  test('every id and name from a note gets the prefix', () => {
+    const out = clean('<div id="findBar">x</div><button id="dlgSaveBtn">Save</button><a name="toast">t</a>');
+    expect(out).toContain('id="user-content-findBar"');
+    expect(out).toContain('id="user-content-dlgSaveBtn"');
+    expect(out).toContain('name="user-content-toast"');
+    expect(out).not.toMatch(/id="findBar"|id="dlgSaveBtn"|name="toast"/);
+  });
+
+  test('a link inside the note follows its target, before or after it in the text', () => {
+    const out = clean('<a href="#later">down</a><p id="first">a</p><a href="#first">up</a><p id="later">b</p>');
+    expect(out).toContain('href="#user-content-later"');
+    expect(out).toContain('href="#user-content-first"');
+  });
+
+  test('footnote references and back-links still point at each other', () => {
+    const out = clean('<sup class="fn-ref" id="fnref-1"><a href="#fn-1">1</a></sup><li id="fn-1" class="fn-item">n <a href="#fnref-1" class="fn-back">back</a></li>');
+    expect(out).toContain('id="user-content-fnref-1"');
+    expect(out).toContain('href="#user-content-fn-1"');
+    expect(out).toContain('id="user-content-fn-1"');
+    expect(out).toContain('href="#user-content-fnref-1"');
+  });
+
+  test('a link to a heading slug (an id the app sets later) is left alone', () => {
+    expect(clean('<a href="#my-heading">go</a><h2>My heading</h2>')).toContain('href="#my-heading"');
+  });
+
+  test('a percent-encoded Arabic fragment finds its target', () => {
+    const out = clean('<a href="#%D9%85%D9%84%D8%A7%D8%AD%D8%B8%D8%A9">x</a><p id="ملاحظة">y</p>');
+    expect(out).toContain('href="#user-content-%D9%85%D9%84%D8%A7%D8%AD%D8%B8%D8%A9"');
+    expect(out).toContain('id="user-content-ملاحظة"');
+  });
+
+  test('a second pass does not add a second prefix', () => {
+    const once = clean('<p id="a">x</p><a href="#a">y</a>');
+    expect(clean(once)).toBe(once);
+  });
+
+  test('a form and its named controls are removed', () => {
+    const out = clean('<form id="f"><input name="cookie"></form><p>kept</p>');
+    expect(out).not.toMatch(/<form/i);
+    expect(out).toContain('<p>kept</p>');
+  });
+
+  test('the hook is gone after the call, so other sanitize stages keep their ids', () => {
+    const purify = realPurify();
+    sanitizeHtml('<p id="a">x</p>', purify);
+    expect(purify.sanitize('<p id="a">x</p>')).toBe('<p id="a">x</p>');
+  });
+
+  test('a data: link is still removed and a data: image still kept', () => {
+    const out = clean('<a href="data:text/html,x">l</a><img src="data:image/png;base64,AAAA">');
+    expect(out).not.toContain('href="data:');
+    expect(out).toContain('src="data:image/png;base64,AAAA"');
+  });
+});
+
+describe('M2: a note keeps only the classes this app produces', () => {
+  test('classes of app chrome are removed, and an emptied class attribute with them', () => {
+    const out = clean('<div class="update-bar">Update <a href="https://example.com">now</a></div><p class="ctx toast modal-overlay open">x</p>');
+    expect(out).not.toMatch(/class=/);
+    expect(out).toContain('href="https://example.com"');
+  });
+
+  test('pipeline classes survive: code language, highlight.js tokens, wikilinks, footnotes', () => {
+    const html = '<pre><code class="language-c++ hljs">x</code></pre>'
+      + '<span class="hljs-title function_">f</span><span class="hljs-keyword">if</span><span class="language-xml">y</span>'
+      + '<a class="wikilink" data-target="Note">Note</a>'
+      + '<sup class="fn-ref">1</sup><section class="footnotes"><li class="fn-item"><a class="fn-back" href="#x">b</a></li></section>';
+    expect(clean(html)).toBe(html);
+  });
+
+  test('a mixed class list keeps the allowed tokens only', () => {
+    expect(clean('<code class="language-js update-bar hljs">x</code>')).toBe('<code class="language-js hljs">x</code>');
+  });
+
+  test('data-* from a note is removed, except the wikilink target', () => {
+    const out = clean('<span data-tip="fake tooltip" data-i18n="menu.file" data-target="Note">x</span>');
+    expect(out).toBe('<span data-target="Note">x</span>');
   });
 });

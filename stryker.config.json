@@ -11,6 +11,7 @@
   "coverageAnalysis": "perTest",
   "scope_comment": "The mutate scope includes the T1 security/trust-boundary files plus T2/T3 logic. src/renderer/locale.js remains excluded because it is a translation string table, while its executable lookup/direction policy lives in included src/renderer/locale-logic.js.",
   "tsconfigFile": "config/stryker-javascript-project-no-tsconfig.json",
+  "ignorePatterns": ["config/stryker-javascript-project-no-tsconfig.json"],
   "mutate": [
     "src/main/index.js",
     "src/preload/index.js",
@@ -23,6 +24,7 @@
     "src/main/ipc-controller.js",
     "src/main/settings.js",
     "src/main/document-store.js",
+    "src/main/own-write-tracker.js",
     "src/main/window-controller.js",
     "src/main/github-tls.js",
     "src/main/version.js",
@@ -62,7 +64,18 @@
     "src/renderer/editor/math-preview.js",
     "src/renderer/editor/line-direction.js",
     "src/renderer/editor/list-continuation.js",
-    "src/renderer/editor/syntax-guards.js"
+    "src/renderer/editor/syntax-guards.js",
+    "src/renderer/editor/keymap-ownership.js",
+    "src/renderer/editor/wrap-detect.js",
+    "src/renderer/editor/history-store.js",
+    "src/main/window-background.js",
+    "src/renderer/components/doc-meta.js",
+    "src/renderer/components/context-menu-items.js",
+    "src/renderer/components/inspector-ui.js",
+    "src/renderer/components/margin-notes.js",
+    "src/renderer/icons.js",
+    "src/renderer/components/streak-grid.js",
+    "src/renderer/components/dirty-state.js"
   ],
   "thresholds_comment": "The repository-wide break score is a secondary 80% floor over the complete configured scope. scripts/check-mutation-tiers.js is the authoritative stricter gate: every T1 file must reach 85%, every T2 file 75%, and every T3 file 60%, so a strong aggregate cannot mask a weak boundary file.",
   "thresholds": {

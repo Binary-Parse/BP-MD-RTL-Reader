@@ -176,9 +176,9 @@ test.describe('[T-F19] chrome visibility states', () => {
     const appTop = await page.evaluate(() =>
       Math.round(document.querySelector('.app').getBoundingClientRect().top));
     await page.focus('#sidebarToggleBtn');
-    const top = await page.evaluate(() =>
-      Math.round(document.querySelector('.titlebar').getBoundingClientRect().top));
-    expect(top, ':focus-within must reveal the bar').toBe(appTop);
+    await expect.poll(() => page.evaluate(() =>
+      Math.round(document.querySelector('.titlebar').getBoundingClientRect().top)),
+    { message: ':focus-within must reveal the bar' }).toBe(appTop);
   });
 
   // The hidden bar must sit UNDER the palette (z-index 100) and the modal (110), or it

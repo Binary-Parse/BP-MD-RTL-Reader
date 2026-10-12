@@ -98,6 +98,7 @@ describe('export:pdf (T-B6)', () => {
     const opts = electron.BrowserWindow.mock.calls.at(-1)[0];
     expect(opts.show).toBe(false);
     expect(opts.webPreferences.partition).toBe('pdf-export');
+    expect(opts.webPreferences.spellcheck).toBe(false); // audit M38
     expect(opts.webPreferences.sandbox).toBe(true);
     expect(opts.webPreferences.nodeIntegration).toBe(false);
     expect(opts.webPreferences.javascript).toBe(false);
@@ -137,6 +138,9 @@ describe('export:pdf (T-B6)', () => {
     const filter = electron._pdfSession.webRequest.onBeforeRequest.mock.calls.at(-1)[0];
     const cancels = (url) => { let out; filter({ url }, (x) => { out = x; }); return out.cancel; };
     expect(electron.session.fromPartition).toHaveBeenCalledWith('pdf-export');
+    // audit M38: the export session downloads no dictionary either.
+    expect(electron.session._pdfSession.setSpellCheckerLanguages).toHaveBeenCalledWith([]);
+    expect(electron.session._pdfSession.setSpellCheckerEnabled).toHaveBeenCalledWith(false);
     const tmpUrl = pathToFileURL(fs.promises.open.mock.calls.at(-1)[0]).href;
     expect(cancels('https://evil.example/beacon.png?leak=1')).toBe(true); // remote beacon blocked
     expect(cancels('http://tracker.test/x')).toBe(true);

@@ -55,9 +55,8 @@ function themeTokens(theme) {
 // `plum` and `teal` are TEXT tokens too — italic body copy / CM6 emphasis and hljs
 // keyword+type+literal use --plum (components.css:1151,1349; codemirror-adapter.js:55),
 // the callout-info accent uses --teal — so a dark theme must redeclare them like ink does.
-// (--green is deliberately NOT pinned: paper's #4E8A3F and sepia's inherit 3.7/3.4 on
-// --paper, a pre-existing light-theme weakness axe does not reach because its sample markup
-// contains no hljs string token. Fixing those is a separate, owner-visible design change.)
+// Marginalia adds the desk surfaces (chrome background), the direction inks and --green, so
+// sidebar/inspector/menu text, LTR/RTL link text and hljs strings are pinned too.
 const PAIRS = [
   ['ink', 'paper', 4.5],
   ['ink', 'paper-deep', 4.5],
@@ -70,6 +69,23 @@ const PAIRS = [
   ['teal', 'paper', 4.5],
   ['teal', 'paper-deep', 4.5],
   ['caution', 'paper-deep', 3.0], // non-text accent floor
+  ['caution', 'paper', 3.0],
+  ['ink', 'desk', 4.5],
+  ['ink', 'desk-3', 4.5],
+  ['ink-soft', 'desk', 4.5],
+  ['ink-soft', 'desk-2', 4.5],
+  ['ink-mute', 'paper', 4.5],
+  ['ink-mute', 'desk', 4.5],
+  ['ink-mute', 'desk-2', 4.5],
+  ['ltr-ink', 'paper', 4.5],
+  ['ltr-ink', 'paper-deep', 4.5],
+  ['ltr-ink', 'desk', 4.5],
+  ['rtl-ink', 'paper', 4.5],
+  ['rtl-ink', 'paper-deep', 4.5],
+  ['rtl-ink', 'desk', 4.5],
+  ['gold', 'paper', 4.5],
+  ['accent', 'paper-deep', 4.5],
+  ['green', 'paper', 4.5],
 ];
 
 describe('per-theme WCAG contrast (audit UX-06)', () => {

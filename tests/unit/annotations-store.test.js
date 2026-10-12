@@ -169,62 +169,6 @@ describe('createAnnotationsStore', () => {
   });
 });
 
-describe('pruneOrphanDocKeys (DATA-01)', () => {
-  test('drops only doc: keys whose capability id is unknown; vault:/loose: keys survive', () => {
-    const fs = memFs();
-    const s = store(fs);
-    s.put('doc:cap-live', [good()]);
-    s.put('doc:cap-dead', [good({ id: 'h2' })]);
-    s.put('vault:cap-v a.md', [good({ id: 'h3' })]);
-    s.put('loose:x.md', [good({ id: 'h4' })]);
-    expect(s.pruneOrphanDocKeys(['cap-live'])).toEqual({ pruned: 1 });
-    expect(s.get('doc:cap-live').highlights).toHaveLength(1);
-    expect(s.get('doc:cap-dead')).toEqual({ highlights: [] });
-    expect(s.get('vault:cap-v a.md').highlights).toHaveLength(1);
-    expect(s.get('loose:x.md').highlights).toHaveLength(1);
-    expect(JSON.parse(fs._files[FILE]).docs).not.toHaveProperty('doc:cap-dead');
-  });
-
-  test('with a vault allowlist, vault: keys of unknown vault grants are pruned and live ones kept', () => {
-    const fs = memFs();
-    const s = store(fs);
-    s.put('vault:cap-live a.md', [good()]);
-    s.put('vault:cap-dead a.md', [good({ id: 'h2' })]);
-    s.put('vault:cap-dead sub/b.md', [good({ id: 'h3' })]);
-    s.put('vault:mangled', [good({ id: 'h4' })]);
-    s.put('loose:x.md', [good({ id: 'h5' })]);
-    expect(s.pruneOrphanDocKeys([], ['cap-live'])).toEqual({ pruned: 3 });
-    expect(s.get('vault:cap-live a.md').highlights).toHaveLength(1);
-    expect(s.get('vault:cap-dead a.md')).toEqual({ highlights: [] });
-    expect(s.get('loose:x.md').highlights).toHaveLength(1);
-    expect(JSON.parse(fs._files[FILE]).docs).toHaveProperty('vault:cap-live a.md');
-  });
-
-  test('prunes every doc: key when the registry has no documents, and persists the result', () => {
-    const fs = memFs();
-    const s = store(fs);
-    s.put('doc:cap-a', [good()]);
-    s.put('doc:cap-b', [good({ id: 'h2' })]);
-    expect(s.pruneOrphanDocKeys([])).toEqual({ pruned: 2 });
-    expect(JSON.parse(fs._files[FILE]).docs).toEqual({});
-    expect(store(fs).get('doc:cap-a')).toEqual({ highlights: [] });
-  });
-
-  test('a no-op prune persists nothing', () => {
-    const fs = memFs();
-    const s = store(fs);
-    s.put('doc:cap-live', [good()]);
-    fs.writeFileSync.mockClear();
-    expect(s.pruneOrphanDocKeys(['cap-live'])).toEqual({ pruned: 0 });
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
-  });
-
-  test('a failed prune persist rolls the in-memory deletion back', () => {
-    const fs = memFs();
-    const s = store(fs);
-    s.put('doc:cap-dead', [good()]);
-    fs.writeFileSync.mockImplementationOnce(() => { throw new Error('ENOSPC'); });
-    expect(s.pruneOrphanDocKeys([])).toEqual({ error: 'write-failed' });
-    expect(s.get('doc:cap-dead').highlights).toHaveLength(1);
-  });
-});
+// The pruneOrphanDocKeys suite that stood here asserted the bulk delete that defect B3 removed
+// (highlights vanished once a note fell off the recents list). What replaced it is covered by
+// tests/unit/b3-annotations-survive.test.js.

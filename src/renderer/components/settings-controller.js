@@ -11,6 +11,8 @@ export const PERSISTED_KEYS = new Set([
   'autosave',
   // v5 (T0.1): reading positions, system-colour follow, update-check mode, daily goal
   'readingProgress', 'themeFollowSystem', 'updateCheck', 'readingGoalMin',
+  // margin notes folded to gutter markers
+  'marginNotesCollapsed',
 ]);
 
 const noop = () => {};
@@ -74,6 +76,7 @@ export function createSettingsController({
       calendar: state.calendar,
       arabicKashida: state.arabicKashida,
       italicRecolor: state.italicRecolor,
+      marginNotesCollapsed: state.marginNotesCollapsed,
       uiLocale: state.uiLocale,
       uiDirection: state.uiDirection,
       readerTextScale: state.readerTextScale,
@@ -175,6 +178,7 @@ export function createSettingsController({
         state.italicRecolor = saved.italicRecolor;
         apply.applyItalicRecolor();
       }
+      if (typeof saved.marginNotesCollapsed === 'boolean') state.marginNotesCollapsed = saved.marginNotesCollapsed;
       if (saved.uiLocale === 'ar' || saved.uiLocale === 'en') apply.setUiLocale(saved.uiLocale);
       if (saved.uiDirection === 'rtl' || saved.uiDirection === 'ltr') apply.setUiDirection(saved.uiDirection);
       // T-F19: coerce here as well as in main/settings.js migrate() — restoreSettings

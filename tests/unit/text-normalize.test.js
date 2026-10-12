@@ -7,7 +7,7 @@
  */
 import { describe, test, expect } from 'vitest';
 import {
-  HAS_ARABIC, normalizeArabic, normalizeArabicWithMap, mapEnd, arabicFindMatches,
+  HAS_ARABIC, NEEDS_FOLD, normalizeArabic, normalizeArabicWithMap, mapEnd, arabicFindMatches,
 } from '../../src/renderer/components/text-normalize.js';
 
 describe('HAS_ARABIC', () => {
@@ -118,5 +118,53 @@ describe('arabicFindMatches (RTL-M3)', () => {
   test('a non-Arabic query or pure-diacritics query is not this path', () => {
     expect(arabicFindMatches('abc', 'abc')).toBeNull();
     expect(arabicFindMatches('نص', 'ًّ')).toEqual([]);
+  });
+});
+
+describe('Persian and Urdu letters, and the three digit sets (audit M26)', () => {
+  test('kaf, ya and ha typed on a Persian or Urdu keyboard fold to the Arabic letters', () => {
+    expect(normalizeArabic('\u06A9\u062A\u0627\u0628')).toBe('\u0643\u062A\u0627\u0628'); // کتاب → كتاب
+    expect(normalizeArabic('\u0639\u0644\u06CC')).toBe('\u0639\u0644\u064A');               // علی → علي
+    expect(normalizeArabic('\u06D2')).toBe('\u064A');                                           // ے → ي
+    expect(normalizeArabic('\u06D5\u06C0')).toBe('\u0647\u0647');                             // ە ۀ → ه ه
+  });
+
+  test('a query in either spelling finds the other, at the positions of the source', () => {
+    const persian = 'x \u06A9\u062A\u0627\u0628 \u0639\u0644\u06CC'; // "x کتاب علی"
+    expect(arabicFindMatches(persian, '\u0643\u062A\u0627\u0628')).toEqual([{ start: 2, end: 6 }]);
+    expect(arabicFindMatches(persian, '\u0639\u0644\u064A')).toEqual([{ start: 7, end: 10 }]);
+    const arabic = '\u0643\u062A\u0627\u0628'; // "كتاب"
+    expect(arabicFindMatches(arabic, '\u06A9\u062A\u0627\u0628')).toEqual([{ start: 0, end: 4 }]);
+  });
+
+  test('Arabic-Indic and Persian digits fold to 0-9', () => {
+    expect(normalizeArabic('\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669')).toBe('0123456789');
+    expect(normalizeArabic('\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9')).toBe('0123456789');
+  });
+
+  test('a number is found whichever digit set the query and the text use', () => {
+    const text = 'year \u0662\u0660\u0662\u0664, \u06F2\u06F0\u06F2\u06F4 and 2024'; // ٢٠٢٤, ۲۰۲۴, 2024
+    const hits = [{ start: 5, end: 9 }, { start: 11, end: 15 }, { start: 20, end: 24 }];
+    expect(arabicFindMatches(text, '2024')).toEqual(hits);
+    expect(arabicFindMatches(text, '\u0662\u0660\u0662\u0664')).toEqual(hits);
+    expect(arabicFindMatches(text, '\u06F2\u06F0\u06F2\u06F4')).toEqual(hits);
+  });
+
+  test('the fold is one character to one character, so the index map keeps its length', () => {
+    const s = '\u06A9\u06CC\u0662\u06F4';
+    const m = normalizeArabicWithMap(s);
+    expect(m.norm).toBe('\u0643\u064A24');
+    expect(m.map).toEqual([0, 1, 2, 3]);
+  });
+
+  test('NEEDS_FOLD is true for Arabic and for digits, false for plain Latin text', () => {
+    expect(NEEDS_FOLD.test('2024')).toBe(true);
+    expect(NEEDS_FOLD.test('\u0645\u062D\u0645\u062F')).toBe(true);
+    expect(NEEDS_FOLD.test('hello world')).toBe(false);
+    expect(arabicFindMatches('hello world', 'world')).toBeNull();
+  });
+
+  test('a digit query in Latin text finds what the plain search found, case folded as before', () => {
+    expect(arabicFindMatches('Version V2 and v2', 'v2')).toEqual([{ start: 8, end: 10 }, { start: 15, end: 17 }]);
   });
 });

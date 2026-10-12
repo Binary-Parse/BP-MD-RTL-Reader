@@ -63,8 +63,10 @@ describe('resolveBlockDirection (T-R1 dominant-script — fixes mixed Arabic/Eng
     expect(resolveBlockDirection('Hello مرحبا مرحبا مرحبا')).toBe('rtl');
     expect(resolveBlockDirection('2024 إصدار جديد من البرنامج')).toBe('rtl');
   });
-  test('English-majority block that opens with Arabic → ltr', () => {
-    expect(resolveBlockDirection('مرحبا this is mostly an english sentence')).toBe('ltr');
+  // audit H4 (owner decision 2026-10-10): an RTL first strong character makes the block RTL,
+  // whatever share of Latin terms follows. Was: 'ltr' once the Latin letters were the majority.
+  test('English-majority block that opens with Arabic → rtl (first strong wins, H4)', () => {
+    expect(resolveBlockDirection('مرحبا this is mostly an english sentence')).toBe('rtl');
   });
   test('pure Arabic → rtl; pure English → ltr', () => {
     expect(resolveBlockDirection('مرحبا بالعالم')).toBe('rtl');
@@ -81,9 +83,10 @@ describe('resolveBlockDirection (T-R1 dominant-script — fixes mixed Arabic/Eng
   test('near-balanced block inherits on an exact tie; a strict majority still flips', () => {
     // audit UX-01: an exact tie now inherits the base direction (default ltr here), instead
     // of first-strong picking whichever script happened to open the block.
-    expect(resolveBlockDirection('مرab')).toBe('ltr'); // 50/50 → inherited ltr
-    expect(resolveBlockDirection('abمر')).toBe('ltr'); // 50/50 → inherited ltr
-    expect(resolveBlockDirection('مرab', 'rtl')).toBe('rtl'); // …and inherits rtl when rtl is the base
+    expect(resolveBlockDirection('مرab')).toBe('rtl'); // 50/50, Arabic first → rtl (H4; was inherited ltr)
+    expect(resolveBlockDirection('abمر')).toBe('ltr'); // 50/50, Latin first → inherited ltr
+    expect(resolveBlockDirection('abمر', 'rtl')).toBe('rtl'); // …and inherits rtl when rtl is the base
+    expect(resolveBlockDirection('مرab', 'ltr')).toBe('rtl'); // Arabic first wins even over an ltr base (H4)
     // English-first table content (7 Latin vs 8 Arabic = 53% RTL) is a STRICT RTL majority → rtl.
     expect(resolveBlockDirection('Name قيمة one واحد')).toBe('rtl');
   });
@@ -97,9 +100,10 @@ describe('resolveBlockDirection (T-R1 dominant-script — fixes mixed Arabic/Eng
     expect(resolveBlockDirection('abمرح')).toBe('rtl');
     // English-first, RTL share 0.5 → exactly a tie → inherits ltr.
     expect(resolveBlockDirection('abcمرح')).toBe('ltr');
-    // Symmetric: Arabic-first, LTR share 0.6 → flips to ltr; 0.5 is a tie → inherits ltr.
-    expect(resolveBlockDirection('مرabc')).toBe('ltr');
-    expect(resolveBlockDirection('مرحabc')).toBe('ltr');
+    // Arabic-first blocks are rtl whatever the Latin share (H4: first strong wins; the strict
+    // majority override applies only to Latin-first blocks). Was: 0.6 Latin share → ltr, tie → ltr.
+    expect(resolveBlockDirection('مرabc')).toBe('rtl');
+    expect(resolveBlockDirection('مرحabc')).toBe('rtl');
   });
 });
 
@@ -140,6 +144,51 @@ describe('resolveBlockDirection — audit UX-01 regression table', () => {
 
   test('an exact tie with inherited ltr → ltr', () => {
     expect(resolveBlockDirection('abمر', 'ltr')).toBe('ltr');
+  });
+});
+
+// audit H4 (owner decision 2026-10-10): the first strong character decides. An Arabic heading that
+// carries Latin product names used to resolve LTR because the Latin letters outnumbered the Arabic.
+describe('resolveBlockDirection — first strong RTL character wins (audit H4)', () => {
+  test.each([
+    ['تثبيت Docker على Windows', 'rtl'],
+    ['كيف تستخدم TypeScript مع React', 'rtl'],
+    ['استخدام Git و GitHub', 'rtl'],
+    ['API دليل المستخدم', 'rtl'],
+    ['Install Docker on Windows', 'ltr'],
+    ['Docker is كبير', 'ltr'],
+    ['שלום Docker Compose Kubernetes', 'rtl'],
+    ['مرحبا Hello world this is long English text', 'rtl'],
+    ['  	«مرحبا» English English English', 'rtl'],
+  ])('%s → %s', (text, expected) => {
+    expect(resolveBlockDirection(text)).toBe(expected);
+    expect(resolveBlockDirection(text, 'ltr')).toBe(expected);
+    expect(resolveBlockDirection(text, 'rtl')).toBe(expected);
+  });
+
+  test('digits and punctuation before the first Arabic letter do not count as strong', () => {
+    expect(resolveBlockDirection('2024: تثبيت Docker و Kubernetes على Windows', 'ltr')).toBe('rtl');
+  });
+
+  test('a Latin-first block stays ltr when its Arabic share is a minority or a tie', () => {
+    expect(resolveBlockDirection('Docker is كبير', 'rtl')).toBe('ltr'); // 4 Arabic vs 8 Latin: not a majority, base is irrelevant
+    expect(resolveBlockDirection('abcمرح', 'ltr')).toBe('ltr'); // 3 vs 3 tie → base
+    expect(resolveBlockDirection('abcمرح', 'rtl')).toBe('rtl'); // tie → base rtl
+  });
+
+  test('a Latin-first block that is mostly Arabic is still rtl (the remaining majority override)', () => {
+    expect(resolveBlockDirection('Docker دليل المستخدم الكامل', 'ltr')).toBe('rtl');
+  });
+
+  test('a block that is only a URL/email (no counted letters) is neutral and inherits the base', () => {
+    // the Arabic local part is stripped with the rest of the address, so nothing is left to vote
+    expect(resolveBlockDirection('مرحبا@example.com', 'ltr')).toBe('ltr');
+    expect(resolveBlockDirection('مرحبا@example.com', 'rtl')).toBe('rtl');
+    expect(resolveBlockDirection('https://example.com/a', 'rtl')).toBe('rtl');
+  });
+
+  test('a URL is not the first strong character of an otherwise Arabic block', () => {
+    expect(resolveBlockDirection('https://example.com/docs راجع الوثائق الكاملة', 'ltr')).toBe('rtl');
   });
 });
 

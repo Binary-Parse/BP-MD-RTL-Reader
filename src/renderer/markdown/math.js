@@ -12,6 +12,7 @@
  */
 import { katexOptions, sanitizeMath } from './trusted.js';
 import { MAX_MATH_BYTES, utf8ByteLength } from '../limits.js';
+import { cachedStart } from './render-guard.js';
 
 // Private-use sentinels (U+E000/U+E001) — never appear in real content, and being
 // non-markdown, non-HTML they survive marked + DOMPurify verbatim.
@@ -52,7 +53,7 @@ export function mathExtension() {
     extensions: [{
       name: 'math',
       level: 'inline',
-      start(src) { const i = src.indexOf('$'); return i < 0 ? undefined : i; },
+      start: cachedStart((src) => { const i = src.indexOf('$'); return i < 0 ? undefined : i; }),
       tokenizer(src) {
         let m = /^\$\$([\s\S]+?)\$\$/.exec(src); // block $$...$$ (wins)
         if (m) return { type: 'math', raw: m[0], tex: m[1], display: true };

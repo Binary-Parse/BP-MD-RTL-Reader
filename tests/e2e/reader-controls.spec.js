@@ -68,7 +68,8 @@ test.describe('Reader controls', () => {
       };
     });
 
-    expect(shell.maxWidth).toBe('800px');
+    // The welcome is a home page: it takes the pane width, not the 800px reading column.
+    expect(shell.maxWidth).toBe('none');
     // v10 redesign (2026-08-25): .editor base font-size 1.0625->1.125rem (17->18px).
     expect(shell.fontSize).toBeCloseTo(18, 1);
 
@@ -189,18 +190,20 @@ test.describe('Reader controls', () => {
   // back to being a no-op — the dominant term at realistic sizes is .editor's own FIXED
   // padding (56px 80px 120px), not the 800px cap the test above targets. At the packaged
   // default window (1280x820, main/settings.js) with both panels open, the pane is only
-  // 1280 - 240 (sidebar) - 300 (inspector) = 740px, minus 2x80px padding = 580px available —
-  // less than even the 72ch default, so every further increase renders identically.
+  // 1280 - 312 (19.5rem sidebar) - 320 (20rem inspector) = 648px, and a fixed 2x80px padding
+  // would leave 488px — less than even the 72ch default, so every further increase would
+  // render identically.
   //
-  // 580px is a genuine ceiling here even after the fix (740px pane minus a responsive but
-  // still-nonzero padding still clips both 72ch and 120ch, which is why the "widens..." test
-  // above can compare two ch values directly and this one can't) — so this asserts the fixed
-  // 160px tax is gone, not that 120ch ends up wider than 72ch at this specific width.
-  test('the content-width slider is not capped at 580px at the packaged default window with both panels open', async ({ page }) => {
+  // A pane that narrow is a genuine ceiling even after the fix (a responsive but still-nonzero
+  // padding still clips both 72ch and 120ch, which is why the "widens..." test above can
+  // compare two ch values directly and this one can't) — so this asserts the fixed 160px tax
+  // is gone: the note is wider than the pane minus 160px.
+  test('the content-width slider is not taxed by a fixed 160px padding at the packaged default window with both panels open', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 820 });
     await boot(page, { viewMode: 'reading', sidebarVisible: true, inspectorVisible: true, readerWidthCh: 72 });
     await injectNote(page);
     await expect(page.locator('#editorArea')).toHaveClass(/reading/);
+    const paneWidth = await page.evaluate(() => document.querySelector('.preview-pane').clientWidth);
 
     const noteWidthAt = (ch) => page.evaluate((value) => {
       const slider = document.getElementById('readerWidthSlider');
@@ -210,7 +213,7 @@ test.describe('Reader controls', () => {
     }, ch);
 
     const w120 = await noteWidthAt(120);
-    expect(w120).toBeGreaterThan(580);
+    expect(w120).toBeGreaterThan(paneWidth - 160);
   });
 
   // The 800px shell cap's `.editor-area.reading:not(.welcome)` carve-out excludes every other

@@ -1,5 +1,211 @@
 # Changelog
 
+## [2.0.0] - 2026-10-12
+
+2.0.0 is the first release of the Marginalia interface that went through a full audit: the
+known issues of 1.3.0 are fixed, and so are all Blocker and High defects of the pre-release
+audit and most of the Medium ones. It is also the first release with Linux packages.
+
+**Marginalia** is the interface introduced in 1.3.0: a two-row title bar, a library sidebar
+with read time and progress, an inspector, a paper sheet for reading and editing, and
+highlights whose notes stand in the margin beside the text. Its full description is in the
+1.3.0 section below.
+
+**Why a major version.** Some things a 1.x user relies on change or go away:
+
+- No 32-bit Windows build. Electron 44 has none; the installers hold x64 and ARM64.
+- The files are not code-signed, and no updater files ship. Windows shows the SmartScreen
+  warning; the README explains how to check a download against `SHA256SUMS.txt`.
+- The built-in spellchecker is off. Spelling suggestions and "Add to Dictionary" are gone
+  from the right-click menu.
+- Table columns follow the direction of the table: `:--` is the start of the cell, which is
+  the right side in an Arabic table. Before, every alignment marker was ignored.
+- `Ctrl+L` inserts a link. `Esc` leaves fullscreen when nothing else is open.
+- A callout without a title of its own shows the Arabic name of its type when the callout
+  is Arabic ("ملاحظة" instead of "Note").
+- Export HTML asks where to save, like PDF and EPUB.
+
+The title-bar drag issue listed under 1.3.0 was checked with a real mouse on Windows: the
+window moves, so it was a test-input artifact, not a bug.
+
+### Fixed
+
+- Export HTML now asks where to save and says "Exported" only after the file is written; cancelling says nothing. When a note that is open gets deleted on disk, the app says so once (audit L3).
+- The built-in spellchecker is turned off, so the app never downloads a dictionary. The right-click menu no longer offers spelling suggestions or "Add to Dictionary" (audit M38).
+- The update check keeps working when GitHub renews or changes its certificates: the roots of its certificate chain and of other certificate authorities are accepted too. When the check cannot be made or cannot be trusted, a card says so and opens the releases page (audit M37).
+- Counted sentences use the right form of the noun and the verb: "1 note … was never saved", "3 notes"; in Arabic the singular, the dual and the plurals ("ملاحظة واحدة", "ملاحظتان", "3 ملاحظات", "11 ملاحظة") (audit M20).
+- The Arabic interface no longer shows English ids: the theme name, the editor mode, the folder state, tooltips and screen-reader names are Arabic. A callout with no title of its own (`> [!NOTE]`) is named in Arabic when its text is Arabic, and in English otherwise (audit M21).
+- Search treats `ک` and `ك`, `ی` and `ي` as the same letter, and a number is found whichever digits it is written in (`2024`, `٢٠٢٤`, `۲۰۲۴`), in Find and in the sidebar search (audit M26).
+- Ctrl+Shift+Z redoes, Ctrl+L inserts a link around the selection, and Esc leaves fullscreen when nothing else is open for it to close. The shortcut list now names Ctrl+E (Reading / Edit) and Ctrl+L (audit M25).
+- Code inside a fence stays left-to-right in the editor, whatever a line holds: an Arabic comment no longer flips its line, and a note forced right-to-left no longer mirrors the code (audit M18).
+- Table columns are aligned as the note asks (`:--`, `:-:`, `--:`), in the reading pane, the editor and every export. The alignment follows the direction of the table: in an Arabic table the start of a cell is the right, and the RTL / LTR / Auto control moves it (audit M19).
+- **Notes with many tables or callouts open far faster.** A large note with hundreds of tables
+  took minutes to switch to Reading; it now takes seconds. Very large notes (over 1 MB) are
+  still slow to open and to edit.
+- **Find marks every match in the editor.** Only the current match was visible; the others were
+  counted but not drawn. Arabic matches found without tashkeel are marked as well.
+- **Shortcuts follow the key labels on German and French keyboards.** Ctrl+Z did nothing on a
+  German keyboard and closed the tab on a French one. Arabic layouts keep working as before.
+- **File names read correctly in the Arabic interface.** A name such as `2026-10-10.md` was
+  shown as `md.2026-10-10` on the tab, in the folder tree and in search results.
+- **A note with a conflict banner stays still.** Auto-save used to try it again every five
+  seconds and redraw the note while the banner was waiting for an answer.
+- **Export asks before it shares your highlights and notes.** HTML and PDF export used to add
+  them at the end of the file without saying so. The export now asks, with "Export without
+  them" as the default. EPUB never includes them.
+- **A note built to freeze the app opens at once.** A small note with thousands of unclosed
+  `*` markers froze the window for half a minute. Rendering now has a time limit: the part it
+  cannot format in time is shown as plain text, and the app says so. Large ordinary notes also
+  render several times faster.
+- **A note cannot draw fake app windows.** Raw HTML in a note could reuse the app's own styles,
+  for example to show a floating "update" card with a link. Notes now keep only the classes
+  the app itself produces (code colours, wikilinks, footnotes).
+- **A note cannot break the app by reusing its element names.** Raw HTML in a note with an
+  `id` such as `findBar` could disable Ctrl+F or the Save button of the close dialog. Ids
+  written in a note are now kept apart from the app's own; links inside the note still work.
+- **A window that crashes comes back by itself with your unsaved work.** It used to stay blank
+  until closed. A window that stops responding now asks whether to wait or reload, and when
+  Windows logs off or shuts down the app stores the latest unsaved text first.
+- **A note that another program holds for a moment still saves.** Antivirus and sync tools can
+  lock a file briefly; the save now waits up to 0.4 seconds for it. When a save does fail, the
+  message says why ("another program is using the file, or it is read-only", "the disk is
+  full") instead of showing an internal code.
+- **A note opened from the file manager while the app is still starting always opens.** It could
+  be dropped when it arrived before the window had finished loading.
+- **A note whose encoding is uncertain is no longer guessed in silence.** A UTF-8 note with a
+  damaged byte used to open as unreadable Windows-1256 text. It now opens as UTF-8, and a bar
+  above the note names the guess and offers "Keep" or "Reopen as" another encoding. The note
+  is not saved, by you or by autosave, until you have answered.
+- **Saving a note with mixed line endings changes only the lines you edited.** Every line used
+  to be rewritten with the most common ending, so the whole file showed as changed in git. The
+  status bar shows "Mixed" for such a note.
+- **UTF-16 notes without a byte-order mark open correctly.** A note that held an em dash, an
+  emoji or similar characters was read as garbled UTF-8 and damaged by the first save.
+- **A deleted highlight can be brought back.** The "Highlight removed" message now has an Undo
+  button for six seconds; it restores the highlight and its note.
+- **One long highlight can no longer stop the others from being saved.** A selection over 5000
+  characters is refused with a message, and a highlight that could not be saved is no longer
+  shown as saved.
+- **Opening a note from a subfolder no longer replaces a note of the same name.** With a folder
+  open, "Open with" on `sub/README.md` used to take the place of the folder's own `README.md`.
+- **A change made by another program to a Windows-1256 or UTF-16 note is always noticed.** If the
+  other program replaced text with text of the same length, saving used to overwrite its change
+  without the usual conflict question.
+- **Undo no longer crosses files.** Each open note keeps its own undo history. Ctrl+Z after
+  switching tabs used to put the previous note's text into the current note, and autosave then
+  wrote it to disk. Loading or reloading a note is not an undo step, and a note reloaded from
+  disk starts with an empty history.
+- **An edit made after another program changed the note is no longer lost.** When a clean note
+  was reloaded from disk, typing the earlier text back looked "saved": autosave skipped it and
+  the window closed without asking. The reloaded text is now the saved baseline.
+- **"Don't Save" really discards.** Closing a folder note's tab (or the window) without saving
+  left the note marked unsaved in the background, and autosave wrote the discarded text to disk
+  a few seconds later. The note now returns to its saved text; if another program had changed
+  the file in the meantime, it takes that text.
+- **A recovery offer you have not answered is no longer lost.** After a crash, closing the
+  "recover unsaved work" dialog with Esc let the app overwrite that work ten seconds later.
+  The offered work is now kept until you choose Restore or Discard, and what you type in
+  the meantime is protected separately; if the app crashes again, both are offered.
+- **Long text wraps everywhere.** A long link or identifier ran out of the reading column and
+  made the page scroll sideways, in the reader, in the editor and in exported HTML and PDF. It
+  now breaks at the column edge. A long line in a code block wraps inside the block (the
+  indentation and the copied text are unchanged) instead of scrolling sideways. In an exported
+  document a wide table scrolls inside its own frame, and fits the page when printed.
+- **The bundled licence file is complete.** `THIRD-PARTY-LICENSES.txt` was missing the licence
+  texts of 47 packages whose code is inside the Mermaid bundle (Chevrotain, Langium, the
+  vscode language-server libraries and others). It now covers all 149, and the build stops if
+  a bundled package has no licence text.
+- **Highlights and margin notes are no longer deleted behind your back.** A note's highlights
+  disappeared for good once the note dropped off the recent-files list and the app restarted,
+  and all of them could go when `settings.json` was damaged. Nothing deletes them
+  automatically now, and a reopened note or folder is recognised as the same one. A damaged
+  `settings.json` or `annotations.json` is kept beside the new file as
+  `<name>.corrupt-<timestamp>`. Highlights already lost in earlier versions cannot be restored.
+- **A link in a note can no longer reload the app.** A link whose target resolved to the app's
+  own page (for example `[x](index.html)`) reloaded the window and unsaved work was lost. No
+  link can navigate the window now; web links still open in the browser and links to a heading
+  still scroll.
+- **Exporting a note with math or a Mermaid diagram keeps the document head.** The exported HTML
+  (and the PDF made from it) had lost its charset, security policy, title, language and
+  direction.
+- **Ctrl+I and Ctrl+/ do one thing.** Ctrl+I italicises the word or selection (it used to take
+  the whole paragraph, and it dropped bold from a bold word); Ctrl+/ opens the shortcut list and
+  no longer comments out the line.
+- **Arabic text with Latin terms stays right-to-left.** A block that starts with an Arabic letter
+  is RTL however many Latin words follow ("تثبيت Docker على Windows"). Lists take the direction
+  of their items, so bullets sit inside the column; an Arabic list item is not turned by English
+  sub-items; an Arabic callout with a default title ("Warning") stays RTL; code and math no
+  longer decide the direction of the document or of its export.
+- **A heading followed by a long run of spaces no longer freezes the app** (13.6 s on 2500
+  spaces). Headings are read with a linear scanner.
+- **Ctrl+N always gets a free name.** After closing `Untitled.md`, a new note reused the name of
+  an open one, showed a false conflict banner, and "Reload from disk" emptied it.
+- **Window buttons stay on screen at 200 % zoom.** The title bar drops controls in steps as it
+  narrows (down to 320 px); each dropped control remains in the View menu, the command palette
+  or its shortcut.
+- **Saving a note no longer re-reads the whole folder.** The folder watcher ignores `.git`,
+  `node_modules`, dot-folders and non-note files, does not echo the app's own saves, and re-reads
+  only the notes that changed (one external edit in a 501-note folder: 1 file read, was 501).
+- **Linux and macOS launch paths** (not yet run on those systems): a `file://` argument opens the
+  note and the package declares the Markdown MIME type; on macOS a file that launches the app is
+  no longer dropped, the menu bar has the standard app / File / Window menus, and the window
+  keeps the native traffic lights.
+- **The welcome screen fits its card.** It is no longer held to the 800px reading column, so
+  the title sits on two lines, the card collapses to one column only when the pane is narrow,
+  and long file names end in an ellipsis (full name on hover) instead of running off the card.
+- **Margin notes no longer push the page off-centre.** The page stays centred and the cards sit
+  in the free margin beside it, on the other side in RTL.
+- **The Arabic tooltip of the sidebar and inspector toggles reads correctly.** The RTL
+  mirror now flips the icon, not the button, so the tooltip is no longer mirrored with it.
+- **Switching the interface language re-localizes what is already on screen:** read time
+  in Properties and the status bar, the word count, the note kicker and the empty-state
+  placeholders.
+- **The line/column readout follows the caret** (click, arrows, selection), not only edits.
+- **The unsaved dot follows the text.** A note is dirty only while its text differs from the
+  last saved text, so undo (or retyping) back to the saved state clears it.
+
+- **Long text in table cells now wraps** inside the reading column instead of stretching
+  the table and forcing a sideways scroll. Cells break long words and URLs
+  (`overflow-wrap: anywhere`) and keep a floor of 8ch, so the wrap follows the reading
+  width and app zoom, and a table with many columns still scrolls inside its own frame
+  rather than collapsing.
+
+### Changed
+
+- **What a release contains is stated exactly.** 2.0.0 ships for Windows (x64, ARM64) and
+  Linux (AppImage and deb; x64 tested, ARM64 built but not run). The files are not
+  code-signed: the README explains the SmartScreen warning and how to check a download
+  against `SHA256SUMS.txt`. macOS is not built or tested.
+- **No updater leftovers.** The packages no longer contain `app-update.yml`; the Linux
+  AppImage no longer starts with the Chromium sandbox switched off from its menu entry.
+- **The mutation gate cannot pass on a stale report.** It now scores exactly as Stryker
+  does and refuses a result made from another version of a file, from only some of its
+  lines, or from an unfinished run.
+- **The release check proves the scans are current.** `npm run scan:deps` writes the SBOM
+  and the OSV report together with the SHA-256 of `package-lock.json`. Release preflight
+  compares that hash instead of file dates, and a missing report now fails it.
+- **Dependency advisories are reviewed one by one.** `npm run audit:deps` replaces the plain
+  `npm audit` step: every advisory must be fixed or listed with a reason in
+  `config/audit-acceptance.json`, and the list may hold nothing else. 14 of 16 advisories
+  are fixed; the two left have no patched release (`braces`, used only by the development
+  tool jscpd, and the KaTeX 0.16 copy that Mermaid builds into its own bundle).
+- **Electron is updated 42.11.6 → 44.7.0** (Chromium 152, Node 24), because Electron 42
+  reaches end of life on 2026-10-20 and 44 is supported until 2027-03-02. Electron 44 ships no
+  32-bit Windows (`ia32`) binary and no longer ships `libEGL.dll` / `libGLESv2.dll` (ANGLE is
+  linked statically); the Inno payload allowlist drops those two files. The app code needed no
+  change.
+- **32-bit Windows (`ia32`) is no longer built.** Electron 44 publishes no `win32-ia32` binary, so
+  the NSIS and portable installers (still named `...-multiarch.exe`) now cover x64 and ARM64 only.
+
+### Added
+
+- **Margin notes fold.** An arrow button at the top of the margin folds the cards into small
+  markers level with their passages and unfolds them again; the choice is remembered. A narrow
+  margin shows the markers instead of hiding the notes.
+- **New app icon and Markdown file icon (the "qalam" design).** The app shows a reed pen
+  drawing a coral kashida on a navy tile, and `.md` and `.markdown` files show the same pen
+  on an ivory page. Both icons are rendered from SVG by `npm run icons:generate`.
+
 ## [1.3.0] - 2026-09-27
 
 ### Fixed
@@ -17,13 +223,26 @@
 
 ### Changed
 
+- **New look: "Marginalia".** A redesigned interface across all four themes: a two-row
+  title bar (command row plus a tab row with a direction tick on each tab), a library
+  sidebar with read time and progress per note and a three-button footer, an inspector
+  that opens with the note's title, path and word / minute / progress counts and numbers
+  its outline, a paper sheet for both reading and editing, a two-column command palette,
+  a Settings drawer, card dialogs and a two-column welcome screen. Highlights with notes
+  also appear as margin notes beside the text when the reading pane is at least 75 rem
+  wide. The Read/Edit and direction buttons keep their cycle behaviour and now show the
+  current state as a segmented indicator; the context menu gained icons, a document
+  header and direction/theme/size rows, plus Highlight / Add Note / Search library on a
+  selection, a Format group in the editor and Save on a tab with unsaved changes. The status
+  bar gained a reading-progress line and a zoom button, and the welcome card a 12-week
+  reading heat-grid. The window's native background colour now follows the theme. No new
+  shortcuts; nothing new talks to the network.
 - Release preflight now refuses a stale OSV vulnerability scan with the same rule it
   already applied to the SBOM: either artifact older than `package-lock.json` fails the
   run (previously only the SBOM was dated, so a stale vulnerability report could pass).
 - A hostile pre-release security audit — the full scanner suite plus an adversarial
   review of every application boundary — found no critical or high issues; all four low
-  findings were fixed before release (below), with the full record in
-  `docs/SECURITY-AUDIT-2026-09-27.md`.
+  findings were fixed before release (below).
 - The update check caps the response body it will buffer at 1 MiB — a pinned-host peer
   returning a giant body can no longer grow the main process's memory without bound —
   and rate-limits repeated checks: one network call per minute, with a repeat inside
@@ -38,6 +257,22 @@ A pre-release integrity pass over the save path, capability checks, and packagin
 the 2026-09-23 adversarial review and its 2026-09-24 follow-up passes (a second adversarial
 attack, the remaining review items, and the RTL product blockers). No new features; nothing
 new talks to the network.
+
+### Known issues
+
+Found while testing the Marginalia design by hand on Windows; none loses data.
+
+- The welcome card stays about 480 px wide even in a maximized window, so its two columns
+  are squeezed and the headline wraps to four lines.
+- In the Arabic interface the inspector toggle's tooltip renders with reversed, unjoined
+  letters; other tooltips are fine.
+- After switching the interface language, a few already-rendered strings stay English until
+  the note is re-rendered: the read time in Properties, the kicker above the document, and
+  parts of the status bar.
+- The line/column readout updates on edits, not on every click.
+- A tab keeps its unsaved dot after undo returns the text to the saved state.
+- Dragging the window by the empty part of the title bar did not move it under synthetic
+  mouse input; the drag region is set correctly, so this is unconfirmed on real hardware.
 
 ### Fixed — data safety
 
@@ -239,8 +474,7 @@ new talks to the network.
 
 A reading-experience release: the app now remembers where you were, lets you mark up what you
 read, ships a fourth theme and can hand a note to your phone as an EPUB — and it carries the
-complete hardening, correctness, and performance work from the 2026-09-20 application audit
-(`docs/AUDIT-REPORT-2026-09-20.md`), plus the T14 pre-release security fixes. Everything new
+complete hardening, correctness, and performance work from the 2026-09-20 application audit, plus the T14 pre-release security fixes. Everything new
 stays local — no new runtime dependency, and no new background network call. (This section
 folds what an earlier draft kept as a separate "[Unreleased]" block: v1.3.0 was never tagged
 or published before this release, so there is exactly one 1.3.0, and it contains all of this —

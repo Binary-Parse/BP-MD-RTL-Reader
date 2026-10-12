@@ -19,9 +19,12 @@ untrusted Markdown is sanitized before it is rendered.
 
 | What | Where |
 | ---- | ----- |
-| App settings (`settings.json`), filesystem grants (`capabilities.json`), highlights & margin notes (`annotations.json`), daily reading stats (`reading-stats.json`), crash-recovery snapshots (`recovery\`), Electron profile state, and local diagnostic logs | `%APPDATA%\bpmdrtlreader` (logs are in `logs\`) |
+| App settings (`settings.json`), filesystem grants (`capabilities.json`), highlights & margin notes (`annotations.json`), daily reading stats (`reading-stats.json`), crash-recovery snapshots (`recovery\`), Electron profile state, and local diagnostic logs | Windows: `%APPDATA%\bpmdrtlreader`. Linux: `~/.config/bpmdrtlreader` (or `$XDG_CONFIG_HOME/bpmdrtlreader`). Logs are in the `logs` folder inside it |
 | Legacy app-data aliases (older installs; the app reads only the directory above — the uninstaller cleans these up) | `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and `%LOCALAPPDATA%\BP MD RTL Reader` |
 | Your notes | wherever **you** saved them — plain `.md` files |
+
+This part is about Windows. On Linux, removing the package or deleting the AppImage leaves
+the profile folder in place; delete it yourself to remove the app data.
 
 Both Windows installer families offer three actions before an interactive uninstall:
 
@@ -44,8 +47,8 @@ uninstaller lists the remaining path instead of reporting complete cleanup.
 
 ## What persists between sessions
 
-So the app reopens the way you left it, plain JSON files in
-`%APPDATA%\bpmdrtlreader\` store your preferences. They are written only by you (via
+So the app reopens the way you left it, plain JSON files in the profile folder above
+store your preferences. They are written only by you (via
 the app) and **never transmitted**. `settings.json` holds:
 
 - **Appearance & layout** — theme (paper/ink/sepia/oasis), whether the app follows the
@@ -71,11 +74,11 @@ Two more local files hold the reading features:
   identifier. The file stores the highlighted text, your note text, and an anchor; it
   is never transmitted, and the annotations channel carries text only (no paths).
 - `reading-stats.json` — daily reading-minute totals (two years) so the welcome line
-  can show your streak against the optional daily goal. Local only.
+  and the 12-week heat-grid can show your streak against the optional daily goal. Local only.
 
 ## What the window title shows
 
-By default the OS window title is the **name of the note you have open** — so Windows
+By default the OS window title is the **name of the note you have open** — so the system
 shows it in the taskbar, in the Alt+Tab switcher, and in window-picker previews. That
 makes a file name visible to anyone who can see your screen, including during a screen
 share or a screen recording. Nothing is transmitted; this is local display only.
@@ -127,7 +130,12 @@ address and request headers is visible to GitHub. The command reads public relea
 metadata only: it neither downloads nor installs an update — when the automatic check
 finds a newer release it shows a local notice, whose "View release" button opens the
 project's releases page (one fixed URL the app owns). On an offline machine the
-request fails and the rest of the app continues to work.
+request fails and the rest of the app continues to work. The answer is accepted only from a
+server whose certificate chain contains a public key this version knows; when it does not,
+no data is read, the app says that the check was not made, and it offers the same releases
+page.
+
+The built-in spellchecker is turned off, so no dictionary is ever downloaded.
 
 ## Security model
 

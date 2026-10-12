@@ -46,6 +46,21 @@ test.describe('[FA] File association — open .md from Explorer', () => {
     expect(state.activeFile).toBe(0);
   });
 
+  test('M9: a nested note with the same name as a root note opens as its own note', async ({ page }) => {
+    await goto(page);
+    const files = await page.evaluate(() => {
+      // What main sends for two notes of one open folder: same vaultId, different relPath.
+      window.openExternalFile({ name: 'README.md', relPath: 'README.md', vaultId: 'vault-1', documentId: 'cap-root', content: '# Root' });
+      window.openExternalFile({ name: 'README.md', relPath: 'sub/README.md', vaultId: 'vault-1', documentId: 'cap-nested', content: '# Nested' });
+      return window._appState.files.map((f) => [f.path, f.documentId, f.content]);
+    });
+    expect(files).toEqual([
+      ['README.md', 'cap-root', '# Root'],
+      ['sub/README.md', 'cap-nested', '# Nested'],
+    ]);
+    await expect(page.locator('#noteContent')).toContainText('Nested');
+  });
+
   test('preview pane shows the heading from the externally-opened file', async ({ page }) => {
     await goto(page);
     await page.evaluate(() => {

@@ -28,6 +28,16 @@ describe('electron-builder cross-platform config (T-B7)', () => {
     expect(typeof linux.maintainer).toBe('string');
   });
 
+  // H14: without a MIME type the generated .desktop file has no MimeType= line, so Linux file
+  // managers never offer this app under "Open with" for Markdown files. electron-builder
+  // appends %U to Exec itself and writes MimeType from these two keys.
+  test('linux: both Markdown file associations carry a MIME type and the desktop entry lists it', () => {
+    for (const assoc of pkg.build.fileAssociations) {
+      expect(assoc.mimeType).toBe('text/markdown');
+    }
+    expect(pkg.build.linux.mimeTypes).toEqual(['text/markdown', 'text/x-markdown']);
+  });
+
   test('the referenced mac entitlements plist exists and grants user-selected file access + JIT', () => {
     const p = path.join(root, pkg.build.mac.entitlements);
     expect(existsSync(p)).toBe(true);
@@ -53,6 +63,36 @@ describe('electron-builder cross-platform config (T-B7)', () => {
   test('win packaging (pre-existing) is preserved alongside the new targets', () => {
     expect(targetsOf(pkg.build.win)).toEqual(expect.arrayContaining(['nsis']));
     expect(pkg.build.appId).toBe('com.binaryparse.bpmdrtlreader');
+  });
+
+  test('Windows NSIS and portable build x64 + arm64 only (Electron 44 has no 32-bit Windows binary)', () => {
+    const archesOf = (name) => pkg.build.win.target.find((t) => t.target === name)?.arch;
+    expect(archesOf('nsis')).toEqual(['x64', 'arm64']);
+    expect(archesOf('portable')).toEqual(['x64', 'arm64']);
+  });
+
+  // M35: the app has no auto-updater (Help > Check for Updates only reads release metadata),
+  // so nothing that exists for one may ship.
+  test('no updater files are generated: publish is null', () => {
+    expect(pkg.build).toHaveProperty('publish', null);
+    expect(pkg.devDependencies).not.toHaveProperty('electron-updater');
+    expect(pkg.dependencies || {}).not.toHaveProperty('electron-updater');
+  });
+
+  // electron-builder always packs elevate.exe into a per-machine NSIS install (it ignores
+  // packElevateHelper there), so the file ships and must carry its notice.
+  test('elevate.exe, which a per-machine NSIS install always carries, has a third-party notice', () => {
+    expect(pkg.build.nsis.perMachine).toBe(true);
+    expect(pkg.build.nsis).not.toHaveProperty('packElevateHelper');
+    const notices = readFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), 'utf8');
+    expect(notices).toMatch(/\| \[Elevate\]\(https:\/\/github\.com\/jpassing\/elevate\) \| MIT \|[^\n]*resources\/elevate\.exe/);
+    expect(notices).toContain('Copyright (c) 2007 Johannes Passing');
+  });
+
+  // B11: electron-builder's default desktop entry starts an AppImage with --no-sandbox.
+  test('the AppImage desktop entry does not switch the Chromium sandbox off', () => {
+    expect(pkg.build.appImage).toEqual({ executableArgs: [] });
+    expect(pkg.build.linux.executableArgs).toBeUndefined();
   });
 
   test('Windows publisher identity is nested under the electron-builder 26 signtool schema', () => {

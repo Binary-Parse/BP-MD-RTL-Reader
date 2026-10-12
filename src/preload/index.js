@@ -9,7 +9,11 @@
 // @param {object} deps.contextBridge - electron.contextBridge (or a mock)
 // @param {object} deps.ipcRenderer   - electron.ipcRenderer (or a mock)
 // @param {object} [deps.webFrame] - electron.webFrame (or a mock)
-function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
+// @param {object} [deps.doc] - the preload document (or a mock); with `platform` it receives html.platform-<os>
+// @param {string} [deps.platform] - process.platform; CSS hides the custom window buttons on macOS
+function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
+  // H13: a CSS hook for platform differences (macOS draws its own traffic lights).
+  if (doc && platform) doc.addEventListener('DOMContentLoaded', () => doc.documentElement.classList.add(`platform-${platform}`), { once: true });
   // SEC-02 (2026-09-26): Electron's structured clone ships a typed array's ENTIRE
   // backing ArrayBuffer, not just its view — a 1-byte view of a multi-GB buffer would
   // drag the whole store across the bridge BEFORE main's size caps can run. This is
@@ -61,6 +65,9 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
     },
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     readVault:  (vaultId) => ipcRenderer.invoke('fs:readVault', vaultId),
+    // H15: re-read only the notes the watcher reported (vault-relative paths, at most 50);
+    // main refuses anything else with { error } and the renderer falls back to readVault.
+    readVaultChanges: (vaultId, relPaths) => ipcRenderer.invoke('fs:readVaultChanges', vaultId, relPaths),
     // SEC-01: re-opening a persisted recent re-validates it against disk and grants
     // session authority for it (a persisted grant alone is no longer enough).
     reopenVault: (vaultId) => ipcRenderer.invoke('fs:reopenVault', vaultId),
@@ -70,6 +77,8 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
     // Main-issued opaque IDs are the only filesystem authority exposed here.
     openFile:   () => ipcRenderer.invoke('dialog:openFile'),
     readFile:   (documentId) => ipcRenderer.invoke('fs:readFile', documentId),
+    // audit M7: answer to "the encoding of this note is a guess" — keep it, or reopen as another.
+    confirmEncoding: (payload) => ipcRenderer.invoke('fs:confirmEncoding', payload),
     writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
     saveFileAs: (payload) => ipcRenderer.invoke('dialog:saveFile', payload),
     // Drag-drop / file-input lanes: the renderer holds a File object, not a path, so it
@@ -100,6 +109,9 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
       'export:epub',
       payload && payload.bytes ? { ...payload, bytes: sizedBytes(payload.bytes) } : payload,
     ),
+    // audit L3: export the current note as a standalone HTML file. Main asks for the path and
+    // writes the finished document; the answer is { ok } | { canceled } | { error }.
+    exportHtml: (payload) => ipcRenderer.invoke('export:html', payload),
     // Edit command bridge — delegates clipboard/undo/redo to Chromium's native
     // webContents.copy/cut/paste/undo/redo/selectAll which operate on the focused
     // editable regardless of JS-side focus juggling caused by the menu opening.
@@ -122,6 +134,8 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
     // change on disk externally so the renderer can refresh + surface conflicts (EC-A2).
     onVaultChanged: (cb) => ipcRenderer.on('vault:changed', (_e, data) => cb(data)),
     onCloseRequested: (cb) => ipcRenderer.on('app:request-close', () => cb()),
+    // audit M11: the Windows session is ending (logoff, shutdown): mirror unsaved notes now.
+    onFlushRecovery: (cb) => ipcRenderer.on('app:flush-recovery', () => cb()),
     // T-Q6: opt-in update check — only ever called from an explicit "Check for Updates…"
     // user action (plus T7.1's opt-in daily auto check, which main itself re-validates
     // against the saved setting). No auto-download, no identifiers.
@@ -133,6 +147,9 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame }) {
     autoUpdateCheck: () => ipcRenderer.invoke('update:auto-check'),
     openReleasePage: () => ipcRenderer.invoke('update:release-page'),
     onUpdateAvailable: (cb) => ipcRenderer.on('update:available', (_e, data) => cb(data)),
+    // audit M37: the automatic check met a certificate this version does not know. Receive-only,
+    // no payload.
+    onUpdateUnverified: (cb) => ipcRenderer.on('update:unverified', () => cb()),
     // One-way error reporter: forwards renderer-side errors (window.onerror,
     // unhandledrejection) to the main process, which appends a JSON line to
     // <userData>/logs/bpmdrtlreader.log. NO network, NO third party — local only.
@@ -152,6 +169,6 @@ module.exports = { setupBridge };
 // unreachable by unit tests. setupBridge() itself is fully mutation-tested.
 if (typeof globalThis.__vitest_worker__ === 'undefined') {
   const { contextBridge, ipcRenderer, webFrame } = require('electron');
-  setupBridge({ contextBridge, ipcRenderer, webFrame });
+  setupBridge({ contextBridge, ipcRenderer, webFrame, doc: document, platform: process.platform });
 }
 // Stryker restore all

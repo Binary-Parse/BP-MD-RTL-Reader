@@ -16,7 +16,7 @@ const INDEX_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index
 const BUILD_BUDGET_MS = 100;
 const KEYSTROKE_BUDGET_MS = 16;
 
-test.describe('[T-F13] real CM6 perf budget', () => {
+test.describe('[T-F13] real CM6 perf budget', { tag: '@perf' }, () => {
   test('10k-line live-preview doc builds < 100ms and absorbs a keystroke < 16ms', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');

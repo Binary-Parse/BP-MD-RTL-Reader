@@ -1,6 +1,6 @@
 {
   "name": "bpmdrtlreader",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "description": "BP MD RTL Reader — markdown reader with RTL support",
   "keywords": [
     "electron",
@@ -36,6 +36,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
+    "dist:linux": "electron-builder --linux --x64 --arm64",
     "build:cm": "esbuild scripts/codemirror-entry.mjs --bundle --format=iife --global-name=CM6 --minify --outfile=resources/vendor/codemirror/codemirror.min.js",
     "vendor:sync": "node scripts/sync-vendor.js",
     "vendor:check": "node scripts/sync-vendor.js --check",
@@ -62,8 +63,11 @@
     "coverage": "npm run test:unit:coverage && npm run test:e2e:coverage && npm run report:merge",
     "report:merge": "node scripts/merge-coverage.js",
     "lint:security": "node scripts/run-security-lint.js",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "postinstall": "node scripts/ensure-playwright-browser.js",
+    "audit:deps": "node scripts/audit-deps.js",
     "audit:secrets": "node scripts/audit-secrets-fulltree.js",
+    "scan:deps": "node scripts/security-scans.js",
     "browser:install": "playwright install chromium",
     "tls:verify": "node scripts/verify-tls-pin.js"
   },
@@ -74,6 +78,7 @@
       "buildResources": "build",
       "output": "dist"
     },
+    "publish": null,
     "files": [
       "src/renderer/index.html",
       "src/main/index.js",
@@ -102,7 +107,6 @@
           "target": "nsis",
           "arch": [
             "x64",
-            "ia32",
             "arm64"
           ]
         },
@@ -110,7 +114,6 @@
           "target": "portable",
           "arch": [
             "x64",
-            "ia32",
             "arm64"
           ]
         }
@@ -156,6 +159,7 @@
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
+        "mimeType": "text/markdown",
         "icon": "build/icons/markdown-file-icon.ico"
       },
       {
@@ -163,6 +167,7 @@
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
+        "mimeType": "text/markdown",
         "icon": "build/icons/markdown-file-icon.ico"
       }
     ],
@@ -213,6 +218,10 @@
         }
       ],
       "category": "Office",
+      "mimeTypes": [
+        "text/markdown",
+        "text/x-markdown"
+      ],
       "icon": "build/icons/icon.png",
       "artifactName": "BP-MD-RTL-Reader-${version}-Linux-${arch}.${ext}",
       "maintainer": "Binary Parse <273296528+Binary-Parse@users.noreply.github.com>",
@@ -223,6 +232,9 @@
           "Comment": "A markdown reader that treats prose like a literary object"
         }
       }
+    },
+    "appImage": {
+      "executableArgs": []
     }
   },
   "devDependencies": {
@@ -241,7 +253,7 @@
     "@vitest/coverage-v8": "4.1.11",
     "axe-core": "4.12.1",
     "dompurify": "3.4.16",
-    "electron": "42.11.6",
+    "electron": "44.7.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.1",
     "eslint": "10.7.0",
@@ -268,6 +280,7 @@
     "@xmldom/xmldom": "0.8.15",
     "browserslist": "4.29.0",
     "js-yaml": "4.3.2",
-    "baseline-browser-mapping": "2.11.25"
+    "baseline-browser-mapping": "2.11.25",
+    "global-agent": "4.1.3"
   }
 }

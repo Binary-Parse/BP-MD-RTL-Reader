@@ -47,6 +47,9 @@ blockquote { border-inline-start: 3px solid #35578C; padding-block: 4px; padding
 img { max-width: 100%; height: auto; }
 hr { border: none; border-top: 1px solid #D9D0BA; }
 table { border-collapse: collapse; } td, th { border: 1px solid #D9D0BA; padding: 4px 8px; }
+th[align="left"], td[align="left"] { text-align: start; }
+th[align="right"], td[align="right"] { text-align: end; }
+th[align="center"], td[align="center"] { text-align: center; }
 .callout { border-inline-start: 3px solid #35578C; background: #EEE8D8; padding: 10px 14px; margin: 16px 0; }
 .export-image-placeholder { color: #544C40; font-style: italic; }
 mark.user-hl { background: rgba(168, 132, 44, 0.20); }

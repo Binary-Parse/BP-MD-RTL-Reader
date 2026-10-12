@@ -11,6 +11,7 @@ export default {
       ...baseConfig.test.exclude,
       'tests/unit/vendor-provenance.test.js',
       'tests/unit/main-controller-boundaries.test.js',
+      'tests/unit/version-consistency.test.js',
     ],
   },
 };

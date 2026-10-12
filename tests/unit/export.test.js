@@ -5,7 +5,7 @@
  * import-testable module. jsdom-tested with an injected fake parseMarkdown (the app's
  * real configured marked + DOMPurify are exercised by the e2e).
  */
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi, afterEach } from 'vitest';
 import { buildExportDoc, buildExportDocAsync } from '../../src/renderer/markdown/export.js';
 
 const md = (s) => `<p>${s}</p>`; // a trivial fake parseMarkdown
@@ -255,10 +255,210 @@ describe('buildExportDoc — Notes appendix (T5.1c)', () => {
   });
 });
 
+describe('M19: the export keeps the column alignment and ties it to the direction', () => {
+  test('left is the start of the cell, right its end, centre the centre', () => {
+    const { fullHtml } = buildExportDoc({ name: 't.md', content: '| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n' }, { parseMarkdown: md });
+    expect(fullHtml).toContain('th[align="left"], td[align="left"] { text-align: start; }');
+    expect(fullHtml).toContain('th[align="right"], td[align="right"] { text-align: end; }');
+    expect(fullHtml).toContain('th[align="center"], td[align="center"] { text-align: center; }');
+  });
+});
+
 describe('RTL-H3: exported code stays LTR inside an RTL document', () => {
   test('the HTML export stylesheet pins pre and code to ltr', () => {
     const { fullHtml } = buildExportDoc({ name: 'كتاب.md', content: 'نص\n' }, { parseMarkdown: md, direction: 'rtl' });
     expect(fullHtml).toContain('direction: ltr; text-align: start;');
     expect(fullHtml).toContain('direction: ltr; unicode-bidi: isolate;');
+  });
+});
+
+// W1 (owner report 2026-10-10): wrapping in the exported document. The geometry is measured in a
+// real browser by tests/e2e/wrap-matrix.spec.js; these pin the document the export produces.
+describe('W1: the exported document wraps instead of scrolling the page', () => {
+  const table = () => '<p>before</p><table><thead><tr><th>a</th></tr></thead><tbody><tr><td>b</td></tr></tbody></table><table><tbody><tr><td>c</td></tr></tbody></table>';
+  const bodyOf = (fullHtml) => {
+    const host = document.createElement('div');
+    host.innerHTML = fullHtml.slice(fullHtml.indexOf('<body>') + 6, fullHtml.indexOf('</body>'));
+    return host;
+  };
+
+  test('every table sits alone inside its own scroll frame', () => {
+    const body = bodyOf(buildExportDoc({ name: 'a.md', content: 'x' }, { parseMarkdown: table }).fullHtml);
+    const tables = [...body.querySelectorAll('table')];
+    expect(tables).toHaveLength(2);
+    for (const t of tables) {
+      expect(t.parentElement.className).toBe('table-frame');
+      expect(t.parentElement.children).toHaveLength(1);
+    }
+    expect(body.querySelectorAll('.table-frame')).toHaveLength(2);
+    expect(body.querySelector('.table-frame td').textContent).toBe('b');
+    expect(body.firstElementChild.textContent).toBe('before'); // order kept: the frame replaces the table in place
+    expect(body.children[1].className).toBe('table-frame');
+  });
+
+  test('the frame is a labelled region reachable by keyboard (the file runs no script)', () => {
+    const en = bodyOf(buildExportDoc({ name: 'a.md', content: 'text' }, { parseMarkdown: table }).fullHtml).querySelector('.table-frame');
+    expect(en.getAttribute('role')).toBe('region');
+    expect(en.getAttribute('tabindex')).toBe('0');
+    expect(en.getAttribute('aria-label')).toBe('Scrollable table');
+  });
+
+  test('the frame label follows the document language', () => {
+    const label = (content) => bodyOf(buildExportDoc({ name: 'a.md', content }, { parseMarkdown: table }).fullHtml)
+      .querySelector('.table-frame').getAttribute('aria-label');
+    expect(label('نص عربي')).toBe('جدول قابل للتمرير أفقيًا');
+    expect(label('---\nlang: AR-eg\n---\ntext')).toBe('جدول قابل للتمرير أفقيًا');
+    expect(label('---\nlang: fa\n---\nنص')).toBe('Scrollable table');
+  });
+
+  test('the async export frames tables too', async () => {
+    const { fullHtml } = await buildExportDocAsync({ name: 'a.md', content: 'x' }, { parseMarkdown: table });
+    expect(bodyOf(fullHtml).querySelectorAll('.table-frame > table')).toHaveLength(2);
+  });
+
+  test('the stylesheet wraps prose and code and keeps wide blocks in their own box', () => {
+    const { fullHtml } = buildExportDoc({ name: 'a.md', content: 'x' }, { parseMarkdown: md });
+    const css = fullHtml.slice(fullHtml.indexOf('<style>'), fullHtml.indexOf('</style>'));
+    expect(css).toMatch(/\nbody \{[^}]*overflow-wrap: anywhere;/);
+    expect(css).toMatch(/\npre \{[^}]*white-space: pre-wrap; overflow-wrap: anywhere;/);
+    expect(css).toMatch(/\n\.table-frame \{[^}]*max-width: 100%;[^}]*overflow-x: auto;/);
+    expect(css).toMatch(/\n\.math-block, \.mermaid \{[^}]*max-width: 100%; overflow-x: auto;/);
+    expect(css).toMatch(/@media print \{[^@]*table \{ table-layout: fixed; \}[^@]*th, td \{ min-width: 0; \}/);
+  });
+});
+
+// Audit H1: the async path used to re-parse the finished document with DOMParser. Under the
+// app's Trusted Types policy that string is sanitized as a fragment, which drops <html lang/dir>,
+// <meta charset>, the CSP meta and <title> — every export with math or a diagram lost them.
+// The async transforms now run on the detached body element and the document is assembled once.
+describe('buildExportDocAsync — document head survives math and Mermaid (audit H1)', () => {
+  const KATEX_HTML = '<p><span class="katex"><span class="katex-mathml"><math><mi>x</mi></math></span>'
+    + '<span class="katex-html" aria-hidden="true">x</span></span></p>';
+  const MERMAID_HTML = '<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>';
+  const loadMermaid = async () => ({ render: async () => ({ svg: '<svg><text>diagram</text></svg>' }) });
+  const DOMPurify = { sanitize: (value) => value };
+
+  async function freshExport() {
+    vi.resetModules(); // the KaTeX stylesheet is cached per module instance
+    return import('../../src/renderer/markdown/export.js');
+  }
+  function expectFullHead(fullHtml, { lang, dir, title }) {
+    expect(fullHtml.startsWith(`<!DOCTYPE html>\n<html lang="${lang}" dir="${dir}">\n<head>\n<meta charset="UTF-8">`)).toBe(true);
+    expect(fullHtml).toMatch(/<meta http-equiv="Content-Security-Policy" content="default-src 'none';/);
+    expect(fullHtml).toContain(`<title>${title}</title>`);
+    expect(fullHtml).toContain('<meta name="viewport" content="width=device-width, initial-scale=1.0">');
+  }
+
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  test('a math note keeps charset, CSP, title, lang and dir', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, text: async () => '.katex{font:1em KaTeX_Main}' }));
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml, baseName } = await build({ name: 'math.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML });
+    expect(baseName).toBe('math');
+    expectFullHead(fullHtml, { lang: 'en', dir: 'ltr', title: 'math' });
+  });
+
+  test('an Arabic math note exports lang=ar dir=rtl', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, text: async () => '.katex{font:1em KaTeX_Main}' }));
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build(
+      { name: 'معادلة.md', content: 'هذه معادلة مهمة جدا' },
+      { parseMarkdown: (s) => `<p>${s}</p>${KATEX_HTML}` },
+    );
+    expectFullHead(fullHtml, { lang: 'ar', dir: 'rtl', title: 'معادلة' });
+  });
+
+  test('a Mermaid note keeps the full head and still renders the diagram', async () => {
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build({ name: 'diagram.md', content: 'x' }, { parseMarkdown: () => MERMAID_HTML, loadMermaid, DOMPurify });
+    expectFullHead(fullHtml, { lang: 'en', dir: 'ltr', title: 'diagram' });
+    expect(fullHtml).toContain('<svg><text>diagram</text></svg>');
+  });
+
+  test('never re-parses the assembled document', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, text: async () => '.katex{font:1em KaTeX_Main}' }));
+    const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+    const { buildExportDocAsync: build } = await freshExport();
+    await build({ name: 'both.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML + MERMAID_HTML, loadMermaid, DOMPurify });
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  test('inlines the KaTeX stylesheet without its font faces and keeps both formula copies', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      text: async () => '@font-face{font-family:KaTeX_Main;src:url(fonts/KaTeX_Main.woff2)}.katex{font:1em KaTeX_Main}',
+    }));
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build({ name: 'math.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML });
+    const head = fullHtml.slice(0, fullHtml.indexOf('</head>'));
+    expect(head).toContain('<style>\n.katex{font:1em KaTeX_Main}\n</style>\n');
+    expect(fullHtml).not.toContain('@font-face');
+    expect(fullHtml).not.toContain('KaTeX_Main.woff2');
+    expect(fullHtml).toContain('class="katex-html"');
+    expect(fullHtml).toContain('<math><mi>x</mi></math>');
+  });
+
+  test('falls back to the MathML copy alone when the stylesheet cannot be loaded', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: false, status: 404, text: async () => '' }));
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build({ name: 'math.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML });
+    expectFullHead(fullHtml, { lang: 'en', dir: 'ltr', title: 'math' });
+    expect(fullHtml).not.toContain('katex-html');
+    expect(fullHtml).toContain('<math><mi>x</mi></math>');
+  });
+
+  test('a rejected stylesheet request also falls back to MathML', async () => {
+    vi.stubGlobal('fetch', async () => { throw new Error('offline'); });
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build({ name: 'math.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML });
+    expect(fullHtml).not.toContain('katex-html');
+    expect(fullHtml).toContain('<math><mi>x</mi></math>');
+  });
+
+  test('a stylesheet cannot close the style element early', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, text: async () => '.katex{}</style><p id="leak">x</p>' }));
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build({ name: 'math.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML });
+    const head = fullHtml.slice(0, fullHtml.indexOf('</head>'));
+    expect((head.match(/<\/style>/g) || []).length).toBe(2);
+    expect(head).toContain('<style>\n.katex{}><p id="leak">x</p>\n</style>\n');
+  });
+
+  test('requests the vendored stylesheet and treats a non-OK response as unavailable', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: false, status: 404, text: async () => '.katex{color:red}' }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const { buildExportDocAsync: build } = await freshExport();
+    const { fullHtml } = await build({ name: 'math.md', content: 'x' }, { parseMarkdown: () => KATEX_HTML });
+    expect(fetchSpy).toHaveBeenCalledWith('../../resources/vendor/katex/katex.min.css');
+    expect(fullHtml).not.toContain('.katex{color:red}');
+    expect(fullHtml).not.toContain('katex-html');
+  });
+
+  test('the Mermaid engine is loaded only for a note that has a diagram', async () => {
+    const loader = vi.fn(loadMermaid);
+    const { buildExportDocAsync: build } = await freshExport();
+    await build({ name: 'plain.md', content: 'hello' }, { parseMarkdown: md, loadMermaid: loader, DOMPurify });
+    expect(loader).not.toHaveBeenCalled();
+    await build({ name: 'd.md', content: 'x' }, { parseMarkdown: () => MERMAID_HTML, loadMermaid: loader, DOMPurify });
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  test('a file with no content exports an empty body and exactly one stylesheet', async () => {
+    const { buildExportDoc: buildSync } = await freshExport();
+    const { fullHtml } = buildSync({ name: 'empty.md' }, { parseMarkdown: (s) => `<p>[${s}]</p>` });
+    expect(fullHtml).toMatch(/<p[^>]*>\[\]<\/p>/);
+    expect((fullHtml.match(/<style>/g) || []).length).toBe(1);
+    expect(fullHtml).toContain('.export-annotation-note { margin: 0 0 12px; }\n</style>\n</head>');
+  });
+
+  test('a plain note needs no stylesheet request at all', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, text: async () => '' }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const { buildExportDocAsync: build, buildExportDoc: buildSync } = await freshExport();
+    const file = { name: 'plain.md', content: 'hello' };
+    const { fullHtml } = await build(file, { parseMarkdown: md });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fullHtml).toBe(buildSync(file, { parseMarkdown: md }).fullHtml);
   });
 });

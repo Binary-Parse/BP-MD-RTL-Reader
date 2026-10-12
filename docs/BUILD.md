@@ -8,23 +8,32 @@ the codebase.
 - **Node.js 24+** (the exact major in `.nvmrc` and CI) and **npm**
 - For the x64 **Inno installer**: the signed Inno Setup **6.3.3** compiler
   (`ISCC.exe`) installed in the canonical Program Files location
-- For the **installer tests / icon scripts**: Windows PowerShell with
+- For the **installer tests**: Windows PowerShell with
   [Pester 5+](https://pester.dev/) (`-InstallPester` opts into installation if missing)
+- For **icon regeneration** (`npm run icons:generate`): the Playwright Chromium that
+  `npm ci` installs
 
 ## Get started
 
 ```bash
 git clone https://github.com/Binary-Parse/BP-MD-RTL-Reader.git
 cd BP-MD-RTL-Reader
-npm install      # postinstall fetches the Playwright Chromium used by the e2e tests
+npm install      # also downloads the Electron binary and the Playwright Chromium
 npm start        # launch the app (electron .)
 ```
+
+`npm install` needs the network: the `electron` package downloads the Electron binary for
+your platform (more than 100 MB) in its own install step, and this project's `postinstall`
+downloads the Chromium used by the browser tests (about 150 MB) unless
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` or `CI` is set. `npm start` downloads nothing. With
+`npm ci --ignore-scripts` neither download happens, and Electron must then be fetched with
+`node node_modules/electron/install.js` before the app can start.
 
 ## Tech stack
 
 | Area | Tooling |
 | ---- | ------- |
-| Runtime | **Electron 42** |
+| Runtime | **Electron 44** |
 | Packaging | **electron-builder 26** + pinned **Inno Setup 6.3.3** |
 | Unit tests | **Vitest 4** (+ V8 coverage) |
 | End-to-end | **Playwright 1.61** (+ axe-core accessibility, visual regression) |
@@ -57,7 +66,7 @@ Packaged windows `loadURL('app://ui/src/renderer/index.html')`; PDF export still
 | `npm run test:unit:coverage` | Unit tests with a V8 coverage report (gated) |
 | `npm run test:e2e` | Full Playwright suite |
 | `npm run test:electron` | Launch and test the real Electron application boundary |
-| `npm run test:e2e:coverage` | Full non-visual renderer suite with source-completeness/coverage gates |
+| `npm run test:e2e:coverage` | Full renderer suite with source-completeness/coverage gates; `@visual` and `@perf` specs are excluded (coverage instrumentation distorts timing) |
 | `npm run test:smoke` | Playwright smoke tests only |
 | `npm run test:integration` | Playwright integration tests only |
 | `npm run test:update-snapshots` | Refresh visual-regression baselines |
@@ -125,8 +134,8 @@ This is the only supported Inno entry point. It does not use PATH or a pre-exist
 Authenticode publisher, and SHA-256; produces a fresh x64 electron-builder directory;
 checks it against `build/installer/source-manifest-policy.json`; hashes/copies the exact files
 to clean staging; then writes
-`dist/BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.exe` and
-`dist/BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.source-manifest.json`.
+`dist/BP-MD-RTL-Reader-2.0.0-Windows-Inno-x64.exe` and
+`dist/BP-MD-RTL-Reader-2.0.0-Windows-Inno-x64.source-manifest.json`.
 
 `source-manifest-policy.json` also pins the **Electron version** and the script fails
 closed when it disagrees with `package.json` — an Electron bump that forgets this pin
@@ -152,36 +161,74 @@ application payload and generated installer. The release VM gate separately veri
 installed uninstaller. Neither path silently downgrades a requested release build to
 unsigned output.
 
-### Public artifact contract
+**Linux** (AppImage and deb, x64 and ARM64) is built on Linux; on Windows use WSL 2 with
+Node 24, working on a copy inside the Linux file system (a build under `/mnt/c` is slow and
+would reuse the Windows `node_modules`):
 
-Version 1.3.0 publishes exactly these 12 files before the generated checksum manifest:
-
-```text
-BP-MD-RTL-Reader-1.3.0-Windows-NSIS-multiarch.exe
-BP-MD-RTL-Reader-1.3.0-Windows-Portable-multiarch.exe
-BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.exe
-BP-MD-RTL-Reader-1.3.0-Windows-Inno-x64.source-manifest.json
-BP-MD-RTL-Reader-1.3.0-macOS-x64.dmg
-BP-MD-RTL-Reader-1.3.0-macOS-arm64.dmg
-BP-MD-RTL-Reader-1.3.0-macOS-x64.zip
-BP-MD-RTL-Reader-1.3.0-macOS-arm64.zip
-BP-MD-RTL-Reader-1.3.0-Linux-x64.AppImage
-BP-MD-RTL-Reader-1.3.0-Linux-arm64.AppImage
-BP-MD-RTL-Reader-1.3.0-Linux-x64.deb
-BP-MD-RTL-Reader-1.3.0-Linux-arm64.deb
+```bash
+git archive --format=tar HEAD | tar -x -C ~/bpmd-build     # a clean copy of the commit
+cd ~/bpmd-build && npm ci --ignore-scripts
+npm run dist:linux                                          # 4 files in dist/
+node tests/packaged/linux-smoke.js dist/linux-unpacked/bpmdrtlreader
 ```
 
-Copy those 12 files into `dist/release`, then run `npm run package:checksums` (it rejects
+`git archive` leaves `tests/` out (`.gitattributes`, `export-ignore`), so copy
+`tests/packaged/linux-smoke.js` into the build copy before the last line. It also needs the
+Playwright package that `npm ci` installed, and no browser download.
+
+`electron-builder` names the x64 files the way each format does: `…-Linux-x86_64.AppImage`
+and `…-Linux-amd64.deb`; the ARM64 files are `…-Linux-arm64.AppImage` and
+`…-Linux-arm64.deb`. `tests/packaged/linux-smoke.js` needs a display (WSLg is enough): it starts the
+packaged program three times with an empty profile and checks that a note passed by path
+opens, that typed text is saved by Ctrl+S, that a note passed as a `file://` URL (what
+the desktop entry's `%U` sends) opens, and that no spellchecker dictionary appears in any of
+its profiles. Only the x64 build can be started on an x64 machine;
+the ARM64 files are built but not run here. The desktop entry registers `text/markdown`.
+
+### Public artifact contract
+
+Version 2.0.0 publishes exactly these 8 files before the generated checksum manifest:
+
+```text
+BP-MD-RTL-Reader-2.0.0-Windows-NSIS-multiarch.exe
+BP-MD-RTL-Reader-2.0.0-Windows-Portable-multiarch.exe
+BP-MD-RTL-Reader-2.0.0-Windows-Inno-x64.exe
+BP-MD-RTL-Reader-2.0.0-Windows-Inno-x64.source-manifest.json
+BP-MD-RTL-Reader-2.0.0-Linux-x86_64.AppImage
+BP-MD-RTL-Reader-2.0.0-Linux-arm64.AppImage
+BP-MD-RTL-Reader-2.0.0-Linux-amd64.deb
+BP-MD-RTL-Reader-2.0.0-Linux-arm64.deb
+```
+
+The `multiarch` Windows installers (NSIS and portable) each contain x64 and ARM64 builds.
+32-bit Windows (`ia32`) is not built: Electron 44 publishes no `win32-ia32` binary.
+
+**macOS is not built and not tested.** The `mac` block in `package.json` is kept as a
+starting point only: there is no Mac to build on, no Apple Developer certificate, and
+`build/icons/icon.png` (256 px) is too small for a macOS icon. A macOS file must not be
+attached to a release until it has been built, signed, notarized and tested on a Mac.
+
+**The release is not code-signed** (owner decision, 2026-10-10). The README tells users how
+to check a download against `SHA256SUMS.txt` and what the SmartScreen warning means.
+
+**No updater.** `"publish": null` keeps electron-builder from writing `app-update.yml` and
+`latest*.yml`: the app has no auto-update. `resources/elevate.exe` still ships in the NSIS
+build, because electron-builder packs it into every per-machine installation and ignores
+`packElevateHelper: false` there; it is listed in `THIRD-PARTY-NOTICES.md`. `appImage.executableArgs: []` removes the `--no-sandbox` that
+electron-builder otherwise puts in the AppImage's desktop entry.
+
+Copy those 8 files into `dist/release`, then run `npm run package:checksums` (it rejects
 missing, extra, duplicate, or case-colliding names) and `npm run package:checksums:verify`.
-Attach `SHA256SUMS.txt` and all 12 allowlisted files to the GitHub Release. Do not invent
-placeholders for platforms this machine cannot build; omit the canonical checksum file
+Attach `SHA256SUMS.txt` and all 8 allowlisted files to the GitHub Release. Do not invent
+placeholders for a file this machine cannot build; omit the canonical checksum file
 until the full set exists.
 
 ## Regenerating assets
 
 ```powershell
-# App icons in build/icons/ plus build/installer/assets/icon.ico from icon-source.png
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1
+# App and Markdown file icons from build/icons/*-source.svg (also copies icon.ico and icon.png
+# to build/installer/assets/ and docs/assets/); renders with Playwright Chromium
+node scripts/generate-icons.mjs
 
 # Documentation screenshots in docs/assets/
 node scripts/capture-screenshots.mjs
@@ -197,10 +244,10 @@ npm run build:cm
 | Layer | Command | Notes |
 | ----- | ------- | ----- |
 | **Unit** | `npm run test:unit` | Vitest behavior suite; `test:unit:coverage` enforces 95% statements / 90% branches / 95% functions / 95% lines |
-| **Browser e2e** | `npm run test:e2e` | Playwright functional, visual, accessibility, performance, integration, and adversarial specs |
+| **Browser e2e** | `npm run test:e2e` | Playwright functional, visual, accessibility, performance (`@perf`), integration, and adversarial specs |
 | **Electron boundary** | `npm run test:electron` | Launches `electron .` with temporary user data and exercises the production preload/IPC boundary |
 | **Combined coverage** | `npm run coverage` | Regenerates both fresh inputs at one commit, requires all renderer sources, then merges and gates them |
-| **Mutation** | `npm run test:mutation` | 80% repository floor plus per-file **T1 85% / T2 75% / T3 60%** floors |
+| **Mutation** (not run) | `npm run test:mutation` | Stopped by owner decision on 2026-10-11; not a release gate. The configuration is kept: 80% repository floor plus per-file **T1 85% / T2 75% / T3 60%** floors |
 | **Installer logic** | `pwsh -File tests/installer/run-tests.ps1` | Pester plus installer mutation; Windows CI runs Pester with `-SkipMutation` |
 | **Pascal self-test** | `pwsh -File tests/installer/run-pascal-self-test.ps1` | Compiles/runs pure Inno Pascal logic locally; requires the pinned compiler |
 
@@ -214,12 +261,12 @@ GitHub Actions is disabled on this repository, so the workflow below does not ru
 automatically. `.github/workflows/ci.yml` still documents the intended gates on every
 push/PR to `main`, `master`, and `feat/**` / `feature/**` / `fix/**` branches:
 
-1. Lint/SAST, full-history Gitleaks scan, `npm audit`, and vendor/license verification
+1. Lint/SAST, full-history Gitleaks scan, `npm run audit:deps` (every advisory `npm audit` reports must be fixed or listed with a reason in `config/audit-acceptance.json`), and vendor/license verification
 2. Unit coverage and full non-visual renderer coverage/merge gates
 3. Four functional E2E shards plus a separately reproducible visual-snapshot lane
 4. Production Electron runtime-boundary tests
 5. Full mutation on schedules/manual runs and incremental mutation on pull requests
-6. Windows/macOS/Linux native package matrices, package-content inspection, and
+6. Windows and Linux native package matrices, package-content inspection, and
    non-destructive Windows Pester installer checks
 7. Pull-request dependency review (currently non-blocking until GHAS is enabled)
 
@@ -238,15 +285,17 @@ Before publishing, run in order:
 npm test                              # unit, browser e2e, Electron boundary
 npm run lint:security                 # SAST against the reviewed baseline
 npm run tls:verify                    # TLS pins vs the LIVE api.github.com chain (T14)
-syft . -o cyclonedx-json=.secreports/sbom.json    # SBOM + OSV must be NEWER than the
-osv-scanner scan --format markdown . > .secreports/osv-scanner.txt    # lockfile (preflight gate)
+npm run audit:deps                    # every npm advisory fixed or reviewed
+npm run scan:deps                     # syft SBOM + osv-scanner report, recorded with the
+                                      # SHA-256 of package-lock.json (preflight checks it)
 node scripts/release-preflight.js     # version, changelog, repository checks,
                                       # and — once dist/release exists — the exact
-                                      # 12-artifact allowlist + SHA256SUMS.txt.
+                                      # 8-artifact allowlist + SHA256SUMS.txt.
                                       # Before the release dir is assembled, pass
                                       # --skip-artifact-check explicitly.
 npm run dist                          # Windows NSIS + portable installers
 pwsh -File build/installer/build-installer.ps1   # Inno x64 installer
+npm run dist:linux                    # on Linux / WSL: AppImage + deb, x64 and ARM64
 npm run package:verify                # archive contents + Electron fuses
                                       # (reads the built binaries; with no dist/ it
                                       # FAILS unless VERIFY_FUSES_ALLOW_NO_BINARIES=1)
@@ -262,28 +311,54 @@ vacuously when nothing was built. `tls:verify` exists
 because the 1.3.0-rc pin shipped unverified and matched no live certificate — never skip it:
 a pin that looks fine but matches nothing silently kills the update check (fail-closed).
 
-Code signing is not automated. For signed Windows builds, set `WIN_CSC_LINK` (or
-`WIN_CSC_LINK_B64` decoded to a PFX) and `WIN_CSC_KEY_PASSWORD` in the environment before
-`npm run dist`; `build-installer.ps1` accepts `-RequireSigned` and `-CertificateSha1` to
-fail closed if the result is unsigned or signed by the wrong certificate. macOS signing and
-Apple notarization require an Apple Developer certificate and an App Store Connect `.p8`
-key, applied through electron-builder's own environment variables.
+The pin list (`src/main/github-tls.js`) holds the four keys of the chain GitHub presents
+today, leaf to root, and six backup roots of other CAs. `tls:verify` prints each presented
+key as `LIVE` or `BACKUP`:
+
+- exit 1, nothing matched: do not release; re-mint `LIVE_CHAIN_PINS` from the live chain.
+- `WARNING — the leaf pin no longer matches`: GitHub re-issued its leaf with a new key (it
+  expires 2026-11-27 at the latest). The CA pins carry the check; replace the leaf pin.
+- `WARNING — only backup roots match`: GitHub changed its CA. Replace all four live pins.
+
+A root pin must be the public key of the root it names in Node's bundled root store;
+`tests/unit/github-tls.test.js` fails otherwise. An installed copy whose pins match nothing
+tells the user that the check was not made and offers the releases page.
+
+Releases are published unsigned (see "Public artifact contract" above). The signing support
+in the build is kept for the day a certificate exists: with `WIN_CSC_LINK` (or
+`WIN_CSC_LINK_B64` decoded to a PFX) and `WIN_CSC_KEY_PASSWORD` set, `npm run dist` signs
+the Windows files, and `build-installer.ps1 -RequireSigned -CertificateSha1 …` fails closed
+if the result is unsigned or signed by another certificate.
 
 Tag the release once the artifacts verify:
 
 ```bash
-git tag -a v1.3.0 -m "BP MD RTL Reader 1.3.0"
-git push origin v1.3.0
+git tag -a v2.0.0 -m "BP MD RTL Reader 2.0.0"
+git push origin v2.0.0
 ```
 
 Then attach the installers and `SHA256SUMS.txt` to a GitHub Release manually. Generate the
 checksums with `npm run package:checksums`, which also enforces the artifact allowlist.
 
+### 1.3.0 release state (2026-09-27)
+
+The 1.3.0 release was published from a squashed single commit ("BP MD RTL Reader 1.3.0")
+on top of the 1.2.2 remote history. The granular local history is not on the remote, and
+the release tree intentionally excludes the `design/` prototypes and `AGENTS.md`
+(local-only agent policy; neither was ever in the shipped asars — `build.files` covers
+`src/`, the vendored runtime, icons, and license files only). Consequence for future
+releases: pushing local `main` can never fast-forward. Repeat the squash flow (build the
+release tree with `git commit-tree` from `main^{tree}` minus those paths, force-push
+`main` and the tag) or publish the Release notes with `gh release create`. The release
+lives at `https://github.com/Binary-Parse/BP-MD-RTL-Reader/releases/tag/v1.3.0`; the
+Windows installers are rebuilt locally, staged unsigned in `dist/release-windows-subset/`
+with `WINDOWS-SUBSET-SHA256.txt`, and are attached after the signed rebuild.
+
 ## Project structure
 
 ```
 build/
-  icons/                  electron-builder icon inputs and source masters
+  icons/                  electron-builder icon inputs and SVG source masters
   installer/              Inno/NSIS scripts, policies, and installer artwork
 docs/
   assets/                 README and guide screenshots
@@ -291,10 +366,11 @@ resources/
   vendor/                 offline runtime libraries, fonts, and license manifests
 scripts/                  build, coverage, release, and asset tooling
 src/
-  main/                   Electron entry point, IPC, window, `app://`/`bpmd://` protocol, storage, and security policy
+  main/                   Electron entry point, IPC, window (including its theme-matched background colour), `app://`/`bpmd://` protocol, storage, and security policy
   preload/                minimal context-isolated renderer bridge
   renderer/
-    components/           file tree, outline, search, settings, tables, and workspace helpers
+    components/           file tree, outline, search, settings, tables, workspace, inspector, margin-note, context-menu, doc-meta, and streak-grid helpers
+    icons.js              SVG icon hydration (placeholders become `createElementNS` SVG, since the sanitiser strips `<use>`)
     editor/               CodeMirror 6 editor and live-preview extensions
     markdown/             parse, sanitize, math, highlight, diagram, and export pipeline
     styles/               base, theme, component, and responsive styles
@@ -309,7 +385,8 @@ tests/
 ## Contributing
 
 1. Branch from `main` using `feat/…`, `fix/…`, or `chore/…`.
-2. **Write a test first.** This codebase is test-driven; new behaviour should come with
-   a failing test that your change turns green.
+2. **Add tests with the change.** New behaviour comes with tests, in the existing test
+   files where one fits.
 3. Keep `npm run test:unit`, `npm run lint:security`, and the relevant e2e specs green.
-4. Open a PR — CI must pass before merge.
+4. Open a PR. CI is disabled on this repository: run `npm test` and
+   `npm run lint:security` yourself and say in the PR that you did.

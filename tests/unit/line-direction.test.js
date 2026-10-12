@@ -51,9 +51,9 @@ describe('createLineDirection', () => {
     expect(inst.decorations.ranges.map((r) => r.spec.attributes.dir)).toEqual(['rtl', 'rtl']);
   });
 
-  test('dominant-script: an English-majority line that opens with Arabic stays ltr', () => {
+  test('first strong wins (audit H4): an English-majority line that opens with Arabic is rtl', () => {
     const { inst } = build(fakeCM6(), fakeView('مرحبا this is mostly an english sentence here'));
-    expect(inst.decorations.ranges[0].spec.attributes.dir).toBe('ltr');
+    expect(inst.decorations.ranges[0].spec.attributes.dir).toBe('rtl');
   });
 
   test('line decorations are zero-width and anchored at line start', () => {
@@ -160,5 +160,57 @@ describe('createLineDirection inline-code stripping (RTL-M6)', () => {
     const view = fakeView('call the API endpoint for details');
     const { inst } = build(CM6, view, () => 'ltr');
     expect(inst.decorations.ranges[0].spec.attributes.dir).toBe('ltr');
+  });
+});
+
+describe('createLineDirection inside a code block (audit M18)', () => {
+  const DOC = 'فقرة عربية\n```js\n// تعليق عربي\nconst a = 1;\n```\nفقرة أخرى';
+  // A fake syntax tree that reports one FencedCode node over lines 2 to 5 of DOC.
+  function withFence(CM6, name = 'FencedCode') {
+    const from = DOC.indexOf('```js');
+    const to = DOC.lastIndexOf('```') + 3;
+    CM6.syntaxTree = () => ({
+      iterate({ enter }) {
+        if (enter({ name: 'Paragraph', from: 0, to: from - 1 }) !== false) { /* no children */ }
+        enter({ name, from, to });
+      },
+    });
+    return CM6;
+  }
+  const dirsOf = (inst) => inst.decorations.ranges.map((r) => r.spec.attributes.dir);
+
+  test('every line of a fence is ltr, the Arabic comment too; the paragraphs keep their own direction', () => {
+    const { inst } = build(withFence(fakeCM6()), fakeView(DOC));
+    expect(dirsOf(inst)).toEqual(['rtl', 'ltr', 'ltr', 'ltr', 'ltr', 'rtl']);
+  });
+
+  test('an indented code block is treated the same way', () => {
+    const { inst } = build(withFence(fakeCM6(), 'CodeBlock'), fakeView(DOC));
+    expect(dirsOf(inst)).toEqual(['rtl', 'ltr', 'ltr', 'ltr', 'ltr', 'rtl']);
+  });
+
+  test('a forced right-to-left note does not mirror the code', () => {
+    const plugin = createLineDirection(withFence(fakeCM6()), 'ltr', 'rtl')[1];
+    const inst = new plugin.cls(fakeView(DOC));
+    expect(dirsOf(inst)).toEqual(['rtl', 'ltr', 'ltr', 'ltr', 'ltr', 'rtl']);
+  });
+
+  test('without a syntax tree each line still gets the direction of its own text', () => {
+    const { inst } = build(fakeCM6(), fakeView(DOC));
+    expect(dirsOf(inst)[2]).toBe('rtl');
+  });
+
+  test('rebuilds when the parser delivers a new tree without a change of text', () => {
+    const CM6 = fakeCM6();
+    let tree = { iterate() {} };
+    CM6.syntaxTree = () => tree;
+    const view = fakeView(DOC);
+    const { inst } = build(CM6, view);
+    const before = inst.decorations;
+    inst.update({ docChanged: false, viewportChanged: false, view, state: view.state });
+    expect(inst.decorations).toBe(before);
+    tree = { iterate() {} };
+    inst.update({ docChanged: false, viewportChanged: false, view, state: view.state });
+    expect(inst.decorations).not.toBe(before);
   });
 });

@@ -31,31 +31,30 @@ export function resolveDirection(text, inherited = 'ltr') {
 }
 
 /**
- * Resolve a BLOCK's direction by DOMINANT strong-script, not strict first-strong.
+ * Resolve a BLOCK's direction: first strong character first, dominant script second.
  *
- * First-strong (resolveDirection / HTML dir="auto") is documented to mis-detect a block
- * whose first strong character runs opposite to its dominant script — e.g. an Arabic
- * heading that opens with an English word or number ("API دليل المستخدم") resolves to LTR
- * and renders left-aligned, English-first (W3C i18n, UAX #9 P2/P3 — first-strong's known
- * failure mode). A block flips away from its first-strong direction only when the OTHER
- * script is a STRICT MAJORITY of the strong letters, counted after URLs/URIs are stripped;
- * an exact tie and neutral-only text inherit the base direction. Inline isolation
- * (needsIsolation) still uses the pure first-strong resolveDirection — an inline run's own
- * direction IS its first strong char.
+ * A block whose first strong character is RTL is RTL (UAX #9 P2/P3, HTML dir="auto"),
+ * whatever share of Latin terms follows: an Arabic heading such as "تثبيت Docker على Windows"
+ * is Arabic text with Latin product names, not an English line (audit H4, owner decision
+ * 2026-10-10). First-strong's one documented failure is the OPPOSITE case, a block that
+ * opens with a Latin word or number but is mostly Arabic ("API دليل المستخدم", W3C i18n).
+ * So a Latin-first block flips to RTL only when RTL is a STRICT MAJORITY of the strong
+ * letters, counted after URLs/URIs are stripped; an exact tie and neutral-only text inherit
+ * the base direction. Inline isolation (needsIsolation) uses the pure first-strong
+ * resolveDirection — an inline run's own direction IS its first strong char.
  *
  * @param {string} text
  * @param {'ltr'|'rtl'} inherited  base direction for neutral-only text / ties
  * @returns {'ltr'|'rtl'}
  */
-// A block flips away from its first-strong direction only when the OTHER script is a
-// STRICT majority of the strong letters (audit UX-01): the previous 0.6 threshold left
-// a dead band (50–60%) where prepending one English word flipped an Arabic paragraph
-// to LTR. URLs/URIs are stripped before counting — their path letters are identifiers,
+// A Latin-first block flips to RTL only when RTL is a STRICT majority of the strong
+// letters (audit UX-01): the previous 0.6 threshold left a dead band (50–60%) where
+// prepending one English word flipped an Arabic paragraph to LTR. URLs/URIs are
+// stripped before counting — their path letters are identifiers,
 // not English prose, and used to force genuinely Arabic sentences to LTR. RTL-M7: the
 // strip covers SCHEME-LESS forms too — bare domains (docs.example.com/en-us/…) and
 // email addresses — whose Latin path/local letters are just as much identifiers as a
 // scheme'd URL's, and used to flip short Arabic sentences to LTR all the same.
-const BLOCK_DOMINANCE = 0.5;
 // RTL-M5/M7: URLs/emails/bare domains are identifiers, not prose — stripped before the
 // script count. Matching is TOKEN-wise with anchored prefix tests: the previous single
 // global alternation (`\S+@`, `[a-z…]*:\/\/\S+`, `[\w-]+\.`) backtracks quadratically on
@@ -84,16 +83,95 @@ export function resolveBlockDirection(text, inherited = 'ltr') {
     if (isRtlLetter(ch)) rtl++;
     else if (ANY_LETTER.test(ch)) ltr++;
   }
-  const total = rtl + ltr;
-  if (total === 0) return inherited; // neutral-only → inherit (EC-C1)
-  if (rtl === ltr) return inherited; // exact tie → inherit (was: dead-band first-strong)
-  // Standards default: first strong character (HTML dir="auto" / UAX #9 P2/P3).
-  const firstStrong = resolveDirection(text, inherited);
-  // …overridden when the opposite script is a strict majority (the documented first-strong
+  if (rtl + ltr === 0) return inherited; // neutral-only → inherit (EC-C1)
+  // Standards default: first strong character (HTML dir="auto" / UAX #9 P2/P3). RTL wins
+  // outright (audit H4); there is deliberately no "mostly Latin" override for it.
+  if (resolveDirection(text, inherited) === 'rtl') return 'rtl';
+  // Latin-first: overridden only when RTL is a strict majority (the documented first-strong
   // failure: an RTL paragraph/heading that begins with a strong LTR character).
-  if (firstStrong === 'ltr' && rtl / total > BLOCK_DOMINANCE) return 'rtl';
-  if (firstStrong === 'rtl' && ltr / total > BLOCK_DOMINANCE) return 'ltr';
-  return firstStrong;
+  if (rtl > ltr) return 'rtl';
+  if (rtl < ltr) return 'ltr';
+  return inherited; // exact tie → inherit (was: dead-band first-strong)
+}
+
+// ── proseText: the text a reader reads (audit H8) ────────────────────────────────────────
+// The document direction (and an export's <html lang dir>) used to be measured on the raw
+// Markdown, so an Arabic article with a long code listing resolved from the code. proseText()
+// drops what is not prose: fenced code, inline code spans and $…$ / $$…$$ math. Everything here
+// is a single left-to-right scan with no nested quantifiers, so a 1 MB note stays linear.
+const FENCE_OPEN = /^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$/;
+const FENCE_CLOSE = /^[ \t]{0,3}(`{3,}|~{3,})\s*$/;
+// Same rule as the renderer's inline-math tokenizer (markdown/math.js): the opening $ is
+// followed by a non-space, the closing $ follows a non-space — so "$5 and $10" is currency.
+const INLINE_MATH = /(?<!\\)\$(?!\$)(?=\S)[^$\n]*?(?<=\S)\$/g;
+const BACKTICK_RUN = /`+/g;
+
+function stripCodeSpans(line) {
+  const runs = [];
+  BACKTICK_RUN.lastIndex = 0;
+  for (let m = BACKTICK_RUN.exec(line); m; m = BACKTICK_RUN.exec(line)) {
+    const escaped = line.charAt(m.index - 1) === '\\'; // \` is a literal backtick
+    const len = m[0].length - (escaped ? 1 : 0);
+    if (len > 0) runs.push({ start: m.index + (escaped ? 1 : 0), len, closer: null });
+  }
+  // A span opens at a run and closes at the NEXT run of exactly the same length (CommonMark).
+  // Linking each run to that "next equal run" from the right keeps the whole line linear.
+  const lastSeen = new Map();
+  for (const run of runs.toReversed()) {
+    run.closer = lastSeen.get(run.len) || null;
+    lastSeen.set(run.len, run);
+  }
+  let out = '';
+  let pos = 0;
+  for (const run of runs) {
+    if (run.start < pos || !run.closer) continue; // inside a span already cut, or never closed
+    out += line.slice(pos, run.start);
+    pos = run.closer.start + run.closer.len;
+  }
+  return out + line.slice(pos);
+}
+
+function stripInline(line) {
+  return stripCodeSpans(line).replace(INLINE_MATH, '');
+}
+
+/**
+ * The prose of a Markdown source: `markdown` without fenced code blocks, inline code spans and
+ * math. Lines that are kept stay in place (joined with '\n'), so it can feed the same direction
+ * resolvers as the raw text.
+ * @param {string} markdown
+ * @returns {string}
+ */
+export function proseText(markdown) {
+  const lines = (markdown == null ? '' : String(markdown)).split('\n');
+  const out = [];
+  let fence = null; // { ch, len } while inside a fenced code block
+  let inDisplayMath = false;
+  // A "$$" opener is a block only when a LATER line holds a "$$" to close it (else plain text).
+  const lastMathLine = lines.findLastIndex((l) => l.includes('$$'));
+  for (const [i, line] of lines.entries()) {
+    if (fence) {
+      const close = FENCE_CLOSE.exec(line);
+      if (close && close[1][0] === fence.ch && close[1].length >= fence.len) fence = null;
+      continue;
+    }
+    if (inDisplayMath) {
+      if (line.includes('$$')) inDisplayMath = false;
+      continue;
+    }
+    const open = FENCE_OPEN.exec(line);
+    // A backtick fence's info string may not contain a backtick (that line is an inline span).
+    if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+      fence = { ch: open[1][0], len: open[1].length };
+      continue;
+    }
+    if (line.trimStart().startsWith('$$')) {
+      if (line.trim().indexOf('$$', 2) !== -1) continue; // $$ … $$ on one line
+      if (lastMathLine > i) { inDisplayMath = true; continue; }
+    }
+    out.push(stripInline(line));
+  }
+  return out.join('\n');
 }
 
 /** True when a run's direction differs from its context (needs isolation). */

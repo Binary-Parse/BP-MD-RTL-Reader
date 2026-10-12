@@ -40,15 +40,17 @@ describe('public v1 release artifact contract', () => {
       'BP-MD-RTL-Reader-{version}-Windows-Portable-multiarch.exe',
       'BP-MD-RTL-Reader-{version}-Windows-Inno-x64.exe',
       'BP-MD-RTL-Reader-{version}-Windows-Inno-x64.source-manifest.json',
-      'BP-MD-RTL-Reader-{version}-macOS-x64.dmg',
-      'BP-MD-RTL-Reader-{version}-macOS-arm64.dmg',
-      'BP-MD-RTL-Reader-{version}-macOS-x64.zip',
-      'BP-MD-RTL-Reader-{version}-macOS-arm64.zip',
-      'BP-MD-RTL-Reader-{version}-Linux-x64.AppImage',
+      'BP-MD-RTL-Reader-{version}-Linux-x86_64.AppImage',
       'BP-MD-RTL-Reader-{version}-Linux-arm64.AppImage',
-      'BP-MD-RTL-Reader-{version}-Linux-x64.deb',
+      'BP-MD-RTL-Reader-{version}-Linux-amd64.deb',
       'BP-MD-RTL-Reader-{version}-Linux-arm64.deb',
     ]);
+  });
+
+  test('macOS is not part of the contract: it is not built or tested', () => {
+    expect(PUBLIC_ARTIFACT_NAMES.filter((name) => /mac|darwin|\.dmg$|\.zip$/i.test(name))).toEqual([]);
+    expect(validateReleaseEntries([...expectedArtifactNames('2.0.0'), 'BP-MD-RTL-Reader-2.0.0-macOS-arm64.dmg'], '2.0.0'))
+      .toEqual(['unexpected artifact BP-MD-RTL-Reader-2.0.0-macOS-arm64.dmg']);
   });
 
   test('rejects missing, extra, duplicate, and case-colliding entries', () => {
@@ -68,7 +70,7 @@ describe('public v1 release artifact contract', () => {
     seedArtifacts(directory);
     const checksumPath = writeChecksums(directory, '1.0.0');
     const lines = readFileSync(checksumPath, 'utf8').trim().split('\n');
-    expect(lines).toHaveLength(12);
+    expect(lines).toHaveLength(8);
     expect(lines.map(line => line.slice(66))).toEqual(expectedArtifactNames('1.0.0').slice().sort());
     expect(verifyChecksums(directory, '1.0.0')).toEqual([]);
   });

@@ -537,6 +537,38 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.td2).toBe(1);           // …and the Arabic line as RTL (whole-editor base would give one value for both)
   });
 
+  test('[M18] the lines of a code fence are left-to-right, an Arabic comment and a forced direction too', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const fence = '```';
+      const doc = ['فقرة عربية قبل الكود', '', fence + 'js', '// تعليق عربي داخل الكود', 'const a = 1;', fence, '', 'فقرة عربية بعد الكود'].join('\n');
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc });
+      const read = async () => {
+        await new Promise((res) => setTimeout(res, 80));
+        return [...div.querySelectorAll('.cm-line')].map((l) => ({ text: l.textContent, dir: l.getAttribute('dir') }));
+      };
+      const auto = await read();
+      ad.setDirection('rtl', 'rtl');
+      const forced = await read();
+      ad.destroy();
+      div.remove();
+      return { auto, forced };
+    });
+    for (const lines of [r.auto, r.forced]) {
+      const dirOf = (needle) => lines.find((l) => l.text.includes(needle)).dir;
+      expect(dirOf('قبل الكود')).toBe('rtl');
+      expect(dirOf('تعليق عربي')).toBe('ltr');
+      expect(dirOf('const a')).toBe('ltr');
+      // The two fence lines (3 and 6); the live preview hides their markers off the caret line.
+      expect([lines[2].dir, lines[5].dir]).toEqual(['ltr', 'ltr']);
+      expect(dirOf('بعد الكود')).toBe('rtl');
+    }
+  });
+
   test('logical caret: the ArrowLeft key is direction-aware per line (EC-C2)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
@@ -564,5 +596,63 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     await page.evaluate(() => { window._rtlAd.destroy(); window._ltrAd.destroy(); });
     expect(rtlHead).toBe(3); // RTL line: ArrowLeft advances (perLineTextDirection makes cursorCharLeft logical)
     expect(ltrHead).toBe(1); // LTR line: ArrowLeft retreats
+  });
+});
+
+test.describe('[N1] Find marks every match in the editor', () => {
+  async function openInEditor(page, content) {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.waitForFunction(() => !!window._appState && !!window.getActiveCmAdapter, null, { timeout: 8000 });
+    await page.evaluate((c) => {
+      window._appState.files = [{ name: 't.md', path: 't.md', content: c, dirty: false }];
+      window.renderFile(0);
+      window.setViewMode('edit');
+    }, content);
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
+  }
+  const marked = (page) => page.locator('.cm-mount .cm-searchMatch').allTextContents();
+
+  test('all matches are drawn, follow an edit, and go when Find closes', async ({ page }) => {
+    await openInEditor(page, 'foo bar foo\n\nand Foo again');
+    await page.keyboard.press('Control+f');
+    await page.fill('#findInput', 'foo');
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(3);
+    expect(await marked(page)).toEqual(['foo', 'foo', 'Foo']);
+    // The marks are painted with the find colour, not left transparent.
+    const paint = await page.evaluate(() => getComputedStyle(document.querySelector('.cm-mount .cm-searchMatch')).backgroundColor);
+    expect(paint).not.toBe('rgba(0, 0, 0, 0)');
+
+    // An edit in the note moves and adds marks.
+    await page.evaluate(() => {
+      const ad = window.getActiveCmAdapter();
+      ad.setSelection({ start: 0, end: 0 });
+      ad.replaceSelection('foo! ');
+    });
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(4);
+
+    await page.fill('#findInput', 'bar');
+    expect(await marked(page)).toEqual(['bar']);
+
+    await page.evaluate(() => window.closeFind());
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(0);
+  });
+
+  test('an Arabic query without tashkeel marks the word written with tashkeel', async ({ page }) => {
+    await openInEditor(page, 'قال مُحَمَّد ثم محمد');
+    await page.keyboard.press('Control+f');
+    await page.fill('#findInput', 'محمد');
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(2);
+    expect(await marked(page)).toEqual(['مُحَمَّد', 'محمد']);
+  });
+
+  test('[M26] a Persian-keyboard word and a number in any digit set are found', async ({ page }) => {
+    await openInEditor(page, 'كتاب و کتاب في ٢٠٢٤ و ۲۰۲۴ و 2024');
+    await page.keyboard.press('Control+f');
+    await page.fill('#findInput', 'کتاب'); // typed with the Persian kaf
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(2);
+    await page.fill('#findInput', '2024');
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(3);
+    expect(await marked(page)).toEqual(['٢٠٢٤', '۲۰۲۴', '2024']);
   });
 });

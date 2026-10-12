@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "note": "Licence texts of packages that are inlined in a prebuilt vendored bundle but are not installed (devDependencies of the package that inlined them). Read by scripts/sync-vendor.js.",
+  "packages": [
+    {
+      "name": "chevrotain",
+      "version": "11.1.2",
+      "license": "Apache-2.0",
+      "file": "chevrotain@11.1.2.txt",
+      "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+      "tarballSha512": "opLQzEVriiH1uUQ4Kctsd49bRoFDXGGSC4GUqj7pGyxM3RehRhvTlZJc1FL/Flew2p5uwxa1tUDWKzI4wNM8pg=="
+    },
+    {
+      "name": "chevrotain-allstar",
+      "version": "0.3.1",
+      "license": "MIT",
+      "file": "chevrotain-allstar@0.3.1.txt",
+      "sha256": "61a510d06eccead56b802d9919e0575f0bbdd9dbdd35b886fb83e2ec391126e5",
+      "tarballSha512": "b7g+y9A0v4mxCW1qUhf3BSVPg+/NvGErk/dOkrDaHA0nQIQGAtrOjlX//9OQtRlSCy+x9rfB5N8yC71lH1nvMw=="
+    },
+    {
+      "name": "@chevrotain/gast",
+      "version": "11.1.2",
+      "license": "Apache-2.0",
+      "file": "@chevrotain__gast@11.1.2.txt",
+      "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+      "tarballSha512": "Z9zfXR5jNZb1Hlsd/p+4XWeUFugrHirq36bKzPWDSIacV+GPSVXdk+ahVWZTwjhNwofAWg/sZg58fyucKSQx5g=="
+    },
+    {
+      "name": "@chevrotain/regexp-to-ast",
+      "version": "11.1.2",
+      "license": "Apache-2.0",
+      "file": "@chevrotain__regexp-to-ast@11.1.2.txt",
+      "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+      "tarballSha512": "nMU3Uj8naWer7xpZTYJdxbAs6RIv/dxYzkYU8GSwgUtcAAlzjcPfX1w+RKRcYG8POlzMeayOQ/znfwxEGo5ulw=="
+    },
+    {
+      "name": "@chevrotain/utils",
+      "version": "11.1.2",
+      "license": "Apache-2.0",
+      "file": "@chevrotain__utils@11.1.2.txt",
+      "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+      "tarballSha512": "4mudFAQ6H+MqBTfqLmU7G1ZwRzCLfJEooL/fsF6rCX5eePMbGhoy5n4g+G4vlh2muDcsCTJtL+uKbOzWxs5LHA=="
+    },
+    {
+      "name": "js-yaml",
+      "version": "4.1.1",
+      "license": "MIT",
+      "file": "js-yaml@4.1.1.txt",
+      "sha256": "a07bc24468b9654ce76a547d47a2db282d07733b715db4c73a98bd63961f9550",
+      "tarballSha512": "qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA=="
+    },
+    {
+      "name": "langium",
+      "version": "4.2.0",
+      "license": "MIT",
+      "file": "langium@4.2.0.txt",
+      "sha256": "599bf70b4e55f06250571d103dbd8441e0c47cb7f858c0147ca312ce38e9ef2a",
+      "tarballSha512": "SoXTYrTyA9x0CjVoguZfB9NIbj2RwQ7KpltHyJwB7jyzbnfHkqw5Alf9A1JtIqouT7fZv4xMCCy+7CoIYGV65w=="
+    },
+    {
+      "name": "path-browserify",
+      "version": "1.0.1",
+      "license": "MIT",
+      "file": "path-browserify@1.0.1.txt",
+      "sha256": "a22b9d5763f574e5db347c30acc0b33eaf4846767c03d2e27d012e864e79a824",
+      "tarballSha512": "b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g=="
+    },
+    {
+      "name": "vscode-jsonrpc",
+      "version": "8.2.0",
+      "license": "MIT",
+      "file": "vscode-jsonrpc@8.2.0.txt",
+      "sha256": "f7d08bcdfe227f29b388ba8f02615076b04eec0ca773fa2bc1fde76abeffa5da",
+      "tarballSha512": "C+r0eKJUIfiDIfwJhria30+TYWPtuHJXHtI7J0YlOmKAo7ogxP20T0zxB7HZQIFhIyvoBPwWskjxrvAtfjyZfA=="
+    },
+    {
+      "name": "vscode-languageserver-protocol",
+      "version": "3.17.5",
+      "license": "MIT",
+      "file": "vscode-languageserver-protocol@3.17.5.txt",
+      "sha256": "9abac82f8c5d0fdf4917682b123e4c922da96a511ca5f38ddda0b7e35c40f535",
+      "tarballSha512": "mb1bvRJN8SVznADSGWM9u/b07H7Ecg0I3OgXDuLdn307rl/J3A9YD6/eYOssqhecL27hK1IPZAsaqh00i/Jljg=="
+    },
+    {
+      "name": "vscode-languageserver-textdocument",
+      "version": "1.0.12",
+      "license": "MIT",
+      "file": "vscode-languageserver-textdocument@1.0.12.txt",
+      "sha256": "f7d08bcdfe227f29b388ba8f02615076b04eec0ca773fa2bc1fde76abeffa5da",
+      "tarballSha512": "cxWNPesCnQCcMPeenjKKsOCKQZ/L6Tv19DTRIGuLWe32lyzWhihGVJ/rcckZXJxfdKCFvRLS3fpBIsV/ZGX4zA=="
+    },
+    {
+      "name": "vscode-languageserver-types",
+      "version": "3.17.5",
+      "license": "MIT",
+      "file": "vscode-languageserver-types@3.17.5.txt",
+      "sha256": "f7d08bcdfe227f29b388ba8f02615076b04eec0ca773fa2bc1fde76abeffa5da",
+      "tarballSha512": "Ld1VelNuX9pdF39h2Hgaeb5hEZM2Z3jUrrMgWQAu82jMtZp7p3vJT3BzToKtZI7NgQssZje5o0zryOrhQvzQAg=="
+    }
+  ]
+}

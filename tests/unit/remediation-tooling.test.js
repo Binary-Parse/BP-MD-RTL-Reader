@@ -5,7 +5,6 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { evaluateTiers, mutationScore } = require('../../scripts/check-mutation-tiers.js');
 const { writeCoverageMetadata, loadCoverageInput } = require('../../scripts/coverage-metadata.js');
 const { loadExpectedFiles, collectSourceFiles } = require('../../scripts/generate-renderer-coverage.js');
 const { verifyPackageEntries, REQUIRED } = require('../../scripts/verify-package-contents.js');
@@ -21,22 +20,7 @@ afterEach(() => {
 });
 
 describe('remediation build and test gates', () => {
-  test('mutation score counts survivors and no-coverage mutants as undetected', () => {
-    const mutants = ['Killed', 'TimedOut', 'Survived', 'NoCoverage'].map(status => ({ status }));
-    expect(mutationScore(mutants)).toBe(50);
-  });
-
-  test('tier evaluation fails missing full-run files and below-tier scores', () => {
-    const tiers = { T1: { minimum: 85, files: ['secure.js', 'missing.js'] } };
-    const report = {
-      files: { 'secure.js': { mutants: [{ status: 'Killed' }, { status: 'Survived' }] } }
-    };
-    const result = evaluateTiers(report, tiers);
-    expect(result.failures).toEqual([
-      'T1 secure.js: 50.00% < 85%',
-      'T1 missing mutation result: missing.js'
-    ]);
-  });
+  // The mutation tier gate has its own file: tests/unit/mutation-tier-gate.test.js.
 
   test('renderer coverage manifest exactly matches every renderer JavaScript source', () => {
     expect(loadExpectedFiles()).toEqual(collectSourceFiles(path.resolve('src/renderer')));

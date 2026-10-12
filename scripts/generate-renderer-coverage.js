@@ -67,7 +67,7 @@ function runFullSuite() {
     [
       playwrightCli, 'test',
       '--config', 'playwright.config.js',
-      '--grep-invert', '@visual|Renderer coverage collector',
+      '--grep-invert', '@visual|@perf|Renderer coverage collector',
     ],
     {
       stdio: 'inherit',

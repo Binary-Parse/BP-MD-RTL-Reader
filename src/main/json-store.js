@@ -15,6 +15,7 @@
 
 const nodeCrypto = require('crypto');
 const nodePath = require('path');
+const { renameWithRetry } = require('./atomic-rename');
 
 /**
  * Best-effort sweep of `<file>.tmp-<uuid>` siblings orphaned by a crash between the
@@ -44,7 +45,7 @@ function sweepStaleJsonTemps(fs, file, { maxAgeMs = 60 * 60 * 1000, now = Date.n
  * Write `data` to `file` atomically: temp file first, then rename onto the target.
  * @returns {{ok: true} | {error: 'write-failed'}}
  */
-function atomicWriteJson(fs, file, data) {
+function atomicWriteJson(fs, file, data, { sleep } = {}) {
   sweepStaleJsonTemps(fs, file);
   // S-M6 class hardening (mirrors document-store.atomicWriteFile): a predictable
   // `<file>.tmp` opened with the default flags follows a pre-planted symlink and
@@ -61,7 +62,7 @@ function atomicWriteJson(fs, file, data) {
     if (fs.fsyncSync) {
       try { const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd); } catch (_) { /* best effort */ }
     }
-    fs.renameSync(tmp, file);
+    renameWithRetry(fs, tmp, file, sleep ? { sleep } : undefined); // a held target is retried (audit M14)
     return { ok: true };
   } catch (_) {
     try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) { /* best effort */ }
@@ -86,4 +87,46 @@ function readJsonFile(fs, file, isAcceptable) {
   }
 }
 
-module.exports = { atomicWriteJson, readJsonFile, sweepStaleJsonTemps };
+/**
+ * Like readJsonFile, but says WHY there is no value (B3). The callers must tell an absent
+ * file (first run) from a damaged one: writing a fresh file over a damaged one destroys
+ * whatever a person or a repair tool could still have recovered from it.
+ *   missing     no file (or a read error that names no cause)
+ *   unreadable  the file is there but the read failed (EACCES, EBUSY, EIO ...)
+ *   corrupt     read fine, but not JSON or not the expected shape/version
+ * @returns {{status:'ok', value:any}|{status:'missing'|'unreadable'|'corrupt'}}
+ */
+function readJsonFileChecked(fs, file, isAcceptable) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    const code = error && error.code;
+    return { status: code && code !== 'ENOENT' ? 'unreadable' : 'missing' };
+  }
+  try {
+    const value = JSON.parse(text);
+    if (isAcceptable(value)) return { status: 'ok', value };
+  } catch (_) { /* falls through to corrupt */ }
+  return { status: 'corrupt' };
+}
+
+/**
+ * Move a damaged file out of the way as `<file>.corrupt-<UTC timestamp>` so the next save
+ * cannot overwrite it (B3).
+ * @returns {string|null} the new path, or null when the rename failed (file left in place)
+ */
+function setAsideCorruptFile(fs, file, now = Date.now()) {
+  const stamp = new Date(now).toISOString().replace(/[-:.]/g, '');
+  const target = `${file}.corrupt-${stamp}`;
+  try {
+    fs.renameSync(file, target);
+    return target;
+  } catch (_) {
+    return null;
+  }
+}
+
+module.exports = {
+  atomicWriteJson, readJsonFile, readJsonFileChecked, setAsideCorruptFile, sweepStaleJsonTemps,
+};

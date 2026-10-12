@@ -102,17 +102,17 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     // expect(computedDir).toBe('rtl');
   });
 
-  test('[A2] a 50/50 Arabic-first block inherits the base direction (audit UX-01 tie rule)', async ({ page }) => {
+  test('[A2] a 50/50 Arabic-first block is rtl (audit H4: first strong RTL wins; was: tie inherits the base)', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
 
     // The whole-doc isArabicHeavy ratio flip was retired (T-R1). Direction is per-block:
-    // first-strong, EXCEPT when the opposite script is a strict majority (audit UX-01).
-    // An exact 50/50 tie now inherits the base direction — ltr here — instead of flipping
-    // to the first strong char's direction.
+    // first-strong. Since audit H4 (owner decision 2026-10-10) an RTL first strong character
+    // makes the block RTL whatever the Latin share, so the 50/50 Arabic-first block is rtl; the
+    // exact-tie-inherits rule now applies only to Latin-first blocks.
     await injectMarkdown(page, FIFTY_PCT_ARABIC);
 
-    await expect(page.locator('#noteContent p').first()).toHaveAttribute('dir', 'ltr');
+    await expect(page.locator('#noteContent p').first()).toHaveAttribute('dir', 'rtl');
     // The container itself is NOT whole-document flipped.
     expect(await getEditorComputedDirection(page)).toBe('ltr');
   });

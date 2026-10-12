@@ -330,7 +330,7 @@ describe('fs:readVault', () => {
     vi.useFakeTimers();
     try {
       mockFs._watchCb('change', 'note.md'); // simulate an external edit
-      vi.advanceTimersByTime(200);          // past the debounce
+      vi.advanceTimersByTime(300);          // past the 300 ms debounce (H15 raised it from 150 ms)
     } finally {
       vi.useRealTimers();
     }
@@ -705,6 +705,7 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     mockProc = buildMockProc(['node', 'src/main/index.js']);
     bootstrap({ electron: mockElectron, fs: mockFs, proc: mockProc });
     await new Promise(r => setTimeout(r, 50));
+    didFinishLoad(); // the page has loaded: only then is a file sent to it (audit M12)
     openFile = appListeners['open-file'];
   });
 

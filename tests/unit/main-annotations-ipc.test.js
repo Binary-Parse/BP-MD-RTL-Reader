@@ -80,7 +80,10 @@ describe('annotations IPC (T5.1a)', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('annotations:put', { docKey: 'doc:cap-1', highlights: [] });
   });
 
-  test('the first annotations use prunes doc: keys orphaned by per-session vault grants (DATA-01)', async () => {
+  // B3: this test used to assert that 'doc:cap-dead' was DELETED on first use. That delete is
+  // the defect: an id the registry has forgotten is exactly what a note looks like after it
+  // falls off the recents list.
+  test('the first annotations use removes nothing, whatever the registry knows (B3)', async () => {
     const files = {};
     const base = path.join('/mock/userData/userData');
     files[path.join(base, 'capabilities.json')] = JSON.stringify({
@@ -112,13 +115,11 @@ describe('annotations IPC (T5.1a)', () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(await handler(el, 'annotations:get')({}, 'doc:cap-live')).toEqual({ highlights: [highlight()] });
-    expect(await handler(el, 'annotations:get')({}, 'doc:cap-dead')).toEqual({ highlights: [] });
+    expect(await handler(el, 'annotations:get')({}, 'doc:cap-dead')).toEqual({ highlights: [highlight({ id: 'h2' })] });
     expect(await handler(el, 'annotations:get')({}, 'vault:cap-v a.md'))
       .toEqual({ highlights: [highlight({ id: 'h3' })] });
     const onDisk = JSON.parse(files[path.join(base, 'annotations.json')]);
-    expect(onDisk.docs).toHaveProperty('doc:cap-live');
-    expect(onDisk.docs).toHaveProperty('vault:cap-v a.md');
-    expect(onDisk.docs).not.toHaveProperty('doc:cap-dead');
+    expect(Object.keys(onDisk.docs)).toEqual(['doc:cap-live', 'doc:cap-dead', 'vault:cap-v a.md']);
   });
 
   test('DATA-01: a vault highlight written in session 1 is re-found in session 2 under the rotated doc id', async () => {

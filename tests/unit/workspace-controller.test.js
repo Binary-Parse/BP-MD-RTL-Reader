@@ -413,6 +413,12 @@ describe('workspace controller', () => {
     expect(controller.getWorkspaceEpoch()).toBe(1);
   });
 
+  test('M9: an external snapshot of a folder note keeps its path inside the folder', () => {
+    const { controller, calls } = harness();
+    controller.openExternalFile({ name: 'README.md', relPath: 'sub/README.md', vaultId: 'vault-1', content: 'nested', documentId: 'doc-3' });
+    expect(calls.addFile[0]).toMatchObject({ name: 'README.md', path: 'sub/README.md', vaultId: 'vault-1', documentId: 'doc-3' });
+  });
+
   test('restores the last session only while no newer user intent supersedes it', async () => {
     let resolveRead;
     const readVault = vi.fn(() => new Promise((resolve) => { resolveRead = resolve; }));
@@ -570,6 +576,56 @@ describe('workspace controller', () => {
     ]);
   });
 
+  test('M7: a note whose encoding is an unconfirmed guess is not written, by Save or by autosave', async () => {
+    const file = {
+      name: 'a.md', path: 'a.md', content: 'edited', dirty: true, documentId: 'doc-1',
+      meta: { hash: 'h', encoding: 'utf8', encodingUncertain: true, encodingInvalidBytes: 1 },
+    };
+    const state = { files: [file], activeFile: 0, vaultName: null, recents: [] };
+    const writeFile = vi.fn(async () => ({ ok: true, meta: { hash: 'h2' } }));
+    const { controller, calls } = harness({ state, electronAPI: { writeFile } });
+
+    expect(await controller.writeThrough(file)).toBe('encoding-unconfirmed'); // the autosave lane
+    await controller.saveCurrent();
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(file.dirty).toBe(true);
+    expect(calls.renderFile).toEqual([0]);
+    expect(calls.toasts).toContainEqual(['Confirm the encoding of “a.md” first (see the bar above the note)', 'error']);
+
+    // After the answer the same save goes through.
+    file.meta = { hash: 'h', encoding: 'utf8' };
+    await controller.saveCurrent();
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(file.meta).toEqual({ hash: 'h2' });
+  });
+
+  test('M14: a failed save names the cause in words, never the code', async () => {
+    const said = async (error) => {
+      const file = { name: 'a.md', path: 'a.md', content: 'edited', dirty: true, documentId: 'doc-1', meta: { hash: 'h' } };
+      const state = { files: [file], activeFile: 0, vaultName: null, recents: [] };
+      const { controller, calls } = harness({ state, electronAPI: { writeFile: vi.fn(async () => ({ error })) } });
+      await controller.saveCurrent();
+      expect(file.dirty).toBe(true);
+      return calls.toasts.at(-1);
+    };
+    expect(await said('locked')).toEqual(['Could not save a.md: another program is using the file, or it is read-only', 'error']);
+    expect(await said('enospc')).toEqual(['Could not save a.md: the disk is full', 'error']);
+    expect(await said('gone')).toEqual(['Could not save a.md: its folder no longer exists', 'error']);
+    expect(await said('unauthorized-capability')).toEqual(['Could not save a.md: the app no longer has access to it; open it again', 'error']);
+    expect(await said('write-failed')).toEqual(['Could not save a.md: the file could not be written', 'error']);
+    expect((await said('some-new-code'))[0]).not.toContain('some-new-code');
+  });
+
+  test('M7: main refusing a save for an unconfirmed guess brings the question back', async () => {
+    const file = { name: 'a.md', path: 'a.md', content: 'edited', dirty: true, documentId: 'doc-1', meta: { hash: 'h', encoding: 'windows-1256' } };
+    const state = { files: [file], activeFile: 0, vaultName: null, recents: [] };
+    const writeFile = vi.fn(async () => ({ error: 'encoding-unconfirmed' }));
+    const { controller } = harness({ state, electronAPI: { writeFile } });
+    expect(await controller.writeThrough(file)).toBe('encoding-unconfirmed');
+    expect(file.meta).toMatchObject({ encoding: 'windows-1256', encodingUncertain: true });
+    expect(file.dirty).toBe(true);
+  });
+
   test('ISSUE-01: does NOT flag a conflict when a dirty note\'s disk copy is unchanged', async () => {
     const state = {
       files: [
@@ -696,7 +752,7 @@ describe('workspace controller', () => {
     } });
     await rejected.controller.saveCurrent();
     expect(state.files[0].dirty).toBe(true);
-    expect(rejected.calls.toasts).toContainEqual(['Could not save a.md (conflict)', 'error']);
+    expect(rejected.calls.toasts).toContainEqual(['Could not save a.md: it was changed on disk', 'error']);
 
     const failedState = {
       files: [{ name: 'b.md', path: 'b.md', content: 'body', dirty: true, documentId: 'doc' }],
@@ -774,7 +830,7 @@ describe('workspace controller', () => {
     } });
     await rejected.controller.saveAs();
     // v1.2: the failure names the file that failed, not just the fact.
-    expect(rejected.calls.toasts).toContainEqual(['Could not save a.md (denied)', 'error']);
+    expect(rejected.calls.toasts).toContainEqual(['Could not save a.md: the file could not be written', 'error']);
 
     const failed = harness({ state: makeState(), electronAPI: {
       saveFileAs: vi.fn(async () => { throw new Error('failed'); }),
@@ -841,7 +897,7 @@ describe('workspace controller', () => {
     } });
     expect(await conflict.controller.saveAllDirty({ promptUntitled: true })).toBe(false);
     expect(conflict.calls.renderFile).toEqual([0]);
-    expect(conflict.calls.toasts).toContainEqual(['Could not save a.md (conflict)', 'error']);
+    expect(conflict.calls.toasts).toContainEqual(['Could not save a.md: it was changed on disk', 'error']);
     expect(conflictState.files[0].conflict).toBe(true);
 
     const errorState = {
@@ -852,7 +908,7 @@ describe('workspace controller', () => {
       writeFile: vi.fn(async () => ({ error: 'nope' })),
     } });
     expect(await errored.controller.saveAllDirty()).toBe(false);
-    expect(errored.calls.toasts).toContainEqual(['Could not save b.md (nope)', 'error']);
+    expect(errored.calls.toasts).toContainEqual(['Could not save b.md: the file could not be written', 'error']);
 
     const declinedState = {
       files: [{ name: 'c.md', path: 'c.md', documentId: 'doc-3', meta: { encoding: 'windows-1256' }, content: 'x', dirty: true, revision: 0 }],
@@ -1062,6 +1118,83 @@ describe('workspace controller', () => {
     expect(current.calls.renderFile).toEqual([]);
     expect(current.calls.renderTabs).toBe(1);
     expect(current.calls.toasts).toEqual([]);
+  });
+
+  // audit L3: a note that is open and gets deleted on disk only got a dashed underline on
+  // its tab. The deletion is now said, once, when the note goes from present to missing.
+  describe('an open note deleted on disk (audit L3)', () => {
+    const note = (name, extra = {}) => ({ name, path: name, content: name, dirty: false, vaultId: 'v', ...extra });
+    const entry = (name) => ({ name, relPath: name, content: name });
+    function vault(files, activeFile, readEntries) {
+      const state = { files, activeFile, vaultName: 'Vault', recents: [] };
+      const current = harness({ state, electronAPI: {
+        readVault: vi.fn(async () => ({ vault: { id: 'v', name: 'Vault', generation: 1 }, entries: readEntries() })),
+      } });
+      current.controller.setVaultIdentity('v', 1);
+      return current;
+    }
+    const DELETED = /deleted on disk/;
+
+    test('the active note: one toast with its name; the note stays open and is marked missing', async () => {
+      const current = vault([note('a.md'), note('b.md', { open: false })], 0, () => [entry('b.md')]);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts).toEqual([
+        ['“a.md” was deleted on disk. It stays open here; saving puts it back.', 'error'],
+      ]);
+      const kept = current.state.files.find((file) => file.path === 'a.md');
+      expect(kept.missing).toBe(true);
+      expect(current.state.files[current.state.activeFile]).toBe(kept);
+    });
+
+    test('a second event for the same folder does not say it again', async () => {
+      const current = vault([note('a.md'), note('b.md', { open: false })], 0, () => [entry('b.md')]);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts.filter(([message]) => DELETED.test(message))).toHaveLength(1);
+    });
+
+    test('a note that comes back and is deleted again is announced again', async () => {
+      let entries = [entry('b.md')];
+      const current = vault([note('a.md'), note('b.md', { open: false })], 0, () => entries);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      entries = [entry('a.md'), entry('b.md')];
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      entries = [entry('b.md')];
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts.filter(([message]) => DELETED.test(message))).toHaveLength(2);
+    });
+
+    test('several open notes: one counted toast', async () => {
+      const current = vault([note('a.md'), note('b.md'), note('c.md', { open: false })], 0, () => [entry('c.md')]);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts).toEqual([
+        ['2 open notes were deleted on disk. They stay open here; saving puts them back.', 'error'],
+      ]);
+    });
+
+    test('a note that is not open in a tab gets no toast', async () => {
+      const current = vault([note('a.md'), note('b.md', { open: false })], 0, () => [entry('a.md')]);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts).toEqual([]);
+    });
+
+    test('a note of another folder with the same name is not counted', async () => {
+      const other = { ...note('a.md'), vaultId: 'w' };
+      const current = vault([other, note('a.md', { open: false }), note('b.md')], 0, () => [entry('b.md')]);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts).toEqual([]);
+      expect(current.state.files.find((file) => file.vaultId === 'w').missing).toBeUndefined();
+    });
+
+    test('the conflict toast of a changed note is still shown', async () => {
+      const dirty = note('a.md', { dirty: true, content: 'mine' });
+      const current = vault([dirty, note('b.md')], 0, () => [{ name: 'a.md', relPath: 'a.md', content: 'theirs' }]);
+      await current.controller.handleVaultChanged({ vaultId: 'v', generation: 1 });
+      expect(current.calls.toasts.map(([message]) => message)).toEqual([
+        '"a.md" changed on disk — your edits are kept; resolve in the editor.',
+        '“b.md” was deleted on disk. It stays open here; saving puts it back.',
+      ]);
+    });
   });
 
   // audit UX-13: a failed watcher re-read is now reported (once per failure streak),

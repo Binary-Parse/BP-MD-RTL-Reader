@@ -12,7 +12,7 @@
  *
  * Surviving mutants targeted (current src/main/index.js line numbers):
  *   - L221 icon (StringLiteral)            → assert icon ENDS WITH "icon.ico"
- *   - L222 backgroundColor (StringLiteral) → assert === "#1A1713"
+ *   - L222 backgroundColor (per-theme desk colour) → assert === "#E4E6E9" (paper) / "#08090B" (dark OS)
  *   - L224 transparent (BooleanLiteral)    → assert === false
  *   - L228 preload path (StringLiteral)    → assert ENDS WITH "src/preload/index.js"
  *   - L253-L264 context-menu enabled flags + role objects
@@ -89,8 +89,8 @@ describe('src/main/index.js — createWindow() BrowserWindow options', () => {
     expect(typeof opts.transparent).toBe('boolean');
   });
 
-  test('backgroundColor === "#1A1713" (L222 StringLiteral, exact hex)', () => {
-    expect(opts.backgroundColor).toBe('#1A1713');
+  test('backgroundColor === "#E4E6E9" (paper desk, light OS and first run)', () => {
+    expect(opts.backgroundColor).toBe('#E4E6E9');
     expect(opts.backgroundColor).not.toBe('');
   });
 
@@ -430,17 +430,6 @@ describe('src/main/index.js — webContents "context-menu" handler (renderer-dra
     expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
   });
 
-  test('a suggestion index calls replaceMisspelling with that suggestion', () => {
-    wc.send.mockClear();
-    wc.replaceMisspelling.mockClear();
-    ctxHandler({}, {
-      isEditable: true, selectionText: '', misspelledWord: 'teh',
-      dictionarySuggestions: ['the', 'tea'], editFlags: {},
-    });
-    const { nonce, descriptors } = lastShowPayload();
-    actionHandler({ sender: wc }, { nonce, index: descriptors.findIndex(i => i.label === 'tea') });
-    expect(wc.replaceMisspelling).toHaveBeenCalledWith('tea');
-  });
 
   // ── App commands (D1 addendum / M17): six renderer-local commands appended past the
   // end of the context-menu descriptors, dispatched through the same nonce+index round-trip
@@ -594,44 +583,19 @@ describe('src/main/index.js — runContextAction (context-menu:action dispatch)'
     expect(wc.downloadURL).toHaveBeenCalledWith('https://img.example/b.png');
   });
 
-  // replace-misspelling: clicking a suggestion calls replaceMisspelling(s).
-  test('replace-misspelling → webContents.replaceMisspelling(suggestion)', () => {
+
+
+  // audit M38: the spellchecker is off. A misspelled word sends the same menu as none.
+  test('a misspelled word sends no suggestion and no dictionary item to the renderer', () => {
     wc.send.mockClear();
-    wc.replaceMisspelling.mockClear();
     ctxHandler({}, {
       isEditable: true, selectionText: '', misspelledWord: 'teh',
-      dictionarySuggestions: ['the'], editFlags: {},
+      dictionarySuggestions: ['the', 'tea'], editFlags: {},
     });
-    clickLabel('the');
-    expect(wc.replaceMisspelling).toHaveBeenCalledWith('the');
-  });
-
-  // add-to-dictionary only runs when session.addWordToSpellCheckerDictionary exists.
-  test('add-to-dictionary → session.addWordToSpellCheckerDictionary(word) when available', () => {
-    wc.send.mockClear();
-    wc.session.addWordToSpellCheckerDictionary.mockClear();
-    ctxHandler({}, {
-      isEditable: true, selectionText: '', misspelledWord: 'recieve',
-      dictionarySuggestions: [], editFlags: {},
-    });
-    clickLabel('Add to Dictionary');
-    expect(wc.session.addWordToSpellCheckerDictionary)
-      .toHaveBeenCalledWith('recieve');
-  });
-
-  test('add-to-dictionary is a no-op (no throw) when the spellchecker API is absent', () => {
-    wc.send.mockClear();
-    const realSession = wc.session;
-    wc.session = {}; // no addWordToSpellCheckerDictionary
-    try {
-      ctxHandler({}, {
-        isEditable: true, selectionText: '', misspelledWord: 'wierd',
-        dictionarySuggestions: [], editFlags: {},
-      });
-      expect(() => clickLabel('Add to Dictionary')).not.toThrow();
-    } finally {
-      wc.session = realSession;
-    }
+    const labels = lastShowPayload().descriptors.map((i) => i.label);
+    expect(labels).not.toContain('the');
+    expect(labels).not.toContain('tea');
+    expect(labels).not.toContain('Add to Dictionary');
   });
 });
 
@@ -679,15 +643,15 @@ describe('src/main/index.js — navigation guard', () => {
     expect(mockElectron.shell.openExternal).toHaveBeenCalledWith('mailto:a@b.com');
   });
 
-  // L478: an 'allow' classification (same-page hash nav to the app URL) returns BEFORE
-  // preventDefault — proving the guard is not forced to always-prevent.
-  test('same-document navigation is allowed (no preventDefault, no openExternal)', () => {
+  // B5: a note link that resolves to the app's own page (`[x](index.html)`) used to
+  // be allowed and reloaded the renderer, losing unsaved work. It is prevented now.
+  test.each([['will-navigate'], ['will-redirect']])('%s to the app URL itself is prevented and not opened (B5)', (eventName) => {
     mockElectron.shell.openExternal.mockClear();
     const e = { preventDefault: vi.fn() };
-    // index.html in the app dir → classifyNavigation returns 'allow'.
-    const appHref = 'app://ui/src/renderer/index.html';
-    navHandler(e, appHref);
-    expect(e.preventDefault).not.toHaveBeenCalled();
+    const appHref = mockElectron._mockWin.loadURL.mock.calls[0][0];
+    expect(typeof appHref).toBe('string');
+    (eventName === 'will-navigate' ? navHandler : redirectHandler)(e, appHref);
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
     expect(mockElectron.shell.openExternal).not.toHaveBeenCalled();
   });
 
@@ -728,5 +692,23 @@ describe('src/main/index.js — renderer sandbox', () => {
     expect(opts.webPreferences.sandbox).toBe(true);
     expect(opts.webPreferences.contextIsolation).toBe(true);
     expect(opts.webPreferences.nodeIntegration).toBe(false);
+  });
+});
+
+describe('src/main/index.js — window background follows the system colour scheme', () => {
+  test('a dark OS paints the ink desk colour before first paint', async () => {
+    const mockElectron = { ...buildMockElectron(), nativeTheme: { shouldUseDarkColors: true } };
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+    const opts = mockElectron.BrowserWindow.mock.calls[0][0];
+    expect(opts.backgroundColor).toBe('#08090B');
+  });
+
+  test('a light OS paints the paper desk colour', async () => {
+    const mockElectron = { ...buildMockElectron(), nativeTheme: { shouldUseDarkColors: false } };
+    bootstrap({ electron: mockElectron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
+    await new Promise((r) => setTimeout(r, 50));
+    const opts = mockElectron.BrowserWindow.mock.calls[0][0];
+    expect(opts.backgroundColor).toBe('#E4E6E9');
   });
 });

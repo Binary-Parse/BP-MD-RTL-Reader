@@ -997,10 +997,13 @@ describe('src/main/index.js — lifecycle + file-association + log rotation (aud
     mockElectron.app.on.mockImplementation((event, fn) => {
       mockAppListeners[event] = fn;
     });
-    // Capture webContents.on('did-finish-load', cb) for later invocation.
+    // Capture webContents.on('did-finish-load', cb) for later invocation: every handler, as
+    // the event runs them all (window-controller marks the page loaded, audit M12).
+    const loadHandlers = [];
     mockElectron._mockWin.webContents.on.mockImplementation((event, fn) => {
-      if (event === 'did-finish-load') didFinishLoadHandler = fn;
+      if (event === 'did-finish-load') loadHandlers.push(fn);
     });
+    didFinishLoadHandler = () => { for (const handler of loadHandlers) handler(); };
 
     mockFs = buildMockFs({
       readFileSync: vi.fn(() => '﻿# Pending'), // includes BOM

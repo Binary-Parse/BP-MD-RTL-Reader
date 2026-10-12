@@ -41,7 +41,7 @@ describe('documentation follows executable repository truth', () => {
     }
   });
 
-  test('documents the release repository, artifact contract, checksums, and manual signing steps', () => {
+  test('documents the release repository, artifact contract, checksums, and what is and is not signed', () => {
     const pkg = JSON.parse(read('package.json'));
     const readme = read('README.md');
     const build = read('docs/BUILD.md');
@@ -59,7 +59,16 @@ describe('documentation follows executable repository truth', () => {
     expect(build).toContain('WIN_CSC_LINK');
     expect(build).toContain('WIN_CSC_KEY_PASSWORD');
     expect(readme).toContain('SHA256SUMS.txt');
-    expect(readme).toContain('signed and notarized');
+    // Owner decision 2026-10-10: releases are unsigned and say so; macOS is not built or tested.
+    expect(readme).toContain('**The files are not code-signed.**');
+    expect(readme).toContain('SmartScreen');
+    expect(readme).toContain('| **macOS** | — | Not built and not tested |');
+    for (const claim of ['signed and notarized', 'Authenticode-signed', 'Windows, macOS, and Linux']) {
+      expect(readme).not.toContain(claim);
+    }
+    expect(build).toContain('**macOS is not built and not tested.**');
+    expect(build).toContain('**The release is not code-signed**');
+    expect(read('SECURITY.md')).toContain('**Not code-signed.**');
   });
 
   test('documents update traffic, persistence, runner ownership, and reproducible licenses', () => {

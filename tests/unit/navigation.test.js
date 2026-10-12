@@ -18,8 +18,16 @@ describe('classifyNavigation', () => {
     expect(classifyNavigation('mailto:a@b.com', APP)).toEqual({ action: 'external' });
     expect(classifyNavigation('tel:+15551234', APP)).toEqual({ action: 'external' });
   });
-  test('exact app URL → allow', () => {
-    expect(classifyNavigation(APP, APP)).toEqual({ action: 'allow' });
+  // B5: a link in a note that resolves to the app's own page must not reload
+  // the renderer (unsaved work would be lost). Nothing is ever allowed.
+  test('the app URL itself → block (B5)', () => {
+    expect(classifyNavigation(APP, APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation(APP)).toEqual({ action: 'block' });
+  });
+  test('no input is ever classified as allow (B5)', () => {
+    for (const u of [APP, APP + '#frag', APP + '?x=1', 'https://example.com', 'file:///etc/passwd', '', undefined]) {
+      expect(classifyNavigation(u, APP).action).not.toBe('allow');
+    }
   });
   test('file:// elsewhere → block', () => {
     expect(classifyNavigation('file:///etc/passwd', APP)).toEqual({ action: 'block' });
@@ -62,12 +70,12 @@ describe('classifyNavigation — guard clauses (mutation kills)', () => {
     expect(_cn('', APP)).toEqual({ action: 'block' });
     expect(_cn({ toString: () => 'https://example.com' }, APP)).toEqual({ action: 'block' });
   });
-  test('allow ONLY on exact app-url match (all three clauses matter)', () => {
-    expect(_cn(APP, APP)).toEqual({ action: 'allow' });
-    expect(_cn(APP + '#x', APP)).not.toEqual({ action: 'allow' }); // not exact
-    expect(_cn('https://x', '')).toEqual({ action: 'external' });   // empty appUrl ⇒ no allow
-    expect(_cn('https://x', 42)).toEqual({ action: 'external' });   // non-string appUrl ⇒ no allow
-    expect(_cn(APP, '')).not.toEqual({ action: 'allow' });          // appUrl '' must not allow
+  test('the app URL is blocked whatever the second argument is (B5)', () => {
+    expect(_cn(APP, APP)).toEqual({ action: 'block' });
+    expect(_cn(APP + '#x', APP)).toEqual({ action: 'block' });
+    expect(_cn(APP, '')).toEqual({ action: 'block' });
+    expect(_cn('https://x', '')).toEqual({ action: 'external' });
+    expect(_cn('https://x', 42)).toEqual({ action: 'external' });
   });
   test('external schemes route external; everything else blocks', () => {
     for (const u of ['https://x', 'http://x', 'mailto:a@b', 'tel:+1']) expect(_cn(u, APP)).toEqual({ action: 'external' });

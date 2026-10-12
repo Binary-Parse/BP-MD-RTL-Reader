@@ -4,11 +4,11 @@ import { isArabicHeavy, escapeHtml, escapeReg } from './i18n.js';
 import { THEMES, getNextTheme, clampZoom } from './theme.js';
 import { createState } from './state.js';
 import { vaultSearch as _vaultSearch, warmSearchIndexSlice } from './components/search.js';
-import { HAS_ARABIC, normalizeArabic, normalizeArabicWithMap, mapEnd } from './components/text-normalize.js';
-import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader } from './markdown/markdown.js';
+import { NEEDS_FOLD, normalizeArabic, normalizeArabicWithMap, mapEnd } from './components/text-normalize.js';
+import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader, lastRenderLimited } from './markdown/markdown.js';
 import { execEditCmd as _execEditCmdImpl } from './editor/edit-commands.js';
 import { applyBidi } from './bidi-dom.js';
-import { resolveBlockDirection, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
+import { resolveBlockDirection, proseText, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
 import { transformCallouts } from './markdown/callouts.js';
 import { activeCodeBlock } from './markdown/code-track.js';
 import { activeHeading, sourceHeadingPositions } from './components/outline.js';
@@ -19,15 +19,18 @@ import { mathExtension, restoreMath, renderTex } from './markdown/math.js';
 import { sanitizeHtml, sanitizeSvg } from './markdown/trusted.js';
 import { renderMermaid } from './markdown/mermaid.js';
 import { tableEdit } from './components/table-edit.js';
+import { applyEdit, markClean, adoptDiskText, discardEdits } from './components/dirty-state.js';
 import { wrapTablesInFrames } from './components/table-frame.js';
 import { getFocusable, trapTab, rovingNext } from './components/focus.js';
-import { t as tr, localeDirection, formatMessage } from './locale.js';
+import { t as tr, tPlural, localeDirection, formatMessage } from './locale.js';
 import { buildExportDocAsync as buildExportDocImpl } from './markdown/export.js';
 // T6.1c: the EPUB path (renderer builds the whole archive; main only writes the bytes).
 import { buildEpubFromNoteAsync } from './markdown/epub.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
-import { isDroppableFile } from './file-predicates.js';
-import { buildFileTree, flattenTree, buildForest, prefixTreePaths } from './components/tree.js';
+import { isWrappedInside, isWrappedOutside } from './editor/wrap-detect.js';
+import { historyKeyOf } from './editor/history-store.js';
+import { isDroppableFile, nextUntitledName } from './file-predicates.js';
+import { buildFileTree, flattenTree, buildForest, prefixTreePaths, treeFileCounts } from './components/tree.js';
 import { fileKey } from './session.js';
 // T4.1: reading-position shelf (capture/restore lives below, next to previewScroller()).
 import { scrollRatio, progressEntryFor, upsertProgress, relativeTime } from './reading-progress.js';
@@ -36,6 +39,13 @@ import { applyHighlights, findSingleTextNodeSelection, newHighlightId, noteExcer
 import { extractTagsFromFiles } from './components/tags.js';
 import { createWorkspaceController } from './components/workspace-controller.js';
 import { createSettingsController } from './components/settings-controller.js';
+import { fileDirKind, crumbSegments, fileMeta, shelfRatio, outlineNumbers } from './components/doc-meta.js';
+import { inspectorData, renderInspectorDoc, renderInspectorProgress, renderZoom } from './components/inspector-ui.js';
+import { createMarginNotes, placeMarginHost, pickMarginMode } from './components/margin-notes.js';
+import { streakGrid } from './components/streak-grid.js';
+import { ctxIconName, ctxHeader, ctxRows, buildCtxHeader, buildCtxRow, surfaceActions } from './components/context-menu-items.js';
+import { svgIcon, hydrateIcons } from './icons.js';
+import { shortcutLetter, hitKey, hitCode } from './shortcut-keys.js';
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -102,6 +112,8 @@ const { state: State, subscribe } = createState({
   calendar: 'gregorian',
   arabicKashida: false,
   italicRecolor: true,
+  // Margin notes folded to gutter markers (persisted via PERSISTED_KEYS).
+  marginNotesCollapsed: false,
   // v1.2: Word-style auto-save (files opened from disk; untitled notes still need Save
   // As because their location is unknown). Persisted via PERSISTED_KEYS.
   autosave: true,
@@ -175,6 +187,13 @@ marked.use(mathExtension());
 function parseMarkdown(md) {
   return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
 }
+// audit M4: the render ran out of its time budget and part of the note is shown as literal
+// text. Said once per note, right after the parse it refers to; not on every keystroke.
+function noteRenderLimit(file) {
+  if (!file || !lastRenderLimited() || file._renderLimitTold) return;
+  file._renderLimitTold = true;
+  showToast(tl('toast.renderLimited'), 'info');
+}
 
 // ── Vault image resolution (R10) ────────────────────────────────────────────
 // A note-relative image `![](pic.png)` must load from the note's neighbour on
@@ -247,7 +266,7 @@ function applyBidiToNote(content) {
   const docDir = resolveDocDirection({
     manual: State.forcedDir,
     frontMatter: fmDir,
-    content: resolveBlockDirection(body, 'ltr'), // dominant-script: an Arabic-majority note reads RTL even if it opens with English
+    content: resolveBlockDirection(proseText(body), 'ltr'), // prose only (no code/math, audit H8); dominant-script: an Arabic-majority note reads RTL even if it opens with English
   });
   applyBidi(noteContent, { baseDir: docDir, escape: escapeHtml, forceDir: forcedDir });
   if (cmAdapter) cmAdapter.setDirection(docDir, forcedDir); // keep the CM6 editor in sync (also closes the front-matter gap)
@@ -410,21 +429,71 @@ window.isArabicHeavy = isArabicHeavy;
 // =====================================================================
 // TOAST
 // =====================================================================
-function showToast(msg, kind) {
+const TOAST_MS = 2200;
+const TOAST_WITH_ACTION_MS = 6000;
+/**
+ * Show a short message. `action` ({ label, onClick }) adds one button to it, for a step
+ * the user can take back; such a toast stays longer and takes pointer input.
+ */
+function showToast(msg, kind, action) {
   if (settingsController?.isRestoring()) return;
   toastEl.textContent = msg;
-  toastEl.classList.remove('error', 'info');
+  toastEl.classList.remove('error', 'info', 'has-action');
   if (kind === 'error') toastEl.classList.add('error');
   else if (kind === 'info') toastEl.classList.add('info');
+  const hide = () => {
+    toastEl.classList.remove('show', 'has-action');
+    toastEl.querySelector('.toast-action')?.remove(); // no focusable control in a hidden toast
+  };
+  const hasAction = !!action && typeof action.label === 'string' && typeof action.onClick === 'function';
+  if (hasAction) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'toast-action';
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      clearTimeout(toastEl._t);
+      hide();
+      action.onClick();
+    });
+    toastEl.appendChild(button);
+    toastEl.classList.add('has-action');
+  }
   toastEl.classList.add('show');
   clearTimeout(toastEl._t);
-  toastEl._t = setTimeout(() => toastEl.classList.remove('show'), 2200);
+  toastEl._t = setTimeout(hide, hasAction ? TOAST_WITH_ACTION_MS : TOAST_MS);
 }
 window.showToast = showToast;
 
 // =====================================================================
 // THEME
 // =====================================================================
+// audit M21: the status bar, the theme toast and the Inspector showed the internal ids
+// ("paper", "Live") in the Arabic interface. These read the name from the catalog.
+function catalogName(prefix, id) {
+  const key = prefix + id;
+  const name = tl(key);
+  return !name || name === key ? String(id) : name;
+}
+const themeName = (id) => catalogName('theme.', id);
+const modeName = (id) => catalogName('mode.', id);
+const capitalised = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+function setThemeLabel(id) {
+  if ($('themeLabel')) $('themeLabel').textContent = themeName(id);
+}
+// The labels above have no data-i18n hook (their text depends on state), so a change of
+// the interface language writes them again.
+function localizeStateLabels() {
+  setThemeLabel(State.theme);
+  if ($('propMode')) $('propMode').textContent = modeName(State.editorMode);
+  setVaultUi();
+  // A11y: name the two menu containers for screen readers.
+  ctxMenu.setAttribute('aria-label', tl('ctxmenu.label'));
+  dropdown.setAttribute('aria-label', tl('dropdown.label'));
+}
+// The kind of a palette command ("command", "view", "help"); a file shows its path instead.
+const paletteMeta = (it) => (it.act && it.key && it.meta ? catalogName('palette.meta.', it.meta) : (it.meta || ''));
+
 function cycleTheme() {
   const next = getNextTheme(State.theme);
   State.theme = next;
@@ -434,8 +503,8 @@ function cycleTheme() {
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('bpmdrtlreader-theme', next);
   $('themeBtn').classList.toggle('active', next !== 'paper'); updateThemeIcon(next);
-  if ($('themeLabel')) $('themeLabel').textContent = next;
-  showToast(tl('toast.theme', { name: next.charAt(0).toUpperCase() + next.slice(1) }), 'info');
+  setThemeLabel(next);
+  showToast(tl('toast.theme', { name: capitalised(themeName(next)) }), 'info');
 }
 window.cycleTheme = cycleTheme;
 
@@ -445,9 +514,9 @@ function setTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('bpmdrtlreader-theme', t);
   $('themeBtn').classList.toggle('active', t !== 'paper'); updateThemeIcon(t);
-  if ($('themeLabel')) $('themeLabel').textContent = t;
+  setThemeLabel(t);
   closeMenu();
-  showToast(tl('toast.theme', { name: t.charAt(0).toUpperCase() + t.slice(1) }), 'info');
+  showToast(tl('toast.theme', { name: capitalised(themeName(t)) }), 'info');
 }
 
 // =====================================================================
@@ -456,7 +525,12 @@ function setTheme(t) {
 function toggleRTL() {
   // Cycle the EXPLICIT content-direction choice: AUTO → RTL → LTR → AUTO.
   // AUTO = smart per-block detection (default). RTL/LTR force EVERY block of the note.
-  State.forcedDir = State.forcedDir === null ? 'rtl' : State.forcedDir === 'rtl' ? 'ltr' : null;
+  applyForcedDir(State.forcedDir === null ? 'rtl' : State.forcedDir === 'rtl' ? 'ltr' : null);
+}
+window.toggleRTL = toggleRTL;
+
+function applyForcedDir(next) {
+  State.forcedDir = next;
   appBody._manualRTL = State.forcedDir === 'rtl'; // back-compat mirror for existing RTL tests/export
   const editorEl = $('editor');
   // #srcTextarea must be dir=auto for RTL and NEVER literal rtl (spec §Constraints); cleared otherwise.
@@ -474,19 +548,21 @@ function toggleRTL() {
   const af = State.files[State.activeFile];
   if (af) af.forcedDir = State.forcedDir; // per-note durable choice (PARTIAL-01) — restored on tab switch in renderFile
   if (af) applyBidiToNote(af.content || '');
+  syncMarginNotes(); // the notes column mirrors with the reading column's direction
   updateDirUI();
   showToast(tl('toast.direction', { dir: State.forcedDir ? State.forcedDir.toUpperCase() : 'Auto' }));
 }
-window.toggleRTL = toggleRTL;
 
 function updateDirUI() {
   // The indicator + the lit state reflect the EFFECTIVE direction (forced choice, else the
   // auto/front-matter-resolved one) so a front-matter `direction: rtl` also lights the button.
   const isRTL = (State.forcedDir || State.direction) === 'rtl';
   $('dirIndicator').textContent = isRTL ? 'RTL' : 'LTR';
+  $('dirIndicator').dataset.d = isRTL ? 'rtl' : 'ltr';
   $('propDir').textContent = isRTL ? 'RTL' : 'LTR';
   const btn = $('rtlBtn');
   if (btn) {
+    btn.dataset.mode = State.forcedDir || 'auto';
     btn.classList.toggle('active', isRTL);
     btn.setAttribute('aria-pressed', State.forcedDir !== null ? 'true' : 'false'); // pressed = the USER forced a direction
   }
@@ -745,7 +821,7 @@ function restoreFocus() {
 }
 
 const pendingModalSettlers = new Set();
-function openModal(title, html) {
+function openModal(title, html, variant) {
   if (dropdown.classList.contains('open')) closeMenu(); // dismiss any open menu (returns focus to its button → captured as the restore target)
   // A body swap while the overlay is already open destroys the previous dialog's
   // buttons while its promise is still pending — settle it now with its abandoned
@@ -754,6 +830,7 @@ function openModal(title, html) {
     for (const abandon of [...pendingModalSettlers]) abandon();
     pendingModalSettlers.clear();
   }
+  if (variant) modalOverlay.dataset.variant = variant; else delete modalOverlay.dataset.variant;
   modalTitle.textContent = title;
   modalBody.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : '';
   // Only capture the opener on a fresh open — re-opening (e.g. Shortcuts→About swaps
@@ -776,7 +853,8 @@ function closeModal() {
 // tl('toast.saved', { name }) instead of concatenating English fragments.
 // Falls back to the key itself when the catalog is missing an entry, never throws.
 function tl(key, vars) {
-  const template = tr(key, State.uiLocale);
+  // A counted sentence (vars.n is a number) takes the plural form of the language (audit M20).
+  const template = tPlural(key, vars ? vars.n : undefined, State.uiLocale);
   return formatMessage(template === key ? key : template, vars);
 }
 window._tl = tl; // exposed for e2e checks of the localized strings
@@ -840,7 +918,7 @@ function askSaveChanges({ name, count = 0 } = {}) {
     // Centered-icon design (v1.2, user-picked): the file name is bolded inline, so the
     // sentence is assembled from prefix + bold name + postfix instead of one template.
     const msgHtml = many
-      ? escapeHtml(tl('dlg.saveMany', { n: count, s: '' }))
+      ? escapeHtml(tl('dlg.saveMany', { n: count }))
       : `${escapeHtml(tl('dlg.saveOnePre'))}<bdi dir="ltr" class="doc-name">“${escapeHtml(name || '')}”</bdi>${escapeHtml(tl('dlg.saveOnePost'))}`;
     const saveLabel = many ? tl('dlg.saveAll') : tl('dlg.save');
     const dontLabel = many ? tl('dlg.closeWithoutSaving') : tl('dlg.dontSave');
@@ -909,7 +987,6 @@ function askEncodingUpgrade({ name, encoding, count, samples }) {
           name: name || '',
           encoding: encoding || '',
           n: count || 0,
-          s: (count || 0) === 1 ? '' : 's',
           samples: (samples || []).join(' '),
         }))}</div>
         <div class="dlg-hint">${escapeHtml(tl('dlg.hint'))}</div>
@@ -937,6 +1014,43 @@ function askEncodingUpgrade({ name, encoding, count, samples }) {
   });
 }
 window._askEncodingUpgrade = askEncodingUpgrade; // e2e hook
+
+/** audit M7: reopening with another encoding reads the disk again; unsaved edits go. */
+function askReopenDiscard(name) {
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (!modalOverlay.classList.contains('open')) {
+        observer.disconnect();
+        abandoned();
+      }
+    });
+    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
+    const html = `
+      <div class="dlg-body">
+        <div class="dlg-title">${escapeHtml(tl('dlg.reopenTitle'))}</div>
+        <div class="dlg-msg" dir="auto">${escapeHtml(tl('dlg.reopenBody', { name: name || '' }))}</div>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="dlg-btn" id="reopenCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
+        <button type="button" class="dlg-btn dlg-primary" id="reopenConfirmBtn">${escapeHtml(tl('dlg.reopenConfirm'))}</button>
+      </div>`;
+    openModal(tl('dlg.reopenTitle'), html);
+    let settled = false;
+    const settle = (choice) => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      pendingModalSettlers.delete(abandoned);
+      closeModal();
+      resolve(choice);
+    };
+    const abandoned = () => settle(false);
+    pendingModalSettlers.add(abandoned);
+    $('reopenConfirmBtn')?.addEventListener('click', () => settle(true));
+    $('reopenCancelBtn')?.addEventListener('click', () => settle(false));
+    setTimeout(() => $('reopenCancelBtn')?.focus(), 0);
+  });
+}
 
 function showShortcuts() {
   closeMenu();
@@ -966,6 +1080,7 @@ function showShortcuts() {
       ['menu.insertWikilink','Ctrl+K Ctrl+W']
     ]],
     ['menu.view', [
+      ['palette.toggleReading','Ctrl+E'],
       ['palette.toggleSidebar','Ctrl+\\'],
       ['titlebar.toggleInspector','Ctrl+Shift+I'],
       ['sc.cycleTheme','Ctrl+Shift+D'],
@@ -994,7 +1109,7 @@ function showShortcuts() {
     });
   });
   const title = tr('menu.shortcuts', loc);
-  openModal(!title || title === 'menu.shortcuts' ? 'Keyboard Shortcuts' : title, html);
+  openModal(!title || title === 'menu.shortcuts' ? 'Keyboard Shortcuts' : title, html, 'wide');
 }
 
 let _aboutVersion = null;
@@ -1010,7 +1125,7 @@ async function showAbout() {
   const html = `
     <div class="about-logo">BP</div>
     <div class="about-name">BP MD RTL Reader</div>
-    <div class="about-version">version ${escapeHtml(_aboutVersion || '1.3.0')} · ${new Date().getFullYear()}</div>
+    <div class="about-version">version ${escapeHtml(_aboutVersion || '2.0.0')} · ${new Date().getFullYear()}</div>
     <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
     <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
       Bilingual to its core — first-class English and Arabic.<br>
@@ -1035,7 +1150,8 @@ async function checkForUpdate() {
   try { res = await window.electronAPI.checkForUpdate(); } catch (_) { res = { error: 'ipc' }; }
   if (res && res.updateAvailable) showToast(tl('toast.updateAvailable', { latest: res.latest, current: res.current }));
   else if (res && res.latest) showToast(tl('toast.upToDate', { current: res.current }), 'info');
-  else showToast(tl('toast.updateCheckFailed'), 'error');
+  // audit M37: a failed check leaves the user a way forward, the releases page.
+  else showUpdateFailure(res && res.error === 'untrusted' ? 'untrusted' : 'failed');
   return res;
 }
 window.checkForUpdate = checkForUpdate;
@@ -1050,6 +1166,18 @@ let _updateBar = null;
 function showUpdateNotice(info) {
   const latest = info && typeof info.latest === 'string' ? info.latest : '';
   if (!latest) return null;
+  return showUpdateBar(tl('update.available', { latest }), tl('update.view'));
+}
+
+// audit M37: the check could not be made. 'untrusted' = the certificate matched no pin of
+// this version (no later check will work either); anything else = offline or a server error.
+// Both offer the one thing that still works: the fixed releases page, opened by main.
+function showUpdateFailure(kind) {
+  return showUpdateBar(tl(kind === 'untrusted' ? 'update.untrusted' : 'update.checkFailed'), tl('update.openReleases'));
+}
+window.showUpdateFailure = showUpdateFailure;
+
+function showUpdateBar(message, actionLabel) {
   if (!_updateBar) {
     _updateBar = document.createElement('div');
     _updateBar.id = 'updateBar';
@@ -1074,8 +1202,8 @@ function showUpdateNotice(info) {
     _updateBar.append(text, view, dismiss);
     document.body.appendChild(_updateBar);
   }
-  _updateBar.querySelector('.ub-text').textContent = tl('update.available', { latest });
-  $('updateViewBtn').textContent = tl('update.view');
+  _updateBar.querySelector('.ub-text').textContent = message;
+  $('updateViewBtn').textContent = actionLabel;
   $('updateDismissBtn').textContent = tl('update.dismiss');
   _updateBar.hidden = false;
   return _updateBar;
@@ -1195,7 +1323,7 @@ const MENU_DEFS = {
       { kind: 'item', get key() { return toggleMenuKey('autoHideTitlebar'); }, get name() { return toggleFallback('autoHideTitlebar'); }, shortcut: 'Ctrl+Shift+T', action: () => { toggleAutoHideTitlebar(); closeMenu(); } },
       { kind: 'item', get key() { return toggleMenuKey('hideStatusBar'); }, get name() { return toggleFallback('hideStatusBar'); }, shortcut: 'Ctrl+Shift+B', action: () => { toggleHideStatusBar(); closeMenu(); } },
       { kind: 'divider' },
-      { kind: 'item', icon: 'align-justify', name: 'Settings…', key: 'menu.settings', shortcut: 'Ctrl+,', action: () => { closeMenu(); showSettings(); } },
+      { kind: 'item', icon: 'gear', name: 'Settings…', key: 'menu.settings', shortcut: 'Ctrl+,', action: () => { closeMenu(); showSettings(); } },
       { kind: 'divider' },
       { kind: 'label', text: 'Zoom', key: 'menu.zoom' },
       { kind: 'item', icon: 'zoom-in', name: 'Zoom In', key: 'menu.zoomIn',    shortcut: 'Ctrl+=', action: () => { zoomIn();    closeMenu(); } },
@@ -1270,13 +1398,14 @@ function buildMenu(name) {
       </div>`;
     } else {
       html += `<div class="dd-item${it.disabled ? ' disabled' : ''}" data-i="${i}" role="menuitem"${it.disabled ? ' aria-disabled="true"' : ' tabindex="0"'}>
-        <span class="dd-icon">${it.icon ? `<svg class="ic"><use href="#ic-${escapeHtml(it.icon)}"/></svg>` : ''}</span>
+        <span class="dd-icon">${it.icon ? `<span data-ic="${escapeHtml(it.icon)}"></span>` : ''}</span>
         <span class="dd-name">${escapeHtml(label(it))}</span>
         ${it.shortcut ? `<span class="dd-shortcut">${escapeHtml(it.shortcut)}</span>` : ''}
       </div>`;
     }
   });
   dropdown.innerHTML = html;
+  hydrateIcons(dropdown);
   dropdown.setAttribute('role', 'menu');
   dropdown.querySelectorAll('.dd-item:not(.disabled)').forEach(el => {
     const i = parseInt(el.dataset.i);
@@ -1370,7 +1499,7 @@ function runFind(q) {
   }
 
   if (!q) { setFindInfo(0, 0); return; }
-  const arabicFind = HAS_ARABIC.test(q);
+  const arabicFind = NEEDS_FOLD.test(q);
   const normQ = arabicFind ? normalizeArabic(q).toLowerCase() : null;
   const re = new RegExp(escapeReg(q), 'gi');
   const walker = document.createTreeWalker(noteContent, NodeFilter.SHOW_TEXT, null);
@@ -1472,9 +1601,11 @@ function findStep(d) {
 // =====================================================================
 // Thin renderer wrapper around the extracted, import-testable export module (T-F12):
 // injects the app's configured parseMarkdown + the manual-direction state + math globals.
-function buildExportDoc(f) {
+// audit M34: the reader's own highlights and margin notes go into the file only when the
+// caller says so. exportHTML and exportPDF ask first (askExportAnnotations).
+function buildExportDoc(f, { includeAnnotations = false } = {}) {
   // T5.1c: the Notes appendix only belongs to the document the loaded annotations describe.
-  const withNotes = f && _annotationsKey && _annotationsKey === fileKey(f);
+  const withNotes = includeAnnotations && ownAnnotationCount(f) > 0;
   return buildExportDocImpl(f, {
     direction: State.forcedDir || 'auto',
     parseMarkdown,
@@ -1488,12 +1619,70 @@ function buildExportDoc(f) {
   });
 }
 
+/** How many highlights and notes of the reader belong to this file (0 when another file's are loaded). */
+function ownAnnotationCount(f) {
+  return (f && _annotationsKey && _annotationsKey === fileKey(f)) ? _annotations.length : 0;
+}
+
+// audit M34: HTML and PDF export used to append the reader's highlights and margin notes
+// without saying so, in a file that is made to be shared. The export now asks, and only when
+// there is something to include. Resolves true (include), false (without) or null (cancel).
+async function askExportAnnotations(f) {
+  const count = ownAnnotationCount(f);
+  if (count === 0) return false;
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (!modalOverlay.classList.contains('open')) { observer.disconnect(); resolve(null); }
+    });
+    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
+    const html = `
+      <div class="dlg-body">
+        <div class="dlg-title">${escapeHtml(tl('export.notesTitle'))}</div>
+        <div class="dlg-msg">${escapeHtml(tl('export.notesBody', { n: count }))}</div>
+        <div class="dlg-hint">${escapeHtml(tl('export.notesHint'))}</div>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="dlg-btn" id="exportWithNotesBtn">${escapeHtml(tl('export.withNotes'))}</button>
+        <button type="button" class="dlg-btn dlg-primary" id="exportWithoutNotesBtn">${escapeHtml(tl('export.withoutNotes'))}</button>
+      </div>`;
+    openModal(tl('export.notesTitle'), html);
+    const settle = (value) => {
+      observer.disconnect();
+      pendingModalSettlers.delete(abandoned);
+      closeModal();
+      resolve(value);
+    };
+    const abandoned = () => settle(null);
+    pendingModalSettlers.add(abandoned);
+    $('exportWithNotesBtn')?.addEventListener('click', () => settle(true));
+    $('exportWithoutNotesBtn')?.addEventListener('click', () => settle(false));
+    setTimeout(() => $('exportWithoutNotesBtn')?.focus(), 0);
+  });
+}
+
 async function exportHTML() {
   closeMenu();
   if (State.activeFile === null || !State.files[State.activeFile]) {
     showToast(tl('toast.noFileToExport'), 'error'); return;
   }
-  const { fullHtml, baseName } = await buildExportDoc(State.files[State.activeFile]);
+  const file = State.files[State.activeFile];
+  const includeAnnotations = await askExportAnnotations(file);
+  if (includeAnnotations === null) return; // the question was dismissed: no export
+  const { fullHtml, baseName } = await buildExportDoc(file, { includeAnnotations });
+  // audit L3: in the desktop app main asks where to save and writes the file, so "Exported"
+  // is said only after the write, and a cancelled dialog says nothing.
+  if (window.electronAPI && typeof window.electronAPI.exportHtml === 'function') {
+    let res;
+    try {
+      res = await window.electronAPI.exportHtml({ html: fullHtml, defaultName: baseName + '.html' });
+    } catch (_) {
+      res = { error: 'ipc-failed' };
+    }
+    if (res && res.ok) showToast(tl('toast.exported', { name: baseName + '.html' }));
+    else if (res && res.canceled) { /* user cancelled — stay quiet */ }
+    else showToast(tl('toast.htmlFailed'), 'error');
+    return fullHtml;
+  }
   const blob = new Blob([fullHtml], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1517,7 +1706,10 @@ async function exportPDF() {
   if (!window.electronAPI || typeof window.electronAPI.exportPDF !== 'function') {
     showToast(tl('toast.pdfNeedsDesktop'), 'error'); return;
   }
-  const { fullHtml, baseName } = await buildExportDoc(State.files[State.activeFile]);
+  const file = State.files[State.activeFile];
+  const includeAnnotations = await askExportAnnotations(file);
+  if (includeAnnotations === null) return { canceled: true }; // the question was dismissed: no export
+  const { fullHtml, baseName } = await buildExportDoc(file, { includeAnnotations });
   showToast(tl('toast.exportingPdf'));
   let res;
   try {
@@ -1669,12 +1861,25 @@ function applyLocale(locale) {
 
   wrapTablesInFrames(noteContent, { locale });
   wrapTablesInFrames(document.querySelector('.cm-mount'), { locale });
+  renderCrumbs();
+}
+// Status-bar placeholders shown while no note is open, in the current interface language.
+function localizeEmptyStatus() {
+  $('readTime').textContent = tl('status.noReadTime');
+  $('wordCount').textContent = tl('status.nWords', { n: 0 });
+  $('cursorPos').textContent = '— · —';
 }
 function setUiLocale(locale) {
   if (locale !== 'en' && locale !== 'ar') return;
   State.uiLocale = locale;
   document.documentElement.setAttribute('lang', locale);
   applyLocale(locale);
+  localizeStateLabels();
+  if (State.files.length) { renderTree(State.files); syncInspector(); renderNoteList(); }
+  // Text that was rendered with tl() at render time (doc-meta strip, read time, word count,
+  // ln/col) has no data-i18n hook: rebuild it from the active note without touching the editor.
+  if (State.activeFile !== null && State.files[State.activeFile]) { renderReadingContent(); updateCursorReadout(); }
+  else localizeEmptyStatus();
 }
 // Mirror the whole chrome by setting the document direction; the grid/flex layout and
 // logical CSS reverse, and the F11 chevrons flip. Content/code/math keep their own dir.
@@ -1723,7 +1928,7 @@ function execEditCmd(cmd) {
     // mode above — CM6 mounts unconditionally at launch, so it can exist while Reading
     // mode has it hidden behind #noteContent. See edit-commands.js's selectAll().
     getViewMode: () => State.viewMode,
-    hasDocument: () => State.activeFile !== null && !!State.files[State.activeFile],
+    hasDocument: () => State.activeFile !== null && !!State.files.at(State.activeFile),
     getCmAdapter: () => cmAdapter, // T-F13: CM6 is the live editor — Edit menu acts on it
     getSrcTextarea: () => srcTextarea,
     getNoteContent: () => noteContent,
@@ -1844,6 +2049,8 @@ function renderCtxItem(item, index) {
   else el.tabIndex = 0;
   const icon = document.createElement('span');
   icon.className = 'dd-icon';
+  const iconName = ctxIconName(item);
+  if (iconName) icon.appendChild(svgIcon(iconName));
   el.appendChild(icon);
   const name = document.createElement('span');
   name.className = 'dd-name';
@@ -1898,7 +2105,11 @@ function detectCtxSurface(el) {
   }
   const wikilink = el.closest('a.wikilink');
   if (wikilink) return { kind: 'wikilink', target: wikilink.dataset.target || wikilink.textContent || '', editable };
-  return { kind: editable ? 'text' : null, editable };
+  if (!editable && State.viewMode === 'reading' && el.closest('#noteContent')) {
+    const selected = String(window.getSelection() || '').trim();
+    if (selected) return { kind: 'selection', text: selected, editable: false };
+  }
+  return { kind: editable ? 'text' : null, editable, inEditor: !!el.closest('.cm-content') };
 }
 document.addEventListener('contextmenu', (e) => {
   const el = e.target instanceof Element ? e.target : null;
@@ -1909,11 +2120,15 @@ document.addEventListener('contextmenu', (e) => {
 }, true);
 
 function buildSurfaceItems(surface) {
-  if (!surface || !surface.kind || surface.kind === 'text') return [];
+  if (!surface || !surface.kind) return [];
   const mk = (id, key, vars) => ({ kind: 'action', id, label: tl(key, vars) });
+  const fromActions = (actions) => actions.map((action) => mk(action.id, action.key, action.vars));
+  if (surface.kind === 'selection' || surface.kind === 'text') return fromActions(surfaceActions(surface));
   if (surface.kind === 'tab') {
-    if (!State.files[surface.idx]) return [];
+    const tabFile = State.files[surface.idx];
+    if (!tabFile) return [];
     return [
+      ...fromActions(surfaceActions(surface, { dirty: !!tabFile.dirty })),
       mk('local:tab-close', 'ctx.close'),
       mk('local:tab-close-others', 'ctx.closeOthers'),
       mk('local:tab-close-all', 'ctx.closeAll'),
@@ -1998,6 +2213,25 @@ async function dispatchLocalCtxItem(id) {
         } catch (_) { showToast(tl('toast.copyPathFailed'), 'error'); }
       }
       break;
+    case 'local:tab-save':
+      if (target) {
+        if (State.activeFile !== idx) renderFile(idx);
+        await saveCurrent();
+      }
+      break;
+    case 'local:sel-highlight':
+    case 'local:sel-note':
+      if (!_pendingSelection) onNoteMouseUp();
+      await addHighlight(id === 'local:sel-note' ? 'note' : 'highlight');
+      break;
+    case 'local:sel-search':
+      searchLibrary(surface.text);
+      break;
+    case 'local:fmt-bold': wrapSelection('**', '**'); break;
+    case 'local:fmt-italic': wrapSelection('*', '*'); break;
+    case 'local:fmt-strike': wrapSelection('~~', '~~'); break;
+    case 'local:fmt-code': wrapSelection('`', '`'); break;
+    case 'local:fmt-link': insertText('[', '](url)'); break;
     case 'local:wiki-open':
       if (surface.target) navWikilink(surface.target);
       break;
@@ -2022,12 +2256,38 @@ function openCtxMenu({ nonce, descriptors, appCommands, x, y }) {
   const showApp = appCommands.length > 0 && surfaceItems.length === 0 && !(_ctxSurface && _ctxSurface.editable);
   _ctxRestoreTarget = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
   clearCtxMenu();
+  const surfaceIdx = _ctxSurface && _ctxSurface.key != null ? fileIndexByKey(_ctxSurface.key) : -1;
+  const surfaceFile = surfaceIdx >= 0 ? State.files.at(surfaceIdx) : null;
+  const header = ctxHeader(_ctxSurface, surfaceFile, surfaceFile ? rootNameFor(surfaceFile) : '');
+  if (header) ctxMenu.appendChild(buildCtxHeader(document, header));
   // The separator inserted above is display-only and must not consume an action index —
   // reconstruct the wire index (descriptors.length + k) for each appCommands entry;
   // renderer-local surface items carry id 'local:*' and never reach the wire.
   let wireIndex = 0;
   for (const item of descriptors) { ctxMenu.appendChild(renderCtxItem(item, wireIndex)); wireIndex++; }
   if (descriptors.length && (surfaceItems.length || showApp)) ctxMenu.appendChild(renderCtxItem({ kind: 'separator' }, -1));
+  if (showApp) {
+    const rows = ctxRows({
+      forcedDir: State.forcedDir,
+      theme: State.theme,
+      scale: State.readerTextScale,
+      hasDocument: State.activeFile !== null && !!State.files.at(State.activeFile),
+      labels: {
+        direction: tl('dir.label'),
+        theme: tl('menu.theme'),
+        textSize: tl('readerControls.textSize'),
+        'dir.auto': tl('dir.auto'),
+        'dir.rtl': tl('dir.rtl'),
+        'dir.ltr': tl('dir.ltr'),
+        'theme.paper': tl('menu.themePaper'),
+        'theme.ink': tl('menu.themeInk'),
+        'theme.sepia': tl('menu.themeSepia'),
+        'theme.oasis': tl('menu.themeOasis'),
+      },
+    });
+    for (const row of rows) ctxMenu.appendChild(buildCtxRow(document, row));
+    ctxMenu.appendChild(renderCtxItem({ kind: 'separator' }, -1));
+  }
   for (const item of surfaceItems) {
     const el = renderCtxItem(item, -1);
     el.dataset.localId = item.id;
@@ -2052,8 +2312,30 @@ function openCtxMenu({ nonce, descriptors, appCommands, x, y }) {
 }
 
 function ctxMenuItems() {
-  return Array.from(ctxMenu.querySelectorAll('.dd-item:not(.disabled)'));
+  return Array.from(ctxMenu.querySelectorAll('.dd-item:not(.disabled), .dd-opt'));
 }
+
+function runCtxOption(optionId) {
+  const [kind, value] = optionId.split(':');
+  if (kind === 'scale') {
+    const next = value === 'reset' ? 1 : Math.round((State.readerTextScale + (value === 'inc' ? 0.1 : -0.1)) * 10) / 10;
+    setReaderTextScale(next);
+    const percent = ctxMenu.querySelector('[data-ctx-opt="scale:reset"]');
+    if (percent) percent.textContent = `${Math.round(State.readerTextScale * 100)}%`;
+    return;
+  }
+  closeCtxMenu();
+  if (kind === 'dir') applyForcedDir(value === 'auto' ? null : value);
+  else if (kind === 'theme') setTheme(value);
+}
+
+ctxMenu.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.dd-opt')) e.preventDefault();
+});
+ctxMenu.addEventListener('click', (e) => {
+  const option = e.target.closest('[data-ctx-opt]');
+  if (option) runCtxOption(option.dataset.ctxOpt);
+});
 
 ctxMenu.addEventListener('keydown', (e) => {
   const items = ctxMenuItems();
@@ -2152,6 +2434,11 @@ function runSidebarSearch(q) {
     nameEl.textContent = r.name;
     card.appendChild(nameEl);
 
+    const pathEl = document.createElement('div');
+    pathEl.className = 'sr-path';
+    pathEl.textContent = State.files.at(r.fileIdx).path || r.name;
+    card.appendChild(pathEl);
+
     if (r.hits.length > 0) {
       r.hits.forEach(h => {
         const snip = document.createElement('div');
@@ -2202,7 +2489,7 @@ function setEditorMode(mode) {
   $('modeLive')?.classList.toggle('active', mode === 'live');
   $('modeSplit')?.classList.toggle('active', mode === 'split');
   $('modeSource')?.classList.toggle('active', mode === 'source');
-  $('propMode').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+  $('propMode').textContent = modeName(mode);
 }
 window.setEditorMode = setEditorMode;
 
@@ -2230,6 +2517,7 @@ function setZoom(factor) {
     document.documentElement.style.fontSize = (ZOOM_BASE_PX * clamped) + 'px';
   }
   editorArea.style.zoom = ''; // clear legacy content-only scaling in both paths
+  renderZoom(document, State.zoomFactor);
 }
 function zoomIn()    { setZoom(State.zoomFactor * 1.1); }
 function zoomOut()   { setZoom(State.zoomFactor / 1.1); }
@@ -2310,6 +2598,7 @@ function renderTabs() {
     tab.type = 'button';
     tab.className = 'tab' + (i === State.activeFile ? ' active' : '') + (f.dirty ? ' dirty' : '') + (f.conflict ? ' conflict' : '') + (f.missing ? ' missing' : '');
     tab.dataset.fileIdx = String(i);
+    tab.dataset.d = fileDirKind(f.content, f.forcedDir ?? null);
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', String(i === State.activeFile));
     tab.setAttribute('aria-controls', 'noteContent');
@@ -2352,7 +2641,54 @@ function renderTabs() {
     tabsEl.appendChild(tab);
   });
   syncWindowTitle(); // T-F19: tab set or dirty flags changed
+  renderCrumbs();
   reportDirtyCount();
+}
+
+function syncInspector() {
+  const f = State.activeFile !== null ? State.files.at(State.activeFile) : null;
+  renderInspectorDoc(document, f ? inspectorData({ file: f, ratio: shelfRatio(State.readingProgress, fileKey(f)), rootName: rootNameFor(f) }) : null);
+}
+
+function rootNameFor(f) {
+  const vault = f.vaultId ? workspaceController.getOpenVaults().find((v) => v.id === f.vaultId) : null;
+  return vault ? vault.name : tr('sidebar.openFiles', State.uiLocale);
+}
+
+function renderCrumbs() {
+  const host = $('crumbs');
+  if (!host) return;
+  host.replaceChildren();
+  const f = State.activeFile !== null ? State.files.at(State.activeFile) : null;
+  if (!f) {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'crumb-ph';
+    placeholder.setAttribute('data-i18n', 'titlebar.search');
+    placeholder.textContent = tl('titlebar.search');
+    host.appendChild(placeholder);
+    return;
+  }
+  const segments = crumbSegments(rootNameFor(f), f.path || f.name);
+  segments.forEach((segment, i) => {
+    const last = i === segments.length - 1;
+    const node = document.createElement('span');
+    node.className = last ? 'crumb-cur' : 'crumb';
+    const label = document.createElement('bdi');
+    label.textContent = segment;
+    node.appendChild(label);
+    if (last && f.dirty) {
+      const dot = document.createElement('i');
+      dot.className = 'crumb-dot';
+      node.appendChild(dot);
+    }
+    host.appendChild(node);
+    if (!last) {
+      const sep = document.createElement('span');
+      sep.className = 'crumb-sep';
+      sep.textContent = '›';
+      host.appendChild(sep);
+    }
+  });
 }
 
 function updateTabState(idx) {
@@ -2364,7 +2700,10 @@ function updateTabState(idx) {
   tab.dataset.tip = f.conflict ? tl('tab.conflictTip', { name: f.name }) : f.name;
   const close = tab.querySelector('.close');
   if (close) close.textContent = f.dirty ? '●' : '×';
-  if (idx === State.activeFile) syncWindowTitle(); // T-F19: dirty flag flipped
+  if (idx === State.activeFile) {
+    syncWindowTitle(); // T-F19: dirty flag flipped
+    renderCrumbs();
+  }
   reportDirtyCount();
 }
 
@@ -2380,11 +2719,17 @@ async function closeTab(idx) {
       await saveCurrent(f);
       if (f.dirty) { showToast(tl('toast.saveCanceled'), 'info'); return; }
     }
+    // B2: "Don't Save" really throws the edits away. A folder note's file object outlives its
+    // tab (the folder's file list keeps it), so it goes back to its saved text and is clean --
+    // otherwise the discarded text stays dirty, is mirrored into the recovery snapshot, comes
+    // back when the note is reopened, and the autosave writes it to disk.
+    if (choice === 'discard') discardEdits(f);
   }
   // The dialog above awaited — tabs may have shifted; close by identity, not index.
   const at = State.files.indexOf(f);
   if (at < 0) return;
   f = State.files[at];
+  if (cmAdapter && f._historyId != null) cmAdapter.releaseHistory(f._historyId); // B1: a closed tab frees its undo history
   if (f.inventory) {
     f.open = false;
     const next = State.files.findIndex((file, i) => i !== at && file.open !== false);
@@ -2478,6 +2823,7 @@ if (floatingTipEl && tabsWrapEl) {
 }
 
 function showWelcome() {
+  void resolveAppVersion().then((version) => { const stamp = $('welcomeVersion'); if (stamp && version) stamp.textContent = version; });
   // T14 (post-review F2): the welcome card is itself a scrollable .preview-pane, so a
   // trailing capture bound to the just-closed note would measure welcome-card geometry and
   // write it over that note's persisted shelf entry. Only renderFile cancelled until now.
@@ -2494,9 +2840,8 @@ function showWelcome() {
   $('propFile').textContent = '—';
   $('propWords').textContent = '0';
   $('propRead').textContent = '—';
-  $('readTime').textContent = '— min read';
-  $('wordCount').textContent = '0 words';
-  $('cursorPos').textContent = '— · —';
+  syncInspector();
+  localizeEmptyStatus();
   tocList.className = 'toc-empty';
   tocList.textContent = tl('outline.empty');
   renderRecents();
@@ -2516,6 +2861,7 @@ function renderReadingContent() {
   if (!f) return;
   const { body } = parseFrontMatter(f.content || '');
   const html = parseMarkdown(body);
+  noteRenderLimit(f);
   const wordCount = (body.match(/\S+/g) || []).length;
   noteContent.innerHTML = `
     <div class="doc-meta" aria-hidden="true">
@@ -2535,6 +2881,7 @@ function renderReadingContent() {
   $('propRead').textContent = tl('doc.readTime', { n: Math.max(1, Math.round(wordCount / 220)) });
   $('readTime').textContent = tl('doc.readTime', { n: Math.max(1, Math.round(wordCount / 220)) });
   $('wordCount').textContent = tl('status.nWords', { n: wordCount });
+  syncInspector();
   noteContent.querySelectorAll('a.wikilink').forEach(a => {
     a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
   });
@@ -2613,12 +2960,13 @@ function renderFile(idx) {
   toolbarStrip.style.display = (State.viewMode === 'reading') ? 'none' : 'flex';
   syncReaderControls();
 
-  loadIntoEditor(file.content || ''); // textarea (default) or CodeMirror (flag) — T-F13
+  loadIntoEditor(file); // textarea (fallback) or CodeMirror — T-F13; one undo history per file (B1)
   syncEditorEmptyHint(file.content);
 
   // Strip YAML front matter (T-R6) so it never renders as body text.
   const { body } = parseFrontMatter(file.content || '');
   const html = parseMarkdown(body);
+  noteRenderLimit(file);
   const wordCount = (body.match(/\S+/g) || []).length;
   const readMin = Math.max(1, Math.round(wordCount / 220));
 
@@ -2654,6 +3002,8 @@ function renderFile(idx) {
       conflictBar.querySelector('.cf-keep')?.addEventListener('click', () => resolveConflict(fileIndexByKey(bannerKey), 'keep'));
       conflictBar.querySelector('.cf-reload')?.addEventListener('click', () => resolveConflict(fileIndexByKey(bannerKey), 'reload'));
     }
+    // audit M7: a guessed encoding is asked about here, and no save happens before the answer.
+    if (file.documentId && file.meta && file.meta.encodingUncertain) conflictBar.appendChild(buildEncodingBanner(file));
   }
 
   // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
@@ -2671,7 +3021,8 @@ function renderFile(idx) {
   $('readTime').textContent = tl('doc.readTime', { n: readMin });
   $('wordCount').textContent = tl('status.nWords', { n: wordCount });
   $('cursorPos').textContent = tl('status.lnCol', { l: 1, c: 1 });
-  $('propMode').textContent = State.editorMode.charAt(0).toUpperCase() + State.editorMode.slice(1);
+  $('propMode').textContent = modeName(State.editorMode);
+  syncInspector();
 
   buildTOC();
   void loadAnnotations(file); // T5.1c: re-anchor this note's highlights after the rebuild
@@ -2700,14 +3051,85 @@ function renderFile(idx) {
 }
 window.renderFile = renderFile;
 
+// ── audit M7 (decision D10): a guessed encoding is confirmed before the first save ──
+const ENCODING_NAMES = new Map([
+  ['utf8', 'UTF-8'], ['windows-1256', 'Windows-1256'], ['utf16le', 'UTF-16 LE'], ['utf16be', 'UTF-16 BE'],
+]);
+const encodingName = (encoding) => ENCODING_NAMES.get(encoding) || String(encoding || '');
+
+/** The bar above the note: what was guessed, "Keep", and "Reopen as" for the other encodings. */
+function buildEncodingBanner(file) {
+  const meta = file.meta || {};
+  const current = ENCODING_NAMES.has(meta.encoding) ? meta.encoding : 'utf8';
+  const key = fileKey(file);
+  const bar = document.createElement('div');
+  bar.className = 'conflict-banner encoding-banner';
+  bar.setAttribute('role', 'alert');
+  const message = document.createElement('span');
+  message.className = 'cf-msg';
+  message.textContent = meta.encodingInvalidBytes > 0
+    ? tl('banner.encodingDamaged', { name: file.name, n: meta.encodingInvalidBytes })
+    : tl('banner.encodingGuessed', { name: file.name, encoding: encodingName(current) });
+  bar.appendChild(message);
+  const addButton = (label, className, encoding, reopen) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.dataset.encoding = encoding;
+    button.textContent = label;
+    button.addEventListener('click', () => { void resolveEncoding(fileIndexByKey(key), encoding, reopen); });
+    bar.appendChild(button);
+  };
+  addButton(tl('banner.encodingKeep', { encoding: encodingName(current) }), 'cf-btn cf-reload enc-keep', current, false);
+  for (const encoding of ENCODING_NAMES.keys()) {
+    if (encoding !== current) addButton(tl('banner.encodingReopen', { encoding: encodingName(encoding) }), 'cf-btn enc-reopen', encoding, true);
+  }
+  return bar;
+}
+
+/** Apply the answer: keep the guess, or read the note again with another encoding. */
+async function resolveEncoding(idx, encoding, reopen) {
+  const f = idx >= 0 ? State.files.at(idx) : null;
+  const bridge = window.electronAPI;
+  if (!f || !f.documentId || !f.meta || !f.meta.encodingUncertain) return;
+  if (!bridge || typeof bridge.confirmEncoding !== 'function') return;
+  if (reopen && f.dirty && !(await askReopenDiscard(f.name))) return;
+  let result;
+  try { result = await bridge.confirmEncoding({ documentId: f.documentId, encoding, reopen }); }
+  catch (_) { result = { error: 'ipc-failed' }; }
+  if (!result || result.error || (reopen && typeof result.content !== 'string')) {
+    showToast(tl('toast.encodingReopenFailed', { name: f.name, encoding: encodingName(encoding) }), 'error');
+    return;
+  }
+  if (reopen) {
+    adoptDiskText(f, result.content); // the disk text in the chosen encoding is the baseline
+    f.meta = result.meta || f.meta;
+  } else {
+    const meta = { ...f.meta };
+    delete meta.encodingUncertain;
+    delete meta.encodingInvalidBytes;
+    f.meta = meta;
+  }
+  const at = State.files.indexOf(f);
+  if (at >= 0 && at === State.activeFile) renderFile(at);
+  renderTabs();
+  if (!f.meta.encodingUncertain) showToast(tl('toast.encodingConfirmed', { encoding: encodingName(f.meta.encoding) }), 'info');
+}
+window._resolveEncoding = resolveEncoding; // e2e hook
+
 // EC-A2 resolve (T-B9): apply the user's choice for a disk-conflicted file.
 function resolveConflict(idx, action) {
   const f = State.files[idx];
   if (!f || !f.conflict) return;
   if (action === 'reload') {
-    if (f.diskContent != null) f.content = f.diskContent; // take the disk version…
-    f.dirty = false;                                       // …discarding local edits
-  } // 'keep' → retain edits + dirty
+    // take the disk version, discarding local edits; the disk text becomes the baseline
+    if (f.diskContent != null) adoptDiskText(f, f.diskContent);
+    else markClean(f);
+  } else if (f.diskContent != null) {
+    // 'keep' → retain the edits; the baseline still moves to the disk text we just
+    // acknowledged (typing back to the OLD baseline must not look clean while disk differs)
+    adoptDiskText(f, f.diskContent, { keepEdits: true });
+  }
   if (f.diskMeta) f.meta = f.diskMeta; // acknowledge current disk identity (both keep + reload) so we don't re-nag / mis-baseHash the next Save
   f.conflict = false;
   f.diskContent = null;
@@ -2752,11 +3174,16 @@ function buildTOC() {
   const srcHeads = cmAdapter ? sourceHeadingPositions(cmAdapter.getValue()) : [];
   const usedSrc = new Set();
   const seen = new Map();
+  const outlineNos = outlineNumbers(rendered.map((el) => Number(el.tagName.charAt(1))));
   rendered.forEach((el, i) => {
     const text = (el.textContent || '').trim();
     let slug = slugify(text);
     if (seen.has(slug)) { const k = seen.get(slug) + 1; seen.set(slug, k); slug = `${slug}-${k}`; }
     else seen.set(slug, 0);
+    // audit M1: a heading called "Editor" or "Toast" must not get the id (and with it the
+    // CSS and the lookups) of an app element.
+    const owner = slug ? document.getElementById(slug) : null;
+    if (owner && !rendered.includes(owner)) slug = `${slug}-heading`;
     el.id = slug;
     // Resolve the CM6 source position for this heading.
     let pos = null;
@@ -2773,7 +3200,10 @@ function buildTOC() {
     item.type = 'button';
     item.className = `toc-item h${el.tagName.charAt(1)}` + (_tocHeadings.length === 0 ? ' active' : '');
     item.textContent = text; // clean rendered text (no raw markdown punctuation)
-    item.setAttribute('dir', 'auto'); // Arabic outline entries render RTL
+    item.dataset.no = outlineNos.at(i);
+    // Same resolver as the heading itself (bidi-dom.js), so the outline entry and its heading
+    // always agree. dir="auto" is plain first-strong and disagrees on "API دليل المستخدم".
+    item.setAttribute('dir', resolveBlockDirection(text, State.direction === 'rtl' ? 'rtl' : 'ltr'));
     const entry = { el, item, pos };
     item.addEventListener('click', () => scrollToHeading(entry));
     tocList.appendChild(item);
@@ -2801,6 +3231,7 @@ function captureReadingProgress(file) {
   const ratio = scrollRatio(previewScroller());
   if (ratio == null) return; // unmeasurable (short note / not laid out) — keep whatever we had
   file.scrollRatio = ratio;
+  renderInspectorProgress(document, ratio);
   const entry = progressEntryFor(file, ratio, Date.now());
   if (!entry) return; // loose or untitled file: not reopenable, so never shelved
   const alreadyShelved = State.readingProgress.some((item) => item && item.key === entry.key);
@@ -2902,13 +3333,32 @@ function renderStreakLine() {
   if (!goal || !stats || (!stats.today && !stats.streak)) {
     el.hidden = true;
     el.textContent = '';
+    renderStreakGrid(null, goal);
     return;
   }
+  renderStreakGrid(stats, goal);
   const parts = [];
   if (stats.streak > 0) parts.push(tl('streak.days', { n: stats.streak }));
   parts.push(tl('streak.today', { n: stats.today, goal }));
   el.textContent = parts.join(' · ');
   el.hidden = false;
+}
+
+function renderStreakGrid(stats, goal) {
+  const host = $('streakGrid');
+  if (!host) return;
+  host.textContent = '';
+  if (!stats || !stats.date) { host.hidden = true; return; }
+  for (const cell of streakGrid(stats.days, stats.date, { goal })) {
+    const dot = document.createElement('span');
+    dot.className = 'sg-cell';
+    dot.dataset.l = String(cell.level);
+    if (cell.future) dot.dataset.future = '';
+    dot.title = `${cell.date} · ${cell.minutes}`;
+    host.appendChild(dot);
+  }
+  host.setAttribute('aria-label', tl('streak.grid'));
+  host.hidden = false;
 }
 
 async function refreshReadingStats() {
@@ -2928,7 +3378,8 @@ function readingMinuteTick() {
   if (document.visibilityState !== 'visible') return;
   void bridge.statsAddMinutes(1).then((res) => {
     if (res && res.ok) {
-      State.readingStats = { today: res.today, date: res.date, streak: res.streak };
+      const days = Object.assign({}, State.readingStats && State.readingStats.days, { [res.date]: res.today });
+      State.readingStats = { today: res.today, date: res.date, streak: res.streak, days };
       renderStreakLine();
     }
   }).catch(() => { /* a failed tick is silent — stats must never nag */ });
@@ -2985,6 +3436,11 @@ async function loadAnnotations(file) {
 }
 window._loadAnnotations = loadAnnotations;
 
+// The longest highlight text or note the store accepts (MAX_TEXT in
+// src/main/annotations-store.js). The store refuses the WHOLE list when one entry is
+// longer, so an entry over the limit must never enter the list (audit M13).
+const HIGHLIGHT_MAX_TEXT = 5000;
+
 /** Persist the active document's whole list (the store replaces it atomically). */
 function saveAnnotations() {
   const bridge = annotationsBridge();
@@ -3010,6 +3466,56 @@ function highlightMark(id) {
 }
 
 /** Inspector "Notes": one row per stored highlight (excerpt + when + delete). */
+const marginNotes = createMarginNotes({
+  doc: document,
+  host: $('marginNotes'),
+  getNotes: () => _annotations,
+  getAnchorTop: (id) => {
+    const mark = highlightMark(id);
+    const pane = previewScroller();
+    if (!mark || !pane) return null;
+    return mark.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+  },
+  formatTime: (at) => relativeTime(at, State.uiLocale),
+  removeLabel: () => tl('hl.remove'),
+  toggleLabel: (expanded) => tl(expanded ? 'mn.collapse' : 'mn.expand'),
+  onJump: (id) => scrollToHighlight(id),
+  onRemove: (id) => { void removeHighlight(id); },
+  onToggle: () => setMarginNotesCollapsed(!State.marginNotesCollapsed),
+  onMarker: (id, forced) => {
+    if (forced) { scrollToHighlight(id); return; } // no room to expand: jump to the passage
+    setMarginNotesCollapsed(false);
+    marginNotes.setActive(id);
+  },
+});
+
+/** Returns false when the gutter beside the reading column is too narrow for `mode` ('cards' | 'markers'). */
+function positionMarginHost(mode) {
+  const host = $('marginNotes');
+  const pane = previewScroller();
+  if (!host || !pane) return false;
+  const padStart = parseFloat(getComputedStyle($('editor')).paddingInlineStart) || 0;
+  const gap = Math.max(10, padStart - 14) + 24;
+  const rtl = getComputedStyle(noteContent).direction === 'rtl';
+  const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return placeMarginHost({ host, pane, column: noteContent, gap, rootFontSize, rtl, mode });
+}
+
+function syncMarginNotes() {
+  const hasNotes = State.viewMode === 'reading' && _annotations.length > 0;
+  const pick = hasNotes
+    ? pickMarginMode({ collapsed: State.marginNotesCollapsed, fits: positionMarginHost })
+    : null;
+  if (!pick) { marginNotes.clear(); return; }
+  marginNotes.refresh(pick);
+}
+
+/** Fold the margin notes to gutter markers (or unfold them); saved with the other UI prefs. */
+function setMarginNotesCollapsed(collapsed) {
+  State.marginNotesCollapsed = !!collapsed; // persisted via the PERSISTED_KEYS subscription
+  syncMarginNotes();
+}
+
 function renderNoteList() {
   if (!noteList) return;
   noteList.textContent = '';
@@ -3018,6 +3524,7 @@ function renderNoteList() {
     empty.className = 'note-empty';
     empty.textContent = tl('notes.empty');
     noteList.appendChild(empty);
+    syncMarginNotes();
     return;
   }
   for (const entry of _annotations) {
@@ -3046,8 +3553,14 @@ function renderNoteList() {
     row.append(jump, del);
     noteList.appendChild(row);
   }
+  syncMarginNotes();
 }
 window._renderNoteList = renderNoteList;
+if (typeof ResizeObserver === 'function') {
+  const marginObserver = new ResizeObserver(() => syncMarginNotes());
+  marginObserver.observe(previewScroller());
+  marginObserver.observe(noteContent);
+}
 
 /** Jump to a stored highlight; entering Reading first when the CM6 surface is showing. */
 function scrollToHighlight(id) {
@@ -3055,6 +3568,9 @@ function scrollToHighlight(id) {
   applyHighlights(noteContent, _annotations);               // idempotent: the switch is async
   const mark = highlightMark(id);
   if (!mark) { showToast(tl('hl.notFound'), 'error'); return; }
+  noteContent.querySelectorAll('mark.user-hl.on').forEach((m) => m.classList.remove('on'));
+  mark.classList.add('on');
+  marginNotes.setActive(id);
   const pane = previewScroller();
   if (!pane) return;
   const top = mark.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
@@ -3064,18 +3580,57 @@ function scrollToHighlight(id) {
 window._scrollToHighlight = scrollToHighlight;
 
 /** Delete one highlight: unwrap its <mark>, then persist the shorter list. */
-async function removeHighlight(id) {
-  _annotations = _annotations.filter((entry) => entry && entry.id !== id);
+/** Take one highlight's <mark> out of the reading DOM, leaving its text in place. */
+function unwrapHighlightMark(id) {
   const mark = highlightMark(id);
-  if (mark && mark.parentNode) {
-    const parent = mark.parentNode;
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-    parent.removeChild(mark);
-    parent.normalize(); // rejoin the text nodes extractContents split
-  }
+  if (!mark || !mark.parentNode) return;
+  const parent = mark.parentNode;
+  while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+  parent.removeChild(mark);
+  parent.normalize(); // rejoin the text nodes extractContents split
+}
+
+/** Undo of a delete (audit M15): put the highlight back where it was in the list. */
+async function restoreHighlight(entry, index, docKey) {
+  // Only into the document it came from, and only once.
+  if (docKey !== _annotationsKey || _annotations.some((item) => item && item.id === entry.id)) return;
+  const next = _annotations.slice();
+  next.splice(Math.min(index, next.length), 0, entry);
+  _annotations = next;
+  applyHighlights(noteContent, [entry]);
   renderNoteList();
-  await saveAnnotations();
-  showToast(tl('hl.removed'), 'info');
+  const saved = await saveAnnotations();
+  if (saved && saved.error && docKey === _annotationsKey) {
+    _annotations = _annotations.filter((item) => item && item.id !== entry.id);
+    unwrapHighlightMark(entry.id);
+    renderNoteList();
+  }
+}
+
+async function removeHighlight(id) {
+  const before = _annotations;
+  const docKey = _annotationsKey;
+  const index = before.findIndex((entry) => entry && entry.id === id);
+  _annotations = _annotations.filter((entry) => entry && entry.id !== id);
+  unwrapHighlightMark(id);
+  renderNoteList();
+  const saved = await saveAnnotations();
+  if (saved && saved.error) {
+    // Not removed on disk (saveAnnotations has said so): show what is really stored.
+    if (docKey === _annotationsKey) {
+      _annotations = before;
+      applyHighlights(noteContent, before.filter((entry) => entry && entry.id === id));
+      renderNoteList();
+    }
+    return;
+  }
+  const removed = before.find((entry) => entry && entry.id === id);
+  if (!removed) return;
+  // One click deletes a highlight and its note, so the delete can be taken back.
+  showToast(tl('hl.removed'), 'info', {
+    label: tl('menu.undo'),
+    onClick: () => { void restoreHighlight(removed, index, docKey); },
+  });
 }
 window._removeHighlight = removeHighlight;
 
@@ -3152,7 +3707,7 @@ function askNoteText(excerpt) {
     const html = `
       <div class="dlg-body">
         <blockquote class="note-excerpt" dir="auto">${escapeHtml(noteExcerpt(excerpt, 160))}</blockquote>
-        <textarea class="note-field" id="noteField" dir="auto" rows="4"
+        <textarea class="note-field" id="noteField" dir="auto" rows="4" maxlength="${HIGHLIGHT_MAX_TEXT}"
           placeholder="${escapeHtml(tl('hl.notePlaceholder'))}"></textarea>
       </div>
       <div class="dlg-actions">
@@ -3179,9 +3734,14 @@ async function addHighlight(mode) {
   const found = _pendingSelection;
   hideHighlightBar();
   if (!found || !_annotationsKey) return;
+  if (found.text.length > HIGHLIGHT_MAX_TEXT) {
+    _pendingSelection = null;
+    showToast(tl('hl.tooLong', { n: HIGHLIGHT_MAX_TEXT }), 'error');
+    return;
+  }
   let note = '';
   if (mode === 'note') {
-    note = (await askNoteText(found.text)).trim();
+    note = (await askNoteText(found.text)).trim().slice(0, HIGHLIGHT_MAX_TEXT);
     if (note === '') return; // cancelled (or left empty) — store nothing
   }
   // T10 (BUG-2) + T14 (post-review F3): the selection must still belong to the loaded
@@ -3196,7 +3756,17 @@ async function addHighlight(mode) {
   _annotations = _annotations.concat([entry]);
   applyHighlights(noteContent, [entry]);
   renderNoteList();
-  await saveAnnotations();
+  const saved = await saveAnnotations();
+  if (saved && saved.error) {
+    // Not stored (saveAnnotations has said so). Take it back out, or every later save of
+    // this document would carry it, and "Highlight saved" would hide the failure.
+    if (found.docKey === _annotationsKey) {
+      _annotations = _annotations.filter((item) => item && item.id !== entry.id);
+      unwrapHighlightMark(entry.id);
+      renderNoteList();
+    }
+    return;
+  }
   showToast(tl('hl.saved'), 'info');
 }
 window._addHighlight = addHighlight;
@@ -3453,6 +4023,7 @@ function renderTree(entries) {
     });
   }
 
+  const fileCounts = treeFileCounts(forest);
   flattenTree(forest, collapsed).forEach(row => {
     const node = document.createElement('div');
     node.setAttribute('role', 'treeitem');
@@ -3485,7 +4056,7 @@ function renderTree(entries) {
       // single unconditional down-chevron off aria-expanded, set two lines above.
       // Swapping the glyph AND rotating it would double-encode the state (a rotated
       // "already-pointing-left" triangle would point up when collapsed).
-      node.innerHTML = `<span class="tree-twisty">▾</span>${nameHtml}`;
+      node.innerHTML = `<span class="tree-twisty">▾</span>${nameHtml}<i class="tree-rule"></i><span class="tree-count">${fileCounts.get(row.path) || 0}</span>`;
       const setOpen = (open) => {
         if (open === !collapsed.has(row.path)) return; // no change
         if (open) collapsed.delete(row.path); else collapsed.add(row.path);
@@ -3511,7 +4082,8 @@ function renderTree(entries) {
       const isCollapsed = collapsed.has(row.path);
       node.className = `tree-node tree-root${indentClass}`;
       node.setAttribute('aria-expanded', String(!isCollapsed));
-      node.innerHTML = `<span class="tree-twisty">▾</span>${nameHtml}`;
+      const rootCount = fileCounts.get(row.path) || 0;
+      node.innerHTML = `<span class="tree-twisty">▾</span>${nameHtml}<span class="tree-count">${escapeHtml(tl('lib.noteCount', { n: rootCount }))}</span>`;
       const setOpen = (open) => {
         if (open === !collapsed.has(row.path)) return;
         if (open) collapsed.delete(row.path); else collapsed.add(row.path);
@@ -3547,7 +4119,14 @@ function renderTree(entries) {
     } else {
       node.className = `tree-node tree-file${indentClass}`;
       node.dataset.fileIdx = row.fileIdx;
-      node.innerHTML = `<span class="tree-icon">¶</span>${nameHtml}`;
+      const treeFile = State.files.at(row.fileIdx);
+      const meta = treeFile && treeFile.content ? fileMeta(treeFile) : null;
+      const ratio = treeFile ? shelfRatio(State.readingProgress, fileKey(treeFile)) : 0;
+      node.dataset.d = meta ? meta.dir : 'ltr';
+      const percent = ratio > 0 ? ` · <bdi dir="ltr">${Math.round(ratio * 100)}%</bdi>` : '';
+      const metaHtml = meta ? `<span class="tree-meta">${escapeHtml(tl('doc.readTime', { n: meta.minutes }))}${percent}</span>` : '';
+      node.innerHTML = `<i class="tree-tick"></i><span class="tree-text">${nameHtml}${metaHtml}</span>${ratio > 0 ? '<span class="tree-prog"><i></i></span>' : ''}`;
+      if (ratio > 0) node.style.setProperty('--p', ratio.toFixed(2));
       const activate = () => openFromTree(row.fileIdx);
       node.addEventListener('click', activate);
       node.addEventListener('keydown', e => {
@@ -3589,11 +4168,15 @@ function renderTags() {
   tagsPane.textContent = '';
   const cloud = document.createElement('div');
   cloud.className = 'tag-cloud';
+  const maxTagFiles = tags[0][1].length;
+  const minTagFiles = tags[tags.length - 1][1].length;
   tags.forEach(([tag, files]) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tag';
     button.dataset.tag = tag;
+    const tagScale = maxTagFiles === minTagFiles ? 0.4 : (files.length - minTagFiles) / (maxTagFiles - minTagFiles);
+    button.style.setProperty('--s', tagScale.toFixed(2));
     button.appendChild(document.createTextNode(tag));
     const count = document.createElement('span');
     count.className = 'count';
@@ -3603,6 +4186,13 @@ function renderTags() {
     cloud.appendChild(button);
   });
   tagsPane.appendChild(cloud);
+}
+
+function searchLibrary(text) {
+  if (!State.sidebarVisible) toggleSidebar();
+  switchSbPane('search');
+  $('sbSearchInput').value = text;
+  runSidebarSearch(text);
 }
 
 function filterByTag(tag) {
@@ -3716,12 +4306,13 @@ fileInput.addEventListener('change', async () => {
       showToast(tl('toast.couldNotRead', { name: file.name }), 'error');
     }
   }
-  if (fileInput.files.length > 0) showToast(tl('toast.openedNFiles', { n: fileInput.files.length, s: '' }));
+  if (fileInput.files.length > 0) showToast(tl('toast.openedNFiles', { n: fileInput.files.length }));
   fileInput.value = '';
 });
 
 function addFile(f) {
   if (!Number.isInteger(f.revision)) f.revision = 0;
+  if (!f.dirty && typeof f.savedContent !== 'string') f.savedContent = f.content; // clean on arrival: the text is the saved baseline
   // B4: dedupe by fileKey (doc capability > vault-scoped path > bare path), not a bare
   // name+path pair — two open folders sharing a relative path (both have notes/todo.md)
   // must never overwrite each other's entry just because a new loose file coincidentally
@@ -3755,8 +4346,7 @@ function addFile(f) {
 function newNote() {
   closeMenu();
   markUserIntent();
-  const n = State.files.filter(f => f.name.startsWith('Untitled')).length;
-  const name = `Untitled${n > 0 ? '-' + n : ''}.md`;
+  const name = nextUntitledName(State.files.map((f) => f.name)); // first free name (audit H10)
   // v1.2.2: a pristine note starts EMPTY and clean. The old scaffold (`# Untitled\n\n
   // Start writing…`) was real document content, so saving an untouched note wrote the
   // placeholder text to disk. The visible "Start writing…" is now a DOM-only hint
@@ -3841,14 +4431,20 @@ function syncEditorEmptyHint(content) {
 // SOURCE TEXTAREA INPUT
 // =====================================================================
 let _srcDebounce = null;
+// ln/col status readout for a caret that moved WITHOUT an edit (click, arrows, selection).
+// Edits update it in applyEditorInput; this covers the rest. No-op while no note is open.
+function updateCursorReadout() {
+  if (!cmAdapter || cmLoading || State.activeFile === null || !State.files[State.activeFile]) return;
+  const { line, col } = cmAdapter.lineAt(cmAdapter.getSelection().start);
+  $('cursorPos').textContent = tl('status.lnCol', { l: line, c: col });
+}
 // Shared by the textarea engine and the CodeMirror engine (T-F13): apply an edit from
 // whichever source editor is active. `val` is the full doc text, `pos` the caret offset.
 function applyEditorInput(val, pos) {
   if (State.activeFile === null || !State.files[State.activeFile]) return;
   const f = State.files[State.activeFile];
-  f.content = val;
+  applyEdit(f, val); // content + dirty vs the saved baseline (undo back to saved text clears the dot)
   f.revision = (Number.isInteger(f.revision) ? f.revision : 0) + 1;
-  f.dirty = true;
   f._editedAt = Date.now();
   syncEditorEmptyHint(val);
   updateTabState(State.activeFile);
@@ -3894,6 +4490,7 @@ function applyEditorInput(val, pos) {
     $('propWords').textContent = wordCount;
     $('propRead').textContent = tl('doc.readTime', { n: readMin });
     $('readTime').textContent = tl('doc.readTime', { n: readMin });
+    syncInspector();
     $('wordCount').textContent = tl('status.nWords', { n: wordCount });
     // UX-03: rebuild on EVERY source change — CM6 offsets shift with any edit above a
     // heading, and the old heading-text-only gate left _tocHeadings positions stale
@@ -4030,7 +4627,7 @@ async function initCM6Editor() {
     renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
     renderMath: renderCmMath,   // T-F13 × F9: inline KaTeX rendering in the single CM6 surface
     onWikilink: navWikilink,    // R09: clicking a rendered [[wikilink]] in the editor navigates
-    onSelectionChange: updateToolbarActiveState, // highlight toolbar buttons for the caret's construct
+    onSelectionChange: () => { updateToolbarActiveState(); updateCursorReadout(); }, // toolbar state + ln/col follow the caret
     onTab: tableTab,            // Tab/Shift-Tab navigate table cells when inside a table
   });
   window.__cmActive = true;
@@ -4046,9 +4643,19 @@ async function initCM6Editor() {
   return true;
 }
 // Load a document into whichever source engine is active (used by renderFile).
-function loadIntoEditor(content) {
-  if (cmAdapter) { cmLoading = true; cmAdapter.load(content || ''); cmLoading = false; }
-  else { srcTextarea.value = content || ''; }
+// Audit B1: `file` selects the editor state (and so the undo history) the text is shown in —
+// each open file has its own, and loading is never an undoable step.
+function loadIntoEditor(file) {
+  const content = file.content || '';
+  if (cmAdapter) {
+    cmLoading = true;
+    try { cmAdapter.load(content, historyKeyOf(file)); } finally { cmLoading = false; }
+    // Files that are gone (closed tab, closed folder) free their history here — after the load,
+    // which parks the file just left; everything still open keeps it. Keys are only read, never
+    // created, for files never shown.
+    cmAdapter.retainHistory(State.files.map((f) => f._historyId).filter((k) => k != null));
+  }
+  else { srcTextarea.value = content; }
 }
 window.loadCM6 = loadCM6;
 window.initCM6Editor = initCM6Editor;
@@ -4109,7 +4716,7 @@ function handleBlockquoteEnter(e) {
 
 srcTextarea.addEventListener('keydown', handleBlockquoteEnter);
 
-srcTextarea.addEventListener('keyup', () => {
+for (const evt of ['keyup', 'click', 'mouseup']) srcTextarea.addEventListener(evt, () => {
   const pos = srcTextarea.selectionStart;
   const upto = srcTextarea.value.slice(0, pos);
   const ln = upto.split('\n').length;
@@ -4181,14 +4788,14 @@ function wrapSelection(left, right) {
       return;
     }
     // markers INSIDE the selection → unwrap
-    if (sel.length >= left.length + right.length && sel.startsWith(left) && sel.endsWith(right)) {
+    if (isWrappedInside(sel, left, right)) {
       const inner = sel.slice(left.length, sel.length - right.length);
       cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(inner);
       cmAdapter.setSelection({ start, end: start + inner.length });
       return;
     }
     // markers just OUTSIDE the selection → unwrap
-    if (v.slice(start - left.length, start) === left && v.slice(end, end + right.length) === right) {
+    if (isWrappedOutside(v, start, end, left, right)) {
       cmAdapter.setSelection({ start: start - left.length, end: end + right.length });
       cmAdapter.replaceSelection(sel);
       cmAdapter.setSelection({ start: start - left.length, end: start - left.length + sel.length });
@@ -4699,7 +5306,7 @@ function showSettings() {
     </div>`;
 
   const title = tr('settings.title', State.uiLocale);
-  openModal(!title || title === 'settings.title' ? 'Settings' : title, html);
+  openModal(!title || title === 'settings.title' ? 'Settings' : title, html, 'drawer');
 
   // Wire after insertion, mirroring buildMenu()'s querySelectorAll pass over its own
   // innerHTML output.
@@ -4736,7 +5343,7 @@ function showSettings() {
       document.documentElement.setAttribute('data-theme', systemTheme);
       $('themeBtn')?.classList.toggle('active', systemTheme !== 'paper');
       updateThemeIcon(systemTheme);
-      if ($('themeLabel')) $('themeLabel').textContent = systemTheme;
+      setThemeLabel(systemTheme);
     }
     sync();
   });
@@ -4753,6 +5360,7 @@ function showSettings() {
     if (State.updateCheck === 'auto') {
       void window.electronAPI?.autoUpdateCheck?.().then((res) => {
         if (res && res.updateAvailable) showUpdateNotice(res);
+        else if (res && res.error === 'untrusted') showUpdateFailure('untrusted');
       }).catch(() => { /* an offline check is silent, not an error toast */ });
     }
   });
@@ -4817,18 +5425,19 @@ function filterPalette(q) {
   let html = ''; palVisible = [];
   Object.entries(sections).forEach(([sec, arr]) => {
     const secLabel = PAL_SEC_KEY[sec] ? tr(PAL_SEC_KEY[sec], loc) : sec;
-    html += `<div class="pal-section-label">${escapeHtml(secLabel)}</div>`;
+    html += `<div class="pal-sec${sec === 'Files in folder' ? ' pal-sec-files' : ''}"><div class="pal-section-label">${escapeHtml(secLabel)}</div>`;
     arr.forEach(it => {
       palVisible.push(it);
       const sk = it.sk ? `<span class="pi-shortcut">${it.sk.split('+').map(p => `<span class="kbd">${p}</span>`).join('')}</span>` : '';
       const optionIndex = palVisible.length - 1;
       html += `<button type="button" class="pal-item${palVisible.length === 1 ? ' active' : ''}" role="option" id="pal-option-${optionIndex}" aria-selected="${palVisible.length === 1}" data-i="${optionIndex}">
-        <span class="pi-icon">${it.icon ? `<svg class="ic"><use href="#ic-${escapeHtml(it.icon)}"/></svg>` : ''}</span>
+        <span class="pi-icon">${it.icon ? `<span data-ic="${escapeHtml(it.icon)}"></span>` : ''}</span>
         <span class="pi-name">${escapeHtml(it._label || it.name)}</span>
-        <span class="pi-meta">${escapeHtml(it.meta || '')}</span>
+        <span class="pi-meta">${escapeHtml(paletteMeta(it))}</span>
         ${sk}
       </button>`;
     });
+    html += '</div>';
   });
   // Non-interactive: no .pal-item class, so it never enters palVisible / keyboard nav.
   if (!q && State.files.length > PALETTE_FILE_CAP) {
@@ -4836,6 +5445,7 @@ function filterPalette(q) {
   }
   if (!items.length) html = `<div class="search-empty" style="padding: 20px;">${escapeHtml(tr('palette.noMatches', loc))}</div>`;
   palResults.innerHTML = html;
+  hydrateIcons(palResults);
   palIdx = 0;
   if (palVisible.length) palInput.setAttribute('aria-activedescendant', 'pal-option-0');
   else palInput.removeAttribute('aria-activedescendant');
@@ -4924,6 +5534,14 @@ async function winClose() {
         try { window.electronAPI?.abortWindowClose?.(); } catch (_) { /* best-effort */ }
         return;
       }
+      if (choice === 'discard') {
+        // B2: "Close without Saving" must not leave the discarded text dirty for the awaits
+        // below (settings flush, recovery clear) -- the autosave timer and the recovery loop
+        // keep running until the window is really gone and would write / mirror it. State only:
+        // no re-render, the window is closing and a re-render would reset the scroll position
+        // that is captured and saved right below.
+        for (const f of dirtyFiles) discardEdits(f);
+      }
     }
     // T14 (post-review L5): flush the active note's final reading position — the 1s capture
     // throttle otherwise leaves the shelf up to a second stale on quit. No-op in Edit mode
@@ -4937,6 +5555,10 @@ async function winClose() {
     // for — quitting now must leave it re-offerable.
     if (!window._recoveryPromptOpen && !window._recoveryDismissed) {
       try { await window.electronAPI?.recoveryClear?.(); } catch (_) { /* best-effort */ }
+    } else {
+      // The offer stays; this session's own mirror (live.json) holds nothing worth offering
+      // after a sanctioned close, so it is emptied.
+      try { await window.electronAPI?.recoverySnapshot?.([]); } catch (_) { /* best-effort */ }
     }
     if (window.electronAPI) window.electronAPI.closeWindow();
   } finally {
@@ -4951,24 +5573,21 @@ if (window.electronAPI && typeof window.electronAPI.onCloseRequested === 'functi
 // =====================================================================
 // GLOBAL KEYBOARD SHORTCUTS
 // =====================================================================
-// Layout-independent matching (v1.2): e.key is the CHARACTER the current keyboard
-// layout produces, so on an Arabic layout Ctrl+S yields 'س' and matched no branch —
-// every shortcut silently died. e.code is the PHYSICAL key ('KeyS' on any layout),
-// so shortcuts now match either. The chord shape (which modifier, shift or not) is
-// unchanged; only the letter test became layout-proof.
-function shortcutLetter(e) {
-  const code = /^(Key|Digit)([A-Z0-9])$/.exec(e.code || '');
-  if (code) return code[2].toLowerCase();
-  return (e.key || '').toLowerCase();
+// Which key an event means is decided in shortcut-keys.js (audit M24): the character the
+// layout produces when it is one a shortcut can use, the physical key otherwise.
+
+// audit M25: Esc leaves fullscreen only when it had nothing else to close. The surfaces are
+// read in the capture phase, before any of their own Escape handlers has closed one.
+let _escapeHadSurface = false;
+function escapeSurfaceOpen() {
+  return palOverlay.classList.contains('open') || modalOverlay.classList.contains('open')
+    || $('findBar').classList.contains('open') || dropdown.classList.contains('open')
+    || !ctxMenu.hidden || !!(_hlBar && !_hlBar.hidden)
+    || !!(readerControlsPopover && !readerControlsPopover.hidden);
 }
-function hitKey(e, ch) {
-  return shortcutLetter(e) === ch || (e.key || '').toLowerCase() === ch;
-}
-// Punctuation chords can't use Key*/Digit* codes; match the physical code OR the
-// produced character so both standard and Arabic-layout punctuation work.
-function hitCode(e, ch, code) {
-  return (e.code || '') === code || (e.key || '') === ch;
-}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') _escapeHadSurface = escapeSurfaceOpen();
+}, true);
 
 document.addEventListener('keydown', e => {
   const cmd = e.ctrlKey || e.metaKey;
@@ -4993,7 +5612,11 @@ document.addEventListener('keydown', e => {
   else if (cmd && !e.shiftKey && hitKey(e, 'n')) { e.preventDefault(); newNote(); }
   else if (cmd && e.shiftKey && hitKey(e, 's')) { e.preventDefault(); saveAs(); }
   else if (cmd && !e.shiftKey && hitKey(e, 's')) { e.preventDefault(); saveCurrent(); }
-  else if (cmd && !e.shiftKey && hitKey(e, 'y')) { e.preventDefault(); execEditCmd('redo'); } // Ctrl+Y Redo: was advertised in the Edit menu, the shortcut sheet and the context menu, but only ever worked inside CM6's own keymap — dead in Reading mode and every text field.
+  // audit M25: Ctrl+Shift+Z redoes too, as the shortcut document says. A press the editor
+  // already acted on (its own history keymap) is not repeated here.
+  else if (cmd && (e.shiftKey ? hitKey(e, 'z') : hitKey(e, 'y'))) { if (!e.defaultPrevented) { e.preventDefault(); execEditCmd('redo'); } } // Ctrl+Y Redo: was advertised in the Edit menu, the shortcut sheet and the context menu, but only ever worked inside CM6's own keymap — dead in Reading mode and every text field.
+  // audit M25: the Edit menu shows Ctrl+L for Insert Link. Ctrl+Shift+L stays "direction".
+  else if (cmd && !e.shiftKey && !e.altKey && !inInput && hitKey(e, 'l')) { e.preventDefault(); insertText('[', '](url)'); }
   else if (cmd && !e.shiftKey && hitKey(e, 'w')) { e.preventDefault(); if (State.activeFile !== null) closeTab(State.activeFile); }
   else if (cmd && !e.shiftKey && hitKey(e, 'f')) { e.preventDefault(); openFind(); }
   else if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
@@ -5009,7 +5632,7 @@ document.addEventListener('keydown', e => {
   else if (cmd && e.shiftKey && !inInput && hitKey(e, 'b')) { e.preventDefault(); toggleHideStatusBar(); }
   else if (cmd && hitCode(e, ',', 'Comma')) { e.preventDefault(); showSettings(); }
   // Zoom shortcuts: Ctrl+= / Ctrl+- / Ctrl+0 (Digit0 covers the Arabic-layout digits too).
-  else if (cmd && !e.shiftKey && hitCode(e, '=', 'Equal')) { e.preventDefault(); zoomIn(); }
+  else if (cmd && !e.shiftKey && (hitCode(e, '=', 'Equal') || e.key === '+')) { e.preventDefault(); zoomIn(); }
   else if (cmd && !e.shiftKey && hitCode(e, '-', 'Minus')) { e.preventDefault(); zoomOut(); }
   else if (cmd && !e.shiftKey && (e.key === '0' || e.code === 'Digit0')) { e.preventDefault(); zoomReset(); }
   // Ctrl+A: when a text field (INPUT/TEXTAREA) is focused, leave NATIVE select-all
@@ -5033,6 +5656,7 @@ document.addEventListener('keydown', e => {
       e.stopImmediatePropagation(); // preserve lower-priority reader popover for the next Escape
     }
     else if (dropdown.classList.contains('open')) closeMenu();
+    else if (!_escapeHadSurface && (_nativeFullscreen || document.fullscreenElement)) toggleFullscreen();
   }
 });
 
@@ -5074,7 +5698,9 @@ $('inspectorToggleBtn').addEventListener('click', toggleInspector);
 // reveal affordance. `$` returns null for a missing id, so leaving these behind would
 // throw at boot and silently kill every later listener registration.
 $('themeBtn').addEventListener('click', cycleTheme);
+$('markBtn').addEventListener('click', () => { showAbout(); });
 $('fullscreenBtn').addEventListener('click', toggleFullscreen);
+$('zoomBtn')?.addEventListener('click', zoomReset);
 $('rtlBtn').addEventListener('click', toggleRTL);
 $('viewModeBtn')?.addEventListener('click', toggleViewMode); // T-F17: Reading ⇄ Edit
 $('tabAddBtn').addEventListener('click', newNote);
@@ -5084,7 +5710,7 @@ $('winMaxBtn').addEventListener('click', winMaximize);
 $('winCloseBtn').addEventListener('click', winClose);
 $('modalCloseBtn').addEventListener('click', closeModal);
 $('modalOverlay').addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
-$('palOverlay').addEventListener('click', e => { if (e.target === palOverlay) closePalette(); });
+$('palOverlay').addEventListener('click', e => { if (e.target === palOverlay || e.target.classList.contains('palette')) closePalette(); });
 readerControlsButton?.addEventListener('click', () => setReaderControlsOpen(readerControlsPopover.hidden));
 readerTextScaleDecrease?.addEventListener('click', () => setReaderTextScale(State.readerTextScale - 0.1));
 readerTextScaleReset?.addEventListener('click', () => setReaderTextScale(1));
@@ -5116,7 +5742,10 @@ $('sbSearchInput').addEventListener('input', e => scheduleSidebarSearch(e.target
 // #sbOpenFileBtn, #sbNewNoteBtn) is removed. Open Folder / Open File / New Note stay
 // reachable through the buttons below (.sb-empty) and the welcome card.
 $('emptyOpenVault').addEventListener('click', openVault);
+$('sbFootOpenFolder').addEventListener('click', openVault);
 $('emptyOpenFile').addEventListener('click', openSingleFile);
+$('sbFootOpenFile').addEventListener('click', openSingleFile);
+$('sbFootNewNote').addEventListener('click', newNote);
 $('emptyLoadDemo').addEventListener('click', loadDemo);
 $('wbOpenVault').addEventListener('click', openVault);
 $('wbOpenFile').addEventListener('click', openSingleFile);
@@ -5207,6 +5836,19 @@ document.addEventListener('click', e => {
 function initDragDrop() {
   const MAX_SIZE = OPEN_FILE_MAX_BYTES; // shared with the file-picker lane (UI-02)
 
+  let dragDepth = 0;
+  const dropOverlay = $('dropOverlay');
+  const carriesFiles = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files');
+  document.body.addEventListener('dragenter', e => {
+    if (!carriesFiles(e)) return;
+    dragDepth += 1;
+    dropOverlay.classList.add('on');
+  });
+  document.body.addEventListener('dragleave', () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dropOverlay.classList.remove('on');
+  });
+
   document.body.addEventListener('dragover', e => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
@@ -5214,6 +5856,8 @@ function initDragDrop() {
 
   document.body.addEventListener('drop', async e => {
     e.preventDefault();
+    dragDepth = 0;
+    dropOverlay.classList.remove('on');
     const files = Array.from(e.dataTransfer.files || []);
     let loaded = 0;
     for (const file of files) {
@@ -5233,7 +5877,7 @@ function initDragDrop() {
         showToast(tl('toast.couldNotRead', { name: file.name }), 'error');
       }
     }
-    if (loaded > 0) showToast(tl('toast.loadedN', { n: loaded, s: loaded === 1 ? '' : 's' }));
+    if (loaded > 0) showToast(tl('toast.loadedN', { n: loaded }));
   });
 }
 window.initDragDrop = initDragDrop;
@@ -5261,7 +5905,7 @@ settingsController = createSettingsController({
     applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       $('themeBtn')?.classList.toggle('active', theme !== 'paper'); updateThemeIcon(theme);
-      if ($('themeLabel')) $('themeLabel').textContent = theme;
+      setThemeLabel(theme);
     },
     setZoom,
     setReaderTextScale,
@@ -5302,7 +5946,9 @@ let _autosaveTimer = null;
 async function autosaveTick() {
   if (!State.autosave || settingsController?.isRestoring()) return;
   if (window._saveDialogOpen) return; // a pending Save/Don't-Save answer owns the disk
-  const due = State.files.filter((f) => f.dirty && f.documentId
+  // audit M10: a note whose conflict banner is unanswered is left alone. Trying again every
+  // tick only got 'conflict' again and re-rendered the note under the user's hands.
+  const due = State.files.filter((f) => f.dirty && f.documentId && !f.conflict
     && Date.now() - (f._editedAt || 0) >= AUTOSAVE_IDLE_MS);
   let saved = false;
   for (const f of due) {
@@ -5336,19 +5982,25 @@ window._autosaveTick = autosaveTick; // e2e hook (same pattern as the other wind
 // close failsafe can then offer the work back on next launch — the Word
 // "recover unsaved documents" model. Cleared on a sanctioned close (winClose).
 let _recoveryBusy = false;
+let _recoveryAgain = false; // a mirror was asked for while one was in flight (audit M11)
+async function mirrorDirtyNotes() {
+  if (!window.electronAPI || typeof window.electronAPI.recoverySnapshot !== 'function') return;
+  if (_recoveryBusy) { _recoveryAgain = true; return; }
+  _recoveryBusy = true;
+  try {
+    const dirty = State.files.filter((f) => f.dirty)
+      .slice(0, 20)
+      .map((f) => ({ name: f.name, content: String(f.content || '') }));
+    await window.electronAPI.recoverySnapshot(dirty);
+  } catch (_) { /* best-effort; retried next tick */ }
+  finally { _recoveryBusy = false; }
+  if (_recoveryAgain) { _recoveryAgain = false; await mirrorDirtyNotes(); }
+}
 function startRecoveryLoop() {
   if (!window.electronAPI || typeof window.electronAPI.recoverySnapshot !== 'function') return;
-  setInterval(async () => {
-    if (_recoveryBusy) return;
-    _recoveryBusy = true;
-    try {
-      const dirty = State.files.filter((f) => f.dirty)
-        .slice(0, 20)
-        .map((f) => ({ name: f.name, content: String(f.content || '') }));
-      await window.electronAPI.recoverySnapshot(dirty);
-    } catch (_) { /* best-effort; retried next tick */ }
-    finally { _recoveryBusy = false; }
-  }, 10000);
+  setInterval(mirrorDirtyNotes, 10000);
+  // audit M11: Windows is logging off or shutting down; do not wait for the next tick.
+  if (typeof window.electronAPI.onFlushRecovery === 'function') window.electronAPI.onFlushRecovery(() => { mirrorDirtyNotes(); });
 }
 
 // Next-launch prompt: offer the snapshots back. Restore reopens them as dirty,
@@ -5376,7 +6028,7 @@ async function offerRecovery() {
         <div class="dlg-body">
           <div class="dlg-badge" id="recoveryBadge"></div>
           <div class="dlg-title">${escapeHtml(tl('recovery.title'))}</div>
-          <div class="dlg-msg">${escapeHtml(tl('recovery.body', { n: snaps.length, s: '' }))}</div>
+          <div class="dlg-msg">${escapeHtml(tl('recovery.body', { n: snaps.length }))}</div>
           <div class="dlg-hint">${escapeHtml(tl('recovery.hint'))}</div>
         </div>
         <div class="dlg-actions">
@@ -5423,7 +6075,10 @@ async function offerRecovery() {
     used.add(name);
     addFile({ name, path: name, handle: null, content: String(snap.content || ''), dirty: true, revision: 1 });
   }
-  showToast(tl('recovery.restored', { n: snaps.length, s: '' }), 'info');
+  // Mirror the restored notes now instead of at the next 10s tick: the offered snapshot was
+  // just cleared, and until they are mirrored a crash would lose them.
+  await mirrorDirtyNotes();
+  showToast(tl('recovery.restored', { n: snaps.length }), 'info');
 }
 window._offerRecovery = offerRecovery;
 
@@ -5441,9 +6096,7 @@ window._offerRecovery = offerRecovery;
     const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
     modKey.textContent = isMac ? '⌘' : 'Ctrl';
   }
-  // A11y: name the two menu containers for screen readers (previously unlabeled).
-  ctxMenu.setAttribute('aria-label', tr('ctxmenu.label', State.uiLocale) || 'Context menu');
-  dropdown.setAttribute('aria-label', tr('dropdown.label', State.uiLocale) || 'Menu');
+  localizeStateLabels();
 
   // Panel visibility: the static markup starts with `no-sidebar no-inspector` (clean editor-only
   // first paint, no flash). In the packaged app, restoreSettings() applies the persisted/default
@@ -5481,7 +6134,7 @@ window._offerRecovery = offerRecovery;
         State.theme = stored;
         document.documentElement.setAttribute('data-theme', stored);
         $('themeBtn')?.classList.toggle('active', stored !== 'paper'); updateThemeIcon(stored);
-        if ($('themeLabel')) $('themeLabel').textContent = stored;
+        setThemeLabel(stored);
       }
     }
     // T-F19: name the way out when the app OPENS with no chrome. restoreSettings() sets
@@ -5507,6 +6160,7 @@ window._offerRecovery = offerRecovery;
   initAnnotationUI();
   // T7.1: main's opt-in auto check reports a newer release on this channel (receive-only).
   window.electronAPI?.onUpdateAvailable?.((info) => showUpdateNotice(info));
+  window.electronAPI?.onUpdateUnverified?.(() => showUpdateFailure('untrusted'));
   // T8.1: the reading line + one minute per tick while the reading view is on screen.
   startReadingStats();
   void refreshReadingStats();

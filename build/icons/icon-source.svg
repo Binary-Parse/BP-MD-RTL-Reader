@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>BP MD RTL Reader app icon, family 2 qalam</title>
+  <defs>
+    <linearGradient id="q2-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22336E"/>
+      <stop offset="1" stop-color="#0B1230"/>
+    </linearGradient>
+    <radialGradient id="q2-glow" cx="0.5" cy="0.74" r="0.55">
+      <stop offset="0" stop-color="#FF7A6B" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FF7A6B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="q2-ink" gradientUnits="userSpaceOnUse" x1="412" y1="0" x2="150" y2="0">
+      <stop offset="0" stop-color="#FFC27A"/>
+      <stop offset="1" stop-color="#FF5F7E"/>
+    </linearGradient>
+    <linearGradient id="q2-reed" gradientUnits="userSpaceOnUse" x1="0" y1="-22" x2="0" y2="22">
+      <stop offset="0" stop-color="#F8E6C0"/>
+      <stop offset="0.55" stop-color="#E2BE84"/>
+      <stop offset="1" stop-color="#B98A4E"/>
+    </linearGradient>
+    <linearGradient id="q2-nib" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="84" y2="0">
+      <stop offset="0" stop-color="#FF5F7E"/>
+      <stop offset="0.32" stop-color="#C9524F"/>
+      <stop offset="0.36" stop-color="#C79A5E"/>
+      <stop offset="1" stop-color="#D9B077"/>
+    </linearGradient>
+    <filter id="q2-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#q2-bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#q2-glow)"/>
+  <rect x="3" y="3" width="506" height="506" rx="109" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="6"/>
+  <g transform="translate(-26 18)">
+    <path d="M412 330 Q296 312 178 336 L156 384 Q274 362 390 378 Z" fill="url(#q2-ink)"/>
+    <g filter="url(#q2-shadow)" transform="translate(168 358) rotate(-47.3)">
+      <path d="M84 -22 L28 -14 L0 -6 L8 9 L84 22 Z" fill="url(#q2-nib)"/>
+      <path d="M10 1 L52 1" stroke="#5A2230" stroke-width="3" stroke-linecap="round"/>
+      <rect x="80" y="-22" width="268" height="44" rx="10" fill="url(#q2-reed)"/>
+      <rect x="168" y="-22" width="9" height="44" fill="#A87A41" fill-opacity="0.75"/>
+      <rect x="268" y="-22" width="9" height="44" fill="#A87A41" fill-opacity="0.75"/>
+      <rect x="84" y="-16" width="260" height="6" rx="3" fill="#FFFFFF" fill-opacity="0.45"/>
+    </g>
+  </g>
+</svg>

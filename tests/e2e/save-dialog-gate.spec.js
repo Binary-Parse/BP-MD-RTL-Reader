@@ -86,3 +86,75 @@ test.describe('[DATA-03] save-dialog autosave gate', () => {
     expect(await page.evaluate(() => window._saveDialogOpen)).toBe(false);
   });
 });
+
+// B2: "Don't Save" throws the edit away for good. The Electron lane proves the disk; this lane
+// proves the in-memory outcome on each surface that offers the choice.
+test.describe('[B2] Don\'t Save discards the edit', () => {
+  const FOLDER_NOTE = { name: 'a.md', path: 'a.md', vaultId: 'v1', inventory: true, open: true, content: 'SAVED\nEDIT', savedContent: 'SAVED', dirty: true, revision: 1 };
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+  });
+
+  test('closing a folder note\'s tab: the note stays in the list at its saved text, clean', async ({ page }) => {
+    await page.evaluate((note) => {
+      window._appState.files.push({ ...note }, { name: 'b.md', path: 'b.md', vaultId: 'v1', inventory: true, open: true, content: 'B', savedContent: 'B', dirty: false, revision: 0 });
+      window.renderFile(0);
+    }, FOLDER_NOTE);
+    await page.evaluate(() => { window.__closing = window.closeTab(0); });
+    await page.locator('#dlgDontSaveBtn').click();
+    await page.evaluate(() => window.__closing);
+    const state = await page.evaluate(() => {
+      const f = window._appState.files.find((x) => x.name === 'a.md');
+      return { content: f.content, dirty: f.dirty, open: f.open, count: window._appState.files.length };
+    });
+    expect(state).toEqual({ content: 'SAVED', dirty: false, open: false, count: 2 });
+    await expect(page.locator('.tab.dirty')).toHaveCount(0);
+  });
+
+  test('closing a loose file\'s tab removes it, as before', async ({ page }) => {
+    await page.evaluate(() => {
+      window._appState.files.push({ name: 'loose.md', path: 'loose.md', content: 'SAVED\nEDIT', savedContent: 'SAVED', dirty: true, revision: 1 });
+      window.renderFile(0);
+    });
+    await page.evaluate(() => { window.__closing = window.closeTab(0); });
+    await page.locator('#dlgDontSaveBtn').click();
+    await page.evaluate(() => window.__closing);
+    expect(await page.evaluate(() => window._appState.files.length)).toBe(0);
+  });
+
+  test('closing a folder note\'s tab with Cancel keeps the edit and the tab', async ({ page }) => {
+    await page.evaluate((note) => { window._appState.files.push({ ...note }); window.renderFile(0); }, FOLDER_NOTE);
+    await page.evaluate(() => { window.__closing = window.closeTab(0); });
+    await page.locator('#dlgCancelBtn').click();
+    await page.evaluate(() => window.__closing);
+    const state = await page.evaluate(() => {
+      const f = window._appState.files[0];
+      return { content: f.content, dirty: f.dirty, open: f.open };
+    });
+    expect(state).toEqual({ content: 'SAVED\nEDIT', dirty: true, open: true });
+  });
+
+  test('"Close without Saving" at window close leaves every dirty note clean at its saved text', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__closeCalls = { closeWindow: 0 };
+      window.electronAPI = {
+        onCloseRequested: (cb) => { window.__closeCb = cb; },
+        closeWindow: () => { window.__closeCalls.closeWindow += 1; },
+      };
+    });
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+    await page.waitForFunction(() => typeof window.__closeCb === 'function');
+    await page.evaluate((note) => {
+      window._appState.files.push({ ...note }, { ...note, name: 'c.md', path: 'c.md', content: 'C-EDIT', savedContent: 'C' });
+      window.renderFile(0);
+    }, FOLDER_NOTE);
+    await page.evaluate(() => window.__closeCb());
+    await page.locator('#dlgDontSaveBtn').click();
+    await page.waitForFunction(() => window.__closeCalls.closeWindow >= 1);
+    const state = await page.evaluate(() => window._appState.files.map((f) => [f.name, f.content, f.dirty]));
+    expect(state).toEqual([['a.md', 'SAVED', false], ['c.md', 'C', false]]);
+  });
+});

@@ -1,34 +1,58 @@
 
 @media (max-width: 1100px) {
-  /* v10 redesign follow-up: one --sidebar-w override now drives both the body grid
-     below AND .tb-menubar's min-inline-size (components.css), instead of the two
-     silently disagreeing — the title bar previously kept its full-width floor while
-     the sidebar narrowed, leaving the first tab 20px past the sidebar's edge. */
-  :root { --sidebar-w: 220px; }
+  :root { --sidebar-w: 16rem; }
   .app-body { grid-template-columns: var(--sidebar-w) 1fr 0; }
   .app-body.no-sidebar { grid-template-columns: 1fr 0; }
   .app-body.no-inspector { grid-template-columns: var(--sidebar-w) 1fr; }
   .app-body.no-sidebar.no-inspector { grid-template-columns: 1fr; }
   .inspector { display: none; }
-  /* .tb-menubar's min-inline-size floor (calc(--sidebar-w - --tb-lead-w - 4px), 181px
-     here) is a floor, not a cap — File/Edit/View/Help's natural width at the desktop
-     10px item padding exceeds it by a couple of px, leaving the tab strip just past the
-     narrowed sidebar's edge. Trimmed padding brings the natural width back under the
-     floor so it binds again. */
-  .tb-menu-item { padding-inline: 8px; }
+  .tb-menu-item { padding-inline: 0.5rem; }
 }
 
-@media (max-width: 800px) {
-  /* v10 redesign (2026-08-25): .tb-brand is gone at every width now, so the desktop
-     and narrow titlebars already share the same 5 visible children (T-F18's "tracks
-     must match visible children" invariant holds without a display:none rule here
-     any more). This override still exists for one reason: minmax(0, 1fr) on the
-     tabs track, not the desktop's bare 1fr -- a bare 1fr can still overflow its
-     content at narrow widths, minmax(0, 1fr) explicitly allows the tabs strip to
-     shrink below its content size instead. */
-  .titlebar { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
-  .tb-search { width: 32px; justify-content: center; }
-  .tb-search > :not(:first-child) { display: none; }
+@media (max-width: 1000px) {
+  .tb-search { flex: 0 0 auto; width: 32px; min-width: 0; margin-inline: 0; padding-inline: 0; justify-content: center; }
+  .tb-search .crumbs, .tb-search .kbd-inline { display: none; }
+  .tb-seg .seg-l { display: none; }
+  .tb-row { gap: 0.4rem; }
+}
+
+@media (max-width: 880px) {
+  #fullscreenBtn { display: none; }
+}
+
+/* H12 (WCAG 1.4.4 resize to 200 %, 1.4.10 reflow to 320 CSS px). The window's minimum width is
+   800 px, so 200 % zoom leaves 400 CSS px; the title bar needed ~770 and pushed the window
+   buttons off-screen. The bar sheds width in three steps and the window buttons never move
+   (.win-controls is flex: 0 0 auto). Every control that disappears keeps another route: the
+   View menu (theme, direction, panels), the command palette (Ctrl+K, Ctrl+E for Read/Edit) and
+   its own shortcut. The groups are deliberately NOT clipped (overflow) -- their CSS tooltips
+   extend past the group box and would be cut off; tests/e2e/zoom-reflow.spec.js measures every
+   visible group at 800/640/400/320 px in English and Arabic instead. */
+@media (max-width: 860px) {
+  .tb-row { gap: 0.2rem; }
+  .tb-menu-item { padding-inline: 0.3rem; }
+  .tb-actions { gap: 0.2rem; }
+  /* a segmented switch shows only its current option (a click still cycles / toggles it) */
+  #viewModeBtn[aria-pressed="true"] .seg-o[data-o="edit"],
+  #viewModeBtn[aria-pressed="false"] .seg-o[data-o="reading"],
+  #rtlBtn[data-mode="auto"] .seg-o:not([data-o="auto"]),
+  #rtlBtn[data-mode="rtl"] .seg-o:not([data-o="rtl"]),
+  #rtlBtn[data-mode="ltr"] .seg-o:not([data-o="ltr"]) { display: none; }
+  /* the inspector panel is not shown below 1100 px, so its toggle has nothing to open */
+  #inspectorToggleBtn { display: none; }
+}
+
+@media (max-width: 520px) {
+  .tb-mark, #searchBtn, #rtlBtn, #themeBtn { display: none; }
+  .win-btn { width: 36px; }
+  /* the browser lane's floating card (24 px margin all round) would cost 48 px of the 400 */
+  body { padding: 0; }
+  .app { height: 100vh; max-height: none; border-radius: 0; }
+}
+
+@media (max-width: 380px) {
+  .tb-actions { display: none; }
+  .tb-menu-item { padding-inline: 0.2rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -42,7 +66,7 @@
 
 /* Electron native window overrides — removes card chrome */
 html.electron body {
-  background: var(--paper);
+  background: var(--desk);
   overflow: hidden;
   padding: 0;
   display: block;
@@ -68,6 +92,9 @@ html.electron .header-actions,
 html.electron .tb-btn,
 html.electron .tb-search,
 html.electron .tb-menu-btn,
+html.electron .tb-mark,
+html.electron .tb-seg,
+html.electron .reader-controls,
 html.electron .tab-add,
 html.electron .ctx {
   -webkit-app-region: no-drag;
@@ -86,4 +113,14 @@ html.electron[data-chrome~="autohide"] .titlebar {
 html.electron[data-chrome~="autohide"][data-chrome-peek] .titlebar,
 html.electron[data-chrome~="autohide"] .titlebar:focus-within {
   -webkit-app-region: drag;
+}
+/* H13: on macOS the window is created with titleBarStyle:'hidden', so the OS draws its own
+   traffic lights at the top-left. Hide the custom minimise / maximise / close buttons and
+   leave room for the lights (they sit on the physical left, in LTR and RTL alike).
+   The hook class comes from the preload (html.platform-darwin). UNVERIFIED on real macOS. */
+html.platform-darwin .win-controls {
+  display: none;
+}
+html.platform-darwin .titlebar .tb-row {
+  padding-left: 5rem;
 }

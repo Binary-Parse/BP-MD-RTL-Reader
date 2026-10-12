@@ -1,7 +1,7 @@
 const path = require('path');
 const {
   parseFileArg,
-  parseFileArgs,
+  parseFileArgs, mergePendingFiles,
   shouldResetChrome,
   isNetworkPath,
   isTooManyFiles,
@@ -36,7 +36,7 @@ const crypto = require('crypto');
 // @param {object} deps.fs       - the 'fs' module (or a mock)
 // @param {object} [deps.proc]   - process-like object (argv/platform/on); defaults to global process
 function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubFetch(), vaultReadYieldEvery }) {
-  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session, protocol } = electron;
+  const { app, BrowserWindow, ipcMain, shell, dialog, crashReporter, Menu, clipboard, screen, session, protocol, nativeTheme } = electron;
   const rootDir = path.resolve(__dirname, '..', '..');
 
   // T-AI2: the bpmd:// asset scheme must be declared privileged BEFORE app `ready`
@@ -155,7 +155,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
   // open with no file and no message when the CLI-supplied path could not be read.
   // window-controller invokes this from did-finish-load.
   function deliverPendingFiles(win) {
-    if (!win || win.isDestroyed()) return 0;
+    if (!win || win.isDestroyed() || !windowController.isRendererLoaded(win)) return 0; // M12: stays queued
     const files = pendingFilesToOpen;
     pendingFilesToOpen = [];
     let delivered = 0; const grantedIds = [];
@@ -230,13 +230,13 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     clipboard,
     screen,
     shell,
-    path,
-    rootDir,
+    path, rootDir,
     appRendererUrl: APP_RENDERER_URL,
     approvedCloseWindows,
     getCurrentSettings: () => currentSettings,
     persistWindowState,
     closeVaultWatcher: () => ipcController.closeVaultWatcher(),
+    resetRecovery: () => ipcController.resetRecoveryForReload(),
     deliverPendingFiles,
     clampWindowBounds,
     isPackaged: !!app.isPackaged,
@@ -245,7 +245,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     buildContextMenuTemplate,
     buildContextMenuLabels: () => labelsForLocale(currentSettings && currentSettings.uiLocale),
     writeLog,
-    ipcMain, crypto, Menu,
+    ipcMain, crypto, Menu, nativeTheme, platform: proc.platform, dialog,
   });
 
   function createWindow() {
@@ -288,7 +288,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
       capabilityRegistry = createCapabilityRegistry({ fs, path, userDataDir: app.getPath('userData') });
       currentSettings = settingsStore.load();
       applyChromeResetIfAsked(proc.argv);   // before createWindow, so it opens with chrome
-      pendingFilesToOpen = parseFileArgs(proc.argv, fs);
+      pendingFilesToOpen = mergePendingFiles(pendingFilesToOpen, parseFileArgs(proc.argv, fs)); // H13: keep open-file paths queued before ready
       windowController.installApplicationMenu(proc.platform);
       registerIpcHandlers();
       protocolController.registerAppProtocol();

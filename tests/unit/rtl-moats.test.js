@@ -56,7 +56,9 @@ describe('locale (T-R7)', () => {
     expect(t('unknown.key', 'ar')).toBe('unknown.key');
   });
   test('ar and en catalogs have the same keys', () => {
-    expect(Object.keys(MESSAGES.ar).sort()).toEqual(Object.keys(MESSAGES.en).sort());
+    // Plural forms (`key#one`, …) differ by language (audit M20); the plain keys must match.
+    const plainKeys = (table) => [...new Set(Object.keys(table).map((k) => k.split('#')[0]))].sort();
+    expect(plainKeys(MESSAGES.ar)).toEqual(plainKeys(MESSAGES.en));
   });
   test('localeDirection', () => {
     expect(localeDirection('ar')).toBe('rtl');

@@ -11,12 +11,12 @@ function getHandle(mockElectron, name) {
 }
 
 describe('fs:writeFile (T-B1)', () => {
-  let el, fsMock, writeFile, openFolder, readVault, files;
+  let el, fsMock, writeFile, openFolder, readVault, files, handlers;
 
   beforeEach(async () => {
     el = buildMockElectron();
     // capture ipc handlers
-    const handlers = {};
+    handlers = {};
     el.ipcMain.handle.mockImplementation((n, fn) => { handlers[n] = fn; });
     files = {};
     fsMock = buildMockFs({
@@ -57,6 +57,77 @@ describe('fs:writeFile (T-B1)', () => {
   test('a raw network path cannot be used as a capability', async () => {
     expect(await writeFile({}, { documentId: '\\\\srv\\s\\a.md', content: 'x' }))
       .toEqual({ error: 'unauthorized-capability' });
+  });
+
+  test('M9: a document of a folder is read back with its path inside that folder', async () => {
+    const nested = await grantDocument('sub/README.md', 'nested\n');
+    const read = await handlers['fs:readFile']({}, nested.documentId);
+    expect(read).toMatchObject({ name: 'README.md', relPath: 'sub/README.md', vaultId: nested.vaultId, content: 'nested\n' });
+    expect(JSON.stringify(read)).not.toContain('vault'.concat(path.sep, 'sub')); // no absolute path
+  });
+
+  describe('M7: a document read with a guessed encoding', () => {
+    const utf8 = Buffer.from('# عنوان الملاحظة\n\nفقرة عربية طويلة فيها كلمات كثيرة.\n', 'utf8');
+    const damaged = Buffer.concat([utf8, Buffer.from([0xE3, 0x0A])]); // one stray byte
+    const payload = (document, extra = {}) => ({
+      documentId: document.documentId, content: 'mine\n', baseHash: document.meta.hash,
+      eol: '\n', encoding: document.meta.encoding, ...extra,
+    });
+
+    test('is not written until the user keeps the guess', async () => {
+      const document = await grantDocument('note.md', damaged);
+      expect(document.meta).toMatchObject({ encoding: 'utf8', encodingUncertain: true, encodingInvalidBytes: 1 });
+      expect(await writeFile({}, payload(document))).toEqual({ error: 'encoding-unconfirmed' });
+      expect(files[path.join('/vault', 'note.md')]).toBe(damaged);
+
+      expect(await handlers['fs:confirmEncoding']({}, { documentId: document.documentId, encoding: 'utf8', reopen: false }))
+        .toEqual({ ok: true });
+      expect((await writeFile({}, payload(document))).ok).toBe(true);
+    });
+
+    test('once kept, a later read of the same bytes does not ask again', async () => {
+      const document = await grantDocument('note.md', damaged);
+      await handlers['fs:confirmEncoding']({}, { documentId: document.documentId, encoding: 'utf8', reopen: false });
+      const again = await handlers['fs:readFile']({}, document.documentId);
+      expect(again.meta.encoding).toBe('utf8');
+      expect(Object.keys(again.meta)).not.toContain('encodingUncertain');
+      expect((await writeFile({}, payload(document))).ok).toBe(true);
+    });
+
+    test('reopened as Windows-1256 it is read without loss and can be saved', async () => {
+      const document = await grantDocument('note.md', damaged);
+      const reopened = await handlers['fs:confirmEncoding']({}, { documentId: document.documentId, encoding: 'windows-1256', reopen: true });
+      expect(reopened.meta.encoding).toBe('windows-1256');
+      expect(Object.keys(reopened.meta)).not.toContain('encodingUncertain');
+      expect(reopened.meta.hash).toBe(document.meta.hash); // same bytes on disk
+      const saved = await writeFile({}, payload(reopened, { content: reopened.content }));
+      expect(saved.ok).toBe(true);
+      expect(Buffer.compare(Buffer.from(files[path.join('/vault', 'note.md')]), damaged)).toBe(0); // byte for byte
+    });
+
+    test('reopened as UTF-8 with invalid bytes it is still held until kept', async () => {
+      const document = await grantDocument('note.md', damaged);
+      const reopened = await handlers['fs:confirmEncoding']({}, { documentId: document.documentId, encoding: 'utf8', reopen: true });
+      expect(reopened.meta).toMatchObject({ encoding: 'utf8', encodingUncertain: true, encodingInvalidBytes: 1 });
+      expect(await writeFile({}, payload(reopened))).toEqual({ error: 'encoding-unconfirmed' });
+    });
+
+    test('an encoding the bytes cannot be, an unknown encoding and a forged capability are refused', async () => {
+      const document = await grantDocument('note.md', Buffer.concat([damaged, Buffer.from([0x0A])])); // odd length
+      expect(await handlers['fs:confirmEncoding']({}, { documentId: document.documentId, encoding: 'utf16le', reopen: true }))
+        .toEqual({ error: 'encoding-mismatch' });
+      expect(await handlers['fs:confirmEncoding']({}, { documentId: document.documentId, encoding: 'latin1', reopen: true }))
+        .toEqual({ error: 'invalid' });
+      expect(await handlers['fs:confirmEncoding']({}, { documentId: 'cap-forged', encoding: 'utf8', reopen: false }))
+        .toEqual({ error: 'unauthorized-capability' });
+      expect(await handlers['fs:confirmEncoding']({}, null)).toEqual({ error: 'invalid' });
+    });
+
+    test('a document with a certain encoding is written as before', async () => {
+      const document = await grantDocument('note.md', utf8);
+      expect(Object.keys(document.meta)).not.toContain('encodingUncertain');
+      expect((await writeFile({}, payload(document))).ok).toBe(true);
+    });
   });
 
   test('writes to disk once folder authorized (atomic via store)', async () => {

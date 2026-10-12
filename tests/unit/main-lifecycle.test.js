@@ -23,7 +23,13 @@ import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js
 // Wire bootstrap with a fresh harness, recording app.on listeners into a map.
 // Returns { electron, fs, proc, listeners, ret } so each test can drive a
 // lifecycle handler in isolation. `lockResult` toggles requestSingleInstanceLock.
-async function drive({ argv = ['node', 'src/main/index.js'], lockResult = true, platform } = {}) {
+/** Fire did-finish-load: from here on the window's page listens for files to open (M12). */
+function finishLoad(electron) {
+  const handlers = electron._mockWin.webContents.on.mock.calls.filter(([event]) => event === 'did-finish-load');
+  for (const [, handler] of handlers) handler();
+}
+
+async function drive({ argv = ['node', 'src/main/index.js'], lockResult = true, platform, loaded = true } = {}) {
   const electron = buildMockElectron();
   electron.app.requestSingleInstanceLock = vi.fn(() => lockResult);
 
@@ -36,6 +42,9 @@ async function drive({ argv = ['node', 'src/main/index.js'], lockResult = true, 
 
   const ret = bootstrap({ electron, fs, proc });
   await new Promise(r => setTimeout(r, 50));
+  // Most tests are about a running app, whose page has loaded. `loaded: false` keeps the
+  // window in its starting state.
+  if (loaded && lockResult) finishLoad(electron);
 
   return { electron, fs, proc, listeners, ret };
 }
@@ -117,6 +126,57 @@ describe('src/main/index.js lifecycle — second-instance', () => {
       'open-external-file',
       expect.objectContaining({ name: 'queued.md', content: '# queued body' })
     );
+  });
+
+  test('M12: a file from a second instance waits for a page that is still loading, then is sent once', async () => {
+    const { electron, fs, listeners } = await drive({ loaded: false });
+    const win = electron._mockWin;
+    win.webContents.send.mockClear();
+    fs.readFileSync.mockReturnValue('# early body');
+    electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+
+    listeners['second-instance']({}, ['node', 'src/main/index.js', 'early.md']);
+    expect(win.webContents.send).not.toHaveBeenCalled(); // the page has no listener yet
+    expect(win.focus).toHaveBeenCalled();
+
+    finishLoad(electron);
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).toHaveBeenCalledWith(
+      'open-external-file',
+      expect.objectContaining({ name: 'early.md', content: '# early body' })
+    );
+    finishLoad(electron); // a later load (reload) does not send it again
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+  });
+
+  test('M12: a file from macOS open-file waits for a page that is still loading', async () => {
+    const { electron, fs, listeners } = await drive({ loaded: false });
+    const win = electron._mockWin;
+    win.webContents.send.mockClear();
+    fs.readFileSync.mockReturnValue('# early body');
+    electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+
+    listeners['open-file']({ preventDefault: vi.fn() }, '/docs/early.md');
+    expect(win.webContents.send).not.toHaveBeenCalled();
+
+    finishLoad(electron);
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send.mock.calls[0][1]).toMatchObject({ name: 'early.md', content: '# early body' });
+  });
+
+  test('M12: after the page crashed, a file waits for the next load', async () => {
+    const { electron, fs, listeners } = await drive();
+    const win = electron._mockWin;
+    const gone = win.webContents.on.mock.calls.find(([event]) => event === 'render-process-gone')[1];
+    gone({}, { reason: 'crashed' });
+    win.webContents.send.mockClear();
+    fs.readFileSync.mockReturnValue('# body');
+    electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+
+    listeners['second-instance']({}, ['node', 'src/main/index.js', 'late.md']);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+    finishLoad(electron);
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
   });
 
   test('minimized window → restore() called AND focus() called', async () => {

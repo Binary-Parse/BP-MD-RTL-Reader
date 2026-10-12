@@ -1,5 +1,6 @@
 import { buildSession, pickActiveIndex, fileKey } from '../session.js';
 import { progressPercent, relativeTime } from '../reading-progress.js';
+import { markClean, adoptDiskText } from './dirty-state.js';
 
 const noop = () => {};
 
@@ -9,6 +10,7 @@ export function fileFromSnapshot(entry, vaultId = null) {
     path: entry.relPath || entry.name,
     handle: null,
     content: entry.content,
+    savedContent: entry.content,
     dirty: false,
     missing: false,
     documentId: entry.documentId || null,
@@ -67,21 +69,59 @@ export function mergeVaultSlice(existing, vaultId, incoming) {
     if (previous.dirty) {
       return { ...previous, conflict: true, diskContent: incomingFile.content, diskMeta: incomingFile.meta, missing: false };
     }
-    return {
+    // Clean note, changed on disk: silent reload. The baseline moves with the text (B6).
+    const reloaded = {
       ...previous,
-      content: incomingFile.content,
       meta: incomingFile.meta || previous.meta,
       documentId: incomingFile.documentId || previous.documentId,
       conflict: false,
       diskContent: null,
       missing: false,
     };
+    adoptDiskText(reloaded, incomingFile.content);
+    return reloaded;
   });
   const keptAbsent = [...previousByPath.values()]
     .filter((file) => !seenPaths.has(file.path))
     .map((file) => ({ ...file, missing: true }));
   const otherVaultFiles = existing.filter((file) => file.vaultId !== vaultId);
   return [...otherVaultFiles, ...merged, ...keptAbsent];
+}
+
+// H15 step 3: above this many changed notes (or for anything that is not a note: a folder
+// event) the watcher handler re-reads the whole folder instead. Main enforces the same cap.
+const MAX_INCREMENTAL_FILES = 50;
+const NOTE_NAME = /\.(md|markdown)$/i;
+
+/**
+ * H15 step 3: turn a partial read into the complete `incoming` list mergeVaultSlice expects.
+ * mergeVaultSlice treats every note of the vault that is NOT in `incoming` as gone (kept, marked
+ * missing), so a partial answer has to be topped up with the notes that did not change. Those
+ * are fed back from what we already hold, so the merge sees them as unchanged and returns the
+ * very same objects (dirty edits included). Order is preserved; notes that were already missing
+ * stay out (they stay missing); a changed note absent from `fresh` was deleted and is left out
+ * so the merge marks it missing exactly as a full read would.
+ *
+ * @param {Array} existing current State.files
+ * @param {string} vaultId
+ * @param {string[]} changedPaths the vault-relative paths that were re-read
+ * @param {Array} fresh the entries fs:readVaultChanges returned
+ * @returns {Array} entries for mergeVaultSlice
+ */
+export function completeIncrementalSlice(existing, vaultId, changedPaths, fresh) {
+  const changed = new Set(changedPaths);
+  const freshByPath = new Map(fresh.map((entry) => [entry.relPath || entry.name, entry]));
+  const out = [];
+  for (const file of existing) {
+    if (file.vaultId !== vaultId || file.missing) continue;
+    if (!changed.has(file.path)) {
+      out.push({ name: file.name, relPath: file.path, content: file.content, meta: file.meta, documentId: file.documentId });
+    } else if (freshByPath.has(file.path)) {
+      out.push(freshByPath.get(file.path));
+      freshByPath.delete(file.path);
+    }
+  }
+  return [...out, ...freshByPath.values()];
 }
 
 /**
@@ -434,6 +474,24 @@ export function createWorkspaceController({
       && !(file.documentId && electronAPI && typeof electronAPI.writeFile === 'function');
   }
 
+  // audit M14: why a save failed, in words. The codes come from main (document-store,
+  // ipc-controller); the user used to read the code itself: "Could not save x (write-failed)".
+  const SAVE_REASONS = new Map([
+    ['locked', ['saveReason.locked', 'another program is using the file, or it is read-only']],
+    ['enospc', ['saveReason.enospc', 'the disk is full']],
+    ['gone', ['saveReason.gone', 'its folder no longer exists']],
+    ['conflict', ['saveReason.conflict', 'it was changed on disk']],
+    ['unauthorized-capability', ['saveReason.unauthorized', 'the app no longer has access to it; open it again']],
+    ['unauthorized-path', ['saveReason.unauthorized', 'the app no longer has access to it; open it again']],
+    ['file-too-large', ['saveReason.tooLarge', 'it is larger than 10 MB']],
+    ['invalid-file-type', ['saveReason.fileType', 'only .md and .markdown files can be saved']],
+    ['network-path-not-allowed', ['saveReason.network', 'network locations are not supported']],
+  ]);
+  function saveReason(code) {
+    const [key, fallback] = SAVE_REASONS.get(code) || ['saveReason.other', 'the file could not be written'];
+    return L(key, fallback);
+  }
+
   const saveQueues = new WeakMap();
 
   // v1.2: the write-through core, split out of saveCurrent so the auto-save timer and
@@ -459,7 +517,7 @@ export function createWorkspaceController({
     // when the save began — an edit landing mid-save keeps the file dirty (the call
     // sites below re-check the same guard for their toasts).
     const cleanIfUnchanged = () => {
-      if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
+      if (file.revision === submittedRevision && file.content === submittedContent) markClean(file, submittedContent);
     };
     const noteRecreatedMissing = () => {
       if (file.vaultId && file.missing) {
@@ -481,6 +539,9 @@ export function createWorkspaceController({
       }
     }
     if (file.documentId && electronAPI && typeof electronAPI.writeFile === 'function') {
+      // audit M7 (decision D10): the encoding of this note is a guess the user has not
+      // confirmed yet. Writing it in a wrong guess destroys the file, so nothing is written.
+      if ((file.meta || {}).encodingUncertain) return 'encoding-unconfirmed';
       const buildPayload = (encoding, bom) => ({
         documentId: file.documentId,
         content: submittedContent,
@@ -516,6 +577,11 @@ export function createWorkspaceController({
           noteRecreatedMissing();
           return 'ok';
         }
+        if (result && result.error === 'encoding-unconfirmed') {
+          // Main holds the same rule; it knows of a guess this tab does not show yet.
+          file.meta = { ...(file.meta || {}), encodingUncertain: true };
+          return 'encoding-unconfirmed';
+        }
         if (result && result.error === 'conflict') {
           // Re-read the disk copy so the Keep-mine/Reload banner has something to show.
           file.conflict = true;
@@ -548,12 +614,9 @@ export function createWorkspaceController({
       showToast(L('toast.noFileToSave', 'No file to save'), 'error');
       return;
     }
-    const submittedRevision = Number.isInteger(file.revision) ? file.revision : 0;
-    const submittedContent = file.content;
     const outcome = await writeThrough(file, { interactive: true });
     if (outcome === 'ok') {
-      const unchanged = file.revision === submittedRevision && file.content === submittedContent;
-      if (unchanged) file.dirty = false;
+      // writeThrough already cleaned the file when (and only when) no edit landed mid-save.
       renderTabs();
       showToast(L('toast.saved', 'Saved {name}', { name: file.name }));
       return;
@@ -562,16 +625,22 @@ export function createWorkspaceController({
       showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
       return;
     }
+    if (outcome === 'encoding-unconfirmed') {
+      const idx = state.files.indexOf(file);
+      if (idx >= 0) renderFile(idx); // the bar with the choices
+      showToast(L('toast.encodingConfirmFirst', 'Confirm the encoding of “{name}” first (see the bar above the note)', { name: file.name }), 'error');
+      return;
+    }
     if (outcome === 'conflict') {
       const idx = state.files.indexOf(file);
       if (idx >= 0) renderFile(idx);
-      showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: 'conflict' }), 'error');
+      showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason('conflict') }), 'error');
       return;
     }
     if (outcome === 'error') {
       renderTabs();
       if (file._lastWriteError) {
-        showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: file._lastWriteError }), 'error');
+        showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason(file._lastWriteError) }), 'error');
       } else {
         showToast(L('toast.couldNotSave', 'Could not save'), 'error');
       }
@@ -638,7 +707,7 @@ export function createWorkspaceController({
           return;
         }
         if (!result.ok) {
-          showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: result.error || 'unknown' }), 'error');
+          showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason(result.error) }), 'error');
           return;
         }
         const leftVault = !!file.vaultId;
@@ -647,7 +716,7 @@ export function createWorkspaceController({
         file.name = result.name;
         file.path = result.name;
         file.meta = result.meta || file.meta;
-        if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
+        if (file.revision === submittedRevision && file.content === submittedContent) markClean(file, submittedContent);
         renderTabs();
         const idx = state.files.indexOf(file);
         if (idx >= 0) renderFile(idx);
@@ -679,7 +748,7 @@ export function createWorkspaceController({
         file.handle = handle;
         file.name = handle.name;
         file.path = handle.name;
-        if (file.revision === submittedRevision && file.content === submittedContent) file.dirty = false;
+        if (file.revision === submittedRevision && file.content === submittedContent) markClean(file, submittedContent);
         renderTabs();
         const idx = state.files.indexOf(file);
         if (idx >= 0) renderFile(idx);
@@ -727,16 +796,22 @@ export function createWorkspaceController({
         showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
         return false;
       }
+      if (outcome === 'encoding-unconfirmed') {
+        const idx = state.files.indexOf(file);
+        if (idx >= 0) renderFile(idx);
+        showToast(L('toast.encodingConfirmFirst', 'Confirm the encoding of “{name}” first (see the bar above the note)', { name: file.name }), 'error');
+        return false;
+      }
       if (outcome === 'conflict') {
         const idx = state.files.indexOf(file);
         if (idx >= 0) renderFile(idx);
-        showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: 'conflict' }), 'error');
+        showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason('conflict') }), 'error');
         return false;
       }
       if (outcome !== 'ok') {
         renderTabs();
         if (file._lastWriteError) {
-          showToast(L('toast.couldNotSaveName', 'Could not save {name} ({reason})', { name: file.name, reason: file._lastWriteError }), 'error');
+          showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason(file._lastWriteError) }), 'error');
         } else {
           showToast(L('toast.couldNotSave', 'Could not save'), 'error');
         }
@@ -774,6 +849,7 @@ export function createWorkspaceController({
       name.className = 'c-name';
       name.setAttribute('dir', 'auto'); // an Arabic filename stays readable
       name.textContent = entry.name || entry.path;
+      name.title = name.textContent;
       const pct = hostDocument.createElement('span');
       pct.className = 'c-pct';
       pct.textContent = `${progressPercent(entry.ratio)}%`;
@@ -781,6 +857,7 @@ export function createWorkspaceController({
       sub.className = 'c-sub';
       sub.setAttribute('dir', 'auto');
       sub.textContent = `${entry.path} · ${relativeTime(entry.at, state.uiLocale)}`;
+      sub.title = entry.path;
       const bar = hostDocument.createElement('span');
       bar.className = 'c-bar';
       const fill = hostDocument.createElement('span');
@@ -813,7 +890,10 @@ export function createWorkspaceController({
       icon.className = 'r-ic';
       icon.textContent = '¶';
       const name = hostDocument.createElement('span');
+      name.className = 'r-name';
+      name.dir = 'auto'; // an Arabic filename stays readable
       name.textContent = recent.name;
+      name.title = recent.name; // the full name stays available once the row truncates it
       const path = hostDocument.createElement('span');
       path.className = 'r-path';
       path.textContent = recent.path;
@@ -933,7 +1013,9 @@ export function createWorkspaceController({
     const { name, content } = snapshot || {};
     if (!name || typeof content !== 'string') return;
     markUserIntent();
-    addFile(fileFromSnapshot({ ...snapshot, relPath: name }));
+    // audit M9: a file inside an open folder keeps its path in that folder; the bare name
+    // made sub/README.md and README.md the same note.
+    addFile(fileFromSnapshot({ ...snapshot, relPath: snapshot.relPath || name }));
   }
 
   // B3 (multi-folder workspaces): scoped to exactly the changed vault's OWN files --
@@ -949,12 +1031,30 @@ export function createWorkspaceController({
     const electronAPI = api();
     if (!changedVaultId || openVaultGenerations.get(changedVaultId) !== generation
       || !electronAPI || typeof electronAPI.readVault !== 'function') return;
-    let read;
+    let read = null;
+    // H15 step 3: a few named notes -> read just those. Any doubt falls through to the full read.
+    const named = event.files;
+    if (typeof electronAPI.readVaultChanges === 'function' && Array.isArray(named)
+      && named.length > 0 && named.length <= MAX_INCREMENTAL_FILES
+      && named.every((name) => typeof name === 'string' && NOTE_NAME.test(name))) {
+      let partial = null;
+      try {
+        partial = await electronAPI.readVaultChanges(changedVaultId, named);
+      } catch (_) { /* fall back to the full read below */ }
+      if (partial && Array.isArray(partial.entries)) {
+        read = {
+          ...partial,
+          entries: completeIncrementalSlice(state.files, changedVaultId, named, partial.entries),
+        };
+      }
+    }
     try {
-      read = normalizeVaultRead(
-        await electronAPI.readVault(changedVaultId),
-        { id: changedVaultId, name: state.vaultName },
-      );
+      if (!read) {
+        read = normalizeVaultRead(
+          await electronAPI.readVault(changedVaultId),
+          { id: changedVaultId, name: state.vaultName },
+        );
+      }
     } catch (_) {
       // audit UX-13: a failed re-read used to return silently, leaving the tree quietly
       // stale. Say it ONCE per failure streak (the flag resets on the next good read) so a
@@ -981,7 +1081,15 @@ export function createWorkspaceController({
       state.files.filter((file) => file.vaultId === changedVaultId).map((file) => [file.path, file]),
     );
     const previousActive = activePath != null ? previousByPath.get(activePath) : null;
+    // audit L3: the notes of this folder that are open in a tab and still on disk. Those
+    // the merge marks missing were deleted behind the user's back; that is said once.
+    const openOnDisk = [...previousByPath.values()]
+      .filter((file) => !file.missing && (file.open !== false || file === activeFile));
     state.files = mergeVaultSlice(state.files, changedVaultId, entries);
+    const missingPaths = new Set(
+      state.files.filter((file) => file.vaultId === changedVaultId && file.missing).map((file) => file.path),
+    );
+    const deletedOpen = openOnDisk.filter((file) => missingPaths.has(file.path));
     let conflictName = null;
     let reloadedActive = false;
     if (previousActive) {
@@ -1001,6 +1109,11 @@ export function createWorkspaceController({
     else renderTabs();
     if (conflictName) {
       showToast(L('toast.diskChanged', '"{name}" changed on disk — your edits are kept; resolve in the editor.', { name: conflictName }), 'error');
+    }
+    if (deletedOpen.length === 1) {
+      showToast(L('toast.deletedOnDisk', '“{name}” was deleted on disk. It stays open here; saving puts it back.', { name: deletedOpen[0].name }), 'error');
+    } else if (deletedOpen.length > 1) {
+      showToast(L('toast.deletedOnDiskMany', '{n} open notes were deleted on disk. They stay open here; saving puts them back.', { n: deletedOpen.length }), 'error');
     }
   }
 

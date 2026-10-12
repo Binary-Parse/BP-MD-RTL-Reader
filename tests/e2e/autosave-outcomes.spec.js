@@ -28,7 +28,11 @@ async function bootWithBridge(page) {
       closeWindow: noop, minimizeWindow: noop, maximizeWindow: noop,
       openFolder: async () => ({ canceled: true }),
       readVault: async () => ({ error: 'unauthorized-capability' }),
-      writeFile: async () => ({ error: 'write-failed' }),
+      writeFile: async () => {
+        window.__writes = (window.__writes || 0) + 1;
+        return window.__writeResult || { error: 'write-failed' };
+      },
+      readFile: async () => ({ content: '# On disk', meta: { bom: false, eol: '\n', finalNewline: true, hash: 'disk' } }),
       getSettings: async () => settings,
       setSettings: async () => ({ ok: true }),
       exportPDF: async () => ({ ok: true }),
@@ -65,5 +69,34 @@ test.describe('[QA-01] autosave write outcomes', () => {
       return window._autosaveTick();
     });
     await expect(page.locator('#toast')).not.toContainText('Auto-save could not write');
+  });
+
+  test('M10: a note with an open conflict banner is not tried again on every tick', async ({ page }) => {
+    await bootWithBridge(page);
+    await page.waitForTimeout(150);
+
+    await page.evaluate(() => {
+      window.__writeResult = { error: 'conflict' };
+      window._appState.autosave = true;
+      window._appState.files.push({
+        name: 'clash.md', path: 'clash.md', handle: null, content: '# Mine',
+        dirty: true, documentId: 'cap-clash', vaultId: null,
+        meta: { bom: false, eol: '\n', finalNewline: true, hash: 'h' },
+        revision: 1, inventory: false, open: true, _editedAt: 0,
+      });
+      window.renderFile(window._appState.files.length - 1);
+    });
+
+    // The first tick finds the conflict and shows the banner.
+    await page.evaluate(() => window._autosaveTick());
+    expect(await page.evaluate(() => window.__writes)).toBe(1);
+    expect(await page.evaluate(() => window._appState.files.at(-1).conflict)).toBe(true);
+
+    // Later ticks leave the note alone: no write, and the rendered note is not rebuilt.
+    await page.evaluate(() => { document.querySelector('#noteContent').firstElementChild.dataset.m10 = 'kept'; });
+    await page.evaluate(async () => { await window._autosaveTick(); await window._autosaveTick(); });
+    expect(await page.evaluate(() => window.__writes)).toBe(1);
+    const rendered = await page.evaluate(() => document.querySelector('#noteContent').firstElementChild.dataset.m10);
+    expect(rendered).toBe('kept');
   });
 });

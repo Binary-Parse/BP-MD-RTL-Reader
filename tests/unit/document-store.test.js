@@ -1,11 +1,12 @@
 /**
  * document-store.test.js — T-AI1. Pure helpers + factory behavior via mock fs.
  */
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, afterEach } from 'vitest';
 import path from 'node:path';
+import nodeCrypto from 'node:crypto';
 import {
-  createDocumentStore, hasBOM, detectEol, applyEol, normalize, hashContent, isInsideRoot, atomicWriteFile, sweepStaleTempFiles,
-  decodeBuffer, encodeBuffer, encodeWindows1256, firstUnmappableWindows1256Char, unmappableWindows1256Summary, validateWriteTarget,
+  createDocumentStore, hasBOM, detectEol, applyEol, hasMixedEol, applyEolPreserving, normalize, hashContent, isInsideRoot, atomicWriteFile, sweepStaleTempFiles,
+  decodeBuffer, decodeBufferAs, utf8Profile, REOPEN_ENCODINGS, encodeBuffer, encodeWindows1256, firstUnmappableWindows1256Char, unmappableWindows1256Summary, validateWriteTarget,
 } from '../../src/main/document-store.js';
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -94,8 +95,60 @@ describe('write (EC-A1/A2/A3)', () => {
     fs.renameSync = vi.fn(() => { throw Object.assign(new Error('lock'), { code: 'EPERM' }); });
     const store = createDocumentStore({ fs, path: path.posix });
     const r = store.write('/v/a.md', 'x', { root: '/v', eol: '\n' });
-    expect(r).toEqual({ error: 'write-failed' });
+    expect(r).toEqual({ error: 'locked' }); // audit M14: EPERM is a held or read-only target
     expect('/v/a.md' in fs._files).toBe(false);
+  });
+});
+
+describe('M14: a target held by another program is retried', () => {
+  const held = (code) => Object.assign(new Error(code), { code });
+  const failing = (times, code) => {
+    const fs = mockFs();
+    const rename = fs.renameSync;
+    let left = times;
+    fs.renameSync = vi.fn((from, to) => { if (left > 0) { left -= 1; throw held(code); } rename(from, to); });
+    return fs;
+  };
+
+  for (const code of ['EBUSY', 'EPERM', 'EACCES']) {
+    test(`${code} twice, then free: the write succeeds on the third attempt`, () => {
+      const fs = failing(2, code);
+      const sleep = vi.fn();
+      expect(atomicWriteFile(fs, '/v/a.md', 'text', 'utf8', { sleep })).toEqual({ ok: true });
+      expect(fs.renameSync).toHaveBeenCalledTimes(3);
+      expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([20, 50]);
+      expect(fs._files['/v/a.md']).toBe('text');
+      expect(Object.keys(fs._files)).toEqual(['/v/a.md']); // no temp file left
+    });
+  }
+
+  test('held through every retry: five attempts, 370 ms of waiting, "locked", and no temp file left', () => {
+    const fs = failing(Infinity, 'EBUSY');
+    fs._files['/v/a.md'] = 'old';
+    const sleep = vi.fn();
+    expect(atomicWriteFile(fs, '/v/a.md', 'new', 'utf8', { sleep })).toEqual({ error: 'locked' });
+    expect(fs.renameSync).toHaveBeenCalledTimes(5);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([20, 50, 100, 200]);
+    expect(fs._files).toEqual({ '/v/a.md': 'old' });
+  });
+
+  test('other errors are not retried and keep their codes', () => {
+    for (const [code, error] of [['ENOSPC', 'enospc'], ['ENOENT', 'gone'], ['EIO', 'write-failed']]) {
+      const fs = failing(Infinity, code);
+      const sleep = vi.fn();
+      expect(atomicWriteFile(fs, '/v/a.md', 'x', 'utf8', { sleep })).toEqual({ error });
+      expect(fs.renameSync).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+    }
+  });
+
+  test('without an injected sleep the real wait is used and stays within its bound', () => {
+    const fs = failing(1, 'EBUSY');
+    const started = Date.now();
+    expect(atomicWriteFile(fs, '/v/a.md', 'x', 'utf8')).toEqual({ ok: true });
+    const waited = Date.now() - started;
+    expect(waited).toBeGreaterThanOrEqual(15);
+    expect(waited).toBeLessThan(2000);
   });
 });
 
@@ -106,6 +159,234 @@ describe('atomicWriteFile', () => {
     expect(atomicWriteFile(fs, '/out/note.pdf', data)).toEqual({ ok: true });
     expect(fs._files['/out/note.pdf']).toBe(data);
     expect(Object.keys(fs._files)).toEqual(['/out/note.pdf']);
+  });
+});
+
+// H15 step 1: a folder of notes is often a git repo too; every `git status` rewrites
+// .git/index, every editor drops swap/temp files. None of those may wake the renderer into a
+// full re-read of the vault.
+describe('watch filtering and timing (H15 step 1)', () => {
+  function setup(statSync, opts) {
+    vi.useFakeTimers();
+    let listener;
+    const fs = { ...mockFs(), watch: vi.fn((r, o, cb) => { listener = cb; return { close() {} }; }) };
+    if (statSync) fs.statSync = statSync;
+    const cb = vi.fn();
+    const handle = createDocumentStore({ fs, path: path.posix }).watch('/v', cb, opts);
+    return { fire: (...a) => listener(...a), cb, handle };
+  }
+  const flushAll = () => vi.advanceTimersByTime(5000);
+  const enoent = () => { const e = new Error('gone'); e.code = 'ENOENT'; throw e; };
+  const asDir = () => ({ isDirectory: () => true });
+  const asFile = () => ({ isDirectory: () => false });
+  afterEach(() => vi.useRealTimers());
+
+  test('events inside .git never reach the callback', () => {
+    const { fire, cb } = setup();
+    fire('change', '.git/index');
+    fire('rename', '.git/index.lock');
+    fire('rename', '.git');
+    fire('change', 'sub/.git/HEAD');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('events inside node_modules never reach the callback', () => {
+    const { fire, cb } = setup();
+    fire('change', 'node_modules/pkg/README.md');
+    fire('change', 'docs/node_modules/x/readme.md');
+    fire('rename', 'node_modules');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('any dot-directory is ignored, even for Markdown files inside it', () => {
+    const { fire, cb } = setup();
+    fire('change', '.obsidian/workspace.md');
+    fire('change', 'notes/.trash/old.md');
+    fire('change', '.DS_Store');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('a dot-FILE that is a note is still a note', () => {
+    const { fire, cb } = setup();
+    fire('change', '.scratch.md');
+    flushAll();
+    expect(cb.mock.calls[0][0].files).toEqual(['.scratch.md']);
+  });
+
+  test('Windows separators are understood (.git\\index dropped, sub\\a.md kept)', () => {
+    const { fire, cb } = setup();
+    fire('change', '.git\\index');
+    fire('change', 'sub\\a.md');
+    flushAll();
+    expect(cb.mock.calls[0][0].files).toEqual(['sub\\a.md']);
+  });
+
+  test('non-note files are ignored: images, text, swap files', () => {
+    const { fire, cb } = setup(enoent);
+    fire('change', 'pic.png');
+    fire('rename', 'pic.png');
+    fire('change', 'todo.txt');
+    fire('rename', 'a.md.swp');
+    fire('rename', 'a.md~');
+    fire('rename', 'a.md.tmp-1234');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('both note extensions pass, case-insensitively', () => {
+    const { fire, cb } = setup();
+    fire('change', 'a.md');
+    fire('change', 'b.MARKDOWN');
+    fire('rename', 'c.Md');
+    flushAll();
+    expect(cb.mock.calls[0][0].files.sort()).toEqual(['a.md', 'b.MARKDOWN', 'c.Md']);
+  });
+
+  test('a directory rename/creation is forwarded (its notes moved with it)', () => {
+    const { fire, cb } = setup(asDir);
+    fire('rename', 'topic-2');
+    flushAll();
+    expect(cb.mock.calls[0][0].files).toEqual(['topic-2']);
+  });
+
+  test('a REMOVED directory (path gone, no extension) is forwarded, a removed picture is not', () => {
+    const { fire, cb } = setup(enoent);
+    fire('rename', 'deleted-folder');
+    fire('rename', 'deleted.png');
+    flushAll();
+    expect(cb.mock.calls[0][0].files).toEqual(['deleted-folder']);
+  });
+
+  test('a plain "change" on a non-note path is never forwarded, directory or not', () => {
+    const { fire, cb } = setup(asDir);
+    fire('change', 'topic-2');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('a renamed non-note FILE that exists is ignored', () => {
+    const { fire, cb } = setup(asFile);
+    fire('rename', 'LICENSE');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('a stat result without isDirectory() counts as "not a directory"', () => {
+    const { fire, cb } = setup(() => ({ size: 1 }));
+    fire('rename', 'LICENSE');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('dot-directories and node_modules are dropped even when stat says they exist as directories', () => {
+    const { fire, cb } = setup(asDir);
+    fire('rename', '.git');
+    fire('rename', '.obsidian');
+    fire('rename', 'sub/.trash');
+    fire('rename', 'node_modules');
+    fire('rename', 'docs/node_modules');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('an empty or separator-only name is ignored without throwing', () => {
+    const { fire, cb } = setup(asDir);
+    expect(() => { fire('rename', '/'); fire('rename', '\\'); fire('rename', ''); fire('rename', undefined); fire('rename', null); }).not.toThrow();
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('a gone name that merely ENDS with a dot has no extension, so it may have been a folder', () => {
+    const { fire, cb } = setup(enoent);
+    fire('rename', 'archive.v2.');
+    flushAll();
+    expect(cb.mock.calls[0][0].files).toEqual(['archive.v2.']);
+  });
+
+  test('a gone name whose extension is not the last dot-run still counts as having one', () => {
+    const { fire, cb } = setup(enoent);
+    fire('rename', 'backup.tar.gz');
+    flushAll();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  test('a mixed burst delivers only the relevant files, in one callback', () => {
+    const { fire, cb } = setup(enoent);
+    fire('change', '.git/index');
+    fire('change', 'a.md');
+    fire('change', 'pic.png');
+    fire('rename', 'sub/b.md');
+    flushAll();
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0].files.sort()).toEqual(['a.md', 'sub/b.md']);
+  });
+
+  test('a filtered event does not start (or extend) the debounce window', () => {
+    const { fire, cb } = setup();
+    fire('change', 'a.md');
+    vi.advanceTimersByTime(200);
+    fire('change', '.git/index');   // must NOT push the flush later
+    vi.advanceTimersByTime(100);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  test('the default trailing debounce is 300 ms', () => {
+    const { fire, cb } = setup();
+    fire('change', 'a.md');
+    vi.advanceTimersByTime(299);
+    expect(cb).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  test('a steady stream below the debounce still flushes at the 2 s max-wait', () => {
+    const { fire, cb } = setup();
+    for (let t = 0; t < 2000; t += 250) {
+      fire('change', 'a.md');
+      vi.advanceTimersByTime(250);
+    }
+    // events at 0,250,...,1750; each re-arms the 300 ms timer, so without a ceiling nothing has fired yet
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0].files).toEqual(['a.md']);
+  });
+
+  test('max-wait does not fire early', () => {
+    const { fire, cb } = setup();
+    for (let t = 0; t < 1750; t += 250) {
+      fire('change', 'a.md');
+      vi.advanceTimersByTime(250);
+    }
+    expect(cb).not.toHaveBeenCalled(); // 1750 ms elapsed, still inside the 2 s ceiling
+    vi.advanceTimersByTime(250);       // now 2000 ms since the first event
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  test('after a flush the next event opens a fresh window (max-wait is per burst)', () => {
+    const { fire, cb } = setup();
+    fire('change', 'a.md');
+    vi.advanceTimersByTime(300);
+    expect(cb).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(5000);
+    fire('change', 'b.md');
+    vi.advanceTimersByTime(299);
+    expect(cb).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb.mock.calls[1][0].files).toEqual(['b.md']);
+  });
+
+  test('debounceMs and maxWaitMs stay configurable', () => {
+    const { fire, cb } = setup(undefined, { debounceMs: 50, maxWaitMs: 120 });
+    fire('change', 'a.md');
+    vi.advanceTimersByTime(49);
+    expect(cb).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(cb).toHaveBeenCalledTimes(1);
+    for (let t = 0; t < 120; t += 40) { fire('change', 'b.md'); vi.advanceTimersByTime(40); }
+    expect(cb).toHaveBeenCalledTimes(2); // ceiling at 120 ms
   });
 });
 
@@ -348,16 +629,46 @@ describe('document-store — residual mutation survivors', () => {
     expect(fs._files['/v/a.md']).toBe('x\n'); // startsWith('x') would wrongly append → 'x\n\n'
   });
 
-  // v1.2 — read() now reads BYTES (no encoding arg) so the encoding can be detected;
-  // write()'s conflict re-read still reads the utf8 string so legacy meta hashes match.
-  test('read reads bytes (no encoding); write conflict re-read forwards utf8', () => {
+  // v1.2 — read() reads BYTES (no encoding arg) so the encoding can be detected.
+  // audit M8 — write()'s conflict re-read reads bytes too: a utf8 string of a cp1256 or
+  // UTF-16 file turns its bytes into U+FFFD, and different files then hash the same.
+  test('read and the write conflict re-read both read bytes (no encoding)', () => {
     const encs = [];
     const base = mockFs({ '/v/a.md': 'old\n' });
     const fs = { ...base, readFileSync: (p, enc) => { encs.push(enc); return base._files[p]; } };
     const store = createDocumentStore({ fs, path: path.posix });
     store.read('/v/a.md');
     store.write('/v/a.md', 'new', { root: '/v', baseHash: hashContent('old\n'), eol: '\n' });
-    expect(encs).toEqual([undefined, 'utf8']);
+    expect(encs).toEqual([undefined, undefined]);
+  });
+
+  test('M8: a same-length external edit of a windows-1256 file is a conflict, not an overwrite', () => {
+    const before = Buffer.from([0xE3, 0xD1, 0xCD, 0xC8, 0xC7, 0x0A]); // مرحبا
+    const after = Buffer.from([0xE3, 0xD1, 0xCD, 0xC8, 0xC8, 0x0A]); // one letter replaced
+    const fs = mockFs({ '/v/a.md': before });
+    const store = createDocumentStore({ fs, path: path.posix, crypto: nodeCrypto });
+    const read = store.read('/v/a.md');
+    expect(read.meta.encoding).toBe('windows-1256');
+    fs._files['/v/a.md'] = after; // another program saved the file
+    expect(store.read('/v/a.md').meta.hash).not.toBe(read.meta.hash);
+    expect(store.write('/v/a.md', 'mine\n', { root: '/v', baseHash: read.meta.hash, encoding: 'windows-1256', eol: '\n' }))
+      .toEqual({ error: 'conflict' });
+    expect(fs._files['/v/a.md']).toBe(after);
+  });
+
+  test('M8: the hash of a UTF-8 file is unchanged (bytes and string hash the same)', () => {
+    const text = '﻿نص — text\r\n';
+    expect(hashContent(Buffer.from(text, 'utf8'), nodeCrypto)).toBe(hashContent(text, nodeCrypto));
+    expect(hashContent(Buffer.from(text, 'utf8'))).toBe(hashContent(text));
+  });
+
+  test('M8: a UTF-16 file saved by the app hashes the same when read back', () => {
+    const fs = mockFs({ '/v/a.md': Buffer.from('﻿old\n', 'utf16le') });
+    const store = createDocumentStore({ fs, path: path.posix, crypto: nodeCrypto });
+    const read = store.read('/v/a.md');
+    const saved = store.write('/v/a.md', 'new — text', { root: '/v', baseHash: read.meta.hash, encoding: 'utf16le', bom: true, eol: '\n' });
+    expect(saved.ok).toBe(true);
+    expect(store.read('/v/a.md').meta.hash).toBe(saved.meta.hash);
   });
 
   // writeFileSync carries { encoding, flag: 'wx' } + openSync(tmp, 'r+') for the fsync pass.
@@ -410,7 +721,7 @@ describe('document-store — residual mutation survivors', () => {
     fs.writeFileSync = vi.fn();
     fs.unlinkSync = vi.fn();
     const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
-    expect(r).toEqual({ error: 'write-failed' });
+    expect(r).toEqual({ error: 'locked' }); // audit M14
     expect(fs.unlinkSync).not.toHaveBeenCalled();
   });
 
@@ -697,6 +1008,208 @@ describe('BOM-less UTF-16 detection (parity heuristic)', () => {
     const store = createDocumentStore({ fs, path: path.posix });
     expect(store.read('/v/cp.md').meta.encoding).toBe('windows-1256');
     expect(store.read('/v/utf8.md').meta.encoding).toBe('utf8');
+  });
+});
+
+describe('M6: BOM-less UTF-16 with characters above U+08FF', () => {
+  const be = (text) => Buffer.from(text, 'utf16le').swap16();
+  const cases = {
+    'an em dash': 'Title — subtitle\nsecond line\n',
+    'Arabic with an em dash and quotes': 'مرحبا — «نص» عربي\nسطر ثانٍ\n',
+    'a surrogate pair': 'emoji 😀 in a note\n',
+  };
+
+  for (const [label, text] of Object.entries(cases)) {
+    test(`${label}: little-endian is read as utf16le and saved back byte for byte`, () => {
+      const raw = Buffer.from(text, 'utf16le');
+      const fs = mockFs({ '/v/a.md': raw });
+      const store = createDocumentStore({ fs, path: path.posix, crypto: nodeCrypto });
+      const read = store.read('/v/a.md');
+      expect(read.meta).toMatchObject({ encoding: 'utf16le', bom: false });
+      expect(read.content).toBe(text);
+      const saved = store.write('/v/a.md', read.content, {
+        root: '/v', encoding: read.meta.encoding, bom: read.meta.bom, eol: read.meta.eol,
+        finalNewline: read.meta.finalNewline, baseHash: read.meta.hash,
+      });
+      expect(saved.ok).toBe(true);
+      expect(Buffer.compare(fs._files['/v/a.md'], raw)).toBe(0);
+    });
+
+    test(`${label}: big-endian is read as utf16be`, () => {
+      const dec = decodeBuffer(be(text));
+      expect(dec).toMatchObject({ text, encoding: 'utf16be', bom: false });
+      expect(Buffer.compare(encodeBuffer(dec.text, dec.encoding, dec.bom), be(text))).toBe(0);
+    });
+  }
+
+  test('bytes that are not text in either byte order are not taken for UTF-16', () => {
+    const lone = Buffer.from([0x00, 0xDC, 0xDC, 0x00]); // a lone low surrogate in both byte orders
+    expect(decodeBuffer(lone).encoding).not.toMatch(/^utf16/);
+    const cjkEitherWay = Buffer.from([0x4E, 0x00, 0x00, 0x4E]); // U+004E U+4E00, or U+4E00 U+004E
+    expect(decodeBuffer(cjkEitherWay).encoding).not.toMatch(/^utf16/);
+    const binary = Buffer.from([0x01, 0x00, 0x41, 0x41, 0x00, 0x41]); // a control character one way, mostly CJK the other
+    expect(decodeBuffer(binary).encoding).not.toMatch(/^utf16/);
+  });
+
+  test('UTF-8 and Windows-1256 text, which hold no NUL byte, are untouched', () => {
+    expect(decodeBuffer(Buffer.from('Title — نص\n', 'utf8')).encoding).toBe('utf8');
+    expect(decodeBuffer(Buffer.from([0xE3, 0xD1, 0xCD, 0xC8, 0xC7, 0x20, 0x41, 0x0A])).encoding).toBe('windows-1256');
+  });
+});
+
+describe('M5: a file with mixed line endings keeps the ending of every untouched line', () => {
+  const MIXED = 'one\r\ntwo\r\nthree\nfour\r\nfive\r\n'; // 4 CRLF + 1 LF
+  const open = (raw) => {
+    const fs = mockFs({ '/v/a.md': Buffer.from(raw, 'utf8') });
+    const store = createDocumentStore({ fs, path: path.posix, crypto: nodeCrypto });
+    const read = store.read('/v/a.md');
+    const save = (content) => {
+      const result = store.write('/v/a.md', content, {
+        root: '/v', baseHash: read.meta.hash, bom: read.meta.bom, eol: read.meta.eol,
+        finalNewline: read.meta.finalNewline, encoding: read.meta.encoding,
+      });
+      return { result, bytes: String(fs._files['/v/a.md']) };
+    };
+    return { read, save };
+  };
+
+  test('the read reports the mix and hands the editor LF only', () => {
+    const { read } = open(MIXED);
+    expect(read.meta).toMatchObject({ eol: '\r\n', eolMixed: true, finalNewline: true });
+    expect(read.content).toBe('one\ntwo\nthree\nfour\nfive\n');
+    expect(open('a\r\nb\r\n').read.meta.eolMixed).toBe(false);
+    expect(open('a\nb\n').read.meta.eolMixed).toBe(false);
+  });
+
+  test('saved untouched, the bytes are identical', () => {
+    const { read, save } = open(MIXED);
+    const { result, bytes } = save(read.content);
+    expect(result.ok).toBe(true);
+    expect(result.meta.eolMixed).toBe(true);
+    expect(bytes).toBe(MIXED);
+  });
+
+  test('an edited line keeps its own ending; no other line changes', () => {
+    expect(open(MIXED).save('ONE\ntwo\nthree\nfour\nfive\n').bytes).toBe('ONE\r\ntwo\r\nthree\nfour\r\nfive\r\n');
+    expect(open(MIXED).save('one\ntwo\nTHREE\nfour\nfive\n').bytes).toBe('one\r\ntwo\r\nTHREE\nfour\r\nfive\r\n');
+    expect(open(MIXED).save('one\ntwo\nthree\nfour\nFIVE\n').bytes).toBe('one\r\ntwo\r\nthree\nfour\r\nFIVE\r\n');
+  });
+
+  test('an inserted line gets the dominant ending; the lines around it keep theirs', () => {
+    expect(open(MIXED).save('one\ntwo\nnew\nthree\nfour\nfive\n').bytes).toBe('one\r\ntwo\r\nnew\r\nthree\nfour\r\nfive\r\n');
+    expect(open(MIXED).save('new\none\ntwo\nthree\nfour\nfive\n').bytes).toBe('new\r\none\r\ntwo\r\nthree\nfour\r\nfive\r\n');
+    expect(open(MIXED).save('one\ntwo\nthree\nfour\nfive\nnew\n').bytes).toBe('one\r\ntwo\r\nthree\nfour\r\nfive\r\nnew\r\n');
+  });
+
+  test('a deleted line takes its ending with it', () => {
+    expect(open(MIXED).save('one\ntwo\nfour\nfive\n').bytes).toBe('one\r\ntwo\r\nfour\r\nfive\r\n');
+    expect(open(MIXED).save('two\nthree\nfour\nfive\n').bytes).toBe('two\r\nthree\nfour\r\nfive\r\n');
+  });
+
+  test('a lone CR is an ending too, and is kept', () => {
+    const raw = 'one\rtwo\nthree\r\nfour';
+    const { read, save } = open(raw);
+    expect(read.content).toBe('one\ntwo\nthree\nfour');
+    expect(read.meta).toMatchObject({ eolMixed: true, finalNewline: false });
+    expect(save(read.content).bytes).toBe(raw);
+    expect(open(raw).save('one\ntwo\nthree\nFOUR').bytes).toBe('one\rtwo\nthree\r\nFOUR');
+  });
+
+  test('a file without a final newline stays without one; an added one gets the dominant ending', () => {
+    const raw = 'one\r\ntwo\nthree\r\nfour';
+    expect(open(raw).save('one\ntwo\nthree\nfour').bytes).toBe(raw);
+    expect(open(raw).save('one\ntwo\nthree\nfour\n').bytes).toBe('one\r\ntwo\nthree\r\nfour\r\n');
+  });
+
+  test('a file with one ending style is written as before', () => {
+    expect(open('one\r\ntwo\r\n').save('one\nnew\ntwo\n').bytes).toBe('one\r\nnew\r\ntwo\r\n');
+    expect(open('one\ntwo\n').save('one\nnew\ntwo\n').bytes).toBe('one\nnew\ntwo\n');
+  });
+
+  test('applyEolPreserving and hasMixedEol on their own', () => {
+    expect(hasMixedEol('a\r\nb\n')).toBe(true);
+    expect(hasMixedEol('a\rb')).toBe(true);
+    expect(hasMixedEol('a\r\nb\r\n')).toBe(false);
+    expect(hasMixedEol('')).toBe(false);
+    expect(applyEolPreserving('x\ny\nz', 'a\r\nb\nc', '\n')).toBe('x\r\ny\nz');
+    expect(applyEolPreserving('', 'a\r\nb\n', '\r\n')).toBe('');
+  });
+});
+
+describe('M7: a guessed encoding is reported as a guess', () => {
+  const utf8Arabic = Buffer.from('# عنوان الملاحظة\n\nفقرة عربية طويلة فيها كلمات كثيرة، وفاصلة.\n', 'utf8');
+  const damaged = Buffer.concat([utf8Arabic, Buffer.from([0xE3]), Buffer.from('\n', 'utf8')]); // one stray byte
+  const cp1256 = new Uint8Array(encodeWindows1256('# عنوان الملاحظة\n\nفقرة عربية طويلة فيها كلمات كثيرة، وفاصلة؟ «نعم».\n'));
+
+  test('UTF-8 with one invalid byte is read as UTF-8, flagged, with the damage counted', () => {
+    const dec = decodeBuffer(damaged);
+    expect(dec).toMatchObject({ encoding: 'utf8', bom: false, uncertain: true, invalidBytes: 1 });
+    expect(dec.text.startsWith('# عنوان الملاحظة')).toBe(true); // not Windows-1256 mojibake
+    expect(utf8Profile(damaged).invalid).toBe(1);
+  });
+
+  test('plain Windows-1256 Arabic, with commas and quotes, is not a guess', () => {
+    const dec = decodeBuffer(Buffer.from(cp1256));
+    expect(dec.encoding).toBe('windows-1256');
+    expect(dec.uncertain).toBeUndefined();
+    expect(dec.text).toContain('فقرة عربية');
+  });
+
+  test('valid UTF-8 and UTF-16 are not guesses', () => {
+    expect(decodeBuffer(utf8Arabic).uncertain).toBeUndefined();
+    expect(decodeBuffer(Buffer.from('﻿note', 'utf16le')).uncertain).toBeUndefined();
+    expect(decodeBuffer(Buffer.from('Title — x\n', 'utf16le')).uncertain).toBeUndefined();
+  });
+
+  test('bytes between the two (few sequences, few stray bytes) are a Windows-1256 guess', () => {
+    const dec = decodeBuffer(Buffer.from([0x41, 0xC9, 0xA1, 0x20, 0xE3, 0x20, 0xE4, 0x0A])); // 1 sequence, 2 stray
+    expect(dec).toMatchObject({ encoding: 'windows-1256', uncertain: true });
+  });
+
+  test('valid UTF-8 that holds a NUL byte, and is not UTF-16, is a guess', () => {
+    expect(decodeBuffer(Buffer.from('abc\u0000def', 'utf8'))).toMatchObject({ encoding: 'utf8', uncertain: true, invalidBytes: 0 });
+  });
+
+  test('a UTF-8 BOM before a body that is not UTF-8 is a guess either way', () => {
+    const bom = Buffer.from([0xEF, 0xBB, 0xBF]);
+    expect(decodeBuffer(Buffer.concat([bom, Buffer.from(cp1256)]))).toMatchObject({ encoding: 'windows-1256', bom: false, uncertain: true });
+    expect(decodeBuffer(Buffer.concat([bom, damaged]))).toMatchObject({ encoding: 'utf8', bom: true, uncertain: true, invalidBytes: 1 });
+  });
+
+  test('the read puts the guess in meta, and only then', () => {
+    const fs = mockFs({ '/v/bad.md': damaged, '/v/good.md': utf8Arabic });
+    const store = createDocumentStore({ fs, path: path.posix, crypto: nodeCrypto });
+    expect(store.read('/v/bad.md').meta).toMatchObject({ encoding: 'utf8', encodingUncertain: true, encodingInvalidBytes: 1 });
+    expect(Object.keys(store.read('/v/good.md').meta)).not.toContain('encodingUncertain');
+  });
+
+  test('decodeBufferAs reads the bytes with the chosen encoding', () => {
+    expect(decodeBufferAs(Buffer.from(cp1256), 'windows-1256').text).toContain('فقرة عربية');
+    expect(decodeBufferAs(Buffer.from(cp1256), 'windows-1256').uncertain).toBeUndefined();
+    expect(decodeBufferAs(damaged, 'utf8')).toMatchObject({ encoding: 'utf8', uncertain: true, invalidBytes: 1 });
+    expect(decodeBufferAs(utf8Arabic, 'utf8')).toMatchObject({ encoding: 'utf8', bom: false, uncertain: false, invalidBytes: 0 });
+    expect(decodeBufferAs(Buffer.from('﻿hi', 'utf16le'), 'utf16le')).toMatchObject({ text: 'hi', bom: true });
+    expect(decodeBufferAs(Buffer.from('hi', 'utf16le').swap16(), 'utf16be')).toMatchObject({ text: 'hi', bom: false });
+    expect(decodeBufferAs(Buffer.from([0x41, 0x00, 0x42]), 'utf16le')).toBeNull(); // odd length
+    expect(decodeBufferAs(utf8Arabic, 'latin1')).toBeNull();
+    expect(REOPEN_ENCODINGS).toEqual(['utf8', 'windows-1256', 'utf16le', 'utf16be']);
+  });
+
+  test('store.read with an encoding the bytes cannot be reports a mismatch', () => {
+    const fs = mockFs({ '/v/a.md': Buffer.from([0x41, 0x00, 0x42]) });
+    const store = createDocumentStore({ fs, path: path.posix, crypto: nodeCrypto });
+    expect(store.read('/v/a.md', { encoding: 'utf16le' })).toEqual({ error: 'encoding-mismatch' });
+    expect(store.read('/v/a.md', { encoding: 'windows-1256' }).meta.encoding).toBe('windows-1256');
+  });
+});
+
+describe('Windows-1256 is a byte-exact round trip', () => {
+  test('every one of the 256 byte values decodes and encodes back to itself', () => {
+    const all = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+    const text = new TextDecoder('windows-1256').decode(all);
+    expect(new Set(text).size).toBe(256);
+    expect(Buffer.compare(encodeWindows1256(text), all)).toBe(0);
+    expect(firstUnmappableWindows1256Char(text)).toBeNull();
   });
 });
 

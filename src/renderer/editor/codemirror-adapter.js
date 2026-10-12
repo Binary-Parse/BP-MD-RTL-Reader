@@ -18,6 +18,8 @@ import { createInlineMarksPreview } from './inline-marks-preview.js';
 // listContinuation lives in its own module so the coverage + mutation gates SEE it (this
 // adapter file is gate-excluded as e2e-only). Re-exported for back-compat with importers.
 import { listContinuation } from './list-continuation.js';
+import { withoutAppOwnedKeys } from './keymap-ownership.js';
+import { createHistoryStore } from './history-store.js';
 export { listContinuation };
 
 /**
@@ -30,7 +32,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     EditorState, EditorSelection, EditorView, keymap, Prec, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
     syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags, markdown, markdownLanguage,
-    search, setSearchQuery, SearchQuery, syntaxTree,
+    syntaxTree, ViewPlugin, Decoration,
   } = CM6;
 
   // Live, mutable direction so setDirection() can re-drive per-line dir AFTER mount — the
@@ -105,8 +107,59 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     }
   });
 
-  const state = EditorState.create({
-    doc: doc == null ? '' : String(doc),
+  // Audit B1: the undo history is part of the EditorState, so every open file gets a state of
+  // its own. `makeState(text)` builds a fresh one (empty history) with the full extension set;
+  // load() below swaps states per file with view.setState() and parks the one it leaves in
+  // `store` (history-store.js).
+  // Find (F13, audit N1): every match of the app's find-bar query is marked in the editor.
+  // CodeMirror's own search highlighter draws only while its search panel is open, and this
+  // app never opens it, so nothing was drawn. The marks come from findIn() below, the same
+  // search the find-bar counts with, so an Arabic match found through normalisation (tashkeel
+  // folded) is marked too. Only matches in the visible part of the document are decorated.
+  let findQuery = '';
+  let findMatches = [];
+  let findStamp = 0; // changes when the query does; the plugin compares it (no StateEffect in the bundle)
+  const findIn = (text, query, caseSensitive = false) => {
+    const matches = [];
+    if (!query) return matches;
+    // RTL-M3: Arabic queries search the NORMALIZED document (tashkeel folded), with
+    // match offsets mapped back to source positions — the same model as the Reading
+    // pane, so 'محمد' finds 'مُحَمَّد' in Edit mode too instead of silently missing it.
+    const arabicMatches = arabicFindMatches(text, query);
+    if (arabicMatches) return arabicMatches;
+    const re = new RegExp(escapeReg(query), caseSensitive ? 'g' : 'gi');
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      matches.push({ start: m.index, end: m.index + m[0].length });
+      if (m.index === re.lastIndex) re.lastIndex++;
+    }
+    return matches;
+  };
+  const findMark = (ViewPlugin && Decoration) ? Decoration.mark({ class: 'cm-searchMatch' }) : null;
+  const buildFindMarks = (v) => {
+    const length = v.state.doc.length;
+    const ranges = [];
+    for (const { start, end } of findMatches) {
+      if (!(end > start) || end > length) continue;
+      if (v.visibleRanges.some((r) => end > r.from && start < r.to)) ranges.push(findMark.range(start, end));
+    }
+    return Decoration.set(ranges, true);
+  };
+  const findMarks = findMark ? ViewPlugin.fromClass(
+    class {
+      constructor(v) { this.stamp = findStamp; this.decorations = buildFindMarks(v); }
+      update(u) {
+        if (u.docChanged) findMatches = findIn(u.state.doc.toString(), findQuery);
+        if (!u.docChanged && !u.viewportChanged && this.stamp === findStamp) return;
+        this.stamp = findStamp;
+        this.decorations = buildFindMarks(u.view);
+      }
+    },
+    { decorations: (v) => v.decorations },
+  ) : null;
+
+  const makeState = (text) => EditorState.create({
+    doc: text,
     extensions: [
       history(),
       // list/quote continuation on Enter, at Prec.highest so it beats BOTH defaultKeymap's
@@ -119,7 +172,7 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
         // (onTab returns true if it handled it); otherwise fall through to indentWithTab below.
         ...(onTab ? [{ key: 'Tab', run: () => onTab(false) }, { key: 'Shift-Tab', run: () => onTab(true) }] : []),
       ]))] : []),
-      keymap.of([...(Prec ? [] : [{ key: 'Enter', run: continueListOnEnter }]), ...defaultKeymap, ...historyKeymap, indentWithTab]),
+      keymap.of([...(Prec ? [] : [{ key: 'Enter', run: continueListOnEnter }]), ...withoutAppOwnedKeys(defaultKeymap), ...historyKeymap, indentWithTab]),
       // GFM via the `extended` parser (markdownLanguage) — strikethrough + tables parse,
       // matching the preview pipeline (marked is GFM). markdownLanguage is already vendored,
       // so this needs no bundle rebuild. Guarded so the fake-CM6 unit path stays safe.
@@ -133,11 +186,8 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       ...(livePreview ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
       ...(livePreview ? [createInlineMarksPreview(CM6)] : []), // ==highlight==/<u>/~sub~/^sup^ rendered off the active line
       ...createLineDirection(CM6, () => liveDir, () => liveForce), // R1/R2 in CM6: per-line dir (forced or auto) + logical caret
-      // F13 Find: the `search` extension draws .cm-searchMatch on EVERY hit of the active
-      // SearchQuery (set via setSearchHighlight below) so all matches are visible, not just the
-      // selected one. No panel/keymap is wired — Find is driven by the app's own find-bar.
-      // Guarded: the fake-CM6 unit harness omits `search`.
-      ...(search ? [search()] : []),
+      // F13 Find: every hit of the find-bar query is drawn as .cm-searchMatch (see findMarks).
+      ...(findMarks ? [findMarks] : []),
       highlightActiveLine(),
       drawSelection(),
       EditorView.lineWrapping,
@@ -147,17 +197,45 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       listener,
     ],
   });
-  const view = new EditorView({ state, parent });
+  const view = new EditorView({ state: makeState(doc == null ? '' : String(doc)), parent });
   view.dom.setAttribute('dir', liveForce || liveDir); // forced direction wins for the surface base
+
+  const store = createHistoryStore((s) => s.doc.toString());
+  let liveKey = null;      // the file whose state is live in the view (null: none / not tracked)
 
   const clamp = (n, len) => Math.max(0, Math.min(n == null ? 0 : n, len));
 
   return {
-    load(content) {
-      const insert = content == null ? '' : String(content);
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert } });
+    /**
+     * Put a file's text into the editor. Not an undoable step: the view is handed a state of
+     * its own — the file's parked one when its text is unchanged since it was parked, otherwise
+     * a fresh one with an empty history. `key` identifies the file (see historyKeyOf); without
+     * one the text is simply loaded into a fresh state.
+     */
+    load(content, key = null) {
+      const text = content == null ? '' : String(content);
+      if (liveKey != null) store.put(liveKey, view.state);
+      const parked = key != null ? store.take(key, text) : null;
+      // a file always opens with the caret at the start, as it did when load() replaced the document
+      const next = parked ? parked.update({ selection: { anchor: 0 } }).state : makeState(text);
+      liveKey = key;
+      findMatches = findIn(text, findQuery); // the marks follow the note that is shown
+      view.setState(next);
       fire();
+      // setState raises no update event; the toolbar + caret readout used to hear about a load
+      // through the docChanged update, so tell them explicitly.
+      if (typeof onSelectionChange === 'function') {
+        try { onSelectionChange(); } catch (_) { /* never let the toolbar break the editor */ }
+      }
     },
+    /** A closed file's history is freed. */
+    releaseHistory(key) {
+      store.release(key);
+      if (liveKey === key) liveKey = null;
+    },
+    /** Free the history of every file whose key is not listed (files that are gone). */
+    retainHistory(keys) { store.retain(keys); },
+    _historySize() { return store.size(); },
     getValue() { return view.state.doc.toString(); },
     // `ranges` feeds edit-commands' multi-selection cut/copy (the clipboard must carry
     // every range replaceSelection will delete); start/end stay the main-range shape
@@ -175,28 +253,17 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     replaceSelection(text) { view.dispatch(view.state.replaceSelection(String(text))); fire(); },
     onChange(cb) { changeCb = cb; return () => { if (changeCb === cb) changeCb = null; }; },
     find(query, { caseSensitive = false } = {}) {
-      const matches = [];
-      if (!query) return matches;
-      const text = view.state.doc.toString();
-      // RTL-M3: Arabic queries search the NORMALIZED document (tashkeel folded), with
-      // match offsets mapped back to source positions — the same model as the Reading
-      // pane, so 'محمد' finds 'مُحَمَّد' in Edit mode too instead of silently missing it.
-      const arabicMatches = arabicFindMatches(text, query);
-      if (arabicMatches) return arabicMatches;
-      const re = new RegExp(escapeReg(query), caseSensitive ? 'g' : 'gi');
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        matches.push({ start: m.index, end: m.index + m[0].length });
-        if (m.index === re.lastIndex) re.lastIndex++;
-      }
-      return matches;
+      return findIn(view.state.doc.toString(), query, caseSensitive);
     },
-    // F13 Find: highlight ALL matches of `query` (drawn as .cm-searchMatch by the `search`
-    // extension). An empty/falsy query clears the highlight. Guarded for the fake-CM6 unit
-    // harness, which omits setSearchQuery/SearchQuery (this path is e2e-covered).
+    // F13 Find: mark ALL matches of `query` (drawn as .cm-searchMatch by findMarks above).
+    // An empty/falsy query clears the marks. No-op in the fake-CM6 unit harness, which has
+    // no ViewPlugin (this path is e2e-covered).
     setSearchHighlight(query) {
-      if (!setSearchQuery || !SearchQuery) return;
-      view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: query == null ? '' : String(query) })) });
+      if (!findMarks) return;
+      findQuery = query == null ? '' : String(query);
+      findMatches = findIn(view.state.doc.toString(), findQuery);
+      findStamp += 1;
+      view.dispatch({});
     },
     // Active formatting constructs at the caret (for toolbar active-state). Walks the markdown
     // syntax tree up from the cursor; returns a Set of tags ('bold','italic','strike','code',

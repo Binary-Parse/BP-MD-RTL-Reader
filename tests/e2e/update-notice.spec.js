@@ -31,6 +31,7 @@ async function boot(page, { settings = DEFAULTS, autoCheckResult = null } = {}) 
       setSettings: async (patch) => { window.__setSettingsCalls.push(patch); return { ok: true }; },
       onOpenFile: () => {}, onVaultChanged: () => {},
       onUpdateAvailable: (cb) => { window.__updateListener = cb; },
+      onUpdateUnverified: (cb) => { window.__unverifiedListener = cb; },
       autoUpdateCheck: async () => {
         window.__autoCheckCalls += 1;
         return autoCheckResult || { checked: true, current: '1.3.0', latest: '1.3.0', updateAvailable: false };
@@ -75,6 +76,24 @@ test.describe('[T7.1] opt-in update notice', () => {
     await page.click('#updateDismissBtn');
     await expect(page.locator('#updateBar')).toBeHidden();
     expect(await page.evaluate(() => window.__releasePageCalls)).toBe(0);
+  });
+
+  test('[M37] main reporting an unknown certificate shows the card with the releases page', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => window.__unverifiedListener());
+    await expect(page.locator('#updateBar')).toContainText('The update check was not made');
+    await expect(page.locator('#updateViewBtn')).toHaveText('Open releases page');
+    // A newer release reported afterwards takes the same card over.
+    await page.evaluate(() => window.__updateListener({ latest: '2.1.0' }));
+    await expect(page.locator('#updateBar')).toContainText('Version 2.1.0 is available.');
+    await expect(page.locator('#updateViewBtn')).toHaveText('View release');
+  });
+
+  test('[M37] turning the automatic check on with an unknown certificate says so', async ({ page }) => {
+    await boot(page, { autoCheckResult: { error: 'untrusted', current: '1.3.0' } });
+    await page.evaluate(() => window.showSettings());
+    await page.locator('#setUpdateAuto').click();
+    await expect(page.locator('#updateBar')).toContainText('The update check was not made');
   });
 
   test('an empty or missing version never renders a notice', async ({ page }) => {

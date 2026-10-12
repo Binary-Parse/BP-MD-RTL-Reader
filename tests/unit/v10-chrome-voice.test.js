@@ -31,24 +31,33 @@ function ruleBody(css, selector) {
 }
 
 describe('the shared "one chrome voice" rule (design §12)', () => {
-  const SHARED_SELECTOR = '.insp-title, .insp-section h4, .recent-label, .pal-section-label,\n.dd-section-label, .set-group-label, .table-controls .tc-label, .about-version';
+  const SHARED_SELECTOR = '.insp-title, .recent-label, .pal-section-label,\n.set-group-label, .table-controls .tc-label, .about-version';
 
   test('exists with the design\'s exact selector list', () => {
     const body = ruleBody(components, SHARED_SELECTOR);
     expect(body, 'the consolidated rule (or its selector list) is missing').not.toBeNull();
   });
 
-  test('declares Inter, weight 600, letter-spacing 0.09em', () => {
+  test('declares JetBrains Mono caps: weight 500, letter-spacing 0.12em', () => {
     const body = ruleBody(components, SHARED_SELECTOR) || '';
-    expect(body).toMatch(/font-family:\s*var\(--sans\)/);
-    expect(body).toMatch(/font-weight:\s*600/);
-    expect(body).toMatch(/letter-spacing:\s*0\.09em/);
+    expect(body).toMatch(/font-family:\s*var\(--mono\)/);
+    expect(body).toMatch(/font-weight:\s*500/);
+    expect(body).toMatch(/letter-spacing:\s*0\.12em/);
+  });
+
+  test('Arabic labels switch to the Arabic face with no tracking and no caps', () => {
+    expect(components).toMatch(/html\[lang="ar"\] :is\(\.insp-title[^{]*\)\s*\{\s*font-family:\s*var\(--arabic\);[^}]*letter-spacing:\s*0;[^}]*text-transform:\s*none/);
+  });
+
+  test('.insp-section h4 is a serif italic section heading', () => {
+    const body = ruleBody(components, '.insp-section h4') || '';
+    expect(body).toMatch(/font:\s*italic\s+700\s+1\.02rem\/1\.2\s+var\(--serif\)/);
   });
 
   // Each of the 8 no longer declares its own font-family/letter-spacing/font-weight —
   // those come from the shared rule now. A leftover mono declaration on any of them
   // would win by source order (same specificity) and silently defeat the shared rule.
-  for (const selector of ['.insp-title', '.insp-section h4', '.recent-label', '.set-group-label', '.about-version']) {
+  for (const selector of ['.insp-title', '.recent-label', '.set-group-label', '.about-version']) {
     test(`${selector} no longer declares its own font-family/letter-spacing`, () => {
       const body = ruleBody(components, selector) || '';
       expect(body, `${selector} still sets its own font-family`).not.toMatch(/font-family:/);
@@ -59,11 +68,16 @@ describe('the shared "one chrome voice" rule (design §12)', () => {
   // These three already used --sans (a prior, partial pass) but at the wrong
   // letter-spacing (0.12em / 0.08em vs the design's shared 0.09em) — own declarations
   // must go so the shared rule's 0.09em actually wins.
-  test('.pal-section-label / .dd-section-label no longer set their own letter-spacing', () => {
-    for (const selector of ['.pal-section-label', '.dd-section-label']) {
-      const body = ruleBody(components, selector) || '';
-      expect(body, `${selector} still sets its own letter-spacing`).not.toMatch(/letter-spacing:/);
-    }
+  test('.pal-section-label no longer sets its own letter-spacing', () => {
+    const body = ruleBody(components, '.pal-section-label') || '';
+    expect(body, '.pal-section-label still sets its own letter-spacing').not.toMatch(/letter-spacing:/);
+  });
+
+  test('.dd-section-label is the Marginalia menu label: JetBrains Mono caps, weight 500, 0.12em', () => {
+    const body = ruleBody(components, '.dd-section-label') || '';
+    expect(body).toMatch(/font:\s*500\s+0\.6875rem\/1\.2\s+var\(--mono\)/);
+    expect(body).toMatch(/letter-spacing:\s*0\.12em/);
+    expect(body).toMatch(/text-transform:\s*uppercase/);
   });
 
   test('.table-controls .tc-label no longer sets its own letter-spacing', () => {
@@ -73,18 +87,16 @@ describe('the shared "one chrome voice" rule (design §12)', () => {
 });
 
 describe('the four individually-tuned chrome-voice selectors (design §12)', () => {
-  test('.pi-meta: Inter 500, letter-spacing 0.06em (was 0.08em)', () => {
+  test('.pi-meta: JetBrains Mono caps, weight 500, letter-spacing 0.06em', () => {
     const body = ruleBody(components, '.pi-meta') || '';
-    expect(body).toMatch(/font-family:\s*var\(--sans\)/);
-    expect(body).toMatch(/font-weight:\s*500/);
+    expect(body).toMatch(/font:\s*500\s+0\.6875rem\/1\s+var\(--mono\)/);
     expect(body).toMatch(/letter-spacing:\s*0\.06em/);
   });
 
-  test('.prop-key: Inter 500, letter-spacing 0.08em (was mono, 0.1em)', () => {
+  test('.prop-key: serif italic with a dotted leader', () => {
     const body = ruleBody(components, '.prop-key') || '';
-    expect(body).toMatch(/font-family:\s*var\(--sans\)/);
-    expect(body).toMatch(/font-weight:\s*500/);
-    expect(body).toMatch(/letter-spacing:\s*0\.08em/);
+    expect(body).toMatch(/font:\s*italic\s+400\s+0\.86rem\/1\.3\s+var\(--serif\)/);
+    expect(components).toMatch(/\.prop-key::after\s*\{[^}]*border-bottom:\s*1px dotted/);
   });
 
   test('.read-time: Inter 600, letter-spacing 0.08em (was mono, 0.1em)', () => {
@@ -98,10 +110,11 @@ describe('the four individually-tuned chrome-voice selectors (design §12)', () 
   // AC4 acceptance criterion (Issues #4/#9) requires every side-panel label to stay >= 13px
   // for readability, and that pre-existing app requirement overrides the design's literal
   // value. Only the family (mono -> Inter) is the v10 change here.
-  test('.tag: Inter, still 0.8125rem (13px) — the AC4 readability floor wins over the design\'s 0.75rem', () => {
+  test('.tag: a serif italic cloud whose smallest tag is still 0.8125rem (13px) — the AC4 readability floor', () => {
     const body = ruleBody(components, '.tag') || '';
-    expect(body).toMatch(/font-family:\s*var\(--sans\)/);
-    expect(body).toMatch(/font-size:\s*0\.8125rem/);
+    expect(body).toMatch(/font-family:\s*var\(--serif\)/);
+    expect(body).toMatch(/font-style:\s*italic/);
+    expect(body).toMatch(/font-size:\s*calc\(0\.8125rem\s*\+\s*var\(--s\)\s*\*\s*0\.55rem\)/);
   });
 });
 
@@ -134,10 +147,13 @@ describe('the three v10 radii the first pass missed (design §12 area)', () => {
 });
 
 describe('unchanged reference points (already matched the design before this fix)', () => {
-  test('.sb-tab keeps its own Inter 600 / 0.07em (not part of the shared rule)', () => {
+  test('.sb-tab is a serif tab: italic when idle, upright and bold when active (not part of the shared rule)', () => {
     const body = ruleBody(components, '.sb-tab') || '';
-    expect(body).toMatch(/font-family:\s*var\(--sans\)/);
-    expect(body).toMatch(/letter-spacing:\s*0\.07em/);
+    expect(body).toMatch(/font-family:\s*var\(--serif\)/);
+    expect(body).toMatch(/font-style:\s*italic/);
+    const active = ruleBody(components, '.sb-tab.active') || '';
+    expect(active).toMatch(/font-style:\s*normal/);
+    expect(active).toMatch(/font-weight:\s*700/);
   });
 
   test('.editor .doc-meta keeps its own Inter 600 / 0.12em (not part of the shared rule)', () => {

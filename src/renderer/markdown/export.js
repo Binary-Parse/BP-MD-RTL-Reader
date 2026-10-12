@@ -5,7 +5,7 @@
  * export and PDF export; both artifacts deny network access.
  */
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
-import { resolveBlockDirection, resolveDocDirection } from '../bidi.js';
+import { resolveBlockDirection, proseText, resolveDocDirection } from '../bidi.js';
 import { applyBidi } from '../bidi-dom.js';
 import { escapeHtml } from '../i18n.js';
 import { restoreMath } from './math.js';
@@ -14,6 +14,7 @@ import { parseCalloutHeader } from './markdown.js';
 import { highlightCode } from './highlight.js';
 import { renderMermaid } from './mermaid.js';
 import { sanitizeSvg } from './trusted.js';
+import { tableFrameLabel } from '../components/table-frame.js';
 
 // No frame-ancestors, report-uri or sandbox here: W3C CSP3 3.3 excludes all three from
 // <meta http-equiv> delivery, so they protect nothing and make every opened export log a
@@ -119,7 +120,7 @@ export function renderExportBody(content, {
   const dir = resolveDocDirection({
     manual: explicitDirection,
     frontMatter: frontMatterDirection(data),
-    content: resolveBlockDirection(body, 'ltr'), // dominant-script base (matches the live preview)
+    content: resolveBlockDirection(proseText(body), 'ltr'), // dominant-script base on prose only (matches the live preview; audit H8)
   });
   const el = document.createElement('div');
   el.innerHTML = parseMarkdown(body);
@@ -133,12 +134,34 @@ export function renderExportBody(content, {
   return { el, dir, lang, explicitDirection, data, body };
 }
 
-export function buildExportDoc(file, {
+/**
+ * W1: a table that cannot fit the page scrolls inside its own frame, never the page. The
+ * exported file runs no script, so the frame is always keyboard-focusable. Runs after the
+ * bidi pass so the table's own `dir` is already settled.
+ */
+function frameTables(root, lang) {
+  for (const table of [...root.querySelectorAll('table')]) {
+    const frame = root.ownerDocument.createElement('div');
+    frame.className = 'table-frame';
+    frame.setAttribute('role', 'region');
+    frame.setAttribute('tabindex', '0');
+    frame.setAttribute('aria-label', tableFrameLabel(lang.toLowerCase().startsWith('ar') ? 'ar' : 'en'));
+    table.replaceWith(frame);
+    frame.appendChild(table);
+  }
+}
+
+/**
+ * Render the note body for a standalone export: the bidi-rendered element plus the facts the
+ * document shell needs. The element stays detached so the async transforms (Mermaid, math) can
+ * run on it BEFORE serialization.
+ */
+function renderExportParts(file, {
   direction = 'auto', parseMarkdown, katex = null, DOMPurify = null,
   hljs = null, sanitizeHighlight = (value) => value,
   annotations = [], annotationsLabel = 'Notes',
 } = {}) {
-  const { el: exportEl, dir: exportDir, lang: exportLang } = renderExportBody((file && file.content) || '', {
+  const { el, dir, lang } = renderExportBody((file && file.content) || '', {
     direction,
     parseMarkdown,
     katex,
@@ -152,22 +175,47 @@ export function buildExportDoc(file, {
       if (appendix) root.appendChild(appendix);
     },
   });
-  const html = exportEl.innerHTML;
+  frameTables(el, lang);
   // Strip any accepted note extension (case-insensitive); fall back to a sane name.
   const baseName = ((file && file.name) || '').replace(/\.(md|markdown|txt)$/i, '') || 'document';
+  return { el, dir, lang, baseName };
+}
+
+/**
+ * The one place the export document is serialized. Built as a string and never re-parsed:
+ * under the app's Trusted Types policy a re-parse sanitizes the document as a fragment, which
+ * drops <html lang/dir>, <meta charset>, the CSP meta and <title> (audit H1).
+ */
+function assembleExportDoc({ bodyHtml, dir, lang, baseName, extraCss = '' }) {
   const cspMeta = `\n<meta http-equiv="Content-Security-Policy" content="${EXPORT_CSP}">`;
-  const fullHtml = `<!DOCTYPE html>
-<html lang="${escapeHtml(exportLang)}" dir="${exportDir}">
+  // A stylesheet is raw text inside <style>; it must not be able to end the element.
+  const extraStyle = extraCss ? `\n<style>\n${extraCss.replace(/<\/style/gi, '')}\n</style>` : '';
+  return `<!DOCTYPE html>
+<html lang="${escapeHtml(lang)}" dir="${dir}">
 <head>
 <meta charset="UTF-8">${cspMeta}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(baseName)}</title>
 <style>
-body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; }
+body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; overflow-wrap: anywhere; }
 h1,h2,h3 { font-weight: 600; line-height: 1.2; }
 a { color: #C0492C; }
 code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; direction: ltr; unicode-bidi: isolate; }
-pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; overflow-x: auto; direction: ltr; text-align: start; }
+pre { background: #F2EDE0; padding: 16px 20px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: auto; direction: ltr; text-align: start; }
+pre code { padding: 0; background: none; }
+.table-frame { max-width: 100%; margin: 16px 0; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { min-width: 8ch; padding: 6px 10px; border-bottom: 1px solid #D9D2C4; text-align: start; vertical-align: top; }
+th[align="left"], td[align="left"] { text-align: start; }
+th[align="right"], td[align="right"] { text-align: end; }
+th[align="center"], td[align="center"] { text-align: center; }
+.math-block, .mermaid { display: block; max-width: 100%; overflow-x: auto; direction: ltr; text-align: center; }
+.mermaid svg { max-width: 100%; height: auto; }
+@media print {
+  .table-frame, .mermaid { overflow: visible; }
+  table { table-layout: fixed; }
+  th, td { min-width: 0; }
+}
 img { max-width: 100%; height: auto; }
 blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding-inline-start: 20px; margin: 24px 0; font-style: italic; }
 .callout { margin: 20px 0; padding: 12px 16px; border-inline-start: 3px solid #C0492C; background: #F2EDE0; }
@@ -178,38 +226,40 @@ blockquote { border-inline-start: 3px solid #C0492C; padding-block: 8px; padding
 .export-annotation-list { padding-inline-start: 24px; }
 .export-annotation-excerpt { margin: 0 0 4px; font-size: 15px; color: #5E554C; }
 .export-annotation-note { margin: 0 0 12px; }
-</style>
+</style>${extraStyle}
 </head>
 <body>
-${html}
+${bodyHtml}
 </body>
 </html>`;
-  return { fullHtml, baseName };
 }
 
-/** Add the one asynchronous live-render transform (Mermaid) before export. */
-export async function buildExportDocAsync(file, options = {}) {
-  const built = buildExportDoc(file, options);
-  const wantsMermaid = typeof options.loadMermaid === 'function'
-    && built.fullHtml.includes('language-mermaid');
-  const wantsMath = built.fullHtml.includes('katex');
-  if (!wantsMermaid && !wantsMath) return built;
+export function buildExportDoc(file, options = {}) {
+  const { el, dir, lang, baseName } = renderExportParts(file, options);
+  return { fullHtml: assembleExportDoc({ bodyHtml: el.innerHTML, dir, lang, baseName }), baseName };
+}
 
-  const parsed = new DOMParser().parseFromString(built.fullHtml, 'text/html');
-  if (wantsMermaid) {
+/** Add the asynchronous live-render transforms (Mermaid, the math stylesheet) before export. */
+export async function buildExportDocAsync(file, options = {}) {
+  const { el, dir, lang, baseName } = renderExportParts(file, options);
+  if (typeof options.loadMermaid === 'function' && el.querySelector('code.language-mermaid')) {
     let mermaid;
     try { mermaid = await options.loadMermaid(); }
     catch (_) { mermaid = null; }
     if (mermaid) {
-      await renderMermaid(parsed.body, {
+      await renderMermaid(el, {
         mermaid,
         sanitize: (svg) => sanitizeSvg(svg, options.DOMPurify),
         idPrefix: 'export-mermaid',
       });
     }
   }
-  if (wantsMath) await applyExportMath(parsed);
-  return { ...built, fullHtml: '<!DOCTYPE html>\n' + parsed.documentElement.outerHTML };
+  let extraCss = '';
+  if (el.querySelector('.katex')) {
+    extraCss = await loadKatexExportCss();
+    if (!extraCss) stripKatexHtml(el);
+  }
+  return { fullHtml: assembleExportDoc({ bodyHtml: el.innerHTML, dir, lang, baseName, extraCss }), baseName };
 }
 
 // UX-01: KaTeX output carries TWO copies of every formula — the MathML copy is hidden
@@ -217,7 +267,8 @@ export async function buildExportDocAsync(file, options = {}) {
 // entirely CSS-driven — so every exported document with math rendered each formula
 // twice, one copy broken. Inline the vendored stylesheet (font-faces stripped: the font
 // files cannot ride along and url() would only 404); when the stylesheet cannot be
-// loaded (offline/test lanes), fall back to the native MathML copy alone.
+// loaded (offline/test lanes), fall back to the native MathML copy alone (the caller
+// strips the span copy when this resolves to '').
 let cachedKatexCss = null;
 async function loadKatexExportCss() {
   if (cachedKatexCss !== null) return cachedKatexCss;
@@ -229,18 +280,6 @@ async function loadKatexExportCss() {
     cachedKatexCss = '';
   }
   return cachedKatexCss;
-}
-
-async function applyExportMath(parsed) {
-  if (!parsed.body || !parsed.body.querySelector('.katex')) return;
-  const css = await loadKatexExportCss();
-  if (css) {
-    const styleEl = parsed.createElement('style');
-    styleEl.textContent = css;
-    parsed.head.appendChild(styleEl);
-    return;
-  }
-  stripKatexHtml(parsed.body);
 }
 
 /** Keep only the native MathML copy of each formula (offline exports, EPUB chapters). */

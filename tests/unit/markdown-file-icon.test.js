@@ -6,7 +6,6 @@
  * Windows packaging paths used by both NSIS and Inno Setup.
  */
 import { describe, expect, test } from 'vitest';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +14,6 @@ import zlib from 'node:zlib';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(resolve(root, rel));
 const json = (rel) => JSON.parse(read(rel).toString('utf8'));
-const sha256 = (rel) => createHash('sha256').update(read(rel)).digest('hex').toUpperCase();
 
 function decodePNG(buf) {
   if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a PNG');
@@ -124,23 +122,23 @@ describe('Markdown file-association icon', () => {
       expect(image.px(x, y).a, `corner ${x},${y} should be transparent`).toBe(0);
     }
 
+    // Page spans x 104..408 and y 40..472 of the 512 canvas, so about 152 x 216 px
+    // at 256 px, minus the rounded corners: roughly 32k opaque pixels.
     let opaque = 0;
-    let vividGreen = 0;
-    let dark = 0;
+    let navy = 0;
     for (let y = 0; y < image.height; y++) {
       for (let x = 0; x < image.width; x++) {
         const pixel = image.px(x, y);
         if (pixel.a > 240) opaque++;
-        if (pixel.a > 200 && pixel.g > 140 && pixel.g - pixel.r > 35 && pixel.g - pixel.b > 35) {
-          vividGreen++;
+        // Navy kashida and pen nib (#1B2556). Its area is about 1000 px at 256 px.
+        if (pixel.a > 200 && pixel.b > pixel.r + 40 && pixel.b > pixel.g + 40 && pixel.b < 120) {
+          navy++;
         }
-        if (pixel.a > 200 && Math.max(pixel.r, pixel.g, pixel.b) < 65) dark++;
       }
     }
     expect(opaque).toBeGreaterThan(20_000);
     expect(opaque).toBeLessThan(60_000);
-    expect(vividGreen).toBeGreaterThan(150);
-    expect(dark).toBeGreaterThan(1_000);
+    expect(navy, 'expected navy kashida ink').toBeGreaterThan(500);
   });
 
   test('ICO contains PNG-compressed 16, 32, 48, and 256 pixel entries', () => {
@@ -163,14 +161,14 @@ describe('Markdown file-association icon', () => {
 
     const policy = json('build/installer/source-manifest-policy.json');
     expect(policy.files).toContain('resources/markdown-file-icon.ico');
-    expect(policy.files).toHaveLength(75);
+    // 75 under Electron 42; Electron 44 links ANGLE statically and no longer ships
+    // libEGL.dll / libGLESv2.dll, so the allowlist is 75 - 2.
+    expect(policy.files).toHaveLength(73);
   });
 
-  test('the dedicated generator is present and existing app icons are unchanged', () => {
-    expect(read('scripts/generate-markdown-file-icon.ps1').length).toBeGreaterThan(0);
-    expect(sha256('build/icons/icon-source.png')).toBe('5842FF32AE83E715461DD3AB2FC29931B234A5992E98EB969A7283E28351B697');
-    expect(sha256('build/icons/icon.png')).toBe('F4E7C6CBAF7A6DA73534CDB059E7C6CDE036C45548EEC655452C6A352B4128D3');
-    expect(sha256('build/icons/icon.ico')).toBe('4B51D7326E0564C016EC305EEE59A7EB2DE937915BE984E3A0C0B5B9A48DC421');
-    expect(sha256('build/installer/assets/icon.ico')).toBe('4B51D7326E0564C016EC305EEE59A7EB2DE937915BE984E3A0C0B5B9A48DC421');
+  test('the generator and the SVG sources for both icons are tracked', () => {
+    expect(read('scripts/generate-icons.mjs').length).toBeGreaterThan(0);
+    expect(read('build/icons/icon-source.svg').toString('utf8')).toContain('<svg');
+    expect(read('build/icons/markdown-file-icon-source.svg').toString('utf8')).toContain('<svg');
   });
 });

@@ -55,6 +55,11 @@ describe('update:check (T-Q6)', () => {
     expect(await handler()).toEqual({ error: 'network', current: '1.0.0' });
   });
 
+  test('a certificate that matches no pin → { error: "untrusted" }, not "network" (audit M37)', async () => {
+    await setup(vi.fn(() => Promise.reject(new Error('tls-pin-mismatch'))));
+    expect(await handler()).toEqual({ error: 'untrusted', current: '1.0.0' });
+  });
+
   test('non-ok HTTP → { error: "http" }', async () => {
     await setup(vi.fn(() => Promise.resolve({ ok: false, status: 503 })));
     expect(await handler()).toEqual({ error: 'http', current: '1.0.0' });

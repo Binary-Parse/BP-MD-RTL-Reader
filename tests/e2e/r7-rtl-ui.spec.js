@@ -152,4 +152,54 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     });
     await expect(page).toHaveScreenshot('rtl-ui-chrome-1440x900.png', { maxDiffPixels: 8000, threshold: 0.2 });
   });
+
+  test('M21: the theme, the editor mode and the folder state are named in Arabic', async ({ page }) => {
+    const labels = () => page.evaluate(() => ({
+      theme: document.getElementById('themeLabel').textContent,
+      mode: document.getElementById('propMode').textContent,
+      folder: document.getElementById('sbVault').textContent,
+    }));
+    expect(await labels()).toEqual({ theme: 'paper', mode: 'Live', folder: 'no folder' });
+    await page.evaluate(() => window.setArabicUI(true));
+    expect(await labels()).toEqual({ theme: 'ورقي', mode: 'مباشر', folder: 'لا مجلد' });
+
+    await page.evaluate(() => window.cycleTheme());
+    expect((await labels()).theme).toBe('حبر');
+    await expect(page.locator('.toast').last()).toHaveText('السمة: حبر');
+
+    // Back to English: the id-like names of before, and the capitalised name in the toast.
+    await page.evaluate(() => window.setArabicUI(false));
+    expect(await labels()).toEqual({ theme: 'ink', mode: 'Live', folder: 'no folder' });
+    await page.evaluate(() => window.cycleTheme());
+    await expect(page.locator('.toast').last()).toHaveText('Theme: Sepia');
+  });
+
+  test('M21: a callout with no title is named in the language of the callout, not of the interface', async ({ page }) => {
+    await page.evaluate(() => {
+      window._appState.files = [{ name: 'c.md', path: 'c.md', handle: null, dirty: false,
+        content: '> [!NOTE]\n> هذه ملاحظة عربية قصيرة\n\n> [!WARNING]\n> An English warning\n' }];
+      window.renderFile(0);
+    });
+    const titles = () => page.locator('#noteContent .callout-title-text').allTextContents();
+    expect(await titles()).toEqual(['ملاحظة', 'Warning']);
+    await page.evaluate(() => window.setArabicUI(true));
+    expect(await titles()).toEqual(['ملاحظة', 'Warning']);
+  });
+
+  test('M17: a file name keeps its own reading order in the Arabic UI', async ({ page }) => {
+    await page.evaluate(() => window.setArabicUI(true));
+    const order = (name) => page.evaluate((fileName) => {
+      window._appState.files.push({ name: fileName, path: fileName, handle: null, content: '# x', dirty: false, open: true });
+      window.renderFile(window._appState.files.length - 1);
+      const edges = (el) => {
+        const text = el.firstChild;
+        const at = (i) => { const r = document.createRange(); r.setStart(text, i); r.setEnd(text, i + 1); return r.getBoundingClientRect().x; };
+        return at(0) < at(text.length - 1) ? 'first-on-left' : 'first-on-right';
+      };
+      return { tab: edges(document.querySelector('.tab.active .tab-name')), inspector: edges(document.querySelector('#propFile')) };
+    }, name);
+    // Was drawn as md.2026-10-10: the digits and the extension changed places.
+    expect(await order('2026-10-10.md')).toEqual({ tab: 'first-on-left', inspector: 'first-on-left' });
+    expect(await order('ملاحظة.md')).toEqual({ tab: 'first-on-right', inspector: 'first-on-right' });
+  });
 });

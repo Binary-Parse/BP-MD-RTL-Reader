@@ -77,4 +77,29 @@ test.describe('fullscreen toggle @electron', () => {
     // beat before the afterEach hook tears the window down.
     await page.waitForTimeout(300);
   });
+
+  test('[M25] Esc leaves fullscreen, but first closes what is open', async () => {
+    const isFull = () => electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen());
+    await page.locator('#fullscreenBtn').click();
+    await expect(page.locator('#fullscreenBtn')).toHaveAttribute('aria-pressed', 'true', { timeout: 10000 });
+
+    // The command palette is open: this Esc belongs to it.
+    await page.keyboard.press('Control+k');
+    await expect(page.locator('#palOverlay')).toHaveClass(/open/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#palOverlay')).not.toHaveClass(/open/);
+    await page.waitForTimeout(400);
+    expect(await isFull()).toBe(true);
+
+    // Nothing is open: this Esc leaves fullscreen.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#fullscreenBtn')).toHaveAttribute('aria-pressed', 'false', { timeout: 10000 });
+    expect(await isFull()).toBe(false);
+
+    // And outside fullscreen Esc does not enter it.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    expect(await isFull()).toBe(false);
+    await page.waitForTimeout(300);
+  });
 });

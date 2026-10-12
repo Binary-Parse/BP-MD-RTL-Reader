@@ -49,8 +49,9 @@ Describe 'Verified installer build chain' {
 
     It 'commits an exact Electron payload inventory and blocks direct Inno compilation' {
         $SourcePolicy.electronVersion | Should -Be $Package.devDependencies.electron -Because 'the Inno payload pin must track package.json, not a hand-synced literal'
-        $SourcePolicy.files.Count | Should -Be 75
-        @($SourcePolicy.files | Select-Object -Unique).Count | Should -Be 75
+        # 75 under Electron 42; Electron 44 no longer ships libEGL.dll / libGLESv2.dll (ANGLE is static).
+        $SourcePolicy.files.Count | Should -Be 73
+        @($SourcePolicy.files | Select-Object -Unique).Count | Should -Be 73
         $SourcePolicy.files | Should -Contain 'resources/app.asar'
         $SourcePolicy.files | Should -Contain 'resources/markdown-file-icon.ico'
         $Inno | Should -Match '#ifndef VerifiedStaging'

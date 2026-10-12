@@ -1,6 +1,14 @@
 /** Shared, allocation-safe limits for renderer-side expensive transforms. */
 export const MAX_MATH_BYTES = 32 * 1024;
 export const MAX_CODE_BYTES = 256 * 1024;
+// audit M4: the time one Markdown render may spend on inline formatting before the rest of
+// the note is emitted as literal text. Honest text costs about 0.25 ms per KB, so the slope
+// leaves a wide margin; the base covers small notes on a slow or busy machine.
+export const RENDER_BUDGET_BASE_MS = 400;
+export const RENDER_BUDGET_MS_PER_KB = 2;
+// Matches x length of one inline context above which marked's masking pass (one copy of the
+// context per match, about 0.3 ns per unit) is not run.
+export const RENDER_MASK_UNITS = 4e9;
 
 /** Return the UTF-8 byte length without allocating an encoded copy. */
 export function utf8ByteLength(value) {

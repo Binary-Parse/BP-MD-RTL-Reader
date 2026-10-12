@@ -54,9 +54,11 @@ test.describe('[T-F11] chevrons mirror in RTL UI', () => {
     await page.evaluate(() => document.documentElement.setAttribute('dir', 'rtl')); // R7 will set this
     await page.waitForTimeout(150); // let any transform transition settle before reading computed style
     // The panel toggles are visible by default → mirrored.
+    // The icon is mirrored, never the button: its ::after tooltip is a child of the button and
+    // would be mirrored with it (known issue fixed in 2.0.0; see known-issues.spec.js).
     const rtl = await page.evaluate(() => ({
-      side: getComputedStyle(document.getElementById('sidebarToggleBtn')).transform,
-      insp: getComputedStyle(document.getElementById('inspectorToggleBtn')).transform,
+      side: getComputedStyle(document.querySelector('#sidebarToggleBtn .ic')).transform,
+      insp: getComputedStyle(document.querySelector('#inspectorToggleBtn .ic')).transform,
     }));
     expect(rtl.side).toMatch(/^matrix\(-1,/); // mirrored
     expect(rtl.insp).toMatch(/^matrix\(-1,/);

@@ -144,3 +144,11 @@ $RECYCLE.BIN/
 .claudedoc/
 .claude/
 .superpowers/
+
+# Local-only: design mocks, agent instructions, the defect list and the decision log
+# (never published)
+design/
+AGENTS.md
+DECISIONS.md
+OPEN_DEFECTS.md
+HANDOFF.md

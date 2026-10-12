@@ -16,6 +16,8 @@
  * parse, so a single registration is safe to reuse across documents.
  */
 
+import { cachedStart } from './render-guard.js';
+
 const REF_RE = /^\[\^([^\]\s]+)\]/;
 // A definition: `[^id]: text`, plus continuation lines until a blank line or the
 // next definition. Up to 3 leading spaces are allowed (CommonMark indent tolerance).
@@ -44,7 +46,7 @@ export function footnoteExtension() {
         // Stryker disable next-line all: marked's `start` is a SCAN-POSITION HINT, not
         // correctness — when it returns a wrong index/undefined, marked falls back to
         // full scanning and the tokenizer still matches, so these mutants are equivalent.
-        start(src) { const i = src.search(/\[\^[^\]\s]+\]/); return i < 0 ? undefined : i; },
+        start: cachedStart((src) => { const i = src.search(/\[\^[^\]\s]+\]/); return i < 0 ? undefined : i; }),
         tokenizer(src) {
           const m = REF_RE.exec(src);
           if (m) return { type: 'footnoteRef', raw: m[0], id: m[1] };
@@ -69,7 +71,8 @@ export function footnoteExtension() {
         name: 'footnoteDef',
         level: 'block',
         // Stryker disable next-line all: a perf scan-hint (see footnoteRef.start) — equivalent.
-        start(src) { const i = src.search(/^ {0,3}\[\^[^\]\s]+\]:/m); return i < 0 ? undefined : i; },
+        // 256: `^` also matches at the first character marked passes in, wherever that is.
+        start: cachedStart((src) => { const i = src.search(/^ {0,3}\[\^[^\]\s]+\]:/m); return i < 0 ? undefined : i; }, 256),
         tokenizer(src) {
           const m = DEF_RE.exec(src);
           if (m) {

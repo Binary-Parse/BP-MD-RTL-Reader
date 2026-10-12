@@ -12,7 +12,7 @@
 const SETTINGS_VERSION = 5;
 const CAPABILITY_ID = /^cap-[A-Za-z0-9_-]{1,128}$/;
 const READING_PROGRESS_CAP = 30;
-const { atomicWriteJson } = require('./json-store');
+const { atomicWriteJson, readJsonFileChecked, setAsideCorruptFile } = require('./json-store');
 
 const DEFAULTS = Object.freeze({
   version: SETTINGS_VERSION,
@@ -32,6 +32,8 @@ const DEFAULTS = Object.freeze({
   calendar: 'gregorian',
   arabicKashida: false,
   italicRecolor: true,
+  // Margin notes folded to small markers in the gutter (false = full cards).
+  marginNotesCollapsed: false,
 
   // T-F19 chrome. windowTitleMode drives the OS window title (and therefore the
   // taskbar and Alt+Tab); 'file' shows the open document, 'app' pins the product
@@ -124,6 +126,7 @@ function migrate(raw) {
   if (raw.calendar === 'hijri' || raw.calendar === 'gregorian') out.calendar = raw.calendar;
   if (typeof raw.arabicKashida === 'boolean') out.arabicKashida = raw.arabicKashida;
   if (typeof raw.italicRecolor === 'boolean') out.italicRecolor = raw.italicRecolor;
+  if (typeof raw.marginNotesCollapsed === 'boolean') out.marginNotesCollapsed = raw.marginNotesCollapsed;
   if (raw.windowTitleMode === 'app' || raw.windowTitleMode === 'file') out.windowTitleMode = raw.windowTitleMode;
   if (typeof raw.autoHideTitlebar === 'boolean') out.autoHideTitlebar = raw.autoHideTitlebar;
   if (typeof raw.hideStatusBar === 'boolean') out.hideStatusBar = raw.hideStatusBar;
@@ -222,20 +225,28 @@ function clampWindowBounds(win, displays) {
   return { w: win.w || def.w, h: win.h || def.h, maximized: !!win.maximized }; // drop off-screen x/y
 }
 
-function createSettingsStore({ fs, path, userDataDir }) {
+function createSettingsStore({ fs, path, userDataDir, now = Date.now }) {
   const file = path.join(userDataDir, 'settings.json');
+  // B3: what load() found. Callers that DELETE things settings no longer mention (the
+  // capability registry prune) must only do so after a real read: defaults returned for a
+  // damaged file mention nothing, and pruning against them wiped every grant.
+  let status = null;
   function load() {
-    try {
-      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-      return migrate(raw);
-    } catch (_) {
-      return defaultSettings(); // missing or corrupt → defaults (EC-D1)
-    }
+    const read = readJsonFileChecked(
+      fs,
+      file,
+      (value) => !!value && typeof value === 'object' && !Array.isArray(value),
+    );
+    // A damaged file is kept as settings.json.corrupt-<timestamp>; the next save would
+    // otherwise replace it with defaults. Once seen, 'corrupt' holds for this run.
+    if (read.status === 'corrupt') setAsideCorruptFile(fs, file, now());
+    if (status !== 'corrupt') status = read.status;
+    return read.status === 'ok' ? migrate(read.value) : defaultSettings(); // EC-D1
   }
   function save(settings) {
     return atomicWriteJson(fs, file, JSON.stringify(migrate(settings), null, 2));
   }
-  return { load, save, file };
+  return { load, save, file, loadStatus: () => status };
 }
 
 /**

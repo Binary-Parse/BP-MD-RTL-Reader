@@ -89,6 +89,59 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(0);
   });
 
+  // B6: whichever way disk text reaches a note, it also becomes the note's saved baseline,
+  // so "dirty" always means "the editor text differs from what is on disk".
+  const typeText = (page, text) => page.evaluate((t) => {
+    const cm = window.getActiveCmAdapter();
+    cm.setSelection({ start: 0, end: cm.getValue().length });
+    cm.replaceSelection(t);
+  }, text);
+  const fileState = (page) => page.evaluate(() => {
+    const f = window._appState.files[0];
+    return { content: f.content, savedContent: f.savedContent, dirty: !!f.dirty };
+  });
+
+  test('B6: after a silent reload the baseline is the disk text; typing the OLD text back is dirty (tab shows it, close would ask)', async ({ page }) => {
+    await seed(page,
+      [{ name: 'a.md', path: 'a.md', content: 'one' }],
+      [{ name: 'a.md', relPath: 'a.md', content: 'two' }]);
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
+    await page.waitForFunction(() => window.getActiveCmAdapter() && window.getActiveCmAdapter().getValue() === 'two');
+    expect(await fileState(page)).toEqual({ content: 'two', savedContent: 'two', dirty: false });
+    await typeText(page, 'one');
+    expect(await fileState(page)).toEqual({ content: 'one', savedContent: 'two', dirty: true });
+    await expect(page.locator('.tab.dirty')).toHaveCount(1);
+    await typeText(page, 'two'); // back to exactly the disk text: clean again
+    expect(await fileState(page)).toEqual({ content: 'two', savedContent: 'two', dirty: false });
+    await expect(page.locator('.tab.dirty')).toHaveCount(0);
+  });
+
+  test('B6: "Reload from disk" makes the disk text the baseline', async ({ page }) => {
+    await seed(page,
+      [{ name: 'a.md', path: 'a.md', content: 'one', dirty: true }],
+      [{ name: 'a.md', relPath: 'a.md', content: 'two' }]);
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
+    await page.locator('#conflictBar .cf-reload').click();
+    await page.waitForFunction(() => window.getActiveCmAdapter() && window.getActiveCmAdapter().getValue() === 'two');
+    expect(await fileState(page)).toEqual({ content: 'two', savedContent: 'two', dirty: false });
+    await typeText(page, 'one');
+    expect((await fileState(page)).dirty).toBe(true);
+  });
+
+  test('B6: "Keep my edits" acknowledges the disk text as the baseline: the kept text stays dirty, the disk text itself is clean', async ({ page }) => {
+    await seed(page,
+      [{ name: 'a.md', path: 'a.md', content: 'mine', dirty: true }],
+      [{ name: 'a.md', relPath: 'a.md', content: 'two' }]);
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
+    await page.locator('#conflictBar .cf-keep').click();
+    await page.waitForFunction(() => window.getActiveCmAdapter() && window.getActiveCmAdapter().getValue() === 'mine');
+    expect(await fileState(page)).toEqual({ content: 'mine', savedContent: 'two', dirty: true });
+    await typeText(page, 'two');
+    expect((await fileState(page)).dirty).toBe(false);
+    await typeText(page, 'mine');
+    expect((await fileState(page)).dirty).toBe(true);
+  });
+
   test('a CRLF-only difference is NOT treated as a conflict (EOL-normalized compare)', async ({ page }) => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: 'line one\nline two', dirty: true }],

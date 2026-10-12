@@ -23,6 +23,20 @@ export const CALLOUT_ICONS = Object.freeze({
   info: 'ⓘ',
 });
 
+// audit M21: a callout with no title of its own shows the name of its type. In an Arabic
+// callout that name is Arabic: content follows its own direction, not the interface language
+// (the same rule as table alignment, decision D9). Hebrew text is right-to-left too and keeps
+// the English name.
+export const CALLOUT_TITLES_AR = Object.freeze({
+  note: 'ملاحظة',
+  tip: 'نصيحة',
+  important: 'مهم',
+  warning: 'تحذير',
+  caution: 'تنبيه',
+  info: 'معلومة',
+});
+const HEBREW = /[\u0590-\u05FF]/;
+
 /**
  * Text of the first visual line of `el`: the run of text before the first hard
  * break. A hard break is a literal '\n' (marked `breaks: false` — a soft break)
@@ -77,16 +91,30 @@ function removeFirstLine(p) {
  * decides (a forced-RTL note must not silently re-base its neutral callouts to LTR),
  * the computed style is the second opinion, 'ltr' the last resort.
  */
-function inheritedDirection(el) {
+function inheritedDirection(el, computedDirection) {
   for (let node = el; node; node = node.parentElement) {
     const dir = node.getAttribute && node.getAttribute('dir');
     if (dir === 'rtl' || dir === 'ltr') return dir;
   }
-  const view = (el && el.ownerDocument && el.ownerDocument.defaultView) || null;
-  const computed = (view && typeof view.getComputedStyle === 'function')
-    ? view.getComputedStyle(el).direction
-    : '';
-  return computed === 'rtl' ? 'rtl' : 'ltr';
+  return computedDirection() === 'rtl' ? 'rtl' : 'ltr';
+}
+
+/**
+ * The computed direction for callouts under `root`, read once per transform and only when a
+ * callout has no `dir` ancestor (audit M16). It was read per callout, after each DOM change,
+ * which made the browser restyle the whole note every time: 1,300 callouts took 29 seconds.
+ * The root's value stands for all of them: between the root and a blockquote, direction
+ * comes from `dir` attributes, which the walk in inheritedDirection has already ruled out.
+ */
+function rootDirectionReader(root) {
+  let known = null;
+  return () => {
+    if (known === null) {
+      const view = (root.ownerDocument && root.ownerDocument.defaultView) || null;
+      known = (view && typeof view.getComputedStyle === 'function') ? view.getComputedStyle(root).direction : '';
+    }
+    return known;
+  };
 }
 
 /**
@@ -99,6 +127,7 @@ function inheritedDirection(el) {
 export function transformCallouts(root, { parseCalloutHeader, resolveDirection } = {}) {
   if (!root || typeof root.querySelectorAll !== 'function' || typeof parseCalloutHeader !== 'function') return root;
   const doc = root.ownerDocument;
+  const computedDirection = rootDirectionReader(root);
   root.querySelectorAll('blockquote').forEach((bq) => {
     const firstP = bq.querySelector(':scope > p');
     const firstLine = firstLineText(firstP || bq);
@@ -121,24 +150,32 @@ export function transformCallouts(root, { parseCalloutHeader, resolveDirection }
     wrap.setAttribute('data-callout', callout.type);
     wrap.setAttribute('role', 'note');
     const typeLabel = callout.type.charAt(0).toUpperCase() + callout.type.slice(1);
-    wrap.setAttribute('aria-label', callout.title === typeLabel ? typeLabel : `${typeLabel}: ${callout.title}`);
     // Resolve the callout's own direction from its content (title + body) on top of the
     // INHERITED base (the note's forced direction), so neutral content keeps the note's
     // direction instead of defaulting to LTR. dir="auto" can't be used on the wrapper
     // because the leading icon glyph is strong-LTR and would force ltr; resolveDirection
     // reads the first strong char of the prose.
-    const text = `${callout.title} ${body.textContent || ''}`.trim();
-    wrap.setAttribute('dir', (typeof resolveDirection === 'function') ? resolveDirection(text, inheritedDirection(bq)) : 'auto');
+    // The DEFAULT title ("Warning", "Note", …) is a Latin label the app adds, not content (audit
+    // H7): it is left out here and marked for the later bidi pass. A custom title still counts.
+    const isDefaultTitle = callout.title === typeLabel;
+    const text = `${isDefaultTitle ? '' : callout.title} ${body.textContent || ''}`;
+    const dir = (typeof resolveDirection === 'function') ? resolveDirection(text, inheritedDirection(bq, computedDirection)) : 'auto';
+    wrap.setAttribute('dir', dir);
+    const arabicLabel = dir === 'rtl' && !HEBREW.test(text) ? CALLOUT_TITLES_AR[callout.type] : null;
+    const shownType = arabicLabel || typeLabel;
+    const shownTitle = isDefaultTitle ? shownType : callout.title;
+    wrap.setAttribute('aria-label', isDefaultTitle ? shownType : `${shownType}: ${callout.title}`);
 
     const titleRow = doc.createElement('div');
     titleRow.className = 'callout-title';
+    if (isDefaultTitle) titleRow.setAttribute('data-default-title', '');
     const icon = doc.createElement('span');
     icon.className = 'callout-icon';
     icon.setAttribute('aria-hidden', 'true');
     icon.textContent = CALLOUT_ICONS[callout.type] || CALLOUT_ICONS.note;
     const titleText = doc.createElement('span');
     titleText.className = 'callout-title-text';
-    titleText.textContent = callout.title; // plain text via textContent — safe
+    titleText.textContent = shownTitle; // plain text via textContent — safe
     titleRow.append(icon, titleText);
 
     wrap.append(titleRow, body);

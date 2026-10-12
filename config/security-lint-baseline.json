@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "reviewedAtCommit": "62acb8c",
-  "expectedTotal": 222,
-  "fingerprintSha256": "07e3e0627648441f4a83240112177a80248bf8cac1c3744977c908bfba5389a5",
+  "reviewedAtCommit": "4809950",
+  "expectedTotal": 224,
+  "fingerprintSha256": "915962cd69e8c5ce14823e71e8f71e90f2a06bf8a983d4c88ba103bd14feae2d",
   "countsByRule": {
     "no-unsanitized/property": 20,
-    "security/detect-non-literal-fs-filename": 62,
+    "security/detect-non-literal-fs-filename": 64,
     "security/detect-non-literal-regexp": 5,
     "security/detect-object-injection": 123,
     "security/detect-unsafe-regex": 12

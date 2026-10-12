@@ -7,7 +7,8 @@
  *
  * Deliberately on the settings.js pattern: fs injected (so unit tests drive it with an
  * in-memory fs), atomic tmp+rename save, strict validation, and a corrupt file degrading to
- * "no annotations" rather than throwing. The channel carries TEXT ONLY — no paths, no
+ * "no annotations" rather than throwing — the corrupt file itself is kept beside the new one
+ * as `annotations.json.corrupt-<timestamp>`. The channel carries TEXT ONLY — no paths, no
  * authority — so storing annotations never widens the capability model.
  *
  * The in-memory map is a Map, not an object keyed by the renderer's docKey: a dynamic
@@ -16,12 +17,12 @@
 
 'use strict';
 
-const { atomicWriteJson, readJsonFile } = require('./json-store');
+const { atomicWriteJson, readJsonFileChecked, setAsideCorruptFile } = require('./json-store');
 
 const ANNOTATIONS_VERSION = 1;
 const MAX_HIGHLIGHTS_PER_DOC = 500;
 const MAX_DOC_KEY = 512;
-const MAX_TEXT = 5000;
+const MAX_TEXT = 5000; // the renderer refuses a longer highlight up front: HIGHLIGHT_MAX_TEXT in app.js
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024;
 
 function validText(value, max = MAX_TEXT) {
@@ -55,22 +56,31 @@ function sanitizeHighlights(raw) {
     .slice(0, MAX_HIGHLIGHTS_PER_DOC);
 }
 
-function createAnnotationsStore({ fs, path, userDataDir, maxBytes = MAX_TOTAL_BYTES } = {}) {
+function createAnnotationsStore({ fs, path, userDataDir, maxBytes = MAX_TOTAL_BYTES, now = Date.now } = {}) {
   const file = path.join(userDataDir, 'annotations.json');
   /** @type {Map<string, {highlights: object[]}>} */
   let docs = new Map();
   let loaded = false;
+  let status = null;       // what the first read found: ok | missing | corrupt | unreadable
+  let writable = true;     // false while a damaged file still sits at `file` (B3)
 
   function load() {
     if (loaded) return { version: ANNOTATIONS_VERSION, docs };
     loaded = true;
     // Missing/corrupt/foreign-version all degrade to "no annotations" (never throw here).
-    const parsed = readJsonFile(
+    const read = readJsonFileChecked(
       fs,
       file,
       (value) => value && value.version === ANNOTATIONS_VERSION
         && value.docs && typeof value.docs === 'object',
     );
+    status = read.status;
+    // B3: a damaged file (torn, or written by a newer version) is moved aside before any save
+    // can replace it. If it cannot be moved, or cannot even be read, saving is refused: an
+    // empty list on screen is recoverable, an overwritten file is not.
+    if (status === 'corrupt') writable = setAsideCorruptFile(fs, file, now()) !== null;
+    if (status === 'unreadable') writable = false;
+    const parsed = read.value;
     if (parsed) {
       for (const [key, value] of Object.entries(parsed.docs)) {
         if (!validText(key, MAX_DOC_KEY) || key === '') continue;
@@ -113,6 +123,7 @@ function createAnnotationsStore({ fs, path, userDataDir, maxBytes = MAX_TOTAL_BY
     if (cleaned.length > MAX_HIGHLIGHTS_PER_DOC) return { error: 'too-many' };
 
     load();
+    if (!writable) return { error: 'store-unreadable' };
     const previous = docs.get(docKey);
     if (cleaned.length === 0) docs.delete(docKey);
     else docs.set(docKey, { highlights: cleaned });
@@ -127,40 +138,27 @@ function createAnnotationsStore({ fs, path, userDataDir, maxBytes = MAX_TOTAL_BY
   }
 
   /**
-   * Drop annotation keys whose identity is no longer known to the registry (DATA-01):
-   * `doc:<id>` keys whose capability id is unknown (vault-read grants are sessionOnly, so
-   * their ids rotate every launch), and — when a vault allowlist is supplied — `vault:<id>
-   * <path>` keys whose vault grant was pruned (bootstrapSessionGrants drops vaults settings
-   * no longer reference; a reopened folder mints a NEW vault id, so the old key can never
-   * resolve again and only counts toward the 2 MiB store cap). `loose:` keys are user-visible
-   * stable paths and are always kept. Persists atomically; on a persist error the in-memory
-   * deletion rolls back so memory matches disk.
-   * @param {Iterable<string>} validDocIds capability ids that can still be resolved
-   * @param {Iterable<string>=} validVaultIds vault capability ids; when omitted, the vault
-   *   namespace is left untouched (single-arg callers keep the historical behavior)
+   * The capability ids the stored keys name (B3): `doc:<id>` and `vault:<id> <path>`.
+   * There is deliberately no bulk delete in this store. An earlier version dropped every key
+   * whose id the capability registry no longer knew, and the registry forgets a note as soon
+   * as it falls off the recents list, so highlights vanished after a few other files were
+   * opened. Now the dependency runs the other way: the registry keeps every record listed
+   * here, so the same file or folder gets the same id, and the same key, when it is reopened.
+   * @returns {{vaultIds: string[], documentIds: string[]}}
    */
-  function pruneOrphanDocKeys(validDocIds, validVaultIds) {
+  function referencedIds() {
     load();
-    const keep = new Set(validDocIds || []);
-    const keepVaults = validVaultIds == null ? null : new Set(validVaultIds);
-    const removed = [];
+    const vaultIds = new Set();
+    const documentIds = new Set();
     for (const key of docs.keys()) {
       if (key.startsWith('doc:')) {
-        if (!keep.has(key.slice(4))) removed.push(key);
-      } else if (keepVaults && key.startsWith('vault:')) {
+        if (key.length > 4) documentIds.add(key.slice(4));
+      } else if (key.startsWith('vault:')) {
         const space = key.indexOf(' ');
-        if (!keepVaults.has(space > 5 ? key.slice(6, space) : '')) removed.push(key);
+        if (space > 6) vaultIds.add(key.slice(6, space));
       }
     }
-    if (!removed.length) return { pruned: 0 };
-    const backup = removed.map((key) => [key, docs.get(key)]);
-    for (const key of removed) docs.delete(key);
-    const result = persist();
-    if (result.error) {
-      for (const [key, value] of backup) docs.set(key, value);
-      return result;
-    }
-    return { pruned: removed.length };
+    return { vaultIds: [...vaultIds], documentIds: [...documentIds] };
   }
 
   return {
@@ -171,7 +169,8 @@ function createAnnotationsStore({ fs, path, userDataDir, maxBytes = MAX_TOTAL_BY
     load,
     get,
     put,
-    pruneOrphanDocKeys,
+    referencedIds,
+    loadStatus: () => { load(); return status; },
     sizeInBytes: () => Buffer.byteLength(serialize(), 'utf8'),
   };
 }

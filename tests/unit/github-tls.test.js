@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
+import tls from 'node:tls';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
@@ -9,6 +11,8 @@ import {
   isGithubApiUrl,
   createPinnedGithubFetch,
   DEFAULT_CERT_PINS,
+  LIVE_CHAIN_PINS,
+  BACKUP_ROOT_PINS,
 } from '../../src/main/github-tls.js';
 
 // Throwaway self-signed fixtures (never trusted for anything but these tests). Their SPKI
@@ -113,6 +117,41 @@ describe('GitHub TLS pin', () => {
       // strengthen anything, it only hides a broken rotation (matching is fail-closed).
       expect(pin).toMatch(/^[0-9a-f]{64}$/);
     }
+  });
+
+  // audit M37: an installed copy cannot be repaired once its pins stop matching, so the list
+  // also holds roots. A root pin that is not the key of the root it names would be the 1.3.0
+  // mistake again; each one is proven against the root store bundled with Node.
+  test('every root pin is the public key of the root certificate it names', () => {
+    const store = new Map(tls.rootCertificates.map((pem) => {
+      const cert = new crypto.X509Certificate(pem);
+      const name = (/CN=(.*)/.exec(cert.subject) || [])[1];
+      const pin = crypto.createHash('sha256').update(cert.publicKey.export({ type: 'spki', format: 'der' })).digest('hex');
+      return [name ? name.trim() : '', pin];
+    }));
+    const roots = [...LIVE_CHAIN_PINS.slice(2), ...BACKUP_ROOT_PINS];
+    expect(roots.length).toBe(8);
+    for (const { name, pin } of roots) expect({ name, pin }).toEqual({ name, pin: store.get(name) });
+  });
+
+  test('the accepted list is the live chain followed by the backup roots, without duplicates', () => {
+    expect(LIVE_CHAIN_PINS.map((entry) => entry.name)).toEqual([
+      '*.github.com',
+      'Sectigo Public Server Authentication CA DV E36',
+      'Sectigo Public Server Authentication Root E46',
+      'USERTrust ECC Certification Authority',
+    ]);
+    expect(DEFAULT_CERT_PINS).toEqual([...LIVE_CHAIN_PINS, ...BACKUP_ROOT_PINS].map((entry) => entry.pin));
+    expect(new Set(DEFAULT_CERT_PINS).size).toBe(DEFAULT_CERT_PINS.length);
+    expect(Object.isFrozen(DEFAULT_CERT_PINS)).toBe(true);
+  });
+
+  test('a chain is accepted when only its root is pinned, and refused when no key is', () => {
+    // leaf A, issued by B, issued by a third certificate that stands for the root.
+    const root = certFixture(CERT_B_B64, 'aa:03');
+    const chain = { ...certFixture(CERT_A_B64, 'aa:01'), issuerCertificate: { ...certFixture(CERT_A_B64, 'aa:02'), issuerCertificate: root } };
+    expect(pinMatches(chain, [CERT_B_PIN])).toBe(true);
+    expect(pinMatches(chain, DEFAULT_CERT_PINS)).toBe(false);
   });
 
   test('bootstrap defaults update traffic to the pinned GitHub fetch', () => {

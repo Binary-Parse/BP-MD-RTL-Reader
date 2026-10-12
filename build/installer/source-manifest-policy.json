@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "electronVersion": "42.11.6",
+  "electronVersion": "44.7.0",
   "executable": {
     "path": "BP MD RTL Reader.exe",
     "productName": "BP MD RTL Reader",
@@ -16,8 +16,6 @@
     "dxil.dll",
     "ffmpeg.dll",
     "icudtl.dat",
-    "libEGL.dll",
-    "libGLESv2.dll",
     "LICENSE.electron.txt",
     "LICENSES.chromium.html",
     "locales/af.pak",

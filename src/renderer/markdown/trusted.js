@@ -18,15 +18,85 @@ const PROTOCOL_RELATIVE_START = /^[\\/][\\/]/;
 // can navigate (`<a href="data:...">`, or any other non-media src).
 const DATA_MEDIA_ELEMENTS = new Set(['img', 'source', 'audio', 'video']);
 
-function stripNonMediaDataUris(DOMPurify) {
+function stripDataUris(node) {
+  if (DATA_MEDIA_ELEMENTS.has(String(node.nodeName || '').toLowerCase())) return;
+  for (const attr of ['href', 'src']) {
+    const value = node.getAttribute(attr);
+    if (typeof value === 'string' && value.trim().toLowerCase().startsWith('data:')) node.removeAttribute(attr);
+  }
+}
+
+// audit M1: the note is rendered into the app's own document, before the find bar, the
+// dialogs and the toast, and the app finds those with document.getElementById. An `id`
+// (or `name`) written in a note could therefore take the place of an app element
+// (`id="findBar"` broke Ctrl+F, `id="dlgSaveBtn"` killed the Save button). Every id and
+// name that comes from a note gets this prefix, and a `#x` link inside the same note that
+// pointed at it follows. Ids the app sets after this stage (heading slugs) have no prefix,
+// so links to headings are left alone.
+export const NOTE_ID_PREFIX = 'user-content-';
+
+function fragmentTarget(href) {
+  if (typeof href !== 'string' || href.length < 2 || !href.startsWith('#')) return null;
+  const raw = href.slice(1);
+  try { return decodeURIComponent(raw); } catch (_) { return raw; }
+}
+
+/** One sanitize pass worth of state: which note ids were renamed, which links wait for one. */
+function createNoteNameIsolation() {
+  const renamed = new Set();
+  const waiting = new Map(); // target id → links seen before the element that carries it
+  const point = (link) => link.setAttribute('href', `#${NOTE_ID_PREFIX}${link.getAttribute('href').slice(1)}`);
+  const rename = (node, attr) => {
+    const value = node.getAttribute(attr);
+    if (typeof value !== 'string' || value === '' || value.startsWith(NOTE_ID_PREFIX)) return;
+    node.setAttribute(attr, NOTE_ID_PREFIX + value);
+    if (renamed.has(value)) return;
+    renamed.add(value);
+    for (const link of waiting.get(value) || []) point(link);
+    waiting.delete(value);
+  };
+  return (node) => {
+    rename(node, 'id');
+    rename(node, 'name');
+    const target = fragmentTarget(node.getAttribute('href'));
+    if (target === null) return;
+    if (renamed.has(target)) { point(node); return; }
+    if (!waiting.has(target)) waiting.set(target, []);
+    waiting.get(target).push(node);
+  };
+}
+
+// audit M2: most app CSS is global, so a class written in a note borrowed app styles:
+// `<div class="update-bar">` drew a fixed card over the window, with a link. Only the
+// classes this pipeline itself produces before the sanitize stage survive: fenced-code
+// languages (marked), highlight.js tokens (`hljs-title function_`), wikilinks, footnotes.
+// Classes the app adds to the DOM afterwards (callouts, tables, math) never pass here.
+const NOTE_CLASSES = new Set(['hljs', 'wikilink', 'fn-ref', 'fn-item', 'fn-back', 'footnotes']);
+const NOTE_CLASS_PREFIXES = ['language-', 'hljs-'];
+const CLASS_TOKEN = /^[\w+#.-]+$/;
+const HLJS_SCOPE_TOKEN = /^[a-z]+__?$/; // `function_`, `class_`, `inherited__`
+
+function isPipelineClass(token) {
+  if (NOTE_CLASSES.has(token) || HLJS_SCOPE_TOKEN.test(token)) return true;
+  return CLASS_TOKEN.test(token) && NOTE_CLASS_PREFIXES.some((prefix) => token.length > prefix.length && token.startsWith(prefix));
+}
+
+function keepPipelineClasses(node) {
+  const value = node.getAttribute('class');
+  if (typeof value !== 'string') return;
+  const kept = value.split(/\s+/).filter(isPipelineClass);
+  if (kept.length) node.setAttribute('class', kept.join(' '));
+  else node.removeAttribute('class');
+}
+
+function addNoteHooks(DOMPurify) {
   if (!DOMPurify || typeof DOMPurify.addHook !== 'function' || typeof DOMPurify.removeHook !== 'function') return null;
+  const isolateNames = createNoteNameIsolation();
   const hook = (node) => {
-    if (!node || node.nodeType !== 1) return;
-    if (DATA_MEDIA_ELEMENTS.has(String(node.nodeName || '').toLowerCase())) return;
-    for (const attr of ['href', 'src']) {
-      const value = node.getAttribute ? node.getAttribute(attr) : null;
-      if (typeof value === 'string' && value.trim().toLowerCase().startsWith('data:')) node.removeAttribute(attr);
-    }
+    if (!node || node.nodeType !== 1 || typeof node.getAttribute !== 'function') return;
+    stripDataUris(node);
+    isolateNames(node);
+    keepPipelineClasses(node);
   };
   DOMPurify.addHook('afterSanitizeAttributes', hook);
   return hook;
@@ -35,18 +105,23 @@ function stripNonMediaDataUris(DOMPurify) {
 /** Sanitize general HTML produced by the Markdown pipeline. */
 export function sanitizeHtml(html, DOMPurify) {
   if (!DOMPurify || typeof DOMPurify.sanitize !== 'function') return '';
-  // The data:-on-navigators rule needs the post-sanitize attribute hook; it is
-  // registered around this one call and removed again so the injected instance
-  // is never left with a lingering hook for the other sanitize stages.
-  const hook = stripNonMediaDataUris(DOMPurify);
+  // The data:-on-navigators rule and the id prefix need the post-sanitize attribute
+  // hook; it is registered around this one call and removed again so the injected
+  // instance is never left with a lingering hook for the other sanitize stages.
+  const hook = addNoteHooks(DOMPurify);
   try {
     return DOMPurify.sanitize(html, {
       ADD_ATTR: ['id', 'data-target', 'dir', 'lang'],
+      // audit M2: no data-* from a note except the wikilink target named above. The app
+      // acts on some of them document-wide (`data-tip` tooltips, `data-i18n` on a
+      // language switch).
+      ALLOW_DATA_ATTR: false,
       // Keep the inline formatting tags the toolbar/extensions emit: <mark> (==highlight==),
       // <u> (underline), <sub>/<sup> (~sub~ / ^sup^). All are in DOMPurify's default allow-list
       // except where a profile narrows it; ADD_TAGS makes the intent explicit + future-proof.
       ADD_TAGS: ['mark', 'u', 'sub', 'sup'],
-      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed'],
+      // `form`: a note has no use for one, and its named controls are a clobbering surface.
+      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
       // `style` here forbids the inline style="" ATTRIBUTE (FORBID_TAGS above only
       // drops the <style> ELEMENT) — kills CSS-exfil via inline styles. Math keeps its
       // positioning styles through the separate sanitizeMath stage; marked emits table

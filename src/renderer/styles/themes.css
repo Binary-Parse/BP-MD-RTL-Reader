@@ -1,83 +1,133 @@
-
-/* v10 redesign (2026-08-25): both theme blocks retuned in full. --statusbar-bg/-fg
-   are no longer redeclared per theme -- :root's var(--paper-deep)/var(--ink-soft)
-   already resolve correctly under each theme, so a per-theme statusbar override is
-   redundant (the status bar is styled directly off the theme tokens, not off a
-   token set of its own). */
 [data-theme="ink"] {
-  color-scheme: dark; /* dark native scrollbars/overscroll — fixes the white scrollbar track on scroll */
-  --paper: #171A20;
-  --paper-deep: #1E222A;
-  --paper-edge: #2B3039;
-  --ink: #DDD7C9;
-  --ink-soft: #B9B2A1;
-  --ink-mute: #958D7C;
-  --rule: #303540;
-  --accent: #90AFDD;
-  --accent-fill: #3C5C90;
-  --accent-soft: #26334A;
-  --hl-bg: rgba(213, 180, 97, 0.24);
-  --gold: #D5B461;
-  --teal: #7CBBA0;
-  --plum: #C093B0;
-  --green: #8CC17A;
-  /* v1.2 design tokens (see base.css) */
-  --backdrop: #0F1116;
-  --caution: #D98F6C;
+  color-scheme: dark;
+  --paper: #131519;
+  --paper-deep: #1A1D22;
+  --paper-edge: #22262C;
+  --desk: #08090B;
+  --desk-2: #0F1114;
+  --desk-3: #171A1F;
+  --ink: #EDEEF0;
+  --ink-soft: #B9BEC6;
+  --ink-mute: #8F95A0;
+  --ink-faint: #5A606B;
+  --rule: rgba(255, 255, 255, 0.09);
+  --rule-2: rgba(255, 255, 255, 0.17);
+  --rule-3: rgba(255, 255, 255, 0.3);
+  --accent: #8E94FF;
+  --accent-fill: #3F44C9;
+  --accent-soft: #262A55;
+  --ltr: #8E94FF;
+  --ltr-ink: #AAAFFF;
+  --rtl: #FF845F;
+  --rtl-ink: #FFA283;
+  --hl-bg: rgba(255, 205, 40, 0.26);
+  --mark-solid: #D9A91C;
+  --find-hit: #FFD84A;
+  --gold: #E5B04A;
+  --teal: #52D1CF;
+  --plum: #C79BFF;
+  --green: #5FD39A;
+  --caution: #FF7596;
+  --bad: #FF7A70;
+  --backdrop: #050607;
+  --shade: rgba(0, 0, 0, 0.6);
+  --toast-error: #FF845F;
+  --toast-ok: #5FD39A;
+  --toast-info: #E5B04A;
+  --tip-bg: #2B2F38;
+  --tip-fg: #EDEEF0;
+  --shadow-sheet: 0 1px 0 rgba(255, 255, 255, 0.04), 0 30px 70px -30px rgba(0, 0, 0, 0.9);
+  --shadow-pop: 0 24px 60px -14px rgba(0, 0, 0, 0.85), 0 0 0 1px var(--rule-2);
+  --grain-opacity: 0.06;
+  --gi: var(--gi-white);
 }
 
 [data-theme="sepia"] {
   color-scheme: light;
-  --paper: #F2E7CD;
-  --paper-deep: #EADDBB;
-  --paper-edge: #DBC898;
-  --ink: #3E2E16;
-  --ink-soft: #5F482A;
-  /* v10's #7A5F3C clears sepia --paper (4.84) but fails --paper-deep at 4.41
-     (needs 4.5) -- not caught by CI (accessibility.spec.js's full-page axe scan
-     never switches to sepia), found and fixed alongside the paper --ink-mute
-     regression, 2026-08-25. */
-  --ink-mute: #755A38;
-  --rule: #CDB584;
-  /* audit UX-05 follow-up: #3E5A7E measured 4.28:1 as the .wikilink pill text on sepia's
-     --paper-edge (#DBC898) — the full-page axe scan never ran in sepia, so this shipped
-     unseen. #3A5577 measures 4.64:1 there (6.22 on --paper, 5.67 on --paper-deep). */
-  --accent: #3A5577;
-  --accent-fill: #3E5A7E;
-  --accent-soft: #D3D6C8;
-  --hl-bg: rgba(146, 110, 40, 0.22);
-  --gold: #7A5C1B; /* audit UX-05: sepia's warmer deep surface needs its own gold — 5.06 / 4.61 */
-  /* v1.2 design tokens (see base.css) — audit UX-06: explicitly owned, was inherited from :root */
-  --backdrop: #2A2620;
-  --caution: #B25A38;
+  --paper: #F4EBDB;
+  --paper-deep: #EBDFCA;
+  --paper-edge: #E0D2B9;
+  --desk: #D8CBB5;
+  --desk-2: #CEBFA6;
+  --desk-3: #C2B195;
+  --ink: #2B2016;
+  --ink-soft: #51412F;
+  --ink-mute: #58482F;
+  --ink-faint: #9C8B71;
+  --rule: rgba(60, 40, 15, 0.16);
+  --rule-2: rgba(60, 40, 15, 0.27);
+  --rule-3: rgba(60, 40, 15, 0.42);
+  --accent: #3E45B8;
+  --accent-fill: #3E45B8;
+  --accent-soft: #DCDCEE;
+  --ltr: #3E45B8;
+  --ltr-ink: #30379A;
+  --rtl: #B7451F;
+  --rtl-ink: #933411;
+  --hl-bg: rgba(214, 146, 20, 0.36);
+  --mark-solid: #C98A0E;
+  --find-hit: #F4D35E;
+  --gold: #7A5200;
+  --teal: #106B67;
+  --plum: #7A3A8E;
+  --green: #2F6B2B;
+  --caution: #A3153A;
+  --bad: #A3281E;
+  --backdrop: #2B2016;
+  --shade: rgba(43, 32, 22, 0.45);
+  --toast-error: #FF9A78;
+  --toast-ok: #8FD08A;
+  --toast-info: #E5B04A;
+  --tip-bg: #2B2016;
+  --tip-fg: #F4EBDB;
+  --shadow-sheet: 0 1px 0 rgba(60, 40, 15, 0.08), 0 28px 60px -34px rgba(60, 40, 15, 0.5), 0 2px 10px -4px rgba(60, 40, 15, 0.14);
+  --shadow-pop: 0 22px 54px -14px rgba(43, 32, 22, 0.5), 0 0 0 1px var(--rule-2);
+  --grain-opacity: 0.05;
+  --gi: var(--gi-black);
 }
 
-/* T1.1 "Oasis" — the warm-dark theme. Palette sampled from design/nebula-prototype.html's
-   oasis theme (COLOURS ONLY; that prototype loads CDN fonts and must never be copied).
-   Every text-on-surface pair below is pinned by tests/unit/theme-contrast.test.js. */
 [data-theme="oasis"] {
   color-scheme: dark;
-  --paper: #110B08;
-  --paper-deep: #1A130D;
-  --paper-edge: #2A1E14;
-  --ink: #F0E5D5;
-  --ink-soft: #CBB9A3;
-  --ink-mute: #A2907B;
-  --rule: #342818;
-  --accent: #F0B95C;
-  --accent-fill: #8A5F1E;
-  --accent-soft: #3A2C16;
-  --hl-bg: rgba(240, 185, 92, 0.16);
-  --gold: #E8C468;
-  /* T1.1: the accent family MUST be redeclared for a dark surface, exactly like ink's.
-     Inheriting :root's light-theme values fails AA badly (--plum #7C4A6B = 2.84:1 on
-     --paper, caught by the full-page axe scan); these measure 8.59 / 10.01 / 9.31 on
-     --paper and 8.08 / 9.42 / 8.76 on --paper-deep. */
-  --plum: #CF9FB0;
-  --green: #9CC58A;
-  --teal: #7FC0A8;
-  --backdrop: #0A0605;
-  --caution: #E39A6F;
+  --paper: #0A2321;
+  --paper-deep: #0F2C2A;
+  --paper-edge: #153835;
+  --desk: #031211;
+  --desk-2: #071A19;
+  --desk-3: #0C2523;
+  --ink: #E3F2ED;
+  --ink-soft: #A9CCC2;
+  --ink-mute: #80A79C;
+  --ink-faint: #4D736A;
+  --rule: rgba(160, 255, 230, 0.1);
+  --rule-2: rgba(160, 255, 230, 0.19);
+  --rule-3: rgba(160, 255, 230, 0.32);
+  --accent: #8CC8FF;
+  --accent-fill: #2F6BA8;
+  --accent-soft: #143A5C;
+  --ltr: #8CC8FF;
+  --ltr-ink: #A8D6FF;
+  --rtl: #FF9E7A;
+  --rtl-ink: #FFB496;
+  --hl-bg: rgba(244, 196, 64, 0.27);
+  --mark-solid: #D8AB2C;
+  --find-hit: #F4C440;
+  --gold: #EDBB55;
+  --teal: #5ADAD4;
+  --plum: #D3A7FF;
+  --green: #6FE0A8;
+  --caution: #FF7E9F;
+  --bad: #FF8A7E;
+  --backdrop: #010908;
+  --shade: rgba(0, 8, 7, 0.62);
+  --toast-error: #FF9E7A;
+  --toast-ok: #6FE0A8;
+  --toast-info: #EDBB55;
+  --tip-bg: #10302D;
+  --tip-fg: #E3F2ED;
+  --shadow-sheet: 0 1px 0 rgba(160, 255, 230, 0.05), 0 30px 70px -30px rgba(0, 0, 0, 0.85);
+  --shadow-pop: 0 24px 60px -14px rgba(0, 0, 0, 0.85), 0 0 0 1px var(--rule-2);
+  --grain-opacity: 0.06;
+  --gi: var(--gi-white);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

@@ -8,9 +8,8 @@
  *                                    electron-builder (build.win.icon / nsis), fileAssociations
  *   - build/installer/assets/icon.ico  — the same icon, used by Inno SetupIconFile
  *
- * These assertions go RED against the previous (placeholder) icons:
- *   • the old icon.ico's 256 entry and old icon.png were different PNGs, and
- *   • the old icon was not the black-background / green-text "BP MD RTL Reader" design.
+ * The artwork is the "qalam" design (build/icons/icon-source.svg, a reed pen drawing a
+ * coral kashida on a navy rounded tile), rendered by scripts/generate-icons.mjs.
  *
  * A tiny dependency-free PNG decoder (zlib + unfilter) lets us assert the design
  * without pulling in an image library.
@@ -124,20 +123,26 @@ describe('app icon — BP MD RTL Reader', () => {
     expect(ico.at(256).blob.equals(read('build/icons/icon.png'))).toBe(true);
   });
 
-  test('icon design is the black-background, green-text BP MD RTL Reader mark', () => {
+  test('icon design is the qalam mark: navy rounded tile with a coral kashida', () => {
     const img = decodePNG(read('build/icons/icon.png'));
-    // Black background: the four corners are dark.
-    const corners = [img.px(0, 0), img.px(255, 0), img.px(0, 255), img.px(255, 255)];
-    const dark = corners.filter((p) => Math.max(p.r, p.g, p.b) < 60).length;
-    expect(dark, 'expected dark corners (black background)').toBeGreaterThanOrEqual(3);
-    // Green accent ("RTL READER" text): many vivid-green pixels exist.
-    let green = 0;
+    // The tile has a 112/512 corner radius, so all four corners are outside it.
+    for (const [x, y] of [[0, 0], [255, 0], [0, 255], [255, 255]]) {
+      expect(img.px(x, y).a, `corner ${x},${y} should be transparent`).toBe(0);
+    }
+    // Tile body is opaque navy (#22336E to #0B1230 gradient, blue channel dominant).
+    // Sampled near the top centre, away from the coral glow and the kashida.
+    const body = img.px(128, 30);
+    expect(body.a).toBe(255);
+    expect(body.b - body.r, 'expected navy tile body').toBeGreaterThan(40);
+    // Coral kashida (#FF5F7E to #FFC27A) covers roughly 2000 px of the 256 px icon;
+    // require a conservative 500 so anti-aliasing and small layout changes still pass.
+    let coral = 0;
     for (let y = 0; y < img.height; y++) {
       for (let x = 0; x < img.width; x++) {
         const p = img.px(x, y);
-        if (p.g > 150 && p.g - p.r > 40 && p.g - p.b > 40) green++;
+        if (p.a > 200 && p.r > 200 && p.g < 150 && p.b < 170) coral++;
       }
     }
-    expect(green, 'expected vivid-green pixels (RTL READER text)').toBeGreaterThanOrEqual(30);
+    expect(coral, 'expected coral kashida pixels').toBeGreaterThanOrEqual(500);
   });
 });

@@ -111,6 +111,16 @@ describe('boot auto check (T7.1)', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  test('a certificate that matches no pin is reported to the window, once per run (audit M37)', async () => {
+    const { electron, fetchFn } = await boot({ updateCheck: 'auto' }, vi.fn(() => Promise.reject(new Error('tls-pin-mismatch'))));
+    const { contents } = await loadFirstWindow(electron);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(contents.send.mock.calls).toEqual([['update:unverified']]);
+    // The renderer asking again gets the answer, and the window is not told a second time.
+    expect(await getHandle(electron, 'update:auto-check')()).toMatchObject({ error: 'untrusted' });
+    expect(contents.send).toHaveBeenCalledTimes(1);
+  });
+
   test('an up-to-date or failing check sends NOTHING to the renderer', async () => {
     const equal = await boot({ updateCheck: 'auto' }, vi.fn(() => Promise.resolve(okJson({ tag_name: 'v1.0.0' }))));
     const first = await loadFirstWindow(equal.electron);

@@ -1,5 +1,9 @@
 'use strict';
 
+const { windowBackground } = require('./window-background');
+const { createWindowHealth } = require('./window-health');
+const { turnSpellcheckOff } = require('./spellcheck-off');
+
 function createWindowController({
   BrowserWindow,
   Menu,
@@ -24,8 +28,19 @@ function createWindowController({
   writeLog,
   ipcMain,
   crypto,
+  nativeTheme = null,
+  // H13: window chrome differs on macOS (native traffic lights); injectable for tests.
+  platform = process.platform,
+  // audit M11: the crash / hang questions, and the recovery reset before a reload.
+  dialog = null,
+  resetRecovery = () => {},
 }) {
   const log = typeof writeLog === 'function' ? writeLog : () => {};
+  const windowHealth = createWindowHealth({
+    dialog,
+    resetRecovery,
+    getLocale: () => { const settings = getCurrentSettings(); return settings && settings.uiLocale; },
+  });
 
   // T-F19: Electron's default menu is the only source of Ctrl+Shift+I / Ctrl+R, so it is
   // suppressed on win32/linux. On darwin it also supplies the Cmd+C/V/X/Z clipboard chords,
@@ -39,7 +54,11 @@ function createWindowController({
       return;
     }
     if (!Menu || typeof Menu.buildFromTemplate !== 'function') return;
+    // H13: macOS shows the application menu bar, so it needs the standard app / File /
+    // Window menus around Edit (Quit, Hide, Close, Minimise, Zoom live there).
     const template = [
+      { role: 'appMenu' },
+      { role: 'fileMenu' },
       {
         label: 'Edit',
         submenu: [
@@ -52,6 +71,7 @@ function createWindowController({
           },
         ],
       },
+      { role: 'windowMenu' },
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   }
@@ -69,6 +89,7 @@ function createWindowController({
   // diagnostics: the failsafe log line reports the last-known dirty count when it
   // fires. It does not delay or cancel the force-close.
   const dirtyCountBySender = new WeakMap();
+  const loadedWindows = new WeakSet(); // windows whose page has finished loading (audit M12)
   // v1.2: pending close failsafes, keyed by webContents. The renderer owns the
   // Save/Don't-Save/Cancel decision, but a hung renderer must not make the window
   // unclosable: after CLOSE_FAILSAFE_MS main force-closes. The renderer clears the
@@ -217,14 +238,6 @@ function createWindowController({
             win.webContents.downloadURL(descriptor.url);
           }
           break;
-        case 'replace-misspelling':
-          win.webContents.replaceMisspelling(descriptor.replacement);
-          break;
-        case 'add-to-dictionary':
-          if (win.webContents.session?.addWordToSpellCheckerDictionary) {
-            win.webContents.session.addWordToSpellCheckerDictionary(descriptor.word);
-          }
-          break;
         default:
           break;
       }
@@ -247,8 +260,16 @@ function createWindowController({
       minHeight: 600,
       title: 'BP MD RTL Reader',
       icon: path.join(rootDir, 'build', 'icons', 'icon.ico'),
-      backgroundColor: '#1A1713',
-      frame: false,
+      backgroundColor: windowBackground(
+        currentSettings && currentSettings.theme,
+        !!(currentSettings && currentSettings.themeFollowSystem),
+        !!(nativeTheme && nativeTheme.shouldUseDarkColors),
+      ),
+      // H13: macOS keeps its native traffic lights over a hidden title bar; frame:false would
+      // remove them and leave no working window buttons (the custom ones are hidden there).
+      ...(platform === 'darwin'
+        ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }
+        : { frame: false }),
       transparent: false,
       webPreferences: {
         nodeIntegration: false,
@@ -262,11 +283,17 @@ function createWindowController({
         // openDevTools() API; the Ctrl+Shift+I accelerator is a separate matter and is
         // removed with Electron's default menu in index.js.
         devTools: !isPackaged,
+        // audit M38: Chromium's spellchecker fetches its dictionaries from a Google CDN on
+        // Windows and Linux. The app promises no network traffic the user did not ask for.
+        spellcheck: false,
         preload: path.join(rootDir, 'src', 'preload', 'index.js'),
       },
     });
 
     const ses = win.webContents.session;
+    // audit M38: the preference above stops the page from asking; this stops the session
+    // from loading or downloading a dictionary at all (see spellcheck-off.js for the order).
+    turnSpellcheckOff(ses);
     // v10 redesign (2026-08-25): the title bar's fullscreen toggle calls the DOM
     // requestFullscreen() API, which these deny-all handlers would otherwise refuse
     // exactly like every other permission. 'fullscreen' is the one permission allowed
@@ -283,7 +310,15 @@ function createWindowController({
 
     if (bounds.maximized) win.maximize();
 
+    // The page's listeners exist from its first load on; loadedWindows lets index.js ask
+    // before it sends a file to open (audit M12).
     let rendererLoaded = false;
+    const health = windowHealth.watch(win);
+    const dropContextMenus = () => {
+      for (const [nonce, entry] of contextMenuStash) {
+        if (entry.sender === win.webContents) contextMenuStash.delete(nonce);
+      }
+    };
     if (typeof win.on === 'function') win.on('close', (event) => {
       if (approvedCloseWindows.has(win)) {
         approvedCloseWindows.delete(win);
@@ -316,6 +351,7 @@ function createWindowController({
     win.loadURL(appRendererUrl);
     win.webContents.on('did-finish-load', () => {
       rendererLoaded = true;
+      loadedWindows.add(win);
       deliverPendingFiles(win);
     });
     win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -326,17 +362,37 @@ function createWindowController({
     });
     win.webContents.on('render-process-gone', (_event, details) => {
       rendererLoaded = false;
-      log('error', 'window:render-process-gone', details && details.reason ? details.reason : 'gone');
+      loadedWindows.delete(win);
+      const reason = details && details.reason ? details.reason : 'gone';
+      log('error', 'window:render-process-gone', reason);
+      // audit M11: nothing the dead page was asked can be answered any more.
+      clearCloseFailsafe(win.webContents);
+      dropContextMenus();
+      if (!approvedCloseWindows.has(win)) health.rendererGone(reason);
     });
+    // audit M11: a hung page (asked after a grace period), and the end of the Windows
+    // session: the page mirrors its unsaved notes at once instead of at the next 10 s tick.
+    // The shutdown itself is not delayed.
+    const flushRecovery = () => {
+      if (rendererLoaded && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('app:flush-recovery');
+    };
+    if (typeof win.on === 'function') {
+      win.on('unresponsive', () => health.unresponsive());
+      win.on('responsive', () => health.responsive());
+      win.on('query-session-end', flushRecovery);
+      win.on('session-end', flushRecovery);
+      win.on('closed', () => health.dispose());
+    }
 
     win.webContents.setWindowOpenHandler(({ url }) => {
       if (isExternallyOpenable(url)) shell.openExternal(url);
       return { action: 'deny' };
     });
 
+    // B5: every navigation is prevented. The app page arrives through loadURL above,
+    // which raises neither event, so nothing legitimate ever passes through here.
     const guardNavigation = (event, url) => {
-      const { action } = classifyNavigation(url, appRendererUrl);
-      if (action === 'allow') return;
+      const { action } = classifyNavigation(url);
       event.preventDefault();
       if (action === 'external' && isExternallyOpenable(url)) shell.openExternal(url);
     };
@@ -351,11 +407,7 @@ function createWindowController({
       contextMenuStash.set(nonce, { descriptors, params, sender: win.webContents });
       win.webContents.send('context-menu:show', { nonce, descriptors, appCommands: APP_COMMANDS, x: params.x, y: params.y });
     });
-    win.webContents.on('destroyed', () => {
-      for (const [nonce, entry] of contextMenuStash) {
-        if (entry.sender === win.webContents) contextMenuStash.delete(nonce);
-      }
-    });
+    win.webContents.on('destroyed', dropContextMenus);
 
     return win;
   }
@@ -394,7 +446,14 @@ function createWindowController({
     screen.on('display-metrics-changed', reclamp);
   }
 
-  return { createWindow, watchDisplays, registerContextMenuActionHandler, installApplicationMenu };
+  // audit M12: index.js sends a file to open only to a page that has loaded. A path from a
+  // second instance or from macOS open-file that arrived while the window was still starting
+  // used to be taken off the queue and sent to a page with no listener; it now stays queued
+  // and goes out with did-finish-load (above).
+  /** True once this window's page has loaded, i.e. it listens for files to open. */
+  const isRendererLoaded = (win) => loadedWindows.has(win);
+
+  return { createWindow, watchDisplays, registerContextMenuActionHandler, installApplicationMenu, isRendererLoaded };
 }
 
 module.exports = { createWindowController };

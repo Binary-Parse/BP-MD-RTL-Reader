@@ -72,6 +72,41 @@ test.describe('renderer-drawn context menu @electron', () => {
     expect(await selectionOutsideChrome(page)).toBe(true);
   });
 
+  // audit M38: Chromium's spellchecker fetches its dictionaries from a Google CDN on Windows
+  // and Linux. It is off, so a misspelled word starts no download and offers no suggestion.
+  test('[M38] the spellchecker is off: no dictionary download, no suggestion items', async () => {
+    await electronApp.evaluate(({ session }) => {
+      global.__dictionaryDownloads = [];
+      session.defaultSession.on('spellcheck-dictionary-download-begin', (_e, code) => global.__dictionaryDownloads.push(code));
+    });
+    expect(await electronApp.evaluate(({ BrowserWindow, session }) => {
+      const ses = BrowserWindow.getAllWindows()[0].webContents.session;
+      return {
+        enabled: ses.isSpellCheckerEnabled(),
+        // Windows has no API to list the languages of the system checker; the Hunspell list
+        // (what Linux downloads dictionaries for) is what must be empty.
+        languages: process.platform === 'win32' ? [] : ses.getSpellCheckerLanguages(),
+        sameSession: ses === session.defaultSession,
+      };
+    })).toEqual({ enabled: false, languages: [], sameSession: true });
+
+    await page.locator('#welcome').click({ button: 'right' });
+    await page.locator('#ctxMenu .dd-item', { hasText: 'Command Palette' }).click();
+    await expect(page.locator('#palOverlay')).toHaveClass(/open/);
+    const input = page.locator('#palInput');
+    await expect(input).toBeVisible();
+    await input.pressSequentially('helo wrold ');
+    await page.waitForTimeout(2000);
+    await input.click({ button: 'right', position: { x: 20, y: 10 } });
+    const ctx = page.locator('#ctxMenu');
+    await expect(ctx).toBeVisible();
+    await expect(ctx.locator('.dd-item', { hasText: 'Paste' })).toBeVisible();
+    await expect(ctx.locator('.dd-item', { hasText: 'Add to Dictionary' })).toHaveCount(0);
+    await expect(ctx.locator('.dd-item', { hasText: /^(hello|world|help|held)$/ })).toHaveCount(0);
+    expect(await electronApp.evaluate(() => global.__dictionaryDownloads)).toEqual([]);
+    await page.keyboard.press('Escape');
+  });
+
   test('Escape closes the menu; a click outside closes it too', async () => {
     await page.locator('#welcome').click({ button: 'right' });
     await expect(page.locator('#ctxMenu')).toBeVisible();
@@ -223,5 +258,84 @@ test.describe('renderer-drawn context menu @electron', () => {
 
     // restore
     await ctx.locator('.dd-item', { hasText: 'Always Show Top Bar' }).click();
+  });
+
+  async function loadDemoAndSelect(pg, start, end) {
+    await pg.waitForFunction(() => typeof window.loadDemo === 'function');
+    await pg.evaluate(() => window.loadDemo());
+    await pg.locator('#noteContent p').first().waitFor({ state: 'visible' });
+    await pg.evaluate(({ start, end }) => {
+      const p = document.querySelector('#noteContent p');
+      const text = document.createTreeWalker(p, NodeFilter.SHOW_TEXT).nextNode();
+      const range = document.createRange();
+      range.setStart(text, start);
+      range.setEnd(text, end);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, { start, end });
+  }
+
+  test('a reading-view selection offers Highlight, Add Note and Search library', async () => {
+    await loadDemoAndSelect(page, 4, 26);
+    const box = await page.locator('#noteContent p').first().boundingBox();
+    await page.mouse.click(box.x + 60, box.y + 12, { button: 'right' });
+    const ctx = page.locator('#ctxMenu');
+    await expect(ctx).toBeVisible();
+    await expect(ctx.locator('.dd-item', { hasText: 'Highlight' })).toBeVisible();
+    await expect(ctx.locator('.dd-item', { hasText: 'Add Note' })).toBeVisible();
+    await expect(ctx.locator('.dd-item', { hasText: 'Search library for' })).toBeVisible();
+  });
+
+  test('Highlight from the right-click menu stores a highlight', async () => {
+    await loadDemoAndSelect(page, 4, 26);
+    const box = await page.locator('#noteContent p').first().boundingBox();
+    await page.mouse.click(box.x + 60, box.y + 12, { button: 'right' });
+    await page.locator('#ctxMenu .dd-item', { hasText: 'Highlight' }).click();
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
+  });
+
+  test('Search library fills the sidebar search with the selected text', async () => {
+    await loadDemoAndSelect(page, 4, 26);
+    const selected = await page.evaluate(() => String(window.getSelection()).trim());
+    const box = await page.locator('#noteContent p').first().boundingBox();
+    await page.mouse.click(box.x + 60, box.y + 12, { button: 'right' });
+    await page.locator('#ctxMenu .dd-item', { hasText: 'Search library for' }).click();
+    await expect(page.locator('#sbSearchInput')).toHaveValue(selected);
+    await expect(page.locator('.sb-tab[data-pane="search"]')).toHaveClass(/active/);
+  });
+
+  test('only a tab with unsaved changes offers Save', async () => {
+    await page.waitForFunction(() => typeof window.loadDemo === 'function');
+    await page.evaluate(() => window.loadDemo());
+    await page.locator('.tab').first().waitFor({ state: 'visible' });
+    await page.locator('.tab').first().click({ button: 'right' });
+    await expect(page.locator('#ctxMenu .dd-item', { hasText: 'Close' }).first()).toBeVisible();
+    await expect(page.locator('#ctxMenu .dd-item', { hasText: /^Save$/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    await page.evaluate(() => {
+      window._appState.files[0].dirty = true;
+      window.renderFile(0);
+    });
+    await page.locator('.tab').first().click({ button: 'right' });
+    await expect(page.locator('#ctxMenu .dd-item', { hasText: /^Save$/ })).toBeVisible();
+  });
+
+  test('the editor menu offers the Format group and Bold wraps at the caret', async () => {
+    await page.waitForFunction(() => typeof window.loadDemo === 'function');
+    await page.evaluate(() => window.loadDemo());
+    await page.keyboard.press('Control+e');
+    await page.locator('.cm-content').first().waitFor({ state: 'visible' });
+    await page.locator('.cm-content').first().click();
+    await page.locator('.cm-content').first().click({ button: 'right' });
+    const ctx = page.locator('#ctxMenu');
+    for (const label of ['Bold', 'Italic', 'Strikethrough', 'Inline Code', 'Link']) {
+      await expect(ctx.locator('.dd-item', { hasText: label })).toBeVisible();
+    }
+    const editorLength = () => page.evaluate(() => document.querySelector('.cm-content').textContent.length);
+    const before = await editorLength();
+    await ctx.locator('.dd-item', { hasText: 'Bold' }).click();
+    await expect.poll(editorLength).toBe(before + 4);
   });
 });

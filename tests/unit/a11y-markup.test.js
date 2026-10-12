@@ -24,6 +24,7 @@ const ICON_BUTTONS = [
   'sidebarToggleBtn', 'inspectorToggleBtn',
   'readerControlsButton',
   'fullscreenBtn', // v10 redesign (2026-08-25)
+  'markBtn', // Marginalia: the BP monogram opens About
   // (the modeLive/modeSplit/modeSource view-mode buttons were removed — CM6 is the sole editor)
   'tbBold', 'tbItalic', 'findCloseBtn', 'modalCloseBtn', 'searchBtn',
 ];
@@ -116,5 +117,21 @@ describe('title-bar brand keeps its name for assistive tech (T-F19, v10)', () =>
 
   test('.tb-brand no longer exists (v10: no painted brand mark at all)', () => {
     expect(html).not.toMatch(/class="tb-brand"/);
+  });
+});
+
+describe('the BP monogram button (Marginalia)', () => {
+  test('is a real button that names its action and opens the About dialog', () => {
+    const tag = openingTagById('markBtn');
+    expect(tag).toMatch(/^<button /);
+    expect(tag).toMatch(/aria-label="About BP MD RTL Reader"/);
+    expect(tag).toMatch(/data-i18n-aria-label="menu\.about"/);
+    expect(tag).toMatch(/aria-haspopup="dialog"/);
+    expect(html).toMatch(/id="markBtn"[^>]*>BP<\/button>/);
+  });
+
+  test('the title bar keeps its command row and its tab row in one .titlebar', () => {
+    expect(html).toMatch(/<div class="titlebar">\s*<div class="tb-row">/);
+    expect(html).toMatch(/<div class="tabs" id="tabs">/);
   });
 });

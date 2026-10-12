@@ -3,8 +3,10 @@
 const { createAnnotationsStore } = require('./annotations-store');
 const { createReadingStatsStore } = require('./reading-stats-store');
 const {
-  hashContent, decodeBuffer, detectEol, normalize, sweepStaleTempFiles,
+  hashContent, decodeBuffer, detectEol, hasMixedEol, normalize, sweepStaleTempFiles, REOPEN_ENCODINGS,
 } = require('./document-store');
+const { createOwnWriteTracker } = require('./own-write-tracker');
+const { turnSpellcheckOff } = require('./spellcheck-off');
 const nodeCrypto = require('crypto');
 
 const DEFAULT_UPDATE_MANIFEST_URL =
@@ -23,6 +25,14 @@ const UPDATE_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 // T6.1c: an EPUB the renderer built is a few hundred KB at most; anything past this cap is a
 // bug or a hostile renderer, and refusing it keeps a single IPC call from filling the disk.
 const MAX_EPUB_BYTES = 64 * 1024 * 1024;
+// A standalone HTML export carries its images inline, so it gets the EPUB ceiling.
+const MAX_HTML_EXPORT_BYTES = 64 * 1024 * 1024;
+
+// H15 step 3: fs:readVaultChanges limits. 50 notes per call (the renderer falls back to a full
+// read above that), and the same nesting depth the full walk goes to.
+const MAX_CHANGED_PATHS = 50;
+const MAX_CHANGED_PATH_CHARS = 1024;
+const MAX_VAULT_DEPTH = 12;
 
 function createIpcController({
   app,
@@ -76,18 +86,11 @@ function createIpcController({
   let annotationsStore = null;
   function annotations() {
     if (typeof getAnnotationsStore === 'function') return getAnnotationsStore();
+    // B3: nothing is pruned here. Annotations used to be dropped on first use when the
+    // capability registry no longer knew their id; see bootstrapSessionGrants for the rule
+    // that replaced it (the registry keeps what annotations name).
     if (!annotationsStore) {
       annotationsStore = createAnnotationsStore({ fs, path, userDataDir: app.getPath('userData') });
-      const capabilityRegistry = getCapabilityRegistry();
-      const persistedDocIds = capabilityRegistry
-        && typeof capabilityRegistry.listDocuments === 'function'
-        ? capabilityRegistry.listDocuments().map((record) => record.id)
-        : [];
-      const persistedVaultIds = capabilityRegistry
-        && typeof capabilityRegistry.listVaults === 'function'
-        ? capabilityRegistry.listVaults().map((record) => record.id)
-        : null;
-      annotationsStore.pruneOrphanDocKeys(persistedDocIds, persistedVaultIds);
     }
     return annotationsStore;
   }
@@ -115,7 +118,7 @@ function createIpcController({
     if (autoUpdateTimer) return autoUpdateTimer;
     autoUpdateTimer = setInterval(() => {
       if (!autoUpdateEnabled()) return;
-      void runUpdateCheck().then((result) => notifyUpdateAvailable(result));
+      void runUpdateCheck().then((result) => notifyAutoCheckResult(result));
     }, AUTO_UPDATE_INTERVAL_MS);
     if (typeof autoUpdateTimer.unref === 'function') autoUpdateTimer.unref();
     return autoUpdateTimer;
@@ -136,6 +139,21 @@ function createIpcController({
     }
     return true;
   }
+  // audit M37: the automatic check is silent when it fails, except for this one case, said
+  // once per run: the certificate was not one this version knows, so no later check will
+  // work either and the user has to look at the releases page.
+  let unverifiedNotified = false;
+  function notifyAutoCheckResult(result) {
+    if (result && result.error === 'untrusted' && !unverifiedNotified) {
+      unverifiedNotified = true;
+      for (const win of BrowserWindow.getAllWindows()) {
+        try {
+          if (win && !win.isDestroyed() && win.webContents) win.webContents.send('update:unverified');
+        } catch (_) { /* a window tearing down mid-send must not break the check */ }
+      }
+    }
+    return notifyUpdateAvailable(result);
+  }
   /** The one network call behind both the manual and the automatic check. */
   async function performUpdateCheck() {
     const current = app.getVersion();
@@ -152,8 +170,11 @@ function createIpcController({
           ? AbortSignal.timeout(15000)
           : undefined,
       });
-    } catch (_) {
-      return { error: 'network', current };
+    } catch (error) {
+      // audit M37: a chain that matches no pin is not "offline". The renderer tells the user
+      // that the check was not made and points at the releases page.
+      const untrusted = !!error && error.message === 'tls-pin-mismatch';
+      return { error: untrusted ? 'untrusted' : 'network', current };
     }
     if (!response || !response.ok) return { error: 'http', current };
     let data;
@@ -238,6 +259,36 @@ function createIpcController({
   // sent (or none). Main now remembers the hash from its own last read and requires a
   // match — an omitted or tampered hash is a conflict, not a silent overwrite.
   const lastReadHashes = new Map(); // documentId → meta.hash at last main-side read
+  // audit M7 (decision D10): documents whose encoding main only guessed at its last read.
+  // Such a document is not written until the user confirms or changes the encoding
+  // (fs:confirmEncoding): a save in a wrong guess destroys the file.
+  const unconfirmedEncodings = new Set(); // documentId
+  // The user's answers of this run: documentId → { encoding, hash of the bytes answered for }.
+  const confirmedEncodings = new Map();
+  function noteEncodingCertainty(documentId, meta) {
+    if (meta && meta.encodingUncertain) unconfirmedEncodings.add(documentId);
+    else unconfirmedEncodings.delete(documentId);
+  }
+  // A later read of an answered document (the folder watcher re-reads on every change) must
+  // not ask again: the answer holds for the same bytes, and for new bytes that the chosen
+  // encoding reads without loss.
+  function withConfirmedEncoding(documentId, absPath, read) {
+    const confirmed = confirmedEncodings.get(documentId);
+    if (!confirmed || !read.meta || !read.meta.encodingUncertain) return read;
+    try {
+      const again = docStore.read(absPath, { encoding: confirmed.encoding });
+      if (again.error) return read;
+      if (again.meta.encodingUncertain && again.meta.hash !== confirmed.hash) return read;
+      const meta = { ...again.meta };
+      delete meta.encodingUncertain;
+      delete meta.encodingInvalidBytes;
+      return { content: again.content, meta };
+    } catch (_) {
+      return read;
+    }
+  }
+  // H15 step 2: what the app itself just wrote, so the vault watcher does not echo it back.
+  const ownWrites = createOwnWriteTracker();
 
   // Hash of the file as it sits on disk right now, computed exactly the way
   // document-store.read computes meta.hash, so it is comparable with a renderer-held
@@ -252,13 +303,13 @@ function createIpcController({
     } catch (_) { return null; }
     try {
       const raw = fs.readFileSync(absPath);
-      return hashContent(typeof raw === 'string' ? raw : raw.toString('utf8'), nodeCrypto);
+      return hashContent(raw, nodeCrypto);
     } catch (_) {
       return null;
     }
   }
 
-  function readDocumentCapability(documentId) {
+  function readDocumentCapability(documentId, { encoding } = {}) {
     const capabilityRegistry = getCapabilityRegistry();
     const record = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
     if (!record) return { error: 'unauthorized-capability' };
@@ -297,15 +348,32 @@ function createIpcController({
       const stat = fs.statSync(realPath);
       if (!stat.isFile()) return { error: 'not-regular-file' };
       if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
-      const { content, meta } = docStore.read(realPath);
+      const read = encoding == null
+        ? withConfirmedEncoding(record.id, realPath, docStore.read(realPath))
+        : docStore.read(realPath, { encoding });
+      if (read.error) return { error: read.error };
+      const { content, meta } = read;
       if (meta && meta.hash) lastReadHashes.set(record.id, meta.hash);
-      return {
+      noteEncodingCertainty(record.id, meta);
+      const snapshot = {
         documentId: record.id,
         vaultId: record.vaultId,
         name: path.basename(record.path),
         content,
         meta,
       };
+      // audit M9: a document that belongs to a folder is identified in the renderer by
+      // (vaultId, path inside the folder). Without the path, sub/README.md opened by
+      // "Open with" took the identity of the folder's root README.md and replaced its tab.
+      // The path is relative to the folder, in the form readVault uses; no absolute path.
+      const vault = record.vaultId ? capabilityRegistry.resolveVault(record.vaultId) : null;
+      if (vault && vault.path) {
+        const rel = path.relative(vault.path, record.path);
+        if (rel && !path.isAbsolute(rel) && !rel.split(path.sep).includes('..')) {
+          snapshot.relPath = rel.split(path.sep).join('/');
+        }
+      }
+      return snapshot;
     } catch (_) {
       return { error: 'read-failed' };
     }
@@ -321,8 +389,9 @@ function createIpcController({
     if (!stat || typeof stat.isFile !== 'function' || !stat.isFile()) return { error: 'not-regular-file' };
     if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
     try {
-      const { content, meta } = await docStore.readAsync(record.path, stat);
+      const { content, meta } = withConfirmedEncoding(record.id, record.path, await docStore.readAsync(record.path, stat));
       if (meta && meta.hash) lastReadHashes.set(record.id, meta.hash);
+      noteEncodingCertainty(record.id, meta);
       return { documentId: record.id, vaultId: record.vaultId, name: path.basename(record.path), content, meta };
     } catch (_) {
       return { error: 'read-failed' };
@@ -341,8 +410,93 @@ function createIpcController({
 
   // Full teardown (app quit / window close) — keeps its original name and signature
   // since window-controller.js and index.js already call it at three teardown sites.
+  let resetRecoveryForReload = () => {}; // set once the recovery handlers exist (audit M11)
   function closeVaultWatcher() {
     for (const vaultId of [...openVaults.keys()]) closeVault(vaultId);
+  }
+
+  // H15 step 3: the three pieces fs:readVault and fs:readVaultChanges share, so the
+  // incremental channel is exactly as strict as the full read and the two cannot drift.
+
+  // A vault id is a main-issued capability that must be granted for THIS session and still
+  // point at an allowed folder. Raw paths and forged ids stop here.
+  function authorizeVault(vaultId) {
+    const capabilityRegistry = getCapabilityRegistry();
+    const vault = capabilityRegistry && capabilityRegistry.resolveVault(vaultId);
+    if (!vault) return { error: 'unauthorized-capability' };
+    if (!vaultGrantActive(vaultId)) return { error: 'unknown-vault' };
+    const folderPath = vault.path;
+    const allowedFolders = new Set(
+      typeof capabilityRegistry.listVaults === 'function'
+        ? capabilityRegistry.listVaults().map((record) => record.path)
+        : [folderPath],
+    );
+    if (!isAuthorizedPath(folderPath, allowedFolders)) return { error: 'unauthorized-path' };
+    return { capabilityRegistry, folderPath };
+  }
+
+  // The per-note body of the vault read: lstat, symlink containment, type/size caps, grant,
+  // decode. Returns one of
+  //   { entry, size }                 the note, ready for the renderer
+  //   { skipped, size? }              'escaped' | 'special' | 'oversized' | 'unreadable'
+  //   { truncated: true }             the batch byte cap would be exceeded
+  // `size` is what the caller adds to its running byte total (a skipped-after-counted note
+  // still counts, as it always did).
+  async function readVaultFile({ capabilityRegistry, vaultId, folderPath, relPath, cumulativeBytes }) {
+    let counted = 0;
+    try {
+      const fullPath = path.join(folderPath, relPath);
+      const lstat = await fs.promises.lstat(fullPath);
+      let canonical = fullPath;
+      let stat = lstat;
+      if (lstat.isSymbolicLink()) {
+        canonical = await fs.promises.realpath(fullPath);
+        if (isSymlinkEscape(canonical, folderPath, path)) return { skipped: 'escaped' };
+        stat = await fs.promises.stat(canonical);
+      }
+      if (!stat || typeof stat.isFile !== 'function' || !stat.isFile()) return { skipped: 'special' };
+      if (isOversizedFile(stat.size)) return { skipped: 'oversized' };
+      if (wouldExceedCumulative(cumulativeBytes, stat.size)) return { truncated: true };
+      counted = stat.size;
+      const capability = capabilityRegistry.grantDocument(canonical, {
+        vaultId,
+        persistGrant: false,
+      });
+      const record = capabilityRegistry.resolveDocument(capability.id);
+      const snapshot = record ? await readSnapshot(record, stat) : { error: 'read-failed' };
+      if (snapshot.error) return { skipped: 'unreadable', size: counted };
+      return { entry: { ...snapshot, relPath }, size: counted };
+    } catch (_) {
+      return { skipped: 'unreadable', size: counted };
+    }
+  }
+
+  // fs:readVaultChanges input check. The renderer names notes by vault-relative path; each is
+  // resolved against the vault root and must stay inside it (no absolute, drive, UNC, empty or
+  // "." segments; ".." only if it still lands inside) and be a Markdown file no deeper than the
+  // full walk goes. Backslashes count as separators only where they are (Windows): elsewhere
+  // they are part of a file name and are refused, which makes the renderer do a full read.
+  // The first bad entry refuses the whole call. Returns { relPaths } (normalised, de-duplicated,
+  // '/'-separated like the full read's) or { error }.
+  function checkChangedPaths(rawPaths, folderPath) {
+    if (!Array.isArray(rawPaths) || rawPaths.length === 0) return { error: 'invalid-paths' };
+    if (rawPaths.length > MAX_CHANGED_PATHS) return { error: 'too-many-paths' };
+    const winSeparators = path.sep === '\\';
+    const clean = new Set();
+    for (const raw of rawPaths) {
+      if (typeof raw !== 'string' || raw.length > MAX_CHANGED_PATH_CHARS) return { error: 'invalid-paths' };
+      if (raw.includes('\0') || (winSeparators ? raw.includes(':') : raw.includes('\\'))) return { error: 'invalid-paths' };
+      const segments = (winSeparators ? raw.replace(/\\/g, '/') : raw).split('/');
+      if (segments.some((segment) => segment === '' || segment === '.')) return { error: 'invalid-paths' };
+      const resolved = path.resolve(folderPath, ...segments);
+      if (isSymlinkEscape(resolved, folderPath, path)) return { error: 'invalid-paths' };
+      const relative = path.relative(folderPath, resolved).split(path.sep).join('/');
+      if (!/\.(md|markdown)$/i.test(relative) || relative.split('/').length - 1 > MAX_VAULT_DEPTH) {
+        return { error: 'invalid-paths' };
+      }
+      clean.add(relative);
+    }
+    return { relPaths: [...clean] };
   }
 
   function registerIpcHandlers() {
@@ -415,6 +569,29 @@ function createIpcController({
       readDocumentCapability(documentId)
     ));
 
+    // audit M7 (decision D10): the user's answer to "the encoding of this note is a guess".
+    // reopen: false — keep the guess: only lifts the hold on saving.
+    // reopen: true  — read the document again with the chosen encoding and return it like
+    //                 fs:readFile; the hold stays when that reading loses bytes (UTF-8 with
+    //                 invalid bytes), until it is confirmed in turn.
+    ipcMain.handle('fs:confirmEncoding', async (_event, payload) => {
+      const { documentId, encoding, reopen } = payload || {};
+      if (typeof documentId !== 'string' || !REOPEN_ENCODINGS.includes(encoding)) return { error: 'invalid' };
+      if (reopen === true) {
+        const snapshot = readDocumentCapability(documentId, { encoding });
+        if (!snapshot.error && !snapshot.meta.encodingUncertain) {
+          confirmedEncodings.set(documentId, { encoding, hash: snapshot.meta.hash });
+        }
+        return snapshot;
+      }
+      const capabilityRegistry = getCapabilityRegistry();
+      const record = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
+      if (!record || !documentGrantActive(record)) return { error: 'unauthorized-capability' };
+      confirmedEncodings.set(documentId, { encoding, hash: lastReadHashes.get(documentId) });
+      unconfirmedEncodings.delete(documentId);
+      return { ok: true };
+    });
+
     // v1.3.0: decode raw bytes for the drag-drop / <input type=file> lanes. The renderer
     // holds a File object, not a path, so it cannot route through fs:readFile — instead
     // it ships the BYTES and main runs the exact document-store detector, making a
@@ -430,6 +607,7 @@ function createIpcController({
         meta: {
           bom: dec.bom,
           eol: detectEol(dec.text),
+          eolMixed: hasMixedEol(dec.text),
           finalNewline: /\n$/.test(dec.text),
           encoding: dec.encoding,
         },
@@ -437,17 +615,9 @@ function createIpcController({
     });
 
     ipcMain.handle('fs:readVault', async (event, vaultId) => {
-      const capabilityRegistry = getCapabilityRegistry();
-      const vault = capabilityRegistry && capabilityRegistry.resolveVault(vaultId);
-      if (!vault) return { error: 'unauthorized-capability' };
-      if (!vaultGrantActive(vaultId)) return { error: 'unknown-vault' };
-      const folderPath = vault.path;
-      const allowedFolders = new Set(
-        typeof capabilityRegistry.listVaults === 'function'
-          ? capabilityRegistry.listVaults().map((record) => record.path)
-          : [folderPath],
-      );
-      if (!isAuthorizedPath(folderPath, allowedFolders)) return { error: 'unauthorized-path' };
+      const authorized = authorizeVault(vaultId);
+      if (authorized.error) return authorized;
+      const { capabilityRegistry, folderPath } = authorized;
       const requestGeneration = (readGenerations.get(vaultId) || 0) + 1;
       readGenerations.set(vaultId, requestGeneration);
       let topEntries;
@@ -508,46 +678,19 @@ function createIpcController({
         if (fileIndex > 0 && fileIndex % vaultReadYieldEvery === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        try {
-          const fullPath = path.join(folderPath, relPath);
-          const lstat = await fs.promises.lstat(fullPath);
-          let canonical = fullPath;
-          let stat = lstat;
-          if (lstat.isSymbolicLink()) {
-            canonical = await fs.promises.realpath(fullPath);
-            if (isSymlinkEscape(canonical, folderPath, path)) {
-              skipped.escaped++;
-              continue;
-            }
-            stat = await fs.promises.stat(canonical);
-          }
-          if (!stat || typeof stat.isFile !== 'function' || !stat.isFile()) {
-            skipped.special++;
-            continue;
-          }
-          if (isOversizedFile(stat.size)) {
-            skipped.oversized++;
-            continue;
-          }
-          if (wouldExceedCumulative(cumulativeBytes, stat.size)) {
-            truncated = true;
-            break;
-          }
-          cumulativeBytes += stat.size;
-          const capability = capabilityRegistry.grantDocument(canonical, {
-            vaultId,
-            persistGrant: false,
-          });
-          const record = capabilityRegistry.resolveDocument(capability.id);
-          const snapshot = record ? await readSnapshot(record, stat) : { error: 'read-failed' };
-          if (snapshot.error) {
-            skipped.unreadable++;
-            continue;
-          }
-          results.push({ ...snapshot, relPath });
-        } catch (_) {
-          skipped.unreadable++;
+        const outcome = await readVaultFile({
+          capabilityRegistry, vaultId, folderPath, relPath, cumulativeBytes,
+        });
+        if (outcome.truncated) {
+          truncated = true;
+          break;
         }
+        cumulativeBytes += outcome.size || 0;
+        if (outcome.skipped) {
+          skipped[outcome.skipped]++;
+          continue;
+        }
+        results.push(outcome.entry);
       }
 
       if (requestGeneration !== readGenerations.get(vaultId)) return { error: 'stale-read' };
@@ -560,11 +703,19 @@ function createIpcController({
       closeVault(vaultId); // only THIS vault's prior watcher, never another open folder's
       const sender = event.sender;
       const watcher = docStore.watch(folderPath, ({ files }) => {
+        // H15 step 2: drop only the files whose content is, byte for byte, what this app just
+        // wrote. Everything else (an external edit, even one made seconds after our save to the
+        // same file) is forwarded. See own-write-tracker.js for the rule.
+        const external = files.filter((rel) => {
+          const abs = path.join(folderPath, rel);
+          return !ownWrites.isOwnWrite(abs, () => currentDiskHash(abs));
+        });
+        if (external.length === 0) return;
         if (sender && !sender.isDestroyed()) {
           sender.send('vault:changed', {
             vaultId,
             generation: requestGeneration,
-            files,
+            files: external.map((rel) => rel.split(path.sep).join('/')), // same form as readVault relPaths
           });
         }
       });
@@ -585,6 +736,42 @@ function createIpcController({
         entries: results,
         skipped,
         truncated,
+      };
+    });
+
+    // H15 step 3: re-read just the notes the watcher reported. Same authority as fs:readVault
+    // (a main-issued vault capability that is open this session), but no folder walk, no new
+    // watcher and no new generation: the renderer merges the entries into what it already has.
+    // Any refusal ({ error }) makes the renderer fall back to a full fs:readVault.
+    ipcMain.handle('fs:readVaultChanges', async (_event, vaultId, relPaths) => {
+      const authorized = authorizeVault(vaultId);
+      if (authorized.error) return authorized;
+      const { capabilityRegistry, folderPath } = authorized;
+      const open = openVaults.get(vaultId);
+      if (!open) return { error: 'vault-not-open' };
+      const checked = checkChangedPaths(relPaths, folderPath);
+      if (checked.error) return checked;
+      const entries = [];
+      let cumulativeBytes = 0;
+      const skipped = { unreadable: 0, oversized: 0, escaped: 0, special: 0 };
+      for (const relPath of checked.relPaths) {
+        const outcome = await readVaultFile({
+          capabilityRegistry, vaultId, folderPath, relPath, cumulativeBytes,
+        });
+        if (outcome.truncated) return { error: 'truncated' };
+        cumulativeBytes += outcome.size || 0;
+        if (outcome.skipped) {
+          skipped[outcome.skipped]++;
+          continue;
+        }
+        entries.push(outcome.entry);
+      }
+      // The folder was closed or fully re-read while we were reading: this answer is stale.
+      if (openVaults.get(vaultId) !== open) return { error: 'stale-read' };
+      return {
+        vault: { id: vaultId, name: open.name, generation: open.generation },
+        entries,
+        skipped,
       };
     });
 
@@ -669,6 +856,8 @@ function createIpcController({
       const document = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
       if (!document) return { error: 'unauthorized-capability' };
       if (!documentGrantActive(document)) return { error: 'unauthorized-capability' };
+      // audit M7: no write while the encoding of this document is an unconfirmed guess.
+      if (unconfirmedEncodings.has(documentId)) return { error: 'encoding-unconfirmed' };
       // audit SEC-02: only a hash MAIN itself read counts. An omitted (or tampered) baseHash
       // for a document main already read is a conflict, never a silent overwrite. When main
       // has not read the document this session, hash the disk state here so the check can
@@ -697,7 +886,10 @@ function createIpcController({
         // v1.2: re-encode in the file's original encoding (UTF-8/UTF-16/Windows-1256).
         encoding: typeof encoding === 'string' ? encoding : 'utf8',
       });
-      if (result.ok && result.meta && result.meta.hash) lastReadHashes.set(documentId, result.meta.hash);
+      if (result.ok && result.meta && result.meta.hash) {
+        lastReadHashes.set(documentId, result.meta.hash);
+        ownWrites.record(document.path, result.meta.hash);
+      }
       return result.ok ? { ...result, revision } : result;
     });
 
@@ -808,6 +1000,9 @@ function createIpcController({
       const pdfSession = session.fromPartition('pdf-export');
       if (!pdfFilteredSessions.has(pdfSession)) {
         pdfFilteredSessions.add(pdfSession);
+        // audit M38: this session has its own spellchecker settings, so it is turned off
+        // here too, before the export window exists.
+        turnSpellcheckOff(pdfSession);
         pdfSession.webRequest.onBeforeRequest((details, callback) => {
           // T14 (post-review MED-1): `file:` used to be allowed wholesale, so an export
           // document could pull in arbitrary local files by path and bake them into the PDF.
@@ -835,6 +1030,7 @@ function createIpcController({
           show: false,
           webPreferences: {
             partition: 'pdf-export',
+            spellcheck: false, // audit M38: no dictionary is ever fetched
             sandbox: true,
             contextIsolation: true,
             nodeIntegration: false,
@@ -881,6 +1077,25 @@ function createIpcController({
         result.filePath,
         Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
       );
+      if (!written.ok) return { error: 'write-failed' };
+      return { ok: true };
+    });
+
+    // audit L3: HTML export used to be a blob download started in the page, which said
+    // "Exported" before the save dialog had even opened. Main asks for the path and writes
+    // the finished document; the page speaks only after the answer. No window, no network.
+    ipcMain.handle('export:html', async (event, payload) => {
+      if (!payload || typeof payload.html !== 'string' || payload.html.length === 0) return { error: 'invalid' };
+      if (Buffer.byteLength(payload.html, 'utf8') > MAX_HTML_EXPORT_BYTES) return { error: 'too-large' };
+      const parent = windowForEvent(event);
+      const defaultPath = sanitizeSuggestedName(payload.defaultName, 'document.html');
+      const result = await dialog.showSaveDialog(parent, {
+        title: 'Export HTML',
+        defaultPath,
+        filters: [{ name: 'HTML Document', extensions: ['html'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      const written = atomicWriteFile(fs, result.filePath, Buffer.from(payload.html, 'utf8'));
       if (!written.ok) return { error: 'write-failed' };
       return { ok: true };
     });
@@ -966,12 +1181,55 @@ function createIpcController({
       }
     });
 
-    // ── v1.2: crash-recovery snapshots (<userData>/recovery/snapshot.json). ──
+    // ── v1.2: crash-recovery snapshots (<userData>/recovery/). ──
     // The renderer mirrors its dirty in-memory notes every 10s; a sanctioned close
-    // clears the file, a crash leaves it for the next launch's recovery prompt.
+    // clears the mirror, a crash leaves it for the next launch's recovery prompt.
+    //
+    // Two files (audit B4, decision D11):
+    //   snapshot.json  what is offered back. While an offer is unanswered it is never
+    //                  written, so the 10s mirror cannot replace crashed-away work.
+    //   live.json      this session's mirror while an offer is unanswered. If this session
+    //                  crashes too, the next launch offers both.
     const RECOVERY_MAX_FILES = 20;
     const RECOVERY_MAX_TOTAL_BYTES = 30 * 1024 * 1024;
-    const recoveryFilePath = () => path.join(app.getPath('userData'), 'recovery', 'snapshot.json');
+    const recoveryDir = () => path.join(app.getPath('userData'), 'recovery');
+    const recoveryFilePath = () => path.join(recoveryDir(), 'snapshot.json');
+    const recoveryLivePath = () => path.join(recoveryDir(), 'live.json');
+    const validRecoveryFiles = (parsed) => (parsed && Array.isArray(parsed.files) ? parsed.files : [])
+      .filter((f) => f && typeof f.name === 'string' && typeof f.content === 'string');
+    /** The recoverable entries of one mirror file; [] when it is absent or unreadable. */
+    const readRecoveryFiles = async (file) => {
+      try { return validRecoveryFiles(JSON.parse(await fs.promises.readFile(file, 'utf8'))); } catch (_) { return []; }
+    };
+    const removeRecoveryFile = async (file) => {
+      try { await fs.promises.unlink(file); return true; } catch (error) { return !!error && error.code === 'ENOENT'; }
+    };
+    // True while snapshot.json holds work the user has not answered for.
+    let recoveryOfferPending = false;
+    let recoveryReady = null;
+    // Once per run: a live.json left behind means the previous session also ended without a
+    // sanctioned close while an offer was open. Its work joins the offer, so nothing is lost.
+    // audit M11: a page reloaded after a crash is a new session over the same disk. Forgetting
+    // the memo makes the next recovery call merge live.json into the offer again, exactly as
+    // a relaunch does; without it the reloaded page's first (empty) mirror would overwrite it.
+    resetRecoveryForReload = () => { recoveryReady = null; };
+    const prepareRecovery = () => {
+      if (!recoveryReady) {
+        recoveryReady = (async () => {
+          const live = await readRecoveryFiles(recoveryLivePath());
+          const offered = await readRecoveryFiles(recoveryFilePath());
+          // A snapshot found at start-up is work from a run that did not close cleanly: it is
+          // an offer from this moment, before the renderer has even asked for it.
+          recoveryOfferPending = offered.length + live.length > 0;
+          if (!live.length) return; // nothing left behind (an empty mirror is simply overwritten)
+          const merged = Buffer.from(JSON.stringify({ files: [...offered, ...live] }), 'utf8');
+          const written = atomicWriteFile(fs, recoveryFilePath(), merged);
+          if (!written || !written.ok) return; // keep live.json; it is read again next launch
+          await removeRecoveryFile(recoveryLivePath());
+        })().catch(() => { /* recovery is best-effort; never block the handlers */ });
+      }
+      return recoveryReady;
+    };
 
     ipcMain.handle('recovery:snapshot', async (_event, files) => {
       if (!Array.isArray(files)) return { error: 'invalid' };
@@ -987,17 +1245,18 @@ function createIpcController({
         clean.push({ name: entry.name, content: entry.content, at: Date.now() });
       }
       try {
-        fs.mkdirSync(path.join(app.getPath('userData'), 'recovery'), { recursive: true });
+        fs.mkdirSync(recoveryDir(), { recursive: true });
       } catch (_) {
         return { error: 'write-failed' };
       }
+      await prepareRecovery();
       const payload = Buffer.from(JSON.stringify({ files: clean }), 'utf8');
       // audit PERF-10: the autosave loop mirrors the recovery snapshot every 10s, and an
       // unchanged document set used to replace identical bytes every time. Compare the
       // STABLE part (name+content) — the per-entry `at` stamp is volatile by design, so a
       // byte-for-byte check could never fire. Absent/unreadable is the normal first-write
       // path; it just falls through to the write.
-      const snapshotPath = recoveryFilePath();
+      const snapshotPath = recoveryOfferPending ? recoveryLivePath() : recoveryFilePath();
       const stable = JSON.stringify(clean.map((entry) => [entry.name, entry.content]));
       try {
         const existing = JSON.parse(await fs.promises.readFile(snapshotPath, 'utf8'));
@@ -1014,6 +1273,7 @@ function createIpcController({
     });
 
     ipcMain.handle('recovery:pop', async () => {
+      await prepareRecovery();
       const snapshotPath = recoveryFilePath();
       try {
         const raw = await fs.promises.readFile(snapshotPath, 'utf8');
@@ -1029,21 +1289,30 @@ function createIpcController({
         }
         // Peek, never delete: the snapshot is the only copy of crashed-away work, so it
         // survives until the user decides (offerRecovery clears on restore/discard; a
-        // crash or quit mid-prompt re-offers it next launch).
-        const files = parsed && Array.isArray(parsed.files) ? parsed.files : [];
-        return {
-          ok: true,
-          files: files.filter((f) => f && typeof f.name === 'string' && typeof f.content === 'string'),
-        };
+        // crash or quit mid-prompt re-offers it next launch). From here until that
+        // decision the mirror goes to live.json.
+        const offered = validRecoveryFiles(parsed);
+        if (offered.length) recoveryOfferPending = true;
+        return { ok: true, files: offered };
       } catch (_) {
         return { ok: true, files: [] }; // nothing to recover — the normal launch path
       }
     });
 
+    // Called when the user answered the offer (Restore or Discard) and on a sanctioned
+    // close with no offer outstanding. Answering an offer removes what was offered and makes
+    // this session's mirror the snapshot; a sanctioned close removes both.
     ipcMain.handle('recovery:clear', async () => {
-      try {
-        await fs.promises.unlink(recoveryFilePath());
-      } catch (_) { /* already absent — fine */ }
+      await prepareRecovery();
+      const answered = recoveryOfferPending;
+      const removed = await removeRecoveryFile(recoveryFilePath());
+      if (!removed) return { error: 'clear-failed' }; // still on disk: it is offered again next launch
+      recoveryOfferPending = false;
+      if (answered) {
+        try { await fs.promises.rename(recoveryLivePath(), recoveryFilePath()); } catch (_) { /* no live mirror yet */ }
+        return { ok: true };
+      }
+      await removeRecoveryFile(recoveryLivePath());
       return { ok: true };
     });
 
@@ -1113,7 +1382,23 @@ function createIpcController({
             bootstrapVaultGrants.add(id);
           } catch (_) { /* gone from disk — skip */ }
         }
-        if (capabilityRegistry && typeof capabilityRegistry.prune === 'function') {
+        // B3: the prune DELETES grants, and a note's highlights are keyed by its grant id, so
+        // it runs only on solid ground: settings really read from disk (defaults returned for
+        // a damaged or missing file name nothing), and an annotations file whose keys are
+        // known. Every id annotations name is kept, so reopening that note or folder gives
+        // the same id and finds its highlights again. A kept record grants no authority by
+        // itself (audit SEC-01: only an open, picked or reopened vault/document does).
+        const annotated = annotations();
+        const annotationsKnown = ['ok', 'missing'].includes(annotated.loadStatus());
+        if (getSettingsStore().loadStatus() === 'ok' && annotationsKnown) {
+          const named = annotated.referencedIds();
+          for (const id of named.vaultIds) keepVaultIds.add(id);
+          for (const id of named.documentIds) {
+            keepDocumentIds.add(id);
+            // a standalone note that later joined a folder is kept through that folder
+            const record = capabilityRegistry.resolveDocument(id);
+            if (record && record.vaultId) keepVaultIds.add(record.vaultId);
+          }
           try { capabilityRegistry.prune({ keepVaultIds, keepDocumentIds }); } catch (_) { /* best-effort */ }
         }
       } catch (_) { /* settings unavailable — no bootstrap, no prune */ }
@@ -1134,7 +1419,7 @@ function createIpcController({
         if (!contents || typeof contents.once !== 'function') return;
         contents.once('did-finish-load', () => {
           if (!autoUpdateEnabled()) return; // the switch may have been turned off while loading
-          void runUpdateCheck().then((result) => notifyUpdateAvailable(result));
+          void runUpdateCheck().then((result) => notifyAutoCheckResult(result));
         });
       });
     }
@@ -1146,6 +1431,7 @@ function createIpcController({
     sessionGrantDocument,
     closeVaultWatcher,
     closeVault,
+    resetRecoveryForReload: () => resetRecoveryForReload(),
     // Full teardown for app quit / last-window-closed: the vault watchers AND the daily update
     // timer, so a quit can never leave a pending timer (or a network call) behind.
     dispose: () => { closeVaultWatcher(); stopAutoUpdateCheck(); },

@@ -1,17 +1,18 @@
 'use strict';
 
+// What a release ships: Windows and Linux. macOS is not built or tested (no Mac to build,
+// sign or notarize on), so it is not in the contract.
+// The Linux names are the ones electron-builder writes: it spells the x64 architecture the way
+// each package format does (x86_64 for an AppImage, amd64 for a deb). Checked against a real
+// build in WSL on 2026-10-11 (audit B11).
 const PUBLIC_ARTIFACT_NAMES = Object.freeze([
   'BP-MD-RTL-Reader-{version}-Windows-NSIS-multiarch.exe',
   'BP-MD-RTL-Reader-{version}-Windows-Portable-multiarch.exe',
   'BP-MD-RTL-Reader-{version}-Windows-Inno-x64.exe',
   'BP-MD-RTL-Reader-{version}-Windows-Inno-x64.source-manifest.json',
-  'BP-MD-RTL-Reader-{version}-macOS-x64.dmg',
-  'BP-MD-RTL-Reader-{version}-macOS-arm64.dmg',
-  'BP-MD-RTL-Reader-{version}-macOS-x64.zip',
-  'BP-MD-RTL-Reader-{version}-macOS-arm64.zip',
-  'BP-MD-RTL-Reader-{version}-Linux-x64.AppImage',
+  'BP-MD-RTL-Reader-{version}-Linux-x86_64.AppImage',
   'BP-MD-RTL-Reader-{version}-Linux-arm64.AppImage',
-  'BP-MD-RTL-Reader-{version}-Linux-x64.deb',
+  'BP-MD-RTL-Reader-{version}-Linux-amd64.deb',
   'BP-MD-RTL-Reader-{version}-Linux-arm64.deb',
 ]);
 

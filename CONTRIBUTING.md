@@ -6,7 +6,7 @@ this document exists so you can meet them without guessing.
 
 ## Getting set up
 
-Node.js **24+** is required (`.nvmrc` pins it, and CI builds on Node 24).
+Node.js **24+** is required (`.nvmrc` pins it).
 
 ```bash
 git clone https://github.com/Binary-Parse/BP-MD-RTL-Reader.git
@@ -16,7 +16,8 @@ npm start      # electron . — run the app
 ```
 
 `npm install` runs `playwright install chromium` as a `postinstall` step, so the first
-install pulls a browser (~150 MB). That is expected.
+install pulls a browser (~150 MB), and the `electron` package downloads the Electron binary
+(more than 100 MB) in its own install step. That is expected. `npm start` downloads nothing.
 
 ## Running the tests
 
@@ -40,7 +41,7 @@ that depends on main-process behaviour has to be proven in the Electron lane.
 | Gate | Threshold | Configured in |
 |------|-----------|---------------|
 | Unit coverage (Vitest) | 95 % statements, 90 % branches, 95 % functions, 95 % lines | `config/coverage-thresholds.json` |
-| Mutation (Stryker) | 80 % overall; per-file T1 85 % / T2 75 % / T3 60 % | `stryker.config.json`, `config/mutation-tiers.json` |
+| Mutation (Stryker), **not run** since 2026-10-11 (owner decision); the configuration is kept | 80 % overall; per-file T1 85 % / T2 75 % / T3 60 % | `stryker.config.json`, `config/mutation-tiers.json` |
 | Security lint | Zero new or moved findings against a reviewed baseline | `config/security-lint-baseline.json` |
 | Packaging | Archive contents and Electron fuses verified | `npm run package:verify` |
 
@@ -69,11 +70,19 @@ Visual specs are tagged `@visual` and run at 1440×900. Committed baselines exis
 pinned container (`mcr.microsoft.com/playwright:v1.61.1-jammy`) so font rendering matches;
 regenerating them on a host machine will produce baselines that fail in CI.
 
+### Performance specs
+
+Timing specs are tagged `@perf` (`tests/e2e/performance.spec.js`, `tests/e2e/f13-cm6-perf.spec.js`).
+They run in `npm run test:e2e` but are excluded from `npm run test:e2e:coverage`, because V8
+coverage instrumentation slows the page enough to break millisecond budgets. The zoom budget
+measures style and layout work through the DevTools protocol, not frame pacing, so a slow or
+busy machine does not quantise it into whole 16.7 ms frames.
+
 ## How we work
 
-**Test first.** Write the failing test, confirm it fails for the reason you expect, then
-write the minimal code that passes it. A behavioural change without a test that would have
-caught its absence is not finished.
+**Tests come with the change.** A behavioural change without a test that would have
+caught its absence is not finished. Put the test in the existing file for that area where
+one fits.
 
 **One logical change per commit**, in [Conventional Commits](https://www.conventionalcommits.org/)
 form — `fix(reader): …`, `feat(tree): …`, `refactor(menu): …`. Explain *why* in the body;
@@ -140,8 +149,8 @@ pipeline enforces them, run all three before publishing anything.
 
 ## Reporting security issues
 
-Please do **not** open a public issue for a vulnerability. See [SECURITY.md](SECURITY.md)
-for private reporting through GitHub Security Advisories.
+Report a security problem by opening an issue on GitHub; there is no private reporting
+channel. See [SECURITY.md](SECURITY.md) for what to include.
 
 ## Licence
 

@@ -318,6 +318,8 @@ describe('RTL-H3: EPUB code stays LTR inside an RTL book', () => {
     const css = zip.find('OEBPS/style.css').text;
     expect(css).toContain('direction: ltr; text-align: start;');
     expect(css).toContain('direction: ltr; unicode-bidi: isolate;');
+    // audit M19: the column alignment follows the direction of the table.
+    expect(css).toContain('th[align="right"], td[align="right"] { text-align: end; }');
   });
 });
 

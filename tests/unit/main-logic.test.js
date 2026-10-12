@@ -5,6 +5,7 @@
 
 import { describe, test, expect, vi } from 'vitest';
 import pathModule from 'path';
+import { pathToFileURL } from 'node:url';
 
 // Static import so v8 coverage instruments main-logic.js correctly.
 // (Previously: `const mainLogic = await import('../../src/main/main-logic.js')`
@@ -13,6 +14,8 @@ import pathModule from 'path';
 import {
   parseFileArg,
   parseFileArgs,
+  fileArgToPath,
+  mergePendingFiles,
   shouldResetChrome,
   isAuthorizedPath,
   isNetworkPath,
@@ -481,5 +484,172 @@ describe('parseFileArgs batch caps (argv / open-with / second-instance)', () => 
       ),
     };
     expect(parseFileArgs(['electron', '/big.md', '/dir.md', '/ok.md'], fs)).toEqual(['/ok.md']);
+  });
+});
+
+// H14 (Linux): a desktop entry ends in "%U", so a file manager launches the app with a
+// file:// URL instead of a path. The URL must be turned into a path BEFORE the extension,
+// network-path, realpath and size checks run. Windows/posix are both forced explicitly so the
+// result does not depend on the host running the tests.
+describe('fileArgToPath() — file:// URL arguments (H14)', () => {
+  test('posix: percent-encoded file URL becomes a plain path', () => {
+    expect(fileArgToPath('file:///home/u/a%20b.md', false)).toBe('/home/u/a b.md');
+  });
+  test('posix: non-ASCII (Arabic) names decode', () => {
+    expect(fileArgToPath('file:///home/u/%D9%85%D9%84%D8%A7%D8%AD%D8%B8%D8%A7%D8%AA.md', false))
+      .toBe('/home/u/ملاحظات.md');
+  });
+  test('posix: "localhost" host is the local machine', () => {
+    expect(fileArgToPath('file://localhost/home/u/x.md', false)).toBe('/home/u/x.md');
+  });
+  test('windows: drive-letter URL becomes a backslash path', () => {
+    expect(fileArgToPath('file:///C:/Users/u/a%20b.md', true)).toBe('C:\\Users\\u\\a b.md');
+  });
+  test('windows: a host in the URL becomes a UNC path (so isNetworkPath can reject it)', () => {
+    const p = fileArgToPath('file://server/share/x.md', true);
+    expect(p).toBe('\\\\server\\share\\x.md');
+    expect(isNetworkPath(p)).toBe(true);
+  });
+  test('posix: a remote host is invalid -> null', () => {
+    expect(fileArgToPath('file://server/share/x.md', false)).toBeNull();
+  });
+  test('malformed URL -> null (never throws)', () => {
+    expect(fileArgToPath('file://[bad', false)).toBeNull();
+    expect(fileArgToPath('file://[bad', true)).toBeNull();
+  });
+  test('encoded path separator is not a valid file URL -> null', () => {
+    expect(fileArgToPath('file:///home/u/a%2Fb.md', false)).toBeNull();
+  });
+  test('scheme match is case-insensitive', () => {
+    expect(fileArgToPath('FILE:///home/u/x.md', false)).toBe('/home/u/x.md');
+  });
+  test('plain paths and flags are returned unchanged', () => {
+    expect(fileArgToPath('/home/u/x.md', false)).toBe('/home/u/x.md');
+    expect(fileArgToPath('C:\\x.md', true)).toBe('C:\\x.md');
+    expect(fileArgToPath('rel/x.md', false)).toBe('rel/x.md');
+    expect(fileArgToPath('--inspect', false)).toBe('--inspect');
+  });
+  test('only a URL that STARTS with file:// is converted', () => {
+    expect(fileArgToPath('x file:///a.md', false)).toBe('x file:///a.md');
+    expect(fileArgToPath('http://example.com/a.md', false)).toBe('http://example.com/a.md');
+    expect(fileArgToPath('file:/a.md', false)).toBe('file:/a.md');
+  });
+  test('non-strings pass through untouched', () => {
+    expect(fileArgToPath(123, false)).toBe(123);
+    expect(fileArgToPath(null, false)).toBeNull();
+    expect(fileArgToPath(undefined, false)).toBeUndefined();
+  });
+  test('defaults to the host platform when "windows" is not given', () => {
+    const real = pathModule.resolve('note.md');
+    expect(fileArgToPath(pathToFileURL(real).href)).toBe(real);
+  });
+  test('the default follows process.platform (win32 -> drive path, linux -> posix path)', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      expect(fileArgToPath('file:///home/u/x.md')).toBe('/home/u/x.md');
+      expect(fileArgToPath('file:///C:/x.md')).toBe('/C:/x.md');
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(fileArgToPath('file:///C:/x.md')).toBe('C:\\x.md');
+      expect(fileArgToPath('file:///home/u/x.md')).toBeNull();
+    } finally {
+      Object.defineProperty(process, 'platform', original);
+    }
+  });
+  test('an array is not a string: returned as is, never converted', () => {
+    const arr = ['file:///home/u/x.md'];
+    expect(fileArgToPath(arr, false)).toBe(arr);
+  });
+});
+
+// H13 (macOS): paths queued by `open-file` before `ready` must survive the argv parse.
+describe('mergePendingFiles() (H13)', () => {
+  test('keeps the queued paths first, then the new ones', () => {
+    expect(mergePendingFiles(['/a.md'], ['/b.md', '/c.md'])).toEqual(['/a.md', '/b.md', '/c.md']);
+  });
+  test('drops duplicates, keeping the first position', () => {
+    expect(mergePendingFiles(['/a.md', '/b.md'], ['/b.md', '/c.md', '/a.md'])).toEqual(['/a.md', '/b.md', '/c.md']);
+  });
+  test('either side may be empty', () => {
+    expect(mergePendingFiles([], ['/a.md'])).toEqual(['/a.md']);
+    expect(mergePendingFiles(['/a.md'], [])).toEqual(['/a.md']);
+    expect(mergePendingFiles([], [])).toEqual([]);
+  });
+  test('never returns more than MAX_FILES_PER_DIR entries and keeps the earliest', () => {
+    const pending = Array.from({ length: MAX_FILES_PER_DIR - 1 }, (_, i) => `/p${i}.md`);
+    const merged = mergePendingFiles(pending, ['/x.md', '/y.md']);
+    expect(merged).toHaveLength(MAX_FILES_PER_DIR);
+    expect(merged[0]).toBe('/p0.md');
+    expect(merged[MAX_FILES_PER_DIR - 1]).toBe('/x.md');
+  });
+  test('does not mutate its inputs', () => {
+    const pending = ['/a.md']; const incoming = ['/b.md'];
+    mergePendingFiles(pending, incoming);
+    expect(pending).toEqual(['/a.md']);
+    expect(incoming).toEqual(['/b.md']);
+  });
+});
+
+describe('parseFileArg() / parseFileArgs() — file:// URL arguments (H14)', () => {
+  const abs = pathModule.resolve('dir with space', 'a b.md');
+  const url = pathToFileURL(abs).href;
+  const okFs = () => ({
+    realpathSync: vi.fn((p) => p),
+    statSync: vi.fn(() => ({ isFile: () => true, size: 100 })),
+  });
+
+  test('parseFileArg opens the decoded path, not the URL text', () => {
+    const fs = okFs();
+    expect(parseFileArg(['electron', url], fs)).toBe(abs);
+    expect(fs.realpathSync).toHaveBeenCalledWith(abs);
+  });
+  test('parseFileArgs returns decoded paths for URLs and plain paths together', () => {
+    const fs = okFs();
+    const other = pathModule.resolve('other.markdown');
+    expect(parseFileArgs(['electron', url, other], fs)).toEqual([abs, other]);
+  });
+  test('parseFileArgs deduplicates a URL and the same plain path', () => {
+    expect(parseFileArgs(['electron', url, abs], okFs())).toEqual([abs]);
+  });
+  test('extension check still applies to the decoded path', () => {
+    const fs = okFs();
+    const txt = pathToFileURL(pathModule.resolve('notes.txt')).href;
+    expect(parseFileArg(['electron', txt], fs)).toBeNull();
+    expect(parseFileArgs(['electron', txt], fs)).toEqual([]);
+    expect(fs.realpathSync).not.toHaveBeenCalled();
+  });
+  test('file://server/share/x.md is never opened (network path / invalid host)', () => {
+    const fs = okFs();
+    expect(parseFileArg(['electron', 'file://server/share/x.md'], fs)).toBeNull();
+    expect(parseFileArgs(['electron', 'file://server/share/x.md'], fs)).toEqual([]);
+    expect(fs.realpathSync).not.toHaveBeenCalled();
+    expect(fs.statSync).not.toHaveBeenCalled();
+  });
+  test('a malformed file URL is ignored and a later valid argument still opens', () => {
+    const fs = okFs();
+    expect(parseFileArg(['electron', 'file://[bad.md', url], fs)).toBe(abs);
+    expect(parseFileArgs(['electron', 'file://[bad.md', url], fs)).toEqual([abs]);
+  });
+  test('size and file-type checks still apply to URL arguments', () => {
+    const big = { realpathSync: (p) => p, statSync: () => ({ isFile: () => true, size: MAX_OPEN_FILE_BYTES + 1 }) };
+    expect(parseFileArg(['electron', url], big)).toBeNull();
+    expect(parseFileArgs(['electron', url], big)).toEqual([]);
+    const dir = { realpathSync: (p) => p, statSync: () => ({ isFile: () => false, size: 1 }) };
+    expect(parseFileArg(['electron', url], dir)).toBeNull();
+  });
+  test('array-like argv (Electron second-instance) works for both parsers', () => {
+    const fs = okFs();
+    const arrayLike = { 0: 'electron', 1: url, length: 2 };
+    expect(parseFileArgs(arrayLike, fs)).toEqual([abs]);
+    expect(parseFileArg(arrayLike, fs)).toBe(abs);
+  });
+  test('argv[0] (the executable) is never treated as a file, even when it ends in .md', () => {
+    expect(parseFileArgs(['/opt/first.md', '/opt/second.md'], okFs())).toEqual(['/opt/second.md']);
+    expect(parseFileArg(['/opt/first.md', '/opt/second.md'], okFs())).toBe('/opt/second.md');
+  });
+  test('plain paths behave exactly as before', () => {
+    const fs = okFs();
+    expect(parseFileArg(['electron', 'plain.md'], fs)).toBe('plain.md');
+    expect(fs.realpathSync).toHaveBeenCalledWith('plain.md');
   });
 });

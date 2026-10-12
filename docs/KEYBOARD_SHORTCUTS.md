@@ -3,11 +3,15 @@
 Every shortcut below is also available in-app — press **`Ctrl+/`** to open the
 shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 
-> On this Windows build, modifiers are **Ctrl** and **Shift**.
+> On Windows and on Linux the modifiers are **Ctrl** and **Shift**. macOS is not built.
 >
 > While a dialog is open, its own buttons own the keyboard: the app shortcuts below
 > are inert until it closes (`Esc` still closes it), so a chord can never stack a
 > second dialog on top of a pending choice.
+>
+> A shortcut is the letter printed on the key, on every keyboard layout (QWERTY, QWERTZ,
+> AZERTY). On a layout that has no Latin letters, such as Arabic, it is the key at the same
+> position as on a US keyboard. `Ctrl++` also zooms in where `+` has a key of its own.
 
 ## General
 
@@ -15,7 +19,7 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 | -------- | ------ |
 | `Ctrl+K` / `Ctrl+P` | Open the command palette (commands + open files) |
 | `Ctrl+/` | Show the keyboard-shortcuts panel |
-| `Esc`    | Close the palette, a menu, a dialog, the find bar, or the highlight/selection bar |
+| `Esc`    | Close the palette, a menu, a dialog, the find bar, or the highlight/selection bar; with none of them open, leave fullscreen |
 
 ## File
 
@@ -43,9 +47,10 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 | `Ctrl+B` | **Bold** the selection (toggles) |
 | `Ctrl+I` | *Italic* the selection (toggles) |
 | `Ctrl+1` … `Ctrl+6` | Set heading level 1–6 (same level again → paragraph) |
+| `Ctrl+L` | Insert a link around the selection |
 | `Ctrl+F` | Find in the document |
 
-> Insert **Link**, **Wiki-link**, **Footnote**, highlight, sub/superscript, lists,
+> Insert **Wiki-link**, **Footnote**, highlight, sub/superscript, lists,
 > callouts, tables, and more from the **formatting toolbar** above the editor (or the
 > command palette). Most are toggles — applying again removes the formatting.
 
@@ -64,23 +69,26 @@ shortcuts panel, or find any command in the palette with **`Ctrl+K`**.
 
 | Shortcut | Action |
 | -------- | ------ |
+| `Ctrl+E` | Switch between Reading and Edit |
 | `Ctrl+\` | Toggle the sidebar (also the panel button at the far left of the title bar) |
 | `Ctrl+Shift+I` | Toggle the inspector (outline + properties); also the panel button at the far right of the title bar |
 | `Ctrl+Shift+D` | Cycle the theme — Paper → Ink → Sepia → Oasis |
 | `Ctrl+Shift+L` | Cycle text direction for the note — Auto → RTL → LTR |
 | `Ctrl+=` | Zoom in |
 | `Ctrl+-` | Zoom out |
-| `Ctrl+0` | Reset zoom to 100% |
+| `Ctrl+0` | Reset zoom to 100% (also a click on the zoom level in the status bar) |
 | `Ctrl+Shift+T` | Auto-hide the top bar (move the pointer to the top edge to bring it back). Note: browsers use this chord for "reopen closed tab" |
 | `Ctrl+Shift+B` | Hide the bottom status bar |
 | `Ctrl+,` | Open Settings |
 | `F11` | Toggle fullscreen |
 
 > The expand button at the far right of the title bar does the same as `F11`; `Esc`
-> exits fullscreen like everything else in the General table above.
+> leaves fullscreen when nothing else is open for it to close.
 
 Additional actions — **Export PDF/HTML/EPUB**, **Load Demo Notes**, **Check for Updates**,
 and the full writing toolbar — live in the menu bar and the command palette (`Ctrl+K`).
 Right-click any surface for a themed context menu with the same Editing commands above,
-spellcheck suggestions, link/image actions, and quick access to New Note, Find, the
-Command Palette, and the two View toggles above.
+link/image actions, and quick access to New Note, Find, the
+Command Palette, and the two View toggles above. On a text selection in the reading view it
+also offers Highlight, Add Note and Search library; in the editor, a Format group (Bold,
+Italic, Strikethrough, Inline Code, Link); on a tab with unsaved changes, Save.

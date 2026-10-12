@@ -98,7 +98,7 @@ jobs:
           tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
           /tmp/gitleaks git . --log-opts="--all" --no-banner --redact --exit-code 1
       - name: Dependency audit
-        run: npm audit --audit-level=moderate
+        run: npm run audit:deps
 
   # ---------------------------------------------------------------------------
   # Unit tests + coverage gate (Vitest). --no-file-parallelism so v8 coverage

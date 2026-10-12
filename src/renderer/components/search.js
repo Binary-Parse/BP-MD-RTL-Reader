@@ -7,7 +7,7 @@
  * each file; hits are mapped back to ORIGINAL indices so snippets show the text as
  * written. The per-file normalized copy is cached next to the lowercase copy.
  */
-import { HAS_ARABIC, normalizeArabic, normalizeArabicWithMap, mapEnd } from './text-normalize.js';
+import { NEEDS_FOLD, normalizeArabic, normalizeArabicWithMap, mapEnd } from './text-normalize.js';
 
 const normalizedFiles = new WeakMap();
 
@@ -36,7 +36,7 @@ function arabicOf(normalized) {
 
 export function vaultSearch(query, files, maxResults = 100) {
   if (!query || query.length < 2 || !files.length) return [];
-  const arabicQuery = HAS_ARABIC.test(query);
+  const arabicQuery = NEEDS_FOLD.test(query);
   const lower = query.toLowerCase();
   const normQuery = arabicQuery ? normalizeArabic(query).toLowerCase() : null;
   // RTL-M5: a query of pure tashkeel/tatweel normalizes to '' — and indexOf('') matches

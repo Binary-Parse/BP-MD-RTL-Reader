@@ -51,11 +51,13 @@ describe('runContextAction (T-B12 side-effects, via the context-menu:action IPC 
     expect(wc.copyImageAt).not.toHaveBeenCalled();
   });
 
-  test('navigation guard allows the app index.html (no preventDefault)', () => {
+  // B5: this used to assert the opposite. A navigation to the app page reloads the
+  // renderer and loses unsaved work, so the guard prevents it like any other.
+  test('navigation guard prevents a navigation to the app index.html (B5)', () => {
     const appUrl = 'app://ui/src/renderer/index.html';
     const e = { preventDefault: vi.fn() };
     nav(e, appUrl);
-    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(e.preventDefault).toHaveBeenCalledTimes(1);
   });
 
   function showAndDispatch(params, label) {
@@ -87,14 +89,13 @@ describe('runContextAction (T-B12 side-effects, via the context-menu:action IPC 
     expect(wc.downloadURL).not.toHaveBeenCalled();
   });
 
-  test('spellcheck: replace + add to dictionary', () => {
-    wc.replaceMisspelling.mockClear();
-    showAndDispatch({ isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'], editFlags: {} }, 'hello');
-    expect(wc.replaceMisspelling).toHaveBeenCalledWith('hello');
-
-    wc.session.addWordToSpellCheckerDictionary.mockClear();
-    showAndDispatch({ isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'], editFlags: {} }, 'Add to Dictionary');
-    expect(wc.session.addWordToSpellCheckerDictionary).toHaveBeenCalledWith('helo');
+  // audit M38: the spellchecker is off; a misspelled word offers nothing to click.
+  test('a misspelled word offers no suggestion and no "Add to Dictionary"', () => {
+    wc.send.mockClear();
+    ctx({}, { isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'], editFlags: {} });
+    const labels = lastShowPayload().descriptors.map((i) => i.label);
+    expect(labels).not.toContain('hello');
+    expect(labels).not.toContain('Add to Dictionary');
   });
 
   test('link: Copy Link Address → clipboard', () => {

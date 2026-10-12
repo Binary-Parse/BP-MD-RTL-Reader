@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { assertReleaseVersion } = require('./release-artifacts.js');
 const { verifyChecksums } = require('./write-artifact-checksums.js');
+const { checkScans } = require('./security-scans.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXPECTED_REPOSITORY = 'Binary-Parse/BP-MD-RTL-Reader';
@@ -19,6 +20,12 @@ function repositorySlugFromPackage() {
   } catch (_) {
     return '';
   }
+}
+
+/** The advisory ids reviewed in config/audit-acceptance.json (see scripts/audit-deps.js). */
+function acceptedAdvisoryIds() {
+  const acceptance = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'audit-acceptance.json'), 'utf8'));
+  return (acceptance.accepted || []).map((entry) => entry.advisory);
 }
 
 function isVersionHeader(line, version) {
@@ -66,24 +73,18 @@ function validateRelease(options) {
     .filter(line => isVersionHeader(line, options.packageVersion)).length;
   if (sectionCount !== 1) errors.push(`CHANGELOG.md must contain exactly one [${options.packageVersion}] section`);
 
-  // audit CMP-05: the SBOM/OSV artifacts under .secreports/ used to silently predate
-  // the lockfile after any dependency bump. Release preflight now refuses a stale scan
-  // (absent artifacts are not dated here — BUILD.md's scan step covers presence).
-  // audit GATE-02: the OSV report is checked with the same rule — refreshing only the
-  // cheap syft inventory while the vulnerability report stays stale must still fail.
+  // audit CMP-05 / GATE-02 / B9 / M39: the SBOM and the OSV report must describe the lockfile
+  // that is on disk. `npm run scan:deps` records the lockfile's SHA-256 beside them; a missing
+  // report, a missing record, another lockfile or a report changed afterwards all fail here.
   if (!options.skipSbomStaleness && options.lockfilePath) {
-    const scanArtifacts = [options.sbomPath, options.osvPath].filter(Boolean);
-    if (scanArtifacts.length) {
-      try {
-        const lockStat = fs.statSync(options.lockfilePath);
-        for (const scanPath of scanArtifacts) {
-          try {
-            if (fs.statSync(scanPath).mtimeMs < lockStat.mtimeMs) {
-              errors.push(`${scanPath} predates ${options.lockfilePath} — re-run the syft/OSV scans, refresh .secreports/, or pass --skip-sbom-staleness with a note in the release report`);
-            }
-          } catch (_) { /* this artifact is absent — not this gate's concern */ }
-        }
-      } catch (_) { /* lockfile absent — not this gate's concern */ }
+    for (const problem of checkScans({
+      lockfilePath: options.lockfilePath,
+      sbomPath: options.sbomPath,
+      osvPath: options.osvPath,
+      manifestPath: options.scanManifestPath,
+      acceptedAdvisories: options.acceptedAdvisories,
+    })) {
+      errors.push(`${problem}, or pass --skip-sbom-staleness with a note in the release report`);
     }
   }
 
@@ -137,6 +138,8 @@ function main(argv = process.argv.slice(2), environment = process.env) {
     // audit CMP-05: the local scan artifacts and the lockfile they were produced from.
     sbomPath: path.join(ROOT, '.secreports', 'sbom.json'),
     osvPath: path.join(ROOT, '.secreports', 'osv-scanner.txt'),
+    scanManifestPath: path.join(ROOT, '.secreports', 'scan-manifest.json'),
+    acceptedAdvisories: acceptedAdvisoryIds(),
     lockfilePath: path.join(ROOT, 'package-lock.json'),
     skipSbomStaleness: args.skipSbomStaleness,
     releaseDir: path.join(ROOT, 'dist', 'release'),

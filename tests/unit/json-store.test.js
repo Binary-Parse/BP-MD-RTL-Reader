@@ -36,6 +36,25 @@ describe('atomicWriteJson (T8.1)', () => {
     const tmp = fs.writeFileSync.mock.calls[0][0];
     expect(fs.unlinkSync).toHaveBeenCalledWith(tmp);
   });
+
+  test('M14: a target held for a moment is retried, so settings and annotations are not lost to a scanner', () => {
+    const fs = buildMockFs();
+    const busy = () => { throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' }); };
+    fs.renameSync.mockImplementationOnce(busy).mockImplementationOnce(busy);
+    const sleep = vi.fn();
+    expect(atomicWriteJson(fs, FILE, '{}', { sleep })).toEqual({ ok: true });
+    expect(fs.renameSync).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  test('M14: held through every retry it reports write-failed and removes the temp file', () => {
+    const fs = buildMockFs();
+    fs.renameSync.mockImplementation(() => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); });
+    fs.existsSync.mockReturnValue(true);
+    expect(atomicWriteJson(fs, FILE, '{}', { sleep: vi.fn() })).toEqual({ error: 'write-failed' });
+    expect(fs.renameSync).toHaveBeenCalledTimes(5);
+    expect(fs.unlinkSync).toHaveBeenCalledWith(fs.writeFileSync.mock.calls[0][0]);
+  });
 });
 
 describe('readJsonFile (T8.1)', () => {

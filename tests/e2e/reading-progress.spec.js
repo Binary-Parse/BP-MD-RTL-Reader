@@ -431,3 +431,36 @@ test.describe('[T14] capture safety on close', () => {
     expect(solo.ratio).toBeLessThan(0.4);
   });
 });
+
+test.describe('[T8.1] reading heat-grid', () => {
+  const stats = { today: 12, date: '2026-01-03', streak: 5, days: { '2026-01-01': 4, '2026-01-02': 8, '2026-01-03': 12 } };
+  const cell = (page, date) => page.locator(`#streakGrid .sg-cell[title^="${date}"]`);
+
+  test('the welcome card draws twelve weeks with each stored day at its level', async ({ page }) => {
+    await bootWithBridge(page, { settings: { ...DEFAULTS, readingGoalMin: 20 }, stats });
+    await expect(page.locator('#streakGrid')).not.toHaveAttribute('hidden', '');
+    await expect(page.locator('#streakGrid .sg-cell')).toHaveCount(84);
+    await expect(cell(page, '2026-01-03')).toHaveAttribute('data-l', '2');
+    await expect(cell(page, '2026-01-02')).toHaveAttribute('data-l', '1');
+    await expect(cell(page, '2026-01-01')).toHaveAttribute('data-l', '1');
+    await expect(cell(page, '2025-12-31')).toHaveAttribute('data-l', '0');
+    await expect(page.locator('#streakGrid')).toHaveAttribute('aria-label', 'Reading minutes per day, last 12 weeks');
+  });
+
+  test('days after today stay empty and invisible', async ({ page }) => {
+    await bootWithBridge(page, { settings: { ...DEFAULTS, readingGoalMin: 20 }, stats });
+    await expect(page.locator('#streakGrid .sg-cell[data-future]')).toHaveCount(1);
+    await expect(cell(page, '2026-01-04')).toHaveAttribute('data-future', '');
+  });
+
+  test('a goal of 0 hides the grid with the line', async ({ page }) => {
+    await bootWithBridge(page, { settings: { ...DEFAULTS, readingGoalMin: 0 }, stats });
+    await expect(page.locator('#streakGrid')).toHaveAttribute('hidden', '');
+    await expect(page.locator('#streakGrid .sg-cell')).toHaveCount(0);
+  });
+
+  test('nothing read yet → no grid', async ({ page }) => {
+    await bootWithBridge(page, { settings: { ...DEFAULTS, readingGoalMin: 10 } });
+    await expect(page.locator('#streakGrid')).toHaveAttribute('hidden', '');
+  });
+});

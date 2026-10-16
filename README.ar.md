@@ -54,7 +54,7 @@
 | نظامك | الملف الموصى به | ملاحظات |
 | ----- | --------------- | ------- |
 | Windows 10 أو 11 | &lrm;`…-Windows-NSIS-multiarch.exe` | مثبّت لمعماريتي x64 وARM64 |
-| Windows دون تثبيت | &lrm;`…-Windows-Portable-multiarch.exe` | يعمل من أي مجلد |
+| Windows دون تثبيت | &lrm;`…-Windows-Portable-multiarch.exe` | يعمل من أي مجلد ويحفظ بياناته بجانبه |
 | Linux (Debian وUbuntu) | &lrm;`…-Linux-amd64.deb` أو &lrm;`…-Linux-arm64.deb` | المفضّل على Linux |
 | Linux (غيرها) | &lrm;`…-Linux-x86_64.AppImage` أو &lrm;`…-Linux-arm64.AppImage` | يعمل دون تثبيت |
 | **macOS** | — | غير مبني وغير مختبَر |

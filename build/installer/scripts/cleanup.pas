@@ -51,7 +51,9 @@ end;
   local logs, window/zoom/theme state, and Chromium profile storage. The three
   title-cased/local paths are supported legacy aliases.
   User-authored Markdown remains wherever the user saved it and is never an
-  installer cleanup target.
+  installer cleanup target. The portable .exe keeps its data in a
+  BP-MD-RTL-Reader-data folder beside itself (src/main/portable-data.js); no
+  installer creates or removes that folder.
 
   KeepUserData mirrors Get-CleanupPlan in logic-sim.ps1:
     True  -> keep all app-data targets.

@@ -16,14 +16,54 @@ function isInside(child, root, path) {
   return rel !== '' && !rel.split(path.sep).includes('..') && !path.isAbsolute(rel);
 }
 
+/**
+ * Records indexed by path (audit PERF-03), compared in Unicode NFC (QA-L4). macOS hands out
+ * the same name precomposed or decomposed for one file; NTFS and ext4 store both forms as two
+ * different files. So a key collision alone never merges two grants: a record with another
+ * spelling is reused only when `sameFile` proves both spellings reach the same file.
+ */
+function createPathIndex(sameFile) {
+  const buckets = new Map();
+  const keyOf = (p) => p.normalize('NFC');
+  return {
+    find(p) {
+      const bucket = buckets.get(keyOf(p));
+      if (!bucket) return undefined;
+      return bucket.find((record) => record.path === p) || bucket.find((record) => sameFile(record.path, p));
+    },
+    add(record) {
+      const bucket = buckets.get(keyOf(record.path));
+      if (bucket) bucket.push(record); else buckets.set(keyOf(record.path), [record]);
+    },
+    remove(record) {
+      const bucket = buckets.get(keyOf(record.path));
+      const at = bucket ? bucket.indexOf(record) : -1;
+      if (at < 0) return;
+      bucket.splice(at, 1);
+      if (!bucket.length) buckets.delete(keyOf(record.path));
+    },
+  };
+}
+
 function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
   const file = path.join(userDataDir, 'capabilities.json');
   const makeId = randomId || (() => `cap-${require('crypto').randomUUID()}`);
   const vaults = new Map();
   const documents = new Map();
   // Path indexes (audit PERF-03): grant lookups used to scan every record on each grant.
-  const vaultsByPath = new Map();
-  const documentsByPath = new Map();
+  const vaultsByPath = createPathIndex(sameFile);
+  const documentsByPath = createPathIndex(sameFile);
+
+  // Same volume and file ID. Any doubt (a stat that fails, no file ID) means "not proven".
+  function sameFile(a, b) {
+    try {
+      const x = fs.statSync(a, { bigint: true });
+      const y = fs.statSync(b, { bigint: true });
+      return x.ino != null && String(x.ino) !== '0' && x.ino === y.ino && x.dev === y.dev;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function validRecord(record) {
     return record && typeof record === 'object' && CAPABILITY_ID.test(record.id)
@@ -55,8 +95,8 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
         }
       }
     } catch (_) { /* missing/corrupt registry starts empty */ }
-    for (const record of vaults.values()) vaultsByPath.set(record.path, record);
-    for (const record of documents.values()) documentsByPath.set(record.path, record);
+    for (const record of vaults.values()) vaultsByPath.add(record);
+    for (const record of documents.values()) documentsByPath.add(record);
   }
 
   function persist() {
@@ -79,9 +119,9 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     // that validRecord would then silently drop on the next load.
     if (realPath.startsWith('\\\\') || realPath.startsWith('//')) return false;
     if (realPath === record.path) return true;
-    vaultsByPath.delete(record.path);
+    vaultsByPath.remove(record);
     record.path = realPath;
-    vaultsByPath.set(realPath, record);
+    vaultsByPath.add(record);
     return true;
   }
 
@@ -90,9 +130,9 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     if (!record || typeof realPath !== 'string' || !path.isAbsolute(realPath)) return false;
     if (realPath.startsWith('\\\\') || realPath.startsWith('//')) return false;
     if (realPath === record.path) return true;
-    documentsByPath.delete(record.path);
+    documentsByPath.remove(record);
     record.path = realPath;
-    documentsByPath.set(realPath, record);
+    documentsByPath.add(record);
     return true;
   }
 
@@ -121,11 +161,11 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     const real = canonical(candidate);
     const stat = fs.statSync(real);
     if (!stat || !stat.isDirectory()) throw new Error('Vault must be a directory');
-    const existing = vaultsByPath.get(real);
+    const existing = vaultsByPath.find(real);
     if (existing) return { id: existing.id, name: path.basename(real), generation: existing.generation };
     const record = { id: nextId(), path: real, generation: 1 };
     vaults.set(record.id, record);
-    vaultsByPath.set(real, record);
+    vaultsByPath.add(record);
     persist();
     return { id: record.id, name: path.basename(real), generation: record.generation };
   }
@@ -139,7 +179,7 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
       const vault = vaults.get(vaultId);
       if (!vault || !isInside(real, vault.path, path)) throw new Error('Document must be inside vault');
     }
-    const existing = documentsByPath.get(real);
+    const existing = documentsByPath.find(real);
     if (existing) {
       let changed = false;
       // v1.3.0 (S-M1): only a PERSISTED grant may convert a standalone record into a
@@ -156,7 +196,7 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     const record = { id: nextId(), path: real, vaultId };
     if (!persistGrant) record.sessionOnly = true;
     documents.set(record.id, record);
-    documentsByPath.set(real, record);
+    documentsByPath.add(record);
     if (persistGrant) persist();
     return { id: record.id, name: path.basename(real), vaultId };
   }
@@ -180,12 +220,12 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     let removedDocuments = 0;
     for (const [id, record] of [...vaults.entries()]) {
       if (keepV.has(id)) continue;
-      vaults.delete(id); vaultsByPath.delete(record.path); removedVaults++;
+      vaults.delete(id); vaultsByPath.remove(record); removedVaults++;
     }
     for (const [id, record] of [...documents.entries()]) {
       if (record.vaultId && keepV.has(record.vaultId)) continue;
       if (!record.vaultId && keepD.has(id)) continue;
-      documents.delete(id); documentsByPath.delete(record.path); removedDocuments++;
+      documents.delete(id); documentsByPath.remove(record); removedDocuments++;
     }
     persist();
     return { removedVaults, removedDocuments };

@@ -29,6 +29,7 @@ Your Markdown notes stay wherever you saved them, as plain `.md` files. The app 
 | System | Location |
 | ------ | -------- |
 | Windows | `%APPDATA%\bpmdrtlreader` |
+| Windows, portable build | `BP-MD-RTL-Reader-data` beside the `.exe` (falls back to `%APPDATA%\bpmdrtlreader` when that folder cannot be written) |
 | Linux | `~/.config/bpmdrtlreader`, or `$XDG_CONFIG_HOME/bpmdrtlreader` |
 
 None of these files is ever sent anywhere. The profile folder holds:

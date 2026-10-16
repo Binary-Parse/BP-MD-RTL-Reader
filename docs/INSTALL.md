@@ -74,7 +74,7 @@ The Inno installer installs for all users by default and asks for administrator 
 
 ### The portable file
 
-Copy the file anywhere and run it. Nothing is installed. The app still keeps its settings in your profile folder, not next to the file. See [Files and limits](FILES_AND_LIMITS.md#the-profile-folder).
+Copy the file anywhere and run it. Nothing is installed. It keeps its data in a `BP-MD-RTL-Reader-data` folder next to the file, so you can carry both on a USB stick. On its first start it copies your existing settings into that folder. If the folder cannot be written, it uses your profile folder instead. See [Files and limits](FILES_AND_LIMITS.md#the-profile-folder).
 
 ### SmartScreen warning
 
@@ -167,7 +167,7 @@ To hear about new releases, turn on **Check for updates automatically** in Setti
 
 Your Markdown notes are never deleted. They stay wherever you saved them. [Privacy](PRIVACY.md#remove-the-app-data) lists the exact folders that **Remove app and all app data** deletes.
 
-The portable file has no uninstaller. Delete the file, then delete the profile folder yourself if you want to remove the settings.
+The portable file has no uninstaller. Delete the file and the `BP-MD-RTL-Reader-data` folder beside it. Its first start may also have left a copy of your settings in the profile folder; delete that folder too if you want everything gone.
 
 ### Linux
 

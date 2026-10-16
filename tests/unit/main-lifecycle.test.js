@@ -49,6 +49,32 @@ async function drive({ argv = ['node', 'src/main/index.js'], lockResult = true, 
   return { electron, fs, proc, listeners, ret };
 }
 
+// ── PORTABLE DATA (D12) ─────────────────────────────────────────────────────
+describe('src/main/index.js lifecycle — portable data folder', () => {
+  test('the portable Windows build moves userData beside the .exe before the crash reporter starts', () => {
+    const electron = buildMockElectron();
+    const fs = buildMockFs();
+    const proc = buildMockProc(['node', 'src/main/index.js']);
+    proc.platform = 'win32';
+    proc.env = { PORTABLE_EXECUTABLE_DIR: 'D:\\Stick' };
+    bootstrap({ electron, fs, proc });
+    expect(electron.app.setPath).toHaveBeenCalledWith('userData', expect.stringContaining('BP-MD-RTL-Reader-data'));
+    expect(electron.app.setPath.mock.invocationCallOrder[0])
+      .toBeLessThan(electron.crashReporter.start.mock.invocationCallOrder[0]);
+  });
+
+  test('the installed build, a dev run and Linux keep the usual userData', () => {
+    for (const [platform, env] of [['win32', {}], ['linux', { PORTABLE_EXECUTABLE_DIR: '/stick' }]]) {
+      const electron = buildMockElectron();
+      const proc = buildMockProc(['node', 'src/main/index.js']);
+      proc.platform = platform;
+      proc.env = env;
+      bootstrap({ electron, fs: buildMockFs(), proc });
+      expect(electron.app.setPath, platform).not.toHaveBeenCalled();
+    }
+  });
+});
+
 // ── SINGLE-INSTANCE LOCK ─────────────────────────────────────────
 describe('src/main/index.js lifecycle — single-instance lock', () => {
   test('lock granted (true): app.quit NOT called; whenReady ran createWindow', async () => {

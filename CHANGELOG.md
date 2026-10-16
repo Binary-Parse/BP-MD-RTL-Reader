@@ -21,6 +21,7 @@ This file is the condensed version. The unabridged text of every release up to 2
 - The check that stops a save from overwriting changes made elsewhere now covers notes of any size, and crash recovery now keeps large notes, mirrored at most every 30 seconds.
 - Export limits are now named in the message: HTML up to 256 MB, PDF and EPUB up to 64 MB. A PDF gets 30 seconds plus 10 seconds per MB, and says when it ran out of time.
 - Direction per block: in Reading mode, a badge beside each paragraph, heading, list, table or callout sets it to right to left, left to right or auto.
+- The portable Windows build keeps its data in a `BP-MD-RTL-Reader-data` folder beside the `.exe`, copying your existing settings there on its first start.
 - A pinned block direction is saved with the note as a hidden comment and reaches exports; `Ctrl+D` flips the block under the caret, and **Reset all block directions to auto** in the command palette removes every pin.
 
 ### Changed
@@ -37,6 +38,7 @@ This file is the condensed version. The unabridged text of every release up to 2
 
 ### Fixed
 
+- Two spellings of one file name (a precomposed `é`, or `e` with a combining accent) that lead to the same file now share one grant, and two real files are never merged.
 - The Windows setups (NSIS and Inno) no longer offer to repair an app that is not installed; setup now installs fresh unless the program file is in the recorded folder.
 - A large Arabic note stored in Windows-1256 saves again; the size limit is now counted in the note's own encoding, so any note that opens can be saved unchanged.
 - Typing in a line of millions of characters, a very large note after each pause in typing, and a note with a very long line or deeply nested tags no longer freeze or slow the window.

@@ -147,7 +147,7 @@ The app keeps its own files in a profile folder, separate from your notes.
 
 If `settings.json` is missing or damaged, the app uses default settings. Your notes are not affected. Delete `settings.json` at any time to reset every preference. A damaged file is set aside, not deleted.
 
-The portable Windows build keeps its settings in this same folder, not beside the `.exe`. Copying the `.exe` to another computer does not carry your settings, and deleting it does not remove them.
+The portable Windows build keeps its data in a `BP-MD-RTL-Reader-data` folder beside the `.exe`, so the app and its settings, highlights and grants travel together, for example on a USB stick. On its first start it copies your data from `%APPDATA%\bpmdrtlreader` once; the original stays for an installed copy. If the folder beside the `.exe` cannot be written, for example on a read-only drive, it uses `%APPDATA%\bpmdrtlreader` instead. On another computer, or after the drive letter changes, open your folders again: a grant names the path it was given.
 
 [Privacy](PRIVACY.md#what-the-app-stores) explains what each file contains. [Install](INSTALL.md#uninstall) explains how to remove the folder.
 
@@ -173,4 +173,4 @@ If you install an older version over a newer one, the older version does not kno
 
 ## Good to know
 
-File and folder names are compared exactly as the file system stores them. Two names that look the same but differ in Unicode composition, such as a precomposed `é` and an `e` followed by a combining accent, are two different notes to the app.
+A file or folder name can be written with a precomposed `é` or with an `e` followed by a combining accent. When both spellings lead to the same file, the app treats them as one note. When they are two real files, as Windows and Linux allow, they stay two notes.

@@ -232,4 +232,20 @@ describe('createOwnWriteTracker — path identity', () => {
     tracker.record('C:\\Vault\\Note.md', 'hash-A');
     expect(tracker.isOwnWrite('c:\\vault\\NOTE.md', () => 'hash-A')).toBe(true);
   });
+
+  // QA-L4: macOS reports a name decomposed (NFD) that the app wrote precomposed (NFC); it is
+  // one file there. On Linux and Windows the two forms are two files.
+  test('macOS treats the NFC and NFD form of a name as one file; Linux and Windows do not', () => {
+    const nfc = '/v/caf\u00e9.md';
+    const nfd = '/v/cafe\u0301.md';
+    const mac = createOwnWriteTracker({ now: () => 1, path: path.posix, platform: 'darwin' });
+    mac.record(nfc, 'hash-A');
+    expect(mac.isOwnWrite(nfd, () => 'hash-A')).toBe(true);
+    const { tracker: linux } = make();
+    linux.record(nfc, 'hash-A');
+    expect(linux.isOwnWrite(nfd, () => 'hash-A')).toBe(false);
+    const win = createOwnWriteTracker({ now: () => 1, path: path.win32, platform: 'win32' });
+    win.record('C:\\v\\caf\u00e9.md', 'hash-A');
+    expect(win.isOwnWrite('C:\\v\\cafe\u0301.md', () => 'hash-A')).toBe(false);
+  });
 });

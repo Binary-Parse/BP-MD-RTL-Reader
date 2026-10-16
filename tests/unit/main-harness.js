@@ -38,6 +38,7 @@ export function buildMockElectron() {
     whenReady: vi.fn(() => Promise.resolve()),
     on: vi.fn(), quit: vi.fn(),
     getPath: vi.fn((name) => `/mock/userData/${name}`),
+    setPath: vi.fn(), // D12: the portable build moves userData beside the .exe
     getVersion: vi.fn(() => '1.0.0'), // T-Q6
     isPackaged: false, // T-F19: DevTools and the default menu are gated on this
   };

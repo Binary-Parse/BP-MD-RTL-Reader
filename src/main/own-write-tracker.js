@@ -35,9 +35,13 @@ function createOwnWriteTracker({
 } = {}) {
   const records = new Map(); // key -> { hash, writtenAt }
 
+  // One key per file as the platform sees it: Windows ignores letter case, macOS ignores the
+  // Unicode form (NFC/NFD) of a name. Elsewhere two spellings are two files, and an event for
+  // one must never be taken for a write to the other.
   function keyOf(absPath) {
     const resolved = path.resolve(absPath);
-    return platform === 'win32' ? resolved.toLowerCase() : resolved;
+    if (platform === 'win32') return resolved.toLowerCase();
+    return platform === 'darwin' ? resolved.normalize('NFC') : resolved;
   }
   function expired(record) {
     return now() - record.writtenAt > ttlMs;

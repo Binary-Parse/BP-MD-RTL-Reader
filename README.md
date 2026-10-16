@@ -48,7 +48,7 @@ Get the latest build from the [Releases page](https://github.com/Binary-Parse/BP
 | Your system | Recommended file | Notes |
 | ----------- | ---------------- | ----- |
 | Windows 10 or 11 | `…-Windows-NSIS-multiarch.exe` | Installer for x64 and ARM64 |
-| Windows, no install | `…-Windows-Portable-multiarch.exe` | Runs from any folder |
+| Windows, no install | `…-Windows-Portable-multiarch.exe` | Runs from any folder and keeps its data beside itself |
 | Linux (Debian, Ubuntu) | `…-Linux-amd64.deb` or `…-Linux-arm64.deb` | Preferred on Linux |
 | Linux (other) | `…-Linux-x86_64.AppImage` or `…-Linux-arm64.AppImage` | Runs without installing |
 | **macOS** | — | Not built and not tested |

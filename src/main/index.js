@@ -22,6 +22,7 @@ const { guardIpc } = require('./ipc-guard'); // QA-M3: every handler checks the 
 const { createProtocolController } = require('./protocol-controller');
 const { createWindowController } = require('./window-controller');
 const { createPinnedGithubFetch } = require('./github-tls');
+const { applyPortableDataDir } = require('./portable-data');
 const crypto = require('crypto');
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
@@ -30,7 +31,6 @@ const crypto = require('crypto');
 // Module._resolveFilename hijack. The real app entry calls bootstrap() with
 // the live electron/fs/process at the bottom of this file (guarded by
 // process.versions.electron), so runtime behaviour is identical to before.
-//
 // @param {object} deps
 // @param {object} deps.electron - the 'electron' module (or a mock)
 // @param {object} deps.fs       - the 'fs' module (or a mock)
@@ -49,10 +49,10 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     ]);
   }
 
-  // ==== OBSERVABILITY ====
-  // Local-only crash + error capture. NO data leaves the user's machine
-  // (uploadToServer: false). Minidumps land in app.getPath('crashDumps');
-  // JS errors land in <userData>/logs/bpmdrtlreader.log (rotated at 1 MiB, keep 3).
+  // D12: the portable .exe keeps its data beside itself. First, before anything reads userData.
+  applyPortableDataDir({ app, fs, env: proc.env || {}, platform: proc.platform, log: (m) => console.warn(m) });
+  // OBSERVABILITY: local-only crash + error capture (uploadToServer: false). Minidumps land in
+  // app.getPath('crashDumps'); JS errors in <userData>/logs/bpmdrtlreader.log (1 MiB, keep 3).
   crashReporter.start({ uploadToServer: false, submitURL: '' });
 
   const LOG_MAX_BYTES = 1024 * 1024;

@@ -322,6 +322,70 @@ describe('main-owned filesystem capability registry', () => {
   });
 });
 
+// QA-L4: one name can be spelled precomposed (NFC) or decomposed (NFD). macOS gives either
+// for one file; NTFS and ext4 can hold both as two files. The NFC key finds the candidate,
+// and the file ID decides.
+describe('Unicode spellings of one path (QA-L4, NFC)', () => {
+  const nfc = '/notes/café.md';
+  const nfd = '/notes/café.md';
+
+  function registryWithIds(ids) {
+    const fs = memFs();
+    fs.statSync = (file) => {
+      const isDir = !file.endsWith('.md');
+      return { isDirectory: () => isDir, isFile: () => !isDir, dev: 1n, ino: ids[file] ?? 0n };
+    };
+    let n = 0;
+    const registry = createCapabilityRegistry({ fs, path: path.posix, userDataDir: '/user', randomId: () => 'cap-' + (++n) });
+    return { fs, registry };
+  }
+
+  test('the NFC and NFD spelling of one file share one grant', () => {
+    const { registry } = registryWithIds({ [nfc]: 7n, [nfd]: 7n });
+    const vault = registry.grantVault('/notes');
+    const a = registry.grantDocument(nfc, { vaultId: vault.id });
+    const b = registry.grantDocument(nfd, { vaultId: vault.id });
+    expect(b.id).toBe(a.id);
+    expect(registry.listDocuments()).toEqual([expect.objectContaining({ path: nfc })]);
+  });
+
+  test('two real files whose names differ only in form keep two grants', () => {
+    const { registry } = registryWithIds({ [nfc]: 7n, [nfd]: 8n });
+    const a = registry.grantDocument(nfc);
+    const b = registry.grantDocument(nfd);
+    expect(b.id).not.toBe(a.id);
+    expect(registry.resolveDocument(a.id).path).toBe(nfc);
+    expect(registry.resolveDocument(b.id).path).toBe(nfd);
+    // Each spelling keeps finding its own record, and pruning one leaves the other.
+    expect(registry.grantDocument(nfd).id).toBe(b.id);
+    registry.prune({ keepDocumentIds: [b.id] });
+    expect(registry.grantDocument(nfd).id).toBe(b.id);
+    expect(registry.listDocuments()).toHaveLength(1);
+  });
+
+  test('no file ID (or a stat that fails) is never taken as proof of one file', () => {
+    const { fs, registry } = registryWithIds({});
+    const vault = registry.grantVault('/notes');
+    const a = registry.grantDocument(nfc, { vaultId: vault.id });
+    expect(registry.grantDocument(nfd, { vaultId: vault.id }).id).not.toBe(a.id);
+    const precomposed = registry.grantVault('/café');
+    const stat = fs.statSync;
+    fs.statSync = (file, options) => { if (options) throw new Error('EPERM'); return { ...stat(file), ino: 9n }; };
+    expect(registry.grantVault('/café').id).not.toBe(precomposed.id);
+  });
+
+  test('a record loaded from disk in NFD is found by its NFC spelling', () => {
+    const file = '/user/capabilities.json';
+    const fs = memFs({
+      [file]: JSON.stringify({ version: 1, vaults: [{ id: 'cap-vault', path: '/café', generation: 1 }], documents: [] }),
+    });
+    fs.statSync = () => ({ isDirectory: () => true, isFile: () => false, dev: 1n, ino: 42n });
+    const registry = createCapabilityRegistry({ fs, path: path.posix, userDataDir: '/user', randomId: () => 'cap-new' });
+    expect(registry.grantVault('/café').id).toBe('cap-vault');
+    expect(registry.listVaults()).toHaveLength(1);
+  });
+});
+
 // audit SEC-01: the registry gained explicit revocation and startup pruning so it stops
 // accumulating every path ever granted, forever.
 describe('capability revocation and pruning (audit SEC-01)', () => {

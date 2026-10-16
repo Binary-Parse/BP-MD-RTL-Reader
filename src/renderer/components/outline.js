@@ -1,8 +1,8 @@
 /**
- * outline.js — document outline (T-F7). Pure: extracts h1–h6 from Markdown via
- * the injected marked lexer and computes the scroll-synced active heading.
+ * outline.js — document outline (T-F7). Pure: finds the ATX/Setext headings of the
+ * editor source and computes the scroll-synced active heading. (Heading ids come from
+ * bidi.headingSlugs.)
  */
-import { slugify } from '../bidi.js';
 
 const ATX_OPEN = /^ {0,3}(#{1,6})(?=[ \t\r]|$)/; // \r: a CRLF line ending is not heading text
 
@@ -54,35 +54,6 @@ export function sourceHeadingPositions(md) {
     if (line.trim() && setext) {
       out.push({ pos: starts[i], level: setext[1][0] === '=' ? 1 : 2, text: line.trim() });
       i++;
-    }
-  }
-  return out;
-}
-
-/**
- * Extract headings (levels 1–6) with Arabic-aware slugs.
- * @param {string} md
- * @param {{marked}} deps  marked with a `.lexer` (marked@1+)
- * @returns {Array<{level:number, text:string, slug:string}>}
- */
-export function extractHeadings(md, { marked } = {}) {
-  if (!md || !marked || typeof marked.lexer !== 'function') return [];
-  const tokens = marked.lexer(md);
-  const out = [];
-  const seen = new Map();
-  for (const t of tokens) {
-    if (t.type === 'heading' && t.depth >= 1 && t.depth <= 6) {
-      const text = String(t.text || '').trim();
-      let slug = slugify(text);
-      // de-duplicate slugs (GitHub style: -1, -2 …)
-      if (seen.has(slug)) {
-        const n = seen.get(slug) + 1;
-        seen.set(slug, n);
-        slug = `${slug}-${n}`;
-      } else {
-        seen.set(slug, 0);
-      }
-      out.push({ level: t.depth, text, slug });
     }
   }
   return out;

@@ -14,7 +14,7 @@ const REQUIRED = [
   'resources/vendor/fonts/LICENSES.md',
   'resources/vendor/fonts/OFL-1.1.txt',
 ];
-const FORBIDDEN_PREFIXES = ['.git/', 'coverage/', 'reports/', 'tests/', 'AUDIT_REPORT.md'];
+const FORBIDDEN_PREFIXES = ['.git/', 'coverage/', 'reports/', 'tests/'];
 
 // Windows installer tooling that electron-winstaller vendors (~31 MB) and that must never
 // reach a shipped tree. It includes 7-Zip 16.04 (2016), which carries a KEV-listed CVE.

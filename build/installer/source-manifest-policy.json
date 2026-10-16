@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "electronVersion": "44.7.0",
+  "electronVersion": "44.7.2",
   "executable": {
     "path": "BP MD RTL Reader.exe",
     "productName": "BP MD RTL Reader",

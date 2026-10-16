@@ -14,7 +14,7 @@ const path = require('path');
 const INDEX_URL = `file:///${path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/')}`;
 
 const DEFAULTS = {
-  theme: 'paper', zoomFactor: 1, editorMode: 'live',
+  theme: 'paper', zoomFactor: 1,
   sidebarVisible: true, inspectorVisible: true,
   uiDirection: 'ltr', uiLocale: 'en',
   calendar: 'gregorian', arabicKashida: false, italicRecolor: true,

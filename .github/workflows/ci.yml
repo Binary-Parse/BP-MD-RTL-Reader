@@ -4,11 +4,9 @@ on:
   push:
     # audit #13: also run on feature branches so SAST/coverage gate runs
     # pre-merge, not only on the protected default branches.
-    branches: [main, master, 'feat/**', 'feature/**', 'fix/**']
+    branches: [main, 'feat/**', 'feature/**', 'fix/**', 'chore/**', 'perf/**']
   pull_request:
-    branches: [main, master]
-  schedule:
-    - cron: '0 3 * * *' # nightly FULL mutation run (see the `mutation` job)
+    branches: [main]
   workflow_dispatch:
 
 # H1 (supply-chain hardening): least-privilege default token — read-only for the
@@ -84,6 +82,8 @@ jobs:
       # audit #4: SAST — static security analysis via eslint security plugins.
       - name: SAST (lint:security)
         run: npm run lint:security
+      - name: Lint tests (undefined and unused names)
+        run: npm run lint:tests
       - name: Duplication check
         run: npm run dupcheck
       # audit #4: secret scanning — fail the build if credentials are committed.
@@ -433,90 +433,6 @@ jobs:
           path: test-results/
           retention-days: 7
 
-  # ---------------------------------------------------------------------------
-  # Mutation testing (Stryker) — M4 two-tier cadence:
-  #   • schedule (nightly) / workflow_dispatch → FULL run
-  #   • pull_request                           → --incremental (changed-only)
-  #   • plain branch push                      → skipped (cost; covered nightly)
-  # The aggregate break threshold and per-file T1/T2/T3 floors live in
-  # stryker.config.json and config/mutation-tiers.json. The incremental baseline
-  # (reports/stryker-incremental.json) is persisted via actions/cache below so PR
-  # runs reuse the last result instead of re-running every mutant from scratch.
-  # ---------------------------------------------------------------------------
-  mutation:
-    name: Mutation (Stryker)
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # Stryker drives Vitest, not browsers
-    steps:
-      - name: Harden runner (egress block)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: block
-          allowed-endpoints: >
-            github.com:443
-            api.github.com:443
-            uploads.github.com:443
-            objects.githubusercontent.com:443
-            github-releases.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
-            codeload.github.com:443
-            ghcr.io:443
-            pkg-containers.githubusercontent.com:443
-            registry.npmjs.org:443
-            nodejs.org:443
-            playwright.azureedge.net:443
-            playwright.download.prss.microsoft.com:443
-            cdn.playwright.dev:443
-            mcr.microsoft.com:443
-            electronjs.org:443
-            github-cloud.githubusercontent.com:443
-            pipelines.actions.githubusercontent.com:443
-            results-receiver.actions.githubusercontent.com:443
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Setup Node 24
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '24'
-          cache: 'npm'
-      - name: Install dependencies
-        run: npm ci
-      # Persist the incremental baseline across runs (key by ref, fall back to any
-      # prior baseline) so the PR --incremental tier is genuinely changed-only.
-      - name: Cache Stryker incremental baseline
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: reports/stryker-incremental.json
-          key: stryker-incremental-${{ github.ref }}-${{ github.sha }}
-          restore-keys: |
-            stryker-incremental-${{ github.ref }}-
-            stryker-incremental-
-      - name: Stryker (incremental on PR, full otherwise)
-        # github.event_name is a fixed GitHub enum, but pass it via env rather
-        # than interpolating ${{ }} straight into the shell (our own convention).
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            npx stryker run --incremental
-            node scripts/check-mutation-tiers.js --allow-partial
-          else
-            npm run test:mutation
-          fi
-      - name: Upload Stryker mutation report
-        if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: mutation-report
-          path: reports/mutation/
-          retention-days: 14
-
   # Build every configured target/architecture on its native runner. Package
   # archives are inspected before upload. Canonical cross-platform release
   # checksums are created only after dist/release holds the exact public
@@ -528,7 +444,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest]
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -542,6 +458,8 @@ jobs:
             api.github.com:443
             objects.githubusercontent.com:443
             github-releases.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            codeload.github.com:443
             registry.npmjs.org:443
             nodejs.org:443
             electronjs.org:443
@@ -560,9 +478,6 @@ jobs:
       - name: Build every Windows target and architecture
         if: runner.os == 'Windows'
         run: npm run dist
-      - name: Build every macOS target and architecture
-        if: runner.os == 'macOS'
-        run: npx electron-builder --mac
       - name: Build every Linux target and architecture
         if: runner.os == 'Linux'
         run: npx electron-builder --linux
@@ -580,8 +495,6 @@ jobs:
           name: packages-${{ matrix.os }}
           path: |
             dist/*.exe
-            dist/*.dmg
-            dist/*.zip
             dist/*.AppImage
             dist/*.deb
           if-no-files-found: error

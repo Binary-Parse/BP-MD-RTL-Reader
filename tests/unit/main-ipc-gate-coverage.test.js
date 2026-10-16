@@ -61,7 +61,7 @@ describe('ipc-controller refusal lanes (GATE-01)', () => {
     const el = await boot(statFs());
     expect(await h(el, 'fs:writeFile')({}, null)).toEqual({ error: 'invalid' });
     expect(await h(el, 'fs:writeFile')({}, { documentId: 'x', content: 7 })).toEqual({ error: 'invalid' });
-    expect(await h(el, 'fs:writeFile')({}, { documentId: 'x', content: 'y'.repeat(10 * 1024 * 1024 + 1) }))
+    expect(await h(el, 'fs:writeFile')({}, { documentId: 'x', content: 'y'.repeat(100 * 1024 * 1024 + 1) }))
       .toEqual({ error: 'file-too-large' });
     expect(await h(el, 'fs:writeFile')({}, { documentId: 'nope', content: 'x' }))
       .toEqual({ error: 'unauthorized-capability' });

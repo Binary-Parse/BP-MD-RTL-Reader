@@ -12,7 +12,7 @@ const path = require('path');
 const INDEX_URL = `file:///${path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/')}`;
 
 const DEFAULTS = {
-  theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'reading',
+  theme: 'paper', zoomFactor: 1, viewMode: 'reading',
   sidebarVisible: true, inspectorVisible: true,
   uiDirection: 'ltr', uiLocale: 'en',
   calendar: 'gregorian', arabicKashida: false, italicRecolor: true,
@@ -420,7 +420,7 @@ test.describe('[T14] capture safety on close', () => {
       window.closeTab(0);                                 // honest capture + cancel
     });
     await page.waitForFunction(() => window._appState.files.length === 0, null, { timeout: 8000 });
-    await page.waitForTimeout(1200); // past the pre-fix fire time
+    await page.waitForTimeout(1200); // deliberate: past the pre-fix fire time
 
     const progress = await page.evaluate(() => window._appState.readingProgress);
     const solo = progress.find((item) => item && item.key === 'doc:cap-t14-solo');

@@ -84,13 +84,12 @@ CODEOWNERS    text eol=lf
 *.xz          binary
 *.bz2         binary
 
-# The working copy is NUL-free (the PH sentinel uses `\u0000` escapes), but
-# revisions committed before that fix embed literal NUL bytes, so content
-# sniffing renders any history-crossing diff as "Binary files differ". Setting
-# `diff` keeps `git log -p` readable across the whole history — gitattributes(5):
+# The file is deleted (one-shot px-to-rem migration; see 494ba77). Its early
+# revisions embed literal NUL bytes, so content sniffing renders any
+# history-crossing diff as "Binary files differ". Attributes are read from the
+# current .gitattributes, so this line keeps `git log -p` readable — gitattributes(5):
 # a path with `diff` set "is treated as text, even when they contain byte values
 # that normally never appear in text files, such as NUL".
-scripts/rem-convert.mjs  text eol=lf diff
 
 # ── Lockfile: collapsed in the GitHub PR UI, still diffable locally ─
 # `linguist-generated=true` alone hides it on GitHub ("Excluded from stats,
@@ -112,7 +111,7 @@ resources/vendor/**/*.min.js text eol=lf linguist-generated=true whitespace=-tra
 resources/vendor/** linguist-vendored=true
 
 # ── Playwright visual baselines ─────────────────────────────────────────────
-# 34 files / 6 MiB, the heaviest tracked category and the one that rewrites on
+# The heaviest tracked category (several MiB) and the one that rewrites on
 # every visual-regression update. `binary` (from *.png above) already suppresses
 # the textual diff; `linguist-generated` additionally collapses them in the PR UI
 # so a baseline refresh does not bury the code it accompanies.
@@ -120,7 +119,7 @@ tests/e2e/**-snapshots/*.png linguist-generated=true
 
 # ── Source-archive exclusions ───────────────────────────────────────────────
 # `git archive` — which is what GitHub serves for "Download ZIP" and for release
-# source tarballs — shipped the whole test suite (245 .js plus 6 MiB of PNGs),
+# source tarballs — shipped the whole test suite (hundreds of .js plus MiBs of PNGs),
 # the CI definitions, and the threshold configs. None of that is needed to build
 # or run the app, and it was roughly a third of the tarball.
 tests/          export-ignore
@@ -132,8 +131,9 @@ config/         export-ignore
 .mailmap        export-ignore
 .nvmrc          export-ignore
 .syft.yaml      export-ignore
-stryker.config.json         export-ignore
 vitest.config.js            export-ignore
-vitest.mutation.config.js   export-ignore
 playwright.config.js        export-ignore
 playwright.electron.config.js export-ignore
+playwright.perf.config.js   export-ignore
+eslint.config.mjs           export-ignore
+.gitleaksignore             export-ignore

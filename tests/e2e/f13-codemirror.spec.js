@@ -1,8 +1,8 @@
 // @ts-check
 /**
  * f13-codemirror.spec.js — T-F13: the CodeMirror 6 source engine behind the EditorPort.
- * The textarea stays the DEFAULT (so default behaviour/snapshots are unchanged); CM6 is
- * opt-in via ?cm=1 and conforms to the same EditorPort contract.
+ * CM6 is the editor and mounts at boot; the textarea is only the fallback when it fails to
+ * load. Both conform to the same EditorPort contract.
  */
 const { test, expect } = require('@playwright/test');
 const path = require('path');
@@ -50,6 +50,29 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
 
   // audit PERF-08: the caret line/col comes from CM6's own line index (an O(log n)
   // lookup) instead of `val.slice(0, pos).split('\n')` on every keystroke.
+  // REND-3: the update listener already reports the edit; a second call re-ran the whole
+  // onChange pipeline for every toolbar action, and one ran even when nothing changed.
+  test('replaceSelection reports one change per edit, and none for a no-op', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const calls = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      let n = 0;
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'abc', onChange: () => { n++; } });
+      ad.setSelection({ start: 0, end: 1 });
+      ad.replaceSelection('X');
+      const edit = n;
+      ad.setSelection({ start: 1, end: 1 });
+      ad.replaceSelection('');
+      const noop = n - edit;
+      div.remove();
+      return { edit, noop };
+    });
+    expect(calls).toEqual({ edit: 1, noop: 0 });
+  });
+
   test('lineAt reports the caret line/column and clamps out-of-range positions', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
@@ -422,6 +445,34 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.listActive).toContain('- bullet');
   });
 
+  // REND-23: the widgets used an undefined token, so every theme got the same fixed grey.
+  test('the bullet and quote widgets take the theme\'s muted ink colour', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    const r = await page.evaluate(async () => {
+      const CM6 = await window.loadCM6();
+      const div = document.createElement('div');
+      document.body.appendChild(div);
+      const ad = window.createCodeMirrorAdapter(div, { CM6, doc: 'para\n- bullet\n> quote' });
+      ad.setSelection({ start: 0, end: 0 });
+      await new Promise((res) => setTimeout(res, 60));
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--ink-mute)';
+      div.appendChild(probe);
+      const out = {
+        mute: getComputedStyle(probe).color,
+        bullet: getComputedStyle(div.querySelector('.cm-lp-bullet')).color,
+        quote: getComputedStyle(div.querySelector('.cm-lp-quote')).color,
+      };
+      ad.destroy();
+      div.remove();
+      return out;
+    });
+    expect(r.mute).not.toBe('rgb(138, 138, 138)');
+    expect(r.bullet).toBe(r.mute);
+    expect(r.quote).toBe(r.mute);
+  });
+
   test('typing new markdown (docChanged) re-hides once the cursor leaves; multi-line selection keeps both — no data loss', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
@@ -460,14 +511,11 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(r.value).toBe('first line\n**bold**');  // the document text itself is intact
   });
 
-  test('?cm=1 mounts CodeMirror as the source engine; editing syncs to the model', async ({ page }) => {
-    await page.goto(INDEX_URL + '?cm=1');
+  test('CodeMirror mounts as the source engine; editing syncs to the model', async ({ page }) => {
+    await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
     await page.evaluate(() => window.loadDemo());
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
-    expect(await page.evaluate(() => document.getElementById('srcTextarea').style.display)).toBe('none');
-
-    await page.evaluate(() => window.setEditorMode('source'));
     await page.locator('.cm-mount .cm-content').click();
     await page.keyboard.type('ZZTOP');
     const f = await page.evaluate(() => window._appState.files[window._appState.activeFile]);
@@ -476,11 +524,10 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
   });
 
   test('formatting (wrapSelection) in CM6 mode applies to the CM6 doc — CM6 edits are NOT lost', async ({ page }) => {
-    await page.goto(INDEX_URL + '?cm=1');
+    await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
     await page.evaluate(() => {
       window._appState.files = [{ name: 'x.md', path: 'x.md', content: '', dirty: false }];
-      window.setEditorMode('source');
       window.renderFile(0);
     });
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
@@ -493,7 +540,7 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
   });
 
   test('toggleRTL flips the CM6 source editor direction', async ({ page }) => {
-    await page.goto(INDEX_URL + '?cm=1');
+    await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
     await page.evaluate(() => window.loadDemo());
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
@@ -501,12 +548,14 @@ test.describe('[T-F13] CodeMirror 6 editor (behind EditorPort)', () => {
     expect(await page.evaluate(() => document.querySelector('.cm-mount .cm-editor').getAttribute('dir'))).toBe('rtl');
   });
 
-  test('default (no flag) NOW mounts CM6 as the sole editor — the textarea is the hidden fallback', async ({ page }) => {
+  // REND-22: the hidden textarea editor is gone; CM6 is the only editing surface.
+  test('default (no flag) mounts CM6 as the sole editor — there is no second editor', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('#app');
     await page.evaluate(() => window.loadDemo());
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
-    expect(await page.evaluate(() => document.getElementById('srcTextarea').style.display)).toBe('none');
+    await expect(page.locator('#editorArea textarea')).toHaveCount(0);
+    expect(await page.evaluate(() => typeof window.setEditorMode)).toBe('undefined');
   });
 
   test('per-line direction: each CM6 line gets dir from its own first-strong char (R1/R2)', async ({ page }) => {
@@ -636,6 +685,58 @@ test.describe('[N1] Find marks every match in the editor', () => {
 
     await page.evaluate(() => window.closeFind());
     await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(0);
+  });
+
+  // APP-25: closeFind kept the old match offsets, so Next after reopening the bar selected
+  // text at positions from before any edit, and the counter jumped from 0/0 to 2/n.
+  test('Next after closing and reopening Find does not step through stale matches', async ({ page }) => {
+    await openInEditor(page, 'foo bar foo');
+    await page.keyboard.press('Control+f');
+    await page.fill('#findInput', 'foo');
+    await expect(page.locator('#findInfo')).toHaveText('1/2');
+    await page.evaluate(() => window.closeFind());
+    await page.evaluate(() => {
+      const ad = window.getActiveCmAdapter();
+      ad.setSelection({ start: 0, end: 0 });
+      ad.replaceSelection('xx ');
+    });
+    await page.keyboard.press('Control+f');
+    await expect(page.locator('#findInfo')).toHaveText('0/0');
+    const before = await page.evaluate(() => window.getActiveCmAdapter().getSelection());
+    await page.locator('#findNextBtn').click();
+    await expect(page.locator('#findInfo')).toHaveText('0/0');
+    expect(await page.evaluate(() => window.getActiveCmAdapter().getSelection())).toEqual(before);
+  });
+
+  // QA H2: typing a query key by key put the later letters over the selected match.
+  test('typing a query key by key and pressing Enter never edits the note', async ({ page }) => {
+    const text = 'alpha foo beta foo gamma\n';
+    await openInEditor(page, text);
+    await page.keyboard.press('Control+f');
+    await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'findInput');
+    await page.keyboard.type('foo', { delay: 30 });
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Shift+Enter');
+    expect(await page.evaluate(() => document.activeElement.id)).toBe('findInput');
+    expect(await page.evaluate(() => window._appState.files[0].content)).toBe(text);
+    expect(await page.evaluate(() => window.getActiveCmAdapter().getSelection())).toMatchObject({ start: 6, end: 9 });
+    // Escape hands the keyboard back to the editor, not to <body>.
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => !!document.activeElement.closest('.cm-editor'))).toBe(true);
+  });
+
+  // QA M7: the find bar followed the note it was opened on.
+  test('switching notes with the find bar open searches the new note', async ({ page }) => {
+    await openInEditor(page, 'needle in a\n');
+    await page.evaluate(() => {
+      window._appState.files.push({ name: 'u.md', path: 'u.md', content: 'x needle y needle\n', dirty: false });
+    });
+    await page.keyboard.press('Control+f');
+    await page.fill('#findInput', 'needle');
+    await expect(page.locator('#findInfo')).toContainText('1');
+    await page.evaluate(() => window.renderFile(1));
+    await expect(page.locator('.cm-mount .cm-searchMatch')).toHaveCount(2);
+    expect(await page.evaluate(() => window.getActiveCmAdapter().getSelection())).toMatchObject({ start: 2, end: 8 });
   });
 
   test('an Arabic query without tashkeel marks the word written with tashkeel', async ({ page }) => {

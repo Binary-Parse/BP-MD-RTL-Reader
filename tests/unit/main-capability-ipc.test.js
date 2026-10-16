@@ -37,6 +37,15 @@ describe('opaque filesystem IPC capabilities', () => {
     expect(await handler(electron, 'fs:readVault')({}, '/vault')).toEqual({ error: 'unauthorized-capability' });
   });
 
+  // MAIN-5: an unwritable profile used to be reported as a bad folder or an unreadable file.
+  test('a grant the registry cannot save is reported as persist-failed', async () => {
+    fs.writeFileSync.mockImplementation(() => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }); });
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/vault'] });
+    expect(await handler(electron, 'dialog:openFolder')()).toEqual({ error: 'persist-failed' });
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/vault/a.md'] });
+    expect(await handler(electron, 'dialog:openFile')()).toEqual({ error: 'persist-failed' });
+  });
+
   test('vault read emits document IDs plus faithful metadata and writes only that exact document', async () => {
     electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/vault'] });
     const picked = await handler(electron, 'dialog:openFolder')();
@@ -209,6 +218,20 @@ describe('session-scoped capability authority (audit SEC-01)', () => {
     expect(await handler(electron, 'fs:reopenVault')({}, 'nope')).toEqual({ error: 'unknown-vault' });
   });
 
+  // MAIN-5: a moved folder or file is re-pinned and saved; when that save fails the user is
+  // told the profile could not be written, not that the folder or file is missing.
+  test('a reopen whose re-pin cannot be saved reports persist-failed', async () => {
+    fs.realpathSync = (p) => (p === '/vault-old' ? '/vault-moved' : p);
+    fs.writeFileSync = () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }); };
+    expect(await handler(electron, 'fs:reopenVault')({}, 'cap-old')).toEqual({ error: 'persist-failed' });
+  });
+
+  test('a failed reopen leaves the cause in the local log', async () => {
+    await handler(electron, 'fs:reopenVault')({}, 'cap-missing');
+    const lines = fs.appendFileSync.mock.calls.map(([, line]) => JSON.parse(line));
+    expect(lines).toContainEqual(expect.objectContaining({ level: 'warn', source: 'ipc:fs:reopenVault', message: 'ENOENT' }));
+  });
+
   test('a stale standalone document is unauthorized until fs:reopenDocument activates it', async () => {
     expect(await handler(electron, 'fs:readFile')({}, 'cap-old-doc')).toEqual({ error: 'unauthorized-capability' });
     expect(await handler(electron, 'fs:writeFile')({}, { documentId: 'cap-old-doc', content: 'x' }))
@@ -230,13 +253,40 @@ describe('session-scoped capability authority (audit SEC-01)', () => {
     expect(saved).toMatchObject({ ok: true, revision: 4 });
   });
 
+  // MAIN-10: with no hash main read itself, the disk copy is hashed before the write. A copy
+  // that cannot be hashed (oversized or unreadable) used to skip that check and be overwritten.
+  test('a never-read document whose disk copy cannot be hashed is not overwritten', async () => {
+    const DOC = '/loose/old.md';
+    fs._files[DOC] = '# note';
+    expect(await handler(electron, 'fs:reopenDocument')({}, 'cap-old-doc')).toEqual({ ok: true });
+    const payload = { documentId: 'cap-old-doc', content: 'blind', bom: false, eol: '\n', finalNewline: true, revision: 1 };
+
+    const realStat = fs.statSync;
+    fs.statSync = (p) => (p === DOC
+      ? { isFile: () => true, isDirectory: () => false, size: 101 * 1024 * 1024, mtimeMs: 10 }
+      : realStat(p));
+    expect(await handler(electron, 'fs:writeFile')({}, payload)).toEqual({ error: 'file-too-large' });
+    fs.statSync = realStat;
+
+    const realRead = fs.readFileSync;
+    fs.readFileSync = (p, ...rest) => {
+      if (p === DOC) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+      return realRead(p, ...rest);
+    };
+    expect(await handler(electron, 'fs:writeFile')({}, payload)).toEqual({ error: 'read-failed' });
+    fs.readFileSync = realRead;
+
+    expect(fs._files[DOC]).toBe('# note');
+  });
+
   test('fs:reopenDocument reports a missing file and an unknown id', async () => {
     expect(await handler(electron, 'fs:reopenDocument')({}, 'nope')).toEqual({ error: 'unknown-capability' });
     expect(await handler(electron, 'fs:reopenDocument')({}, 'cap-vanished')).toEqual({ error: 'unknown-capability' });
   });
 
   test('startup pruning keeps only the records settings reference', async () => {
-    // Re-boot against the same store: the unreferenced records must be gone from disk.
+    // The boot in beforeEach ran startup pruning; every record here is referenced by
+    // recents, so all of them must still be on disk.
     await new Promise(resolve => setTimeout(resolve, 10));
     const persisted = JSON.parse(fs._files[CAPS]);
     expect(persisted.vaults.map((v) => v.id).sort()).toEqual(['cap-missing', 'cap-old']);
@@ -538,14 +588,15 @@ describe('symlinked grants are refused, not followed (SEC-01)', () => {
     await new Promise((r) => setTimeout(r, 20));
 
     // reopen grants session authority WITHOUT reading, so the write must hash disk
-    // state itself — and the 5GB stat must stop it before any readFileSync.
+    // state itself — and the 5GB stat must stop it before any readFileSync. A disk copy it
+    // cannot hash is refused, not overwritten blind (MAIN-10).
     expect(await h(el, 'fs:reopenDocument')({}, 'cap-old')).toEqual({ ok: true });
     readCalls.length = 0;
     const res = await h(el, 'fs:writeFile')({}, {
       documentId: 'cap-old', content: 'fresh', baseHash: 'whatever',
       bom: false, eol: '\n', finalNewline: true, revision: 1,
     });
-    expect(res).toMatchObject({ ok: true });
+    expect(res).toEqual({ error: 'file-too-large' });
     expect(readCalls).toEqual([]);
   });
 });

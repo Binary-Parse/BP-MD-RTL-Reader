@@ -3,7 +3,7 @@
  * JSON file main owns.
  */
 import { describe, test, expect, vi } from 'vitest';
-import { atomicWriteJson, readJsonFile, sweepStaleJsonTemps } from '../../src/main/json-store.js';
+import { atomicWriteJson, readJsonFileChecked, sweepStaleJsonTemps } from '../../src/main/json-store.js';
 import { buildMockFs } from './main-harness.js';
 
 const FILE = 'C:\\mock\\userData\\thing.json';
@@ -47,36 +47,49 @@ describe('atomicWriteJson (T8.1)', () => {
     expect(sleep).toHaveBeenCalledTimes(2);
   });
 
-  test('M14: held through every retry it reports write-failed and removes the temp file', () => {
+  // MAIN-4: the JSON stores share the note writer, so a held file and a full disk get the
+  // same specific codes a note save gets.
+  test('M14: held through every retry it reports locked and removes the temp file', () => {
     const fs = buildMockFs();
     fs.renameSync.mockImplementation(() => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); });
     fs.existsSync.mockReturnValue(true);
-    expect(atomicWriteJson(fs, FILE, '{}', { sleep: vi.fn() })).toEqual({ error: 'write-failed' });
+    expect(atomicWriteJson(fs, FILE, '{}', { sleep: vi.fn() })).toEqual({ error: 'locked' });
     expect(fs.renameSync).toHaveBeenCalledTimes(5);
     expect(fs.unlinkSync).toHaveBeenCalledWith(fs.writeFileSync.mock.calls[0][0]);
   });
+
+  test('MAIN-4: a full disk reports enospc', () => {
+    const fs = buildMockFs();
+    fs.writeFileSync.mockImplementation(() => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }); });
+    expect(atomicWriteJson(fs, FILE, '{}')).toEqual({ error: 'enospc' });
+  });
+
+  test('MAIN-4: the JSON file keeps its permission bits across a write', () => {
+    const fs = buildMockFs({ statSync: vi.fn(() => ({ mode: 0o100600 })), chmodSync: vi.fn() });
+    expect(atomicWriteJson(fs, FILE, '{}')).toEqual({ ok: true });
+    expect(fs.chmodSync).toHaveBeenCalledWith(fs.writeFileSync.mock.calls[0][0], 0o600);
+  });
 });
 
-describe('readJsonFile (T8.1)', () => {
+describe('readJsonFileChecked (T8.1, B3)', () => {
   const accept = (value) => !!(value && value.version === 1);
 
   test('returns the parsed value when the guard accepts it', () => {
     const fs = buildMockFs({ readFileSync: vi.fn(() => '{"version":1,"days":{}}') });
-    expect(readJsonFile(fs, FILE, accept)).toEqual({ version: 1, days: {} });
+    expect(readJsonFileChecked(fs, FILE, accept)).toEqual({ status: 'ok', value: { version: 1, days: {} } });
   });
 
-  test('a missing file, invalid JSON, or a rejected shape all degrade to null', () => {
+  test('a missing file, a failed read, and a damaged file each say so', () => {
     const missing = buildMockFs({ readFileSync: vi.fn(() => { throw new Error('ENOENT'); }) });
-    expect(readJsonFile(missing, FILE, accept)).toBeNull();
+    expect(readJsonFileChecked(missing, FILE, accept)).toEqual({ status: 'missing' });
 
-    const broken = buildMockFs({ readFileSync: vi.fn(() => 'not json') });
-    expect(readJsonFile(broken, FILE, accept)).toBeNull();
+    const locked = buildMockFs({ readFileSync: vi.fn(() => { throw Object.assign(new Error('x'), { code: 'EACCES' }); }) });
+    expect(readJsonFileChecked(locked, FILE, accept)).toEqual({ status: 'unreadable' });
 
-    const foreign = buildMockFs({ readFileSync: vi.fn(() => '{"version":99}') });
-    expect(readJsonFile(foreign, FILE, accept)).toBeNull();
-
-    const empty = buildMockFs({ readFileSync: vi.fn(() => 'null') });
-    expect(readJsonFile(empty, FILE, accept)).toBeNull();
+    for (const text of ['not json', '{"version":99}', 'null']) {
+      const fs = buildMockFs({ readFileSync: vi.fn(() => text) });
+      expect(readJsonFileChecked(fs, FILE, accept), text).toEqual({ status: 'corrupt' });
+    }
   });
 });
 
@@ -129,8 +142,8 @@ describe('json-store hardening lanes (GATE-01)', () => {
     const calls = [];
     const fs = memFs(files);
     fs.statSync = () => { throw new Error('locked'); };
-    fs.openSync = (p) => { calls.push('open'); return 3; };
-    fs.fsyncSync = (fd) => calls.push('fsync');
+    fs.openSync = () => { calls.push('open'); return 3; };
+    fs.fsyncSync = () => calls.push('fsync');
     fs.closeSync = () => calls.push('close');
     expect(atomicWriteJson(fs, '/u/a.json', '{}')).toEqual({ ok: true });
     expect(calls).toEqual(['open', 'fsync', 'close']);

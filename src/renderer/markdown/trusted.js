@@ -4,14 +4,11 @@
  * unit-testable in Node. Centralizes XSS/DoS defenses for every content sink.
  */
 
-// Link schemes safe to keep as href in rendered output.
-const SAFE_HREF = /^(https?:|mailto:|tel:|#|bpmd:)/i;
-/** Relative URLs (no scheme) plus SAFE_HREF; blocks javascript:/data-html:/protocol-relative.
+/** Link allow-list: http(s)/mailto/tel/bpmd, #fragments, data:image, and relative URLs
+ * (no scheme); blocks javascript:/data-html:/protocol-relative.
  * The protocol-relative lookahead rejects every slash-family opening (`//`, `/\`, `\/`, `\\`):
  * browsers normalize `\` to `/` in special URLs, so `\\evil.com` IS `//evil.com`. */
 const ALLOWED_URI_REGEXP = /^(?:(?:https?|mailto|tel|bpmd):|#|data:image\/|(?![a-z][a-z0-9+.-]*:)(?!\/[\\/])(?!\\)).*$/i;
-/** Same protocol-relative block as a plain string guard (regexp + guard, belt and braces). */
-const PROTOCOL_RELATIVE_START = /^[\\/][\\/]/;
 
 // data: URIs are embedded-image payloads, not navigation targets: they stay on the
 // media elements the URI allow-list exists for, and are stripped from anything that
@@ -33,7 +30,7 @@ function stripDataUris(node) {
 // name that comes from a note gets this prefix, and a `#x` link inside the same note that
 // pointed at it follows. Ids the app sets after this stage (heading slugs) have no prefix,
 // so links to headings are left alone.
-export const NOTE_ID_PREFIX = 'user-content-';
+const NOTE_ID_PREFIX = 'user-content-';
 
 function fragmentTarget(href) {
   if (typeof href !== 'string' || href.length < 2 || !href.startsWith('#')) return null;
@@ -71,7 +68,9 @@ function createNoteNameIsolation() {
 // classes this pipeline itself produces before the sanitize stage survive: fenced-code
 // languages (marked), highlight.js tokens (`hljs-title function_`), wikilinks, footnotes.
 // Classes the app adds to the DOM afterwards (callouts, tables, math) never pass here.
-const NOTE_CLASSES = new Set(['hljs', 'wikilink', 'fn-ref', 'fn-item', 'fn-back', 'footnotes']);
+// `bpmd-dir` / `bpmd-src` are the hidden placeholders of block-direction.js; the reading view
+// consumes and removes them, and no app style targets them.
+const NOTE_CLASSES = new Set(['hljs', 'wikilink', 'fn-ref', 'fn-item', 'fn-back', 'footnotes', 'bpmd-dir', 'bpmd-src']);
 const NOTE_CLASS_PREFIXES = ['language-', 'hljs-'];
 const CLASS_TOKEN = /^[\w+#.-]+$/;
 const HLJS_SCOPE_TOKEN = /^[a-z]+__?$/; // `function_`, `class_`, `inherited__`
@@ -89,46 +88,102 @@ function keepPipelineClasses(node) {
   else node.removeAttribute('class');
 }
 
-function addNoteHooks(DOMPurify) {
+// QA M1: attributes that point at another element by its id. The ids of a note are
+// prefixed (above), so these follow; unprefixed, `<label for="themeBtn">` in a note clicked
+// the app's own button. The aria-* lists hold several ids.
+const ID_REFERENCE_ATTRS = ['for', 'form', 'list', 'popovertarget', 'commandfor', 'interestfor', 'aria-activedescendant', 'aria-details', 'aria-errormessage'];
+const ID_LIST_ATTRS = ['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns', 'aria-flowto'];
+
+function isolateReferences(node) {
+  for (const attr of ID_REFERENCE_ATTRS) {
+    const value = node.getAttribute(attr);
+    if (typeof value === 'string' && value !== '' && !value.startsWith(NOTE_ID_PREFIX)) node.setAttribute(attr, NOTE_ID_PREFIX + value);
+  }
+  for (const attr of ID_LIST_ATTRS) {
+    const value = node.getAttribute(attr);
+    if (typeof value !== 'string' || value.trim() === '') continue;
+    node.setAttribute(attr, value.trim().split(/\s+/)
+      .map((id) => (id.startsWith(NOTE_ID_PREFIX) ? id : NOTE_ID_PREFIX + id)).join(' '));
+  }
+}
+
+// QA H5: thousands of unclosed tags (`<u>a <u>a ...`) nest up to the parser's limit of 511
+// levels, and every paint of such a note took about 0.75 s (each run of text draws the
+// underline of every ancestor): a 100 KB note froze the window for 40 s. No Markdown a person
+// writes nests this deep; an element at this depth keeps only the text below it.
+export const MAX_NOTE_DEPTH = 32;
+
+function flattenDeepElements(root) {
+  const depth = new Map([[root, 0]]);
+  const boundary = [];
+  const walker = root.ownerDocument.createTreeWalker(root, 1 /* NodeFilter.SHOW_ELEMENT */);
+  for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+    const d = (depth.get(el.parentNode) || 0) + 1;
+    depth.set(el, d);
+    if (d === MAX_NOTE_DEPTH && el.firstElementChild) boundary.push(el);
+  }
+  for (const el of boundary) { const text = el.textContent; el.textContent = text; } // one text node, O(size)
+}
+
+function addNoteHooks(DOMPurify, onDepth) {
   if (!DOMPurify || typeof DOMPurify.addHook !== 'function' || typeof DOMPurify.removeHook !== 'function') return null;
   const isolateNames = createNoteNameIsolation();
+  const depth = new WeakMap();
   const hook = (node) => {
     if (!node || node.nodeType !== 1 || typeof node.getAttribute !== 'function') return;
     stripDataUris(node);
     isolateNames(node);
+    isolateReferences(node);
     keepPipelineClasses(node);
+    const d = (depth.get(node.parentNode) || 0) + 1;
+    depth.set(node, d);
+    if (d > MAX_NOTE_DEPTH && onDepth) onDepth();
   };
   DOMPurify.addHook('afterSanitizeAttributes', hook);
   return hook;
 }
 
 /** Sanitize general HTML produced by the Markdown pipeline. */
-export function sanitizeHtml(html, DOMPurify) {
+export function sanitizeHtml(html, DOMPurify, { fragment = false } = {}) {
   if (!DOMPurify || typeof DOMPurify.sanitize !== 'function') return '';
   // The data:-on-navigators rule and the id prefix need the post-sanitize attribute
   // hook; it is registered around this one call and removed again so the injected
   // instance is never left with a lingering hook for the other sanitize stages.
-  const hook = addNoteHooks(DOMPurify);
+  let tooDeep = false;
+  const hook = addNoteHooks(DOMPurify, () => { tooDeep = true; });
+  const config = {
+    ADD_ATTR: ['id', 'data-target', 'dir', 'lang'],
+    // audit M2: no data-* from a note except the wikilink target named above. The app
+    // acts on some of them document-wide (`data-tip` tooltips, `data-i18n` on a
+    // language switch).
+    ALLOW_DATA_ATTR: false,
+    // Keep the inline formatting tags the toolbar/extensions emit: <mark> (==highlight==),
+    // <u> (underline), <sub>/<sup> (~sub~ / ^sup^). All are in DOMPurify's default allow-list
+    // except where a profile narrows it; ADD_TAGS makes the intent explicit + future-proof.
+    ADD_TAGS: ['mark', 'u', 'sub', 'sup'],
+    // `form`: a note has no use for one, and its named controls are a clobbering surface.
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
+    // `style` here forbids the inline style="" ATTRIBUTE (FORBID_TAGS above only
+    // drops the <style> ELEMENT) — kills CSS-exfil via inline styles. Math keeps its
+    // positioning styles through the separate sanitizeMath stage; marked emits table
+    // alignment as the `align` attribute, not inline style, so this is loss-free.
+    FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
+    ALLOWED_URI_REGEXP,
+  };
   try {
-    return DOMPurify.sanitize(html, {
-      ADD_ATTR: ['id', 'data-target', 'dir', 'lang'],
-      // audit M2: no data-* from a note except the wikilink target named above. The app
-      // acts on some of them document-wide (`data-tip` tooltips, `data-i18n` on a
-      // language switch).
-      ALLOW_DATA_ATTR: false,
-      // Keep the inline formatting tags the toolbar/extensions emit: <mark> (==highlight==),
-      // <u> (underline), <sub>/<sup> (~sub~ / ^sup^). All are in DOMPurify's default allow-list
-      // except where a profile narrows it; ADD_TAGS makes the intent explicit + future-proof.
-      ADD_TAGS: ['mark', 'u', 'sub', 'sup'],
-      // `form`: a note has no use for one, and its named controls are a clobbering surface.
-      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
-      // `style` here forbids the inline style="" ATTRIBUTE (FORBID_TAGS above only
-      // drops the <style> ELEMENT) — kills CSS-exfil via inline styles. Math keeps its
-      // positioning styles through the separate sanitizeMath stage; marked emits table
-      // alignment as the `align` attribute, not inline style, so this is loss-free.
-      FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
-      ALLOWED_URI_REGEXP,
-    });
+    // RETURN_DOM costs nothing extra: DOMPurify serializes its body the same way.
+    const out = DOMPurify.sanitize(html, { ...config, RETURN_DOM: true });
+    if (!out || typeof out !== 'object' || typeof out.innerHTML !== 'string') return out;
+    if (tooDeep) flattenDeepElements(out);
+    // QA-M16: the reading pane takes the sanitized nodes as they are. Serializing them to a
+    // string meant the page parsed it again and the Trusted Types default policy sanitized
+    // it a second time (about a second each for a 2.5 MB note).
+    if (fragment) {
+      const frag = out.ownerDocument.createDocumentFragment();
+      while (out.firstChild) frag.appendChild(out.firstChild);
+      return frag;
+    }
+    return out.innerHTML;
   } finally {
     if (hook) DOMPurify.removeHook('afterSanitizeAttributes', hook);
   }
@@ -180,36 +235,4 @@ export function katexOptions(overrides = {}) {
     ...rest,
     trust: false,
   };
-}
-
-/** Whether a link href is safe to keep (EC-B5/B6). */
-export function isSafeHref(href) {
-  return typeof href === 'string' && SAFE_HREF.test(href.trim());
-}
-
-export function isAllowedHref(href) {
-  if (typeof href !== 'string') return false;
-  const value = href.trim();
-  return ALLOWED_URI_REGEXP.test(value) && !PROTOCOL_RELATIVE_START.test(value);
-}
-
-/** Minimal HTML escape for the no-marked fallback — it must never be a raw-HTML sink. */
-const MINIMAL_ESCAPE = (value) => String(value)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
-
-/**
- * Full trusted render: Markdown → HTML → sanitize.
- * @param {string} md
- * @param {{marked, DOMPurify, escapeHtml?}} deps
- */
-export function renderTrusted(md, { marked, DOMPurify, escapeHtml } = {}) {
-  if (!marked || typeof marked.parse !== 'function') {
-    return (typeof escapeHtml === 'function') ? escapeHtml(md ?? '') : MINIMAL_ESCAPE(md ?? '');
-  }
-  const raw = marked.parse(md || '');
-  return sanitizeHtml(raw, DOMPurify);
 }

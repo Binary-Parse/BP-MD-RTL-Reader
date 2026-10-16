@@ -42,4 +42,12 @@ describe('parseFrontMatter (T-R6)', () => {
     expect(body).toBe('\uFEFFno fence here');
     expect(parseFrontMatter('---\nkey: val\n---\nB').data).toEqual({ key: 'val' });
   });
+
+  // QA M2: a leading `---` rule and a later one are not a front-matter block.
+  test('prose between two rules is body text, not front matter', () => {
+    const md = '---\nIntro paragraph.\n\nMore text.\n---\nEnd';
+    expect(parseFrontMatter(md)).toEqual({ data: {}, body: md });
+    expect(parseFrontMatter('---\n---- x').body).toBe('---\n---- x');
+    expect(parseFrontMatter('---\ntitle: T\ntags:\n  - a\n# c\n\n---\nB')).toEqual({ data: { title: 'T', tags: '' }, body: 'B' });
+  });
 });

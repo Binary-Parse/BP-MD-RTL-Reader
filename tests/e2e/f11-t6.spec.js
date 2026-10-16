@@ -52,7 +52,7 @@ test.describe('[T-F11] chevrons mirror in RTL UI', () => {
     expect(ltr === 'none' || ltr === 'matrix(1, 0, 0, 1, 0, 0)').toBe(true); // not mirrored in LTR
 
     await page.evaluate(() => document.documentElement.setAttribute('dir', 'rtl')); // R7 will set this
-    await page.waitForTimeout(150); // let any transform transition settle before reading computed style
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector('#sidebarToggleBtn .ic')).transform)).toMatch(/^matrix\(-1,/);
     // The panel toggles are visible by default → mirrored.
     // The icon is mirrored, never the button: its ::after tooltip is a child of the button and
     // would be mirrored with it (known issue fixed in 2.0.0; see known-issues.spec.js).

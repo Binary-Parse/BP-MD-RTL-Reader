@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Adversarial / gap-filling tests for the RTL fix (run_id=20260512T164546Z-4421).
+ * Adversarial / gap-filling tests for the RTL fix.
  *
  * These tests are deliberately hostile: they probe edge-cases, boundary
  * conditions, and implementation-specific branches that the Implementer's
@@ -145,7 +145,7 @@ test.describe('[Adversarial-A] isArabicHeavy threshold boundary', () => {
     let threw = false;
     try {
       await injectMarkdown(page, '');
-    } catch (e) {
+    } catch (_) {
       threw = true;
     }
     expect(threw).toBe(false);
@@ -578,24 +578,6 @@ test.describe('[Adversarial-E] RTL interaction with other features', () => {
     await expect(page.locator('#editor')).toHaveAttribute('dir', 'rtl');
     const computedDir = await getEditorComputedDirection(page);
     expect(computedDir).toBe('rtl');
-  });
-
-  test('[E3] #srcTextarea is never dir=rtl: auto per-block load leaves it alone, manual toggle sets dir=auto', async ({ page }) => {
-    // spec.md §Constraints: "Must keep #srcTextarea at dir=auto".
-    await page.goto(INDEX_URL);
-    await page.waitForLoadState('networkidle');
-
-    // Per-block load must NOT force the source textarea to rtl.
-    await injectMarkdown(page, ARABIC_HEAVY);
-    expect(await page.evaluate(() =>
-      document.getElementById('srcTextarea').getAttribute('dir'))).not.toBe('rtl');
-
-    // The manual ⇄ override sets the source textarea to dir=auto (never rtl).
-    await page.click('#rtlBtn');
-    const srcDir = await page.evaluate(() =>
-      document.getElementById('srcTextarea').getAttribute('dir'));
-    expect(srcDir).toBe('auto');
-    expect(srcDir).not.toBe('rtl');
   });
 
   test('[E4] a new note opens in AUTO even when another note is forced RTL', async ({ page }) => {

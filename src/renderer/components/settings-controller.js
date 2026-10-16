@@ -1,8 +1,9 @@
 // T4.1: the stored reading positions are validated with the same rules the shelf uses.
 import { sanitizeProgress } from '../reading-progress.js';
+import { THEMES } from '../theme.js';
 
 export const PERSISTED_KEYS = new Set([
-  'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible',
+  'theme', 'zoomFactor', 'viewMode', 'sidebarVisible',
   'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
   'italicRecolor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
   // T-F19 chrome settings
@@ -23,7 +24,7 @@ export function createSettingsController({
   actions = {},
   subscribe = noop,
   getLastSession = () => null,
-  themes = ['paper', 'ink', 'sepia'],
+  themes = THEMES,
   delay = 200,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
@@ -38,7 +39,6 @@ export function createSettingsController({
   const apply = {
     applyTheme: actions.applyTheme || noop,
     setZoom: actions.setZoom || noop,
-    setEditorMode: actions.setEditorMode || noop,
     setViewMode: actions.setViewMode || noop,
     applyPanelLayout: actions.applyPanelLayout || noop,
     renderRecents: actions.renderRecents || noop,
@@ -63,7 +63,6 @@ export function createSettingsController({
     return {
       theme: state.theme,
       zoomFactor: state.zoomFactor,
-      editorMode: state.editorMode,
       viewMode: state.viewMode,
       sidebarVisible: state.sidebarVisible,
       inspectorVisible: state.inspectorVisible,
@@ -151,8 +150,6 @@ export function createSettingsController({
       if (typeof saved.zoomFactor === 'number') apply.setZoom(saved.zoomFactor);
       if (typeof saved.readerTextScale === 'number') apply.setReaderTextScale(saved.readerTextScale);
       if (typeof saved.readerWidthCh === 'number') apply.setReaderWidthCh(saved.readerWidthCh);
-      // CM6 is the sole editor. Old split/source values must not resurrect a second surface.
-      apply.setEditorMode('live');
       if (saved.viewMode === 'reading' || saved.viewMode === 'edit') apply.setViewMode(saved.viewMode);
       if (typeof saved.sidebarVisible === 'boolean') state.sidebarVisible = saved.sidebarVisible;
       if (typeof saved.inspectorVisible === 'boolean') state.inspectorVisible = saved.inspectorVisible;

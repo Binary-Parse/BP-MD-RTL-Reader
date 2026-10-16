@@ -120,8 +120,17 @@ Describe 'Elevated installer command boundaries' {
     It 'NSIS never executes an uninstall command or install location read from the registry' {
         $Nsis | Should -Not -Match '(?m)^\s*ExecWait\b'
         $Nsis | Should -Not -Match 'QuietUninstallString'
-        $Nsis | Should -Not -Match 'InstallLocation'
         $Nsis | Should -Not -Match 'RemovePreviousInstall'
+        # An install location is read for ONE purpose: checking that the program file exists
+        # (a leftover registration is not an installation). It is read into $1 inside the
+        # detection macro only, and $1 there never reaches a command, a delete or a copy.
+        $code = ($Nsis -split "`r?`n" | Where-Object { $_ -notmatch '^\s*;' }) -join "`n"
+        foreach ($line in ($code -split "`n" | Where-Object { $_ -match 'InstallLocation' })) {
+            $line | Should -Match '^\s*ReadRegStr \$1 (HKLM|HKCU) "[^"]+" "InstallLocation"\s*$'
+        }
+        $detect = [regex]::Match($code, '(?s)!macro BpmdDetectInstalledVersion(.*?)!macroend').Groups[1].Value
+        ([regex]::Matches($code, 'InstallLocation')).Count | Should -Be ([regex]::Matches($detect, 'InstallLocation')).Count
+        $detect | Should -Not -Match '(?m)^\s*(Exec\w*|Delete|RMDir|Rename|CopyFiles|nsExec::\w+|ShellExecWait)\b'
     }
 
     It 'Inno detects versions but exposes no registry-command execution path' {
@@ -146,6 +155,29 @@ Describe 'Elevated installer command boundaries' {
         # Localized prompts ship in both UI languages, selected at runtime.
         $Nsis | Should -Match '\$LANGUAGE == 1025'
         $Nsis | Should -Match '\$LANGUAGE == 1025[\s\S]*\$LANGUAGE == 1025'
+    }
+
+    It 'NSIS detection ignores a registration whose program file is gone' {
+        # An uninstall that stopped part-way (or a copy deleted by hand) leaves the uninstall
+        # key with its DisplayVersion; the setup then offered "Repair" for an app that was not
+        # there. A copy counts as installed only when its program file exists at the
+        # InstallLocation recorded in the same hive.
+        $detect = [regex]::Match($Nsis, '(?s)!macro BpmdDetectInstalledVersion(.*?)!macroend').Groups[1].Value
+        $detect | Should -Match 'ReadRegStr \$1 HKLM "Software\\\$\{BPMD_EB_UNINSTALL_KEY\}" "InstallLocation"'
+        $detect | Should -Match 'ReadRegStr \$1 HKCU "Software\\\$\{BPMD_EB_UNINSTALL_KEY\}" "InstallLocation"'
+        $detect | Should -Match '\$\{BPMD_INNO_UNINSTALL_KEY\}" "InstallLocation"'
+        $detect | Should -Match '\$\{IfNot\} \$\{FileExists\} "\$1\\\$\{PRODUCT_FILENAME\}\.exe"'
+        $detect | Should -Match 'StrCpy \$BpmdDetectedVersion ""'
+    }
+
+    It 'Inno detection ignores a registration whose program file is gone' {
+        # Same rule as the NSIS page: a version counts only when the program file is in the
+        # install folder recorded in the same registry view (read, then FileExists; never run).
+        $Version | Should -Match 'function GetPresentInstalledVersion\('
+        $Version | Should -Match "RegQueryStringValue\(Root, LocationKey, 'InstallLocation', Location\)"
+        $Version | Should -Match 'FileExists\(AddBackslash\(Location\) \+ ExeName\)'
+        $Inno | Should -Match "GetPresentInstalledVersion\(UNINSTALL_KEY, UNINSTALL_KEY, '\{#MyAppExe\}', IsAdminInstallMode\)"
+        $Inno | Should -Match "GetPresentInstalledVersion\(EB_NSIS_KEY, EB_INSTALL_KEY, '\{#MyAppExe\}', IsAdminInstallMode\)"
     }
 
     It 'both installers present a license page' {

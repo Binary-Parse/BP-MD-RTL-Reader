@@ -4,7 +4,7 @@
  * renderer code paths via direct function calls + minimal UI interaction.
  */
 
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
@@ -50,17 +50,13 @@ test.describe('Renderer coverage collector', () => {
     });
   });
 
-  test('RTL + theme + editor modes', async ({ page }) => {
+  test('RTL + theme', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForSelector('.app', { state: 'visible' });
     await page.click('#emptyLoadDemo');
     await page.evaluate(() => {
       window.toggleRTL();
       window.toggleRTL();
-      window.setEditorMode('source');
-      window.setEditorMode('live');
-      window.setEditorMode('split');
-      window.setEditorMode('live');
     });
     await page.click('#themeBtn');
     await page.click('#themeBtn');

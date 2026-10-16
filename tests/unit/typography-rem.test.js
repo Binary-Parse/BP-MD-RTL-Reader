@@ -4,24 +4,21 @@
  * rem (T-T4, so a single root-font / zoom change scales everything) and never use
  * a label smaller than 11px ≡ 0.6875rem (T-T5, legibility floor). The HTML-export
  * <style> template (a separate, standalone document) is intentionally left in px.
+ * The one-shot px-to-rem converter that did the T-T4 migration (scripts/rem-convert.mjs,
+ * 494ba77) is deleted; these checks on the stylesheets themselves keep px from returning.
  */
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { convertChromeFontSizes, toRem, FLOOR_PX } from '../../scripts/rem-convert.mjs';
-
-const html = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'index.html'),
-  'utf8',
-);
 
 const stylesRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'styles');
 const chromeCss = ['base.css', 'themes.css', 'components.css', 'responsive.css']
   .map((file) => readFileSync(path.join(stylesRoot, file), 'utf8'))
   .join('\n');
 const REM_PER_PX = 1 / 16;
-const MIN_LABEL_REM = 11 * REM_PER_PX; // 0.6875rem
+const FLOOR_PX = 11;
+const MIN_LABEL_REM = FLOOR_PX * REM_PER_PX; // 0.6875rem
 
 // v10 redesign (2026-08-25): two typographic ornaments sit intentionally below the
 // label floor. Neither is informational text a screen-reader user needs at a legible
@@ -80,14 +77,7 @@ describe('chrome typography sizing (T-T4 / T-T5)', () => {
   });
 });
 
-describe('rem-convert transform (T-T4)', () => {
-  test('re-running the converter on the committed app CSS is a no-op (fully converted + idempotent)', () => {
-    // The strongest completeness check: the live file is already fully converted, so the
-    // pure transform must reproduce it byte-for-byte (no missed px, no double-conversion
-    // of the :root base — which a naive converter would turn into 1rem on a second pass).
-    expect(convertChromeFontSizes(chromeCss)).toBe(chromeCss);
-  });
-
+describe('chrome rem values (T-T4)', () => {
   test('every emitted chrome rem maps back to a sane label px (floored ≥ 11, ≤ 64)', () => {
     const remFontSizes = [...chromeCssForFloorCheck.matchAll(/font-size:\s*([\d.]+)rem/g)].map((m) => parseFloat(m[1]));
     for (const rem of remFontSizes) {
@@ -95,13 +85,5 @@ describe('rem-convert transform (T-T4)', () => {
       expect(px, `${rem}rem → ${px}px below the 11px floor`).toBeGreaterThanOrEqual(FLOOR_PX - 1e-6);
       expect(px, `${rem}rem → ${px}px implausibly large`).toBeLessThanOrEqual(64);
     }
-  });
-
-  test('toRem floors sub-11px and divides by 16 otherwise', () => {
-    expect(toRem(8)).toBe('0.6875rem');   // 8 → 11px floor
-    expect(toRem(10)).toBe('0.6875rem');  // 10 → 11px floor
-    expect(toRem(11)).toBe('0.6875rem');  // 11 exactly
-    expect(toRem(15)).toBe('0.9375rem');  // 15/16
-    expect(toRem(16)).toBe('1rem');       // trailing zeros dropped
   });
 });

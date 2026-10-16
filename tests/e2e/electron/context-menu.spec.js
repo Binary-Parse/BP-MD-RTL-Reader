@@ -8,6 +8,7 @@
  * app:command relay — all of that only exists in the real main process.
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -36,12 +37,7 @@ test.describe('renderer-drawn context menu @electron', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) {
-        await page.evaluate(() => window.electronAPI.closeWindow());
-      }
-      await electronApp.close();
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -96,7 +92,7 @@ test.describe('renderer-drawn context menu @electron', () => {
     const input = page.locator('#palInput');
     await expect(input).toBeVisible();
     await input.pressSequentially('helo wrold ');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2000); // deliberate: a spellchecker, were it on, would have marked the words by now
     await input.click({ button: 'right', position: { x: 20, y: 10 } });
     const ctx = page.locator('#ctxMenu');
     await expect(ctx).toBeVisible();
@@ -172,7 +168,7 @@ test.describe('renderer-drawn context menu @electron', () => {
       S.files = [{ name: 'ctx.md', path: 'ctx.md', handle: null, content: '# Doc\n\nSelectable body text.', dirty: false }];
       window.renderFile(0);
     });
-    await page.waitForTimeout(200);
+    await page.locator('#noteContent p').waitFor();
     await page.evaluate(() => {
       const p = document.querySelector('#noteContent p');
       const range = document.createRange();
@@ -225,7 +221,7 @@ test.describe('renderer-drawn context menu @electron', () => {
   test('the right-click menu localizes its app commands with the UI', async () => {
     await page.waitForFunction(() => typeof window.toggleArabicUI === 'function');
     await page.evaluate(() => window.toggleArabicUI());
-    await page.waitForTimeout(100);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await page.locator('#welcome').click({ button: 'right' });
     const ctx = page.locator('#ctxMenu');
     await expect(ctx).toBeVisible();

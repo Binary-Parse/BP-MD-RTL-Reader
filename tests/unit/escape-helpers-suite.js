@@ -13,24 +13,24 @@ import { escapeHtml, escapeReg } from '../../src/renderer/i18n.js';
 /** Registers the escapeHtml() mutation-killer describe block. */
 export function describeEscapeHtml() {
   describe('escapeHtml() — mutation killers', () => {
-    // Mutant L19: '&amp;' → "" — & chars would be deleted instead of escaped
+    // Mutant: '&amp;' → "" — & chars would be deleted instead of escaped
     test('preserves & as &amp;', () => {
       expect(escapeHtml('&')).toBe('&amp;');
       expect(escapeHtml('a & b')).toBe('a &amp; b');
     });
 
-    // Mutant L20: '&lt;' → "" — < chars would be deleted
+    // Mutant: '&lt;' → "" — < chars would be deleted
     test('preserves < as &lt;', () => {
       expect(escapeHtml('<')).toBe('&lt;');
       expect(escapeHtml('<script>')).toBe('&lt;script&gt;');
     });
 
-    // Mutant L21: '&gt;' → "" — > chars would be deleted
+    // Mutant: '&gt;' → "" — > chars would be deleted
     test('preserves > as &gt;', () => {
       expect(escapeHtml('>')).toBe('&gt;');
     });
 
-    // Mutant L22: '&quot;' → "" — " chars would be deleted
+    // Mutant: '&quot;' → "" — " chars would be deleted
     test('preserves " as &quot;', () => {
       expect(escapeHtml('"')).toBe('&quot;');
       expect(escapeHtml('say "hi"')).toBe('say &quot;hi&quot;');

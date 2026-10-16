@@ -10,7 +10,7 @@
  * A single-character marker is really present only when the run of that character next to the
  * text has ODD length: 1 = the mark alone, 3 = the mark inside bold (`***`), 2/4 = bold layers.
  *
- * Pure and DOM-free so the coverage + mutation gates see it (app.js is e2e-only).
+ * Pure and DOM-free so the coverage gate sees it (app.js is e2e-only).
  */
 
 const RUN_MARKERS = new Set(['*', '_', '~']);

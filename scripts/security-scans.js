@@ -105,7 +105,9 @@ function main() {
 
   let osvReport;
   try {
-    osvReport = execFileSync('osv-scanner', ['scan', '--format', 'markdown', '.'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+    // The lockfile the manifest records, named directly: osv-scanner 2.4's directory walk found
+    // no package source on Windows (it visited one inode of the folder) and failed the scan.
+    osvReport = execFileSync('osv-scanner', ['scan', 'source', '--lockfile', 'package-lock.json', '--format', 'markdown'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
   } catch (error) {
     // osv-scanner exits 1 when it finds a vulnerability; the report is still on stdout.
     if (!error || error.status !== 1 || typeof error.stdout !== 'string') throw error;

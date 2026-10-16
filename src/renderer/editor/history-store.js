@@ -8,10 +8,12 @@
  *
  * A parked state is only handed back while the file's text is EXACTLY the text the state holds.
  * If the file was replaced from disk in the meantime (external change, "Reload from disk") the
- * state is dropped, so undo can never bring back text from before the reload.
+ * state is dropped, so undo can never bring back text from before the reload. A reload that
+ * brings exactly the text the state already holds replaced nothing, so that history is kept on
+ * purpose (QA-N2): undo then steps back through edits the user really made to this text.
  *
  * Pure and CodeMirror-free (the state is opaque; `textOf` reads its document) so the coverage
- * and mutation gates see it — the adapter itself is e2e-only.
+ * gate sees it — the adapter itself is e2e-only.
  */
 
 /**

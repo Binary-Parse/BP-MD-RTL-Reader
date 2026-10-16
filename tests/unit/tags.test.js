@@ -7,6 +7,17 @@ import { describe, test, expect } from 'vitest';
 import { extractTags, extractTagsFromFiles } from '../../src/renderer/components/tags.js';
 
 describe('Tag extraction', () => {
+  // QA-L3: code, numbers and colours polluted the tags pane.
+  test('code, numbers and colours are not tags; words that look like hex still are', () => {
+    const md = [
+      '#reading in prose, issue #123, colour #fff and #1F1B16',
+      '```css', 'a { color: #abc; } #incode', '```',
+      'inline `x #span` and #add #decade #facade',
+    ].join('\n');
+    expect(Object.keys(extractTags(md)).sort()).toEqual(['add', 'decade', 'facade', 'reading']);
+    expect(extractTagsFromFiles([{ content: md }])).toEqual({ reading: [0], add: [0], decade: [0], facade: [0] });
+  });
+
   test('extracts single tag from text', () => {
     const tags = extractTags('Some content #reading here');
     expect(Object.keys(tags)).toContain('reading');

@@ -11,9 +11,14 @@ import { NEEDS_FOLD, normalizeArabic, normalizeArabicWithMap, mapEnd } from './t
 
 const normalizedFiles = new WeakMap();
 
+// Large-file mode (a note of 20-100 MB): lower-casing it builds a second copy as big as the note,
+// again after every edit, and the Arabic map is larger still. Such a note is searched for the
+// query exactly as typed (case-sensitive, no Arabic folding) straight in its own text, and
+// nothing is cached for it. Its name is matched as for any note.
 function normalizeFile(file) {
   const content = file.content || '';
   const name = file.name || '';
+  if (file.largeTier >= 2) return { content, name, nameLower: name.toLowerCase(), contentLower: null, arabic: null, large: true };
   const cached = normalizedFiles.get(file);
   if (cached && cached.content === content && cached.name === name) return cached;
   const normalized = { content, name, contentLower: content.toLowerCase(), nameLower: name.toLowerCase(), arabic: null };
@@ -27,7 +32,7 @@ function normalizeFile(file) {
 // character whose toLowerCase changes UTF-16 length (e.g. İ U+0130 → i + U+0307).
 function arabicOf(normalized) {
   if (!normalized.arabic) {
-    const content = normalizeArabicWithMap(normalized.contentLower);
+    const content = normalized.large ? { norm: '', map: [] } : normalizeArabicWithMap(normalized.contentLower);
     const name = normalizeArabicWithMap(normalized.nameLower);
     normalized.arabic = { normLower: content.norm, map: content.map, nameLower: name.norm };
   }
@@ -56,6 +61,7 @@ export function vaultSearch(query, files, maxResults = 100) {
     while (hits.length < 5) {
       let matchStart; let matchEnd; // match range in ORIGINAL coordinates
       let a; let b; // snippet window [a,b) in ORIGINAL coordinates
+      if (n.large && arabicQuery) break; // no folded copy of a large note is built
       if (arabicQuery) {
         const ar = arabicOf(n);
         const idx = ar.normLower.indexOf(normQuery, searchFrom);
@@ -66,7 +72,7 @@ export function vaultSearch(query, files, maxResults = 100) {
         a = Math.max(0, matchStart - 40);
         b = Math.min(c.length, matchEnd + 40);
       } else {
-        const idx = n.contentLower.indexOf(lower, searchFrom);
+        const idx = n.large ? c.indexOf(query, searchFrom) : n.contentLower.indexOf(lower, searchFrom);
         if (idx < 0) break;
         matchStart = idx;
         matchEnd = idx + query.length;

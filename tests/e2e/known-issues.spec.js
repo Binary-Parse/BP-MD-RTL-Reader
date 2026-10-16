@@ -21,7 +21,7 @@ test.describe('#2 RTL panel toggles mirror the icon, not the button (so tooltips
   test('button is not mirrored, the icon inside is', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => document.documentElement.setAttribute('dir', 'rtl'));
-    await page.waitForTimeout(150);
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector('#inspectorToggleBtn .ic')).transform)).toMatch(/^matrix\(-1,/);
     for (const id of ['sidebarToggleBtn', 'inspectorToggleBtn']) {
       const t = await page.evaluate((i) => {
         const b = document.getElementById(i);
@@ -36,7 +36,7 @@ test.describe('#2 RTL panel toggles mirror the icon, not the button (so tooltips
     await boot(page);
     await page.evaluate(() => { document.documentElement.setAttribute('dir', 'rtl'); document.documentElement.setAttribute('lang', 'ar'); });
     await page.hover('#inspectorToggleBtn');
-    await page.waitForTimeout(500);
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.getElementById('inspectorToggleBtn'), '::after').content)).not.toBe('none');
     const net = await page.evaluate(() => {
       const b = document.getElementById('inspectorToggleBtn');
       // product of the horizontal scale of the button and its ::after tooltip

@@ -152,7 +152,7 @@ describe('relativeTime', () => {
     }
   });
 
-  test('a fresh entry reads as ~1 minute ago, and future stamps are positive', () => {
+  test('a fresh entry reads as ~1 minute ago, and a stamp an hour ahead reads in hours', () => {
     expect(relativeTime(now, 'en', now)).toMatch(/minute/);
     expect(relativeTime(now + 3600 * 1000, 'en', now)).toMatch(/hour/);
   });

@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 📖 Documentation & User Guide
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Binary-Parse/BP-MD-RTL-Reader/security/advisories/new
+    about: Do not open a public issue for a vulnerability. Use private reporting. See SECURITY.md.
+  - name: Documentation and user guide
     url: https://github.com/Binary-Parse/BP-MD-RTL-Reader/tree/main/docs
-    about: Check the User Guide and Build docs before opening an issue.
+    about: Check the guides and troubleshooting page before opening an issue.

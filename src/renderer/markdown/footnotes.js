@@ -17,16 +17,12 @@
  */
 
 import { cachedStart } from './render-guard.js';
+import { escapeHtml as esc } from '../i18n.js';
 
 const REF_RE = /^\[\^([^\]\s]+)\]/;
 // A definition: `[^id]: text`, plus continuation lines until a blank line or the
 // next definition. Up to 3 leading spaces are allowed (CommonMark indent tolerance).
 const DEF_RE = /^ {0,3}\[\^([^\]\s]+)\]:[ \t]*([^\n]*(?:\n(?![ \t]*\n)(?! {0,3}\[\^)[^\n]*)*)\n?/;
-
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 export function footnoteExtension() {
   const order = [];        // ref ids in first-appearance (render) order
@@ -43,9 +39,9 @@ export function footnoteExtension() {
       {
         name: 'footnoteRef',
         level: 'inline',
-        // Stryker disable next-line all: marked's `start` is a SCAN-POSITION HINT, not
-        // correctness — when it returns a wrong index/undefined, marked falls back to
-        // full scanning and the tokenizer still matches, so these mutants are equivalent.
+        // marked's `start` is a SCAN-POSITION HINT, not correctness — when it returns a
+        // wrong index/undefined, marked falls back to full scanning and the tokenizer
+        // still matches.
         start: cachedStart((src) => { const i = src.search(/\[\^[^\]\s]+\]/); return i < 0 ? undefined : i; }),
         tokenizer(src) {
           const m = REF_RE.exec(src);
@@ -70,7 +66,7 @@ export function footnoteExtension() {
       {
         name: 'footnoteDef',
         level: 'block',
-        // Stryker disable next-line all: a perf scan-hint (see footnoteRef.start) — equivalent.
+        // A perf scan-hint (see footnoteRef.start).
         // 256: `^` also matches at the first character marked passes in, wherever that is.
         start: cachedStart((src) => { const i = src.search(/^ {0,3}\[\^[^\]\s]+\]:/m); return i < 0 ? undefined : i; }, 256),
         tokenizer(src) {

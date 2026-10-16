@@ -47,6 +47,12 @@ describe('nextUntitledName (audit H10)', () => {
     expect(nextUntitledName(new Map([['Untitled.md', 1]]).keys())).toBe('Untitled-1.md');
   });
 
+  test('QA-L2: the name follows the interface language', () => {
+    expect(nextUntitledName([], 'بلا عنوان')).toBe('بلا عنوان.md');
+    expect(nextUntitledName(['بلا عنوان.md'], 'بلا عنوان')).toBe('بلا عنوان-1.md');
+    expect(nextUntitledName(['Untitled.md'], '  ')).toBe('Untitled-1.md');
+  });
+
   test('missing input behaves like no open notes', () => {
     expect(nextUntitledName()).toBe('Untitled.md');
     expect(nextUntitledName(null)).toBe('Untitled.md');

@@ -46,11 +46,10 @@ function makeClipboard({ writeOk = true, readText = '' } = {}) {
 }
 
 function makeDeps(overrides = {}) {
-  const ta = overrides.srcTextarea || makeTextarea();
+  // `field`: the focused text field (the find box, a rename input) the fallback acts on.
+  const ta = overrides.field || makeTextarea();
   return {
     electronAPI: null,
-    getMode: () => 'source',
-    getSrcTextarea: () => ta,
     getNoteContent: () => ({ tagName: 'DIV' }),
     getLastFocusedEditable: () => null,
     getActiveElement: () => ta,
@@ -72,16 +71,16 @@ describe('execEditCmd — dispatcher', () => {
     expect(execEditCmd(undefined, makeDeps())).toEqual({ ok: false, reason: 'unknown-cmd' });
   });
 
-  // L195 guard is NOT equivalent to the L117 forwardOrFallback fallthrough.
-  // The L117 fallthrough is only reached AFTER the electronAPI branch (L95-99).
-  // If the L195 guard were removed, an unknown cmd with a live electronAPI would
+  // The unknown-command guard is NOT equivalent to the forwardOrFallback fallthrough.
+  // That fallthrough is only reached AFTER the electronAPI branch.
+  // If the guard were removed, an unknown cmd with a live electronAPI would
   // be forwarded as editCommand('bogus') → {ok:true,reason:'ipc'} instead of
   // being rejected. This test fixes the guard as load-bearing (kills the
   // "remove the guard" equivalent-mutant claim).
-  test('L195 guard: unknown command is rejected BEFORE reaching electronAPI', () => {
+  test('unknown-command guard: unknown command is rejected BEFORE reaching electronAPI', () => {
     const electronAPI = { editCommand: vi.fn() };
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI, field: ta });
     expect(execEditCmd('bogus', deps)).toEqual({ ok: false, reason: 'unknown-cmd' });
     // Must NOT have been forwarded to the native command (would select/IPC garbage).
     expect(electronAPI.editCommand).not.toHaveBeenCalled();
@@ -127,28 +126,11 @@ describe('execEditCmd — dispatcher', () => {
 
 // ── selectAll ───────────────────────────────────────────────────────────────
 describe('selectAll', () => {
-  test('source mode: focuses + selects srcTextarea', () => {
-    const ta = makeTextarea('text');
-    const deps = makeDeps({ getMode: () => 'source', srcTextarea: ta });
-    expect(execEditCmd('selectAll', deps)).toEqual({ ok: true });
-    expect(ta.focus).toHaveBeenCalled();
-    expect(ta.select).toHaveBeenCalled();
-    expect(deps.closeMenu).toHaveBeenCalled();
-  });
-
-  test('split mode: same as source — focuses srcTextarea', () => {
-    const ta = makeTextarea();
-    const deps = makeDeps({ getMode: () => 'split', srcTextarea: ta });
-    expect(execEditCmd('selectAll', deps)).toEqual({ ok: true });
-    expect(ta.select).toHaveBeenCalled();
-  });
-
-  test('live mode: scopes selection to noteContent via Range API', () => {
+  test('no CM6 adapter: scopes selection to noteContent via Range API', () => {
     const noteContent = { tagName: 'DIV' };
     const range = makeRange();
     const sel = makeSelection();
     const deps = makeDeps({
-      getMode: () => 'live',
       getNoteContent: () => noteContent,
       getSelection: () => sel,
       createRange: () => range,
@@ -157,38 +139,26 @@ describe('selectAll', () => {
     expect(sel.removeAllRanges).toHaveBeenCalled();
     expect(range.selectNodeContents).toHaveBeenCalledWith(noteContent);
     expect(sel.addRange).toHaveBeenCalledWith(range);
+    expect(deps.closeMenu).toHaveBeenCalled();
   });
 
-  test('live mode: ok=false when noteContent is null', () => {
-    const deps = makeDeps({ getMode: () => 'live', getNoteContent: () => null });
+  test('no CM6 adapter: ok=false when noteContent is null', () => {
+    const deps = makeDeps({ getNoteContent: () => null });
     expect(execEditCmd('selectAll', deps)).toEqual({ ok: false, reason: 'no-editor' });
   });
 
-  test('live mode: ok=false when window.getSelection() returns null', () => {
-    const deps = makeDeps({ getMode: () => 'live', getSelection: () => null });
-    expect(execEditCmd('selectAll', deps)).toEqual({ ok: false, reason: 'no-editor' });
-  });
-
-  test('source mode: ok=false when srcTextarea is null', () => {
-    const deps = makeDeps({ getMode: () => 'source', getSrcTextarea: () => null });
+  test('no CM6 adapter: ok=false when window.getSelection() returns null', () => {
+    const deps = makeDeps({ getSelection: () => null });
     expect(execEditCmd('selectAll', deps)).toEqual({ ok: false, reason: 'no-editor' });
   });
 
   test('CRITICAL: selectAll NEVER routes through electronAPI (would select whole DOM)', () => {
     const electronAPI = { editCommand: vi.fn() };
-    const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const range = makeRange();
+    const deps = makeDeps({ electronAPI, createRange: () => range });
     execEditCmd('selectAll', deps);
     expect(electronAPI.editCommand).not.toHaveBeenCalled();
-    expect(ta.select).toHaveBeenCalled();
-  });
-
-  test('selectAll uses default mode "source" when getMode is missing', () => {
-    const ta = makeTextarea();
-    const deps = makeDeps({ srcTextarea: ta });
-    delete deps.getMode;
-    expect(execEditCmd('selectAll', deps)).toEqual({ ok: true });
-    expect(ta.select).toHaveBeenCalled();
+    expect(range.selectNodeContents).toHaveBeenCalled();
   });
 });
 
@@ -271,7 +241,7 @@ describe('undo / redo', () => {
   test('forwards to electronAPI.editCommand("undo") AFTER focus restore', () => {
     const electronAPI = { editCommand: vi.fn() };
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI, field: ta });
     const result = execEditCmd('undo', deps);
     expect(result).toEqual({ ok: true, reason: 'ipc' });
     expect(ta.focus).toHaveBeenCalled();
@@ -285,7 +255,7 @@ describe('undo / redo', () => {
   test('forwards to electronAPI.editCommand("redo")', () => {
     const electronAPI = { editCommand: vi.fn() };
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI, field: ta });
     expect(execEditCmd('redo', deps)).toEqual({ ok: true, reason: 'ipc' });
     expect(electronAPI.editCommand).toHaveBeenCalledWith('redo');
   });
@@ -303,7 +273,7 @@ describe('undo / redo', () => {
 
   test('fallback (no electronAPI): undo runs document.execCommand on target', () => {
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     execEditCmd('undo', deps);
     expect(ta.focus).toHaveBeenCalled();
     expect(document.execCommand).toHaveBeenCalledWith('undo');
@@ -311,7 +281,7 @@ describe('undo / redo', () => {
 
   test('fallback: redo runs document.execCommand("redo")', () => {
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     execEditCmd('redo', deps);
     expect(document.execCommand).toHaveBeenCalledWith('redo');
   });
@@ -329,7 +299,7 @@ describe('undo / redo', () => {
   test('fallback: execCommand throw is silently swallowed', () => {
     const ta = makeTextarea();
     document.execCommand = vi.fn(() => { throw new Error('not-supported'); });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     expect(() => execEditCmd('undo', deps)).not.toThrow();
   });
 });
@@ -339,23 +309,23 @@ describe('copy', () => {
   test('IPC path: focuses target, calls editCommand("copy")', () => {
     const electronAPI = { editCommand: vi.fn() };
     const ta = makeTextarea('hello', 0, 5);
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI, field: ta });
     expect(execEditCmd('copy', deps)).toEqual({ ok: true, reason: 'ipc' });
     expect(ta.focus).toHaveBeenCalled();
     expect(electronAPI.editCommand).toHaveBeenCalledWith('copy');
   });
 
-  test('fallback: copies selected text from textarea via clipboard.writeText', () => {
+  test('fallback: copies selected text from the field via clipboard.writeText', () => {
     const ta = makeTextarea('hello world', 6, 11);
     const clipboard = makeClipboard();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     expect(execEditCmd('copy', deps)).toEqual({ ok: true });
     expect(clipboard.writeText).toHaveBeenCalledWith('world');
   });
 
   test('fallback: empty selection → ok=false reason=no-selection', () => {
     const ta = makeTextarea('hello', 3, 3);
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     expect(execEditCmd('copy', deps)).toEqual({ ok: false, reason: 'no-selection' });
   });
 
@@ -387,7 +357,7 @@ describe('copy', () => {
     const ta = makeTextarea('hi', 0, 2);
     const clipboard = makeClipboard({ writeOk: false });
     const toast = vi.fn();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard, showToast: toast });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard, showToast: toast });
     execEditCmd('copy', deps);
     await new Promise(r => setTimeout(r, 5));
     expect(toast).toHaveBeenCalledWith('Copy failed', 'error');
@@ -395,7 +365,7 @@ describe('copy', () => {
 
   test('fallback: no clipboard at all → still returns ok=true (no write)', () => {
     const ta = makeTextarea('hi', 0, 2);
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard: null });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard: null });
     expect(execEditCmd('copy', deps)).toEqual({ ok: true });
   });
 });
@@ -405,15 +375,15 @@ describe('cut', () => {
   test('IPC path: focuses + IPCs', () => {
     const electronAPI = { editCommand: vi.fn() };
     const ta = makeTextarea('text', 0, 4);
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI, field: ta });
     execEditCmd('cut', deps);
     expect(electronAPI.editCommand).toHaveBeenCalledWith('cut');
   });
 
-  test('fallback: removes selection from textarea + writes to clipboard + fires input', () => {
+  test('fallback: removes selection from the field + writes to clipboard + fires input', () => {
     const ta = makeTextarea('hello world', 5, 11);
     const clipboard = makeClipboard();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     expect(execEditCmd('cut', deps)).toEqual({ ok: true });
     expect(clipboard.writeText).toHaveBeenCalledWith(' world');
     expect(ta.value).toBe('hello');
@@ -424,22 +394,9 @@ describe('cut', () => {
 
   test('fallback: empty selection → ok=false reason=no-selection, value unchanged', () => {
     const ta = makeTextarea('hello', 2, 2);
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     expect(execEditCmd('cut', deps)).toEqual({ ok: false, reason: 'no-selection' });
     expect(ta.value).toBe('hello');
-  });
-
-  test('fallback: live mode → preview-readonly + toast', () => {
-    const ta = makeTextarea('x', 0, 1);
-    const toast = vi.fn();
-    const deps = makeDeps({
-      electronAPI: null,
-      getMode: () => 'live',
-      srcTextarea: ta,
-      showToast: toast,
-    });
-    expect(execEditCmd('cut', deps)).toEqual({ ok: false, reason: 'preview-readonly' });
-    expect(toast).toHaveBeenCalledWith('Cut not supported in preview', 'info');
   });
 
   test('fallback: no target → ok=false', () => {
@@ -451,28 +408,15 @@ describe('cut', () => {
     expect(execEditCmd('cut', deps)).toEqual({ ok: false, reason: 'no-editor' });
   });
 
-  test('fallback: clipboard write failure still mutates textarea (best-effort)', async () => {
+  test('fallback: clipboard write failure still mutates the field (best-effort)', async () => {
     const ta = makeTextarea('abc', 0, 3);
     const clipboard = makeClipboard({ writeOk: false });
     const toast = vi.fn();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard, showToast: toast });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard, showToast: toast });
     execEditCmd('cut', deps);
     await new Promise(r => setTimeout(r, 5));
     expect(toast).toHaveBeenCalledWith('Cut failed', 'error');
-    expect(ta.value).toBe(''); // textarea was still mutated
-  });
-
-  // L144: cut with getMode ABSENT defaults to 'source' (NOT 'live'), so the cut
-  // proceeds (mutates the textarea) instead of returning preview-readonly.
-  // Kills the no-coverage mutants on `deps.getMode ? deps.getMode() : 'source'`.
-  test('fallback: getMode ABSENT → defaults to "source", cut proceeds', () => {
-    const ta = makeTextarea('hello world', 5, 11);
-    const clipboard = makeClipboard();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
-    delete deps.getMode;
-    expect(execEditCmd('cut', deps)).toEqual({ ok: true });
-    expect(clipboard.writeText).toHaveBeenCalledWith(' world');
-    expect(ta.value).toBe('hello'); // proved it did NOT short-circuit as preview-readonly
+    expect(ta.value).toBe(''); // the field was still mutated
   });
 });
 
@@ -481,7 +425,7 @@ describe('paste', () => {
   test('IPC path: focuses + IPCs', () => {
     const electronAPI = { editCommand: vi.fn() };
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI, field: ta });
     execEditCmd('paste', deps);
     expect(electronAPI.editCommand).toHaveBeenCalledWith('paste');
   });
@@ -489,7 +433,7 @@ describe('paste', () => {
   test('fallback: inserts clipboard text at cursor + fires input', async () => {
     const ta = makeTextarea('hello world', 5, 5);
     const clipboard = makeClipboard({ readText: ',cruel,' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 5));
     expect(ta.value).toBe('hello,cruel, world');
@@ -501,29 +445,16 @@ describe('paste', () => {
   test('fallback: REPLACES the selected range', async () => {
     const ta = makeTextarea('hello world', 6, 11);
     const clipboard = makeClipboard({ readText: 'CRUEL' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 5));
     expect(ta.value).toBe('hello CRUEL');
   });
 
-  test('fallback: live mode → preview-readonly + toast', () => {
-    const ta = makeTextarea();
-    const toast = vi.fn();
-    const deps = makeDeps({
-      electronAPI: null,
-      getMode: () => 'live',
-      srcTextarea: ta,
-      showToast: toast,
-    });
-    expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'preview-readonly' });
-    expect(toast).toHaveBeenCalledWith('Paste not supported in preview', 'info');
-  });
-
   test('fallback: no clipboard → ok=false + toast', () => {
     const ta = makeTextarea();
     const toast = vi.fn();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard: null, showToast: toast });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard: null, showToast: toast });
     expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'no-clipboard' });
     expect(toast).toHaveBeenCalledWith('Paste not supported in this context', 'info');
   });
@@ -532,7 +463,7 @@ describe('paste', () => {
     const ta = makeTextarea();
     const deps = makeDeps({
       electronAPI: null,
-      srcTextarea: ta,
+      field: ta,
       clipboard: { writeText: vi.fn() },
     });
     expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'no-clipboard' });
@@ -545,7 +476,7 @@ describe('paste', () => {
       readText: vi.fn(() => Promise.reject(new Error('denied'))),
     };
     const toast = vi.fn();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard, showToast: toast });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard, showToast: toast });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 5));
     expect(toast).toHaveBeenCalledWith('Paste failed', 'error');
@@ -555,7 +486,7 @@ describe('paste', () => {
     const ta = makeTextarea('keep', 0, 0);
     ta.isConnected = false; // detached
     const clipboard = makeClipboard({ readText: 'X' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 5));
     expect(ta.value).toBe('keep'); // not mutated
@@ -570,66 +501,52 @@ describe('paste', () => {
     });
     expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'no-editor' });
   });
-
-  // L166: paste with getMode ABSENT defaults to 'source' (NOT 'live'), so the
-  // paste proceeds (inserts clipboard text) instead of returning preview-readonly.
-  // Kills the no-coverage mutants on `deps.getMode ? deps.getMode() : 'source'`.
-  test('fallback: getMode ABSENT → defaults to "source", paste proceeds', async () => {
-    const ta = makeTextarea('hello world', 5, 5);
-    const clipboard = makeClipboard({ readText: ',cruel,' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
-    delete deps.getMode;
-    expect(execEditCmd('paste', deps)).toEqual({ ok: true });
-    await new Promise(r => setTimeout(r, 5));
-    expect(clipboard.readText).toHaveBeenCalled();
-    expect(ta.value).toBe('hello,cruel, world'); // proved it did NOT short-circuit as preview-readonly
-  });
 });
 
 // ── mutation killers (targeted) ─────────────────────────────────────────────
 // Each test names the exact mutant it kills.
 describe('mutation killers — return-value invariants', () => {
-  test('L111: undo fallback returns exactly { ok: true } (not {} or ok:false)', () => {
+  test('undo fallback returns exactly { ok: true } (not {} or ok:false)', () => {
     document.execCommand = vi.fn();
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     expect(execEditCmd('undo', deps)).toEqual({ ok: true });
   });
 
-  test('L111: redo fallback returns exactly { ok: true }', () => {
+  test('redo fallback returns exactly { ok: true }', () => {
     document.execCommand = vi.fn();
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     expect(execEditCmd('redo', deps)).toEqual({ ok: true });
   });
 
-  test('L191: paste fallback returns exactly { ok: true } (not {} or ok:false)', () => {
+  test('paste fallback returns exactly { ok: true } (not {} or ok:false)', () => {
     const ta = makeTextarea();
     const clipboard = makeClipboard({ readText: 'x' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     expect(execEditCmd('paste', deps)).toEqual({ ok: true });
   });
 
-  test('L162/L191: cut fallback returns exactly { ok: true }', () => {
+  test('cut fallback returns exactly { ok: true }', () => {
     const ta = makeTextarea('hello', 0, 5);
     const clipboard = makeClipboard();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     expect(execEditCmd('cut', deps)).toEqual({ ok: true });
   });
 
-  test('L161: cut dispatches Event with bubbles:true (kills boolean+object mutants)', () => {
+  test('cut dispatches Event with bubbles:true (kills boolean+object mutants)', () => {
     const ta = makeTextarea('hello', 0, 5);
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta });
+    const deps = makeDeps({ electronAPI: null, field: ta });
     execEditCmd('cut', deps);
     const ev = ta.dispatchEvent.mock.calls[0][0];
     expect(ev.type).toBe('input');
     expect(ev.bubbles).toBe(true);
   });
 
-  test('L187: paste dispatches Event with bubbles:true', async () => {
+  test('paste dispatches Event with bubbles:true', async () => {
     const ta = makeTextarea('abc', 0, 0);
     const clipboard = makeClipboard({ readText: 'X' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 30));
     const ev = ta.dispatchEvent.mock.calls[0][0];
@@ -639,7 +556,7 @@ describe('mutation killers — return-value invariants', () => {
 });
 
 describe('mutation killers — clipboard-absence branches', () => {
-  test('L124: copyFromSelection with NO clipboard does not crash and returns ok=true', () => {
+  test('copyFromSelection with NO clipboard does not crash and returns ok=true', () => {
     const sel = makeSelection('grabbed');
     const deps = makeDeps({
       electronAPI: null,
@@ -651,7 +568,7 @@ describe('mutation killers — clipboard-absence branches', () => {
     expect(execEditCmd('copy', deps)).toEqual({ ok: true });
   });
 
-  test('L124: copyFromSelection with clipboard but NO writeText fn', () => {
+  test('copyFromSelection with clipboard but NO writeText fn', () => {
     const sel = makeSelection('x');
     const deps = makeDeps({
       electronAPI: null,
@@ -663,33 +580,33 @@ describe('mutation killers — clipboard-absence branches', () => {
     expect(execEditCmd('copy', deps)).toEqual({ ok: true });
   });
 
-  test('L137: copyField with clipboard but NO writeText fn', () => {
+  test('copyField with clipboard but NO writeText fn', () => {
     const ta = makeTextarea('hi', 0, 2);
     const deps = makeDeps({
       electronAPI: null,
-      srcTextarea: ta,
+      field: ta,
       clipboard: { readText: () => Promise.resolve('') },
     });
     expect(execEditCmd('copy', deps)).toEqual({ ok: true });
   });
 
-  test('L153: cutField with clipboard but NO writeText still mutates textarea', () => {
+  test('cutField with clipboard but NO writeText still mutates the field', () => {
     const ta = makeTextarea('hello', 0, 5);
     const deps = makeDeps({
       electronAPI: null,
-      srcTextarea: ta,
+      field: ta,
       clipboard: { readText: () => Promise.resolve('') },
     });
     expect(execEditCmd('cut', deps)).toEqual({ ok: true });
     expect(ta.value).toBe('');
   });
 
-  test('L172: pasteField with clipboard but NO readText fn', () => {
+  test('pasteField with clipboard but NO readText fn', () => {
     const ta = makeTextarea();
     const toast = vi.fn();
     const deps = makeDeps({
       electronAPI: null,
-      srcTextarea: ta,
+      field: ta,
       clipboard: { writeText: vi.fn() },
       showToast: toast,
     });
@@ -699,32 +616,17 @@ describe('mutation killers — clipboard-absence branches', () => {
 });
 
 describe('mutation killers — showToast-absence branches', () => {
-  test('L146: cut in live mode does NOT crash when showToast is missing', () => {
-    const ta = makeTextarea('x', 0, 1);
-    const deps = makeDeps({ electronAPI: null, getMode: () => 'live', srcTextarea: ta });
-    delete deps.showToast;
-    expect(() => execEditCmd('cut', deps)).not.toThrow();
-    expect(execEditCmd('cut', deps)).toEqual({ ok: false, reason: 'preview-readonly' });
-  });
-
-  test('L168: paste in live mode does NOT crash when showToast is missing', () => {
+  test('paste with no clipboard + no showToast does NOT crash', () => {
     const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI: null, getMode: () => 'live', srcTextarea: ta });
-    delete deps.showToast;
-    expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'preview-readonly' });
-  });
-
-  test('L172: paste with no clipboard + no showToast does NOT crash', () => {
-    const ta = makeTextarea();
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard: null });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard: null });
     delete deps.showToast;
     expect(execEditCmd('paste', deps)).toEqual({ ok: false, reason: 'no-clipboard' });
   });
 
-  test('L155: cut clipboard.writeText rejection without showToast does NOT crash', async () => {
+  test('cut clipboard.writeText rejection without showToast does NOT crash', async () => {
     const ta = makeTextarea('abc', 0, 3);
     const clipboard = makeClipboard({ writeOk: false });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     delete deps.showToast;
     expect(() => execEditCmd('cut', deps)).not.toThrow();
     await new Promise(r => setTimeout(r, 30));
@@ -732,28 +634,28 @@ describe('mutation killers — showToast-absence branches', () => {
     expect(ta.value).toBe('');
   });
 
-  test('L189: paste readText rejection without showToast does NOT crash', async () => {
+  test('paste readText rejection without showToast does NOT crash', async () => {
     const ta = makeTextarea();
     const clipboard = {
       writeText: vi.fn(),
       readText: vi.fn(() => Promise.reject(new Error('denied'))),
     };
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     delete deps.showToast;
     expect(() => execEditCmd('paste', deps)).not.toThrow();
     await new Promise(r => setTimeout(r, 30));
   });
 
-  test('L137: copy clipboard.writeText rejection without showToast does NOT crash', async () => {
+  test('copy clipboard.writeText rejection without showToast does NOT crash', async () => {
     const ta = makeTextarea('hi', 0, 2);
     const clipboard = makeClipboard({ writeOk: false });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     delete deps.showToast;
     expect(() => execEditCmd('copy', deps)).not.toThrow();
     await new Promise(r => setTimeout(r, 30));
   });
 
-  test('L126: copyFromSelection rejection without showToast does NOT crash', async () => {
+  test('copyFromSelection rejection without showToast does NOT crash', async () => {
     const sel = makeSelection('text');
     const clipboard = makeClipboard({ writeOk: false });
     const deps = makeDeps({
@@ -770,22 +672,22 @@ describe('mutation killers — showToast-absence branches', () => {
 });
 
 describe('mutation killers — async path / isConnected guard', () => {
-  test('L195: paste DOES mutate when target.isConnected is true (default)', async () => {
+  test('paste DOES mutate when target.isConnected is true (default)', async () => {
     const ta = makeTextarea('keep', 0, 0);
     // ta.isConnected defaults to true in makeTextarea
     const clipboard = makeClipboard({ readText: 'X' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 50));
     expect(ta.value).toBe('Xkeep');
     expect(ta.focus).toHaveBeenCalled();
   });
 
-  test('L195: paste does NOT mutate when target.isConnected is false', async () => {
+  test('paste does NOT mutate when target.isConnected is false', async () => {
     const ta = makeTextarea('keep', 0, 0);
     ta.isConnected = false;
     const clipboard = makeClipboard({ readText: 'X' });
-    const deps = makeDeps({ electronAPI: null, srcTextarea: ta, clipboard });
+    const deps = makeDeps({ electronAPI: null, field: ta, clipboard });
     execEditCmd('paste', deps);
     await new Promise(r => setTimeout(r, 50));
     expect(ta.value).toBe('keep');
@@ -837,12 +739,12 @@ function cmDeps(cm, overrides = {}) {
 }
 
 describe('cmEdit — CM6 is the active editor (T-F13)', () => {
-  test('no adapter → returns null path → falls through to legacy textarea handler', () => {
-    // getCmAdapter absent/null: selectAll still works via the legacy textarea branch.
-    const ta = makeTextarea('abc', 0, 0);
-    const deps = makeDeps({ getCmAdapter: () => null, getMode: () => 'source', srcTextarea: ta });
-    expect(execEditCmd('selectAll', deps)).toEqual({ ok: true });
-    expect(ta.select).toHaveBeenCalled(); // proves legacy path ran, not CM6
+  test('no adapter → returns null path → copy falls through to the focused field', () => {
+    const ta = makeTextarea('abc', 0, 2);
+    const clipboard = makeClipboard();
+    const deps = makeDeps({ getCmAdapter: () => null, field: ta, clipboard });
+    expect(execEditCmd('copy', deps)).toEqual({ ok: true });
+    expect(clipboard.writeText).toHaveBeenCalledWith('ab'); // proves the field path ran, not CM6
   });
 
   test('selectAll routes to cm.selectAll(), closes menu, focuses', () => {

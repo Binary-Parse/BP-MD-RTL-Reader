@@ -73,6 +73,9 @@
   --hl-bg: rgba(255, 208, 0, 0.42);
   --mark-solid: #E8B800;
   --find-hit: #FFE45C;
+  /* Text on a find match. The match is yellow in every theme, so its text stays dark in Ink
+     and Oasis too (their --ink is light: 1.2:1 on yellow, QA H6). */
+  --find-ink: #1A1408;
   --gold: #8A5A00;
   --teal: #0E7C7B;
   --plum: #8A3FB0;
@@ -88,13 +91,9 @@
   --tip-fg: #F2F3F4;
   --shadow-sheet: 0 1px 0 rgba(15, 18, 23, 0.05), 0 28px 60px -34px rgba(15, 18, 23, 0.38), 0 2px 10px -4px rgba(15, 18, 23, 0.1);
   --shadow-pop: 0 22px 54px -14px rgba(15, 18, 23, 0.4), 0 0 0 1px var(--rule-2);
-  --grain-opacity: 0.045;
-  --gi: var(--gi-black);
   --close-red: #E81123;
   --statusbar-bg: var(--desk);
   --statusbar-fg: var(--ink-soft);
-  --gi-black: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --gi-white: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* T3.1: one radius scale for the whole UI. components.css used to carry 14 different
@@ -116,7 +115,9 @@
   --inspector-w: 20rem;
 
   --serif: 'Literata', 'IBM Plex Sans Arabic', Georgia, serif;
-  --sans: 'Inter', system-ui, sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* QA-L7: the bundled Arabic face comes second so Latin still draws in Inter / JetBrains
+     Mono, and Arabic in the chrome and in code no longer falls to whatever the OS picks. */
+  --sans: 'Inter', 'IBM Plex Sans Arabic', system-ui, 'Segoe UI', 'Noto Sans Arabic', Tahoma, sans-serif;
+  --mono: 'JetBrains Mono', 'IBM Plex Sans Arabic', ui-monospace, Consolas, monospace;
   --arabic: 'IBM Plex Sans Arabic', 'Inter', sans-serif;
 }

@@ -65,6 +65,17 @@ describe('own-write suppression (H15 step 2)', () => {
     expect(sentChanges()).toEqual([]);
   });
 
+  // A Save As into an open folder must reach the renderer: that event is what lists the new
+  // file in the folder tree (the renderer re-reads only the folder the note came from).
+  test('the watcher event caused by a Save As into the open folder IS forwarded', async () => {
+    await openVaultWith({ 'note.md': 'old\n' });
+    el.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: abs('copy.md') });
+    const saved = await getHandle(el, 'dialog:saveFile')({}, { content: 'a copy', eol: '\n' });
+    expect(saved.ok).toBe(true);
+    fire('copy.md', 'rename');
+    expect(sentChanges().map((c) => c.files)).toEqual([['copy.md']]);
+  });
+
   test('all raw events of one save are swallowed (rename + change + change)', async () => {
     await openVaultWith({ 'note.md': 'old\n' });
     await save('note.md', 'new text');

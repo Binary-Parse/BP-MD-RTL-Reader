@@ -15,7 +15,7 @@ async function boot(page, { width, height, withNote }) {
   await page.setViewportSize({ width, height });
   await page.addInitScript(() => {
     window.electronAPI = {
-      getSettings: async () => ({ theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'reading', recents: [], lastSession: null, sidebarVisible: false, inspectorVisible: false }),
+      getSettings: async () => ({ theme: 'paper', zoomFactor: 1, viewMode: 'reading', recents: [], lastSession: null, sidebarVisible: false, inspectorVisible: false }),
       setSettings: async () => {},
       onOpenFile: () => {}, onVaultChanged: () => {},
     };

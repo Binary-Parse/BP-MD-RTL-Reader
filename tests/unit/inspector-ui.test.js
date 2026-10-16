@@ -56,6 +56,7 @@ describe('eolLabel', () => {
     expect(eolLabel(null, undefined)).toBe('LF');
     expect(eolLabel({ eol: '\r\n', eolMixed: true }, 'a\nb')).toBe('Mixed'); // audit M5
     expect(eolLabel({ eol: '\r\n', eolMixed: false }, 'a\nb')).toBe('CRLF');
+    expect(eolLabel({ eolMixed: true }, '', 'مختلط')).toBe('مختلط'); // QA-L2
   });
 });
 

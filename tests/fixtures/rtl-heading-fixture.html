@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,200;7..72,400;7..72,500;7..72,600;7..72,700;7..72,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="../../resources/vendor/marked/marked.umd.js"></script>
 <style>
 :root {
   /* v10 redesign (2026-08-25): mirrors src/renderer/styles/base.css + themes.css. */
@@ -2479,7 +2479,7 @@ function showAbout() {
       Slow tools beget slow thought.
     </p>
     <p style="text-align: center; margin-top: 20px; font-family: var(--mono); font-size: 10px; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.1em;">
-      Built with React · CodeMirror · Tauri
+      Built with Electron · CodeMirror
     </p>
   `;
   openModal('About', html);
@@ -2563,7 +2563,7 @@ palInput.addEventListener('keydown', e => {
 });
 
 // =====================================================================
-// WINDOW BUTTONS (visual only — would call OS APIs in Tauri)
+// WINDOW BUTTONS (visual only — the real app calls the Electron window APIs)
 // =====================================================================
 function winMinimize() { showToast('Minimize (would call window.minimize() in desktop build)', 'info'); }
 function winMaximize() { showToast('Maximize (would call window.toggleMaximize() in desktop build)', 'info'); }

@@ -1,0 +1,11 @@
+# Reviewed gitleaks false positives. One fingerprint per line.
+# Format: <file>:<rule>:<line> for a tree scan, <commit>:<file>:<rule>:<line> for a history scan.
+
+# Minified Mermaid 12.1.0 (built by scripts/sync-vendor.js): minified code, not a key.
+resources/vendor/mermaid/mermaid.min.js:generic-api-key:593
+8b98532e04c339501e1f94d7d97eacf6cd86629d:resources/vendor/mermaid/mermaid.min.js:generic-api-key:593
+
+# The same minified Mermaid code inside the local 2.1.0 build (dist/ is untracked build output;
+# the line moves with each build, so re-review after a rebuild): a minified property read, not a key.
+dist/win-unpacked/resources/app.asar:generic-api-key:9727
+dist/win-arm64-unpacked/resources/app.asar:generic-api-key:9727

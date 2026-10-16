@@ -6,13 +6,12 @@
 import { sanitizeHtml } from './trusted.js';
 import { footnoteExtension } from './footnotes.js';
 import { installRenderGuard, cachedStart, beginRender, endRender, markLimited } from './render-guard.js';
+import { escapeHtml as esc } from '../i18n.js';
+import { attachSourceLines, dirMarkerExtension, srcLineRenderer, withSourceLines } from './block-direction.js';
 
 // audit SEC-11: a wikilink alias is author-controlled text rendered into element content.
 // The TARGET already had its quotes stripped (an attribute-value guard); the alias needs
-// real escaping. Local helper — this module is pure/DI and imports no escaper.
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-}[c]));
+// real escaping (escapeHtml, from the dependency-free i18n.js).
 
 export function wikilinkTokenizer(src) {
   const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
@@ -32,6 +31,9 @@ export function wikilinkRenderer(token) {
   return `<a class="wikilink" data-target="${safe}">${esc(token.alias)}</a>`;
 }
 
+const dirMarker = dirMarkerExtension();
+let tagSourceLines = false;
+
 export function configureMarked(marked) {
   if (!marked || typeof marked.use !== 'function') return;
   marked.use({
@@ -41,14 +43,8 @@ export function configureMarked(marked) {
       name: 'wikilink',
       level: 'inline',
       start: cachedStart((src) => src.indexOf('[[')),
-      tokenizer(src) {
-        const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
-        if (m) return { type: 'wikilink', raw: m[0], target: m[1].trim(), alias: m[2]?.trim() || m[1].trim() };
-      },
-      renderer(t) {
-        const safe = t.target.replace(/['"]/g, '');
-        return `<a class="wikilink" data-target="${safe}">${esc(t.alias)}</a>`;
-      }
+      tokenizer: wikilinkTokenizer,
+      renderer: wikilinkRenderer,
     }, {
       // Highlight ==text== → <mark> (Typora/Obsidian). Inner is inline-parsed so **bold** etc.
       // still work inside. Requires non-space right after == so "a == b" stays literal text.
@@ -79,7 +75,13 @@ export function configureMarked(marked) {
         if (m) return { type: 'superscript', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
       },
       renderer(t) { return `<sup>${this.parser.parseInline(t.tokens)}</sup>`; },
-    }]
+    },
+    // A block's pinned direction, `<!-- dir: rtl -->` above it (block-direction.js).
+    dirMarker,
+    { name: 'srcLine', renderer: srcLineRenderer }],
+    // Each rendered top-level block learns its first source line, for the reading view's
+    // direction badge. Only while parseMarkdown asks for it: exports never carry the marks.
+    hooks: { processAllTokens: (tokens) => (tagSourceLines ? withSourceLines(tokens) : tokens) },
   });
   // Footnotes (R11): marked core doesn't support GFM footnotes — add them as a
   // separate extension+hooks bundle ([^id] refs + [^id]: defs → end-of-doc list).
@@ -109,7 +111,7 @@ let renderLimited = false;
 /** True when the last parseMarkdown call emitted part of the note as literal text (audit M4). */
 export function lastRenderLimited() { return renderLimited; }
 
-export function parseMarkdown(md, { marked, DOMPurify, escapeHtml } = {}) {
+export function parseMarkdown(md, { marked, DOMPurify, escapeHtml, fragment = false, sourceLines = false } = {}) {
   if (!marked || typeof marked.parse !== 'function') {
     return escapeHtml ? escapeHtml(md) : String(md);
   }
@@ -117,6 +119,7 @@ export function parseMarkdown(md, { marked, DOMPurify, escapeHtml } = {}) {
   let raw;
   // audit M4: one render may not stall the window (see render-guard.js).
   beginRender(text.length);
+  tagSourceLines = sourceLines;
   try {
     raw = marked.parse(text);
   } catch (error) {
@@ -125,10 +128,12 @@ export function parseMarkdown(md, { marked, DOMPurify, escapeHtml } = {}) {
     markLimited();
     raw = `<pre>${esc(text)}</pre>`;
   } finally {
+    tagSourceLines = false;
     renderLimited = endRender();
   }
   if (DOMPurify && typeof DOMPurify.sanitize === 'function') {
-    return sanitizeHtml(raw, DOMPurify);
+    const out = sanitizeHtml(raw, DOMPurify, { fragment });
+    return sourceLines && typeof out === 'object' ? attachSourceLines(out) : out;
   }
   return '';
 }

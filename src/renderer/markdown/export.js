@@ -5,7 +5,7 @@
  * export and PDF export; both artifacts deny network access.
  */
 import { parseFrontMatter, frontMatterDirection } from './frontmatter.js';
-import { resolveBlockDirection, proseText, resolveDocDirection } from '../bidi.js';
+import { resolveBlockDirection, proseText, resolveDocDirection, headingSlugs } from '../bidi.js';
 import { applyBidi } from '../bidi-dom.js';
 import { escapeHtml } from '../i18n.js';
 import { restoreMath } from './math.js';
@@ -103,6 +103,36 @@ function declaredLanguage(data) {
 }
 
 /**
+ * QA-M22: the language of a right-to-left note without a `lang:`, guessed from its letters.
+ * Every RTL note used to be exported as `ar`, so a screen reader read Persian, Urdu and
+ * Hebrew with an Arabic voice. Hebrew has its own block; Persian and Urdu share the Arabic
+ * block but use letters Arabic does not (پ چ ژ گ, and ٹ ڈ ڑ ں ے for Urdu). A note in plain
+ * Arabic letters stays `ar`. Set `lang:` in the front matter when the guess is wrong.
+ */
+export function rtlLanguage(text) {
+  const s = String(text || '');
+  const hebrew = (s.match(/[\u0590-\u05FF]/g) || []).length;
+  const arabic = (s.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+  if (hebrew > arabic) return 'he';
+  if (/[\u0679\u0688\u0691\u06BA\u06C1\u06D2]/.test(s)) return 'ur';
+  if (/[\u067E\u0686\u0698\u06AF]/.test(s)) return 'fa';
+  return 'ar';
+}
+
+/** The language of a note: its front matter's `lang:`, else a guess from its letters. */
+function noteLanguage(data, dir, prose) {
+  return declaredLanguage(data) || (dir === 'rtl' ? rtlLanguage(prose) : 'en');
+}
+
+// QA-L3: the reading view gives headings ids (buildTOC in app.js) but the exports did not, so
+// a `[see](#section)` link was dead in HTML and PDF and was stripped from EPUB. Same rule.
+function assignHeadingIds(el) {
+  const headings = [...el.querySelectorAll('h1, h2, h3, h4, h5, h6')];
+  const slugs = headingSlugs(headings.map((h) => (h.textContent || '').trim()));
+  headings.forEach((h, i) => { if (slugs[i] && !h.id) h.id = slugs[i]; });
+}
+
+/**
  * The shared markdown → bidi-rendered-DOM pipeline behind every export artifact (HTML, PDF,
  * EPUB): front matter + direction precedence, callouts, code highlighting, math, the image
  * policy, then one per-block bidi pass. `decorate` runs after the image policy and BEFORE the
@@ -128,9 +158,10 @@ export function renderExportBody(content, {
   if (hljs) highlightCode(el, { hljs, sanitize: sanitizeHighlight });
   if (katex) restoreMath(el, { katex, DOMPurify }); // T-F9: pre-render math so the doc needs no JS
   neutralizePassiveResources(el);
+  assignHeadingIds(el);
   if (typeof decorate === 'function') decorate(el);
   applyBidi(el, { baseDir: dir, escape: escapeHtml, forceDir: explicitDirection });
-  const lang = declaredLanguage(data) || (dir === 'rtl' ? 'ar' : 'en');
+  const lang = noteLanguage(data, dir, proseText(body));
   return { el, dir, lang, explicitDirection, data, body };
 }
 
@@ -181,6 +212,18 @@ function renderExportParts(file, {
   return { el, dir, lang, baseName };
 }
 
+// Column alignment (`:--`, `:-:`, `--:`) that follows the direction of the table. Shared by
+// the HTML export and the EPUB stylesheet.
+export const TABLE_ALIGN_CSS = `th[align="left"], td[align="left"] { text-align: start; }
+th[align="right"], td[align="right"] { text-align: end; }
+th[align="center"], td[align="center"] { text-align: center; }
+/* QA M14: a cell with its own direction (a Latin cell in an Arabic table) still aligns by the
+   direction of the table, so a column lines up. Browsers without :dir() keep the rules above. */
+table:dir(rtl) th[align="left"], table:dir(rtl) td[align="left"] { text-align: right; }
+table:dir(rtl) th[align="right"], table:dir(rtl) td[align="right"] { text-align: left; }
+table:dir(ltr) th[align="left"], table:dir(ltr) td[align="left"] { text-align: left; }
+table:dir(ltr) th[align="right"], table:dir(ltr) td[align="right"] { text-align: right; }`;
+
 /**
  * The one place the export document is serialized. Built as a string and never re-parsed:
  * under the app's Trusted Types policy a re-parse sanitizes the document as a fragment, which
@@ -197,7 +240,7 @@ function assembleExportDoc({ bodyHtml, dir, lang, baseName, extraCss = '' }) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(baseName)}</title>
 <style>
-body { font-family: Georgia, serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; overflow-wrap: anywhere; }
+body { font-family: Georgia, 'Noto Naskh Arabic', 'Segoe UI', Tahoma, 'Geeza Pro', serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1F1B16; overflow-wrap: anywhere; }
 h1,h2,h3 { font-weight: 600; line-height: 1.2; }
 a { color: #C0492C; }
 code { background: #F2EDE0; padding: 1px 5px; border-radius: 3px; font-size: 14px; direction: ltr; unicode-bidi: isolate; }
@@ -206,9 +249,7 @@ pre code { padding: 0; background: none; }
 .table-frame { max-width: 100%; margin: 16px 0; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; }
 th, td { min-width: 8ch; padding: 6px 10px; border-bottom: 1px solid #D9D2C4; text-align: start; vertical-align: top; }
-th[align="left"], td[align="left"] { text-align: start; }
-th[align="right"], td[align="right"] { text-align: end; }
-th[align="center"], td[align="center"] { text-align: center; }
+${TABLE_ALIGN_CSS}
 .math-block, .mermaid { display: block; max-width: 100%; overflow-x: auto; direction: ltr; text-align: center; }
 .mermaid svg { max-width: 100%; height: auto; }
 @media print {

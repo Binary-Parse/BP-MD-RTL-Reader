@@ -12,7 +12,7 @@ const path = require('path');
 const INDEX_URL = `file:///${path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/')}`;
 
 const DEFAULTS = {
-  theme: 'paper', zoomFactor: 1, editorMode: 'live',
+  theme: 'paper', zoomFactor: 1,
   sidebarVisible: true, inspectorVisible: true,
   uiDirection: 'ltr', uiLocale: 'en',
   calendar: 'gregorian', arabicKashida: false, italicRecolor: true,
@@ -68,7 +68,7 @@ test.describe('[M6] session restore wiring', () => {
     expect(await page.evaluate(() => window._appState.files.length)).toBe(0);
   });
 
-  test('loadDemo clears the vault session — no conflated {realVault + demoPaths} is persisted (regression)', async ({ page }) => {
+  test('QA-M8: loadDemo keeps the folder session and never adds the demo paths to it', async ({ page }) => {
     await bootWithBridge(page, {
       vaults: { 'cap-real': { vault: { id: 'cap-real', name: 'RealVault', generation: 1 }, entries: [
         { name: 'note.md', relPath: 'note.md', documentId: 'cap-note', content: '# real note' },
@@ -94,6 +94,7 @@ test.describe('[M6] session restore wiring', () => {
     expect(r.afterVault?.activeVaultId).toBe('cap-real');  // …with the opaque vault session
     expect(r.afterVault?.vaults).toEqual([{ vaultId: 'cap-real', openPaths: ['note.md'] }]);
     expect(r.w2).toBeGreaterThan(r.w1);                   // loadDemo triggered a fresh persist
-    expect(r.afterDemo).toBe(null);                       // …that CLEARED the session (no '/RealVault' + demo paths)
+    // QA-M8 (D10): the open folder survives Load Demo; the loose demo notes stay out of it.
+    expect(r.afterDemo?.vaults).toEqual([{ vaultId: 'cap-real', openPaths: ['note.md'] }]);
   });
 });

@@ -14,22 +14,28 @@ test.describe('Performance budgets', { tag: '@perf' }, () => {
     await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
     const content = '# Title\n\n' + 'word '.repeat(10000);
+    // QA-N7: the median of five renders, so one stall on a busy machine does not decide it.
     const result = await page.evaluate(async (md) => {
-      const t0 = performance.now();
-      window._appState.files = [{ name: 'big.md', content: md, path: 'big.md', dirty: false }];
-      window.renderFile(0);
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const runs = [];
+      for (let i = 0; i < 5; i++) {
+        const t0 = performance.now();
+        window._appState.files = [{ name: 'big.md', content: md, path: 'big.md', dirty: false }];
+        window.renderFile(0);
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        runs.push(performance.now() - t0);
+      }
+      runs.sort((x, y) => x - y);
       const editor = document.querySelector('.cm-mount .cm-editor');
       const rect = editor.getBoundingClientRect();
       return {
-        elapsed: performance.now() - t0,
+        elapsed: runs[2],
         contentLength: window._appState.files[0].content.length,
         laidOut: rect.width > 0 && rect.height > 0
       };
     }, content);
     expect(result.contentLength).toBe(content.length);
     expect(result.laidOut).toBe(true);
-    expect(result.elapsed, `Completed render took ${result.elapsed}ms`).toBeLessThan(1000);
+    expect(result.elapsed, `Median render took ${result.elapsed}ms`).toBeLessThan(1000);
   });
 
   // audit M4: 60 KB of unclosed emphasis froze the window for about 30 seconds.

@@ -32,14 +32,16 @@ const EXPECTED_MANIFEST = path.join(process.cwd(), 'config', 'renderer-coverage-
 // 63.6 % stmts; the full e2e suite covers materially more. We assert a floor
 // safely below the full-suite result but ABOVE the collector-only baseline, so
 // the guard turns red the moment full-suite collection stops working.
+// The floors live in config/coverage-thresholds.json (`renderer`); the env vars override them.
 // Opt out with ENFORCE_RENDERER_COVERAGE_FLOOR=0 (e.g. ad-hoc partial runs).
+const RENDERER = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'coverage-thresholds.json'), 'utf8')).renderer;
 const ENFORCE_FLOOR = process.env.ENFORCE_RENDERER_COVERAGE_FLOOR !== '0';
-const MIN_FUNC_PCT = Number(process.env.MIN_RENDERER_FUNC_PCT || 40);
-const MIN_STMT_PCT = Number(process.env.MIN_RENDERER_STMT_PCT || 70);
+const MIN_FUNC_PCT = Number(process.env.MIN_RENDERER_FUNC_PCT || RENDERER.functions);
+const MIN_STMT_PCT = Number(process.env.MIN_RENDERER_STMT_PCT || RENDERER.statements);
 const CRITICAL_FILE_FLOORS = {
-  'src/renderer/app.js': Number(process.env.MIN_RENDERER_APP_STMT_PCT || 45),
-  'src/renderer/theme-boot.js': Number(process.env.MIN_RENDERER_THEME_BOOT_STMT_PCT || 80),
-  'src/renderer/editor/codemirror-adapter.js': Number(process.env.MIN_RENDERER_CM_STMT_PCT || 35),
+  'src/renderer/app.js': Number(process.env.MIN_RENDERER_APP_STMT_PCT || RENDERER.files['src/renderer/app.js']),
+  'src/renderer/theme-boot.js': Number(process.env.MIN_RENDERER_THEME_BOOT_STMT_PCT || RENDERER.files['src/renderer/theme-boot.js']),
+  'src/renderer/editor/codemirror-adapter.js': Number(process.env.MIN_RENDERER_CM_STMT_PCT || RENDERER.files['src/renderer/editor/codemirror-adapter.js']),
 };
 
 /**

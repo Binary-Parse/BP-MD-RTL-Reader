@@ -1,11 +1,19 @@
 import { buildSession, pickActiveIndex, fileKey } from '../session.js';
 import { progressPercent, relativeTime } from '../reading-progress.js';
 import { markClean, adoptDiskText } from './dirty-state.js';
+import { openTier, applyNoteSize, TIER, getLimits, megabytes, limitMb } from './large-file.js';
 
 const noop = () => {};
 
 export function fileFromSnapshot(entry, vaultId = null) {
+  // Bytes on disk (from main) pick the note's size tier: HUGE notes run in large-file mode. It is
+  // recomputed whenever the size changes (a save, a reload: applyNoteSize). A snapshot without a
+  // size (older caller, mock) is an ordinary note.
+  const sized = Number.isFinite(entry.size)
+    ? { sizeBytes: entry.size, largeTier: openTier(entry.size) }
+    : {};
   return {
+    ...sized,
     name: entry.name,
     path: entry.relPath || entry.name,
     handle: null,
@@ -26,6 +34,23 @@ export function normalizeVaultRead(result, fallbackVault) {
   if (Array.isArray(result)) return { vault: fallbackVault, entries: result, skipped: {}, truncated: false };
   if (!result || result.error || !Array.isArray(result.entries)) return null;
   return result;
+}
+
+const isDeferredNote = (file) => !!file && file.largeTier >= TIER.HUGE;
+
+/** The folder read changed under a note in large-file mode: mark that very object, never copy it. */
+function flagDeferredNote(note, incomingFile) {
+  const noteHash = note.meta && note.meta.hash;
+  const diskHash = incomingFile.meta && incomingFile.meta.hash;
+  const changed = noteHash != null && diskHash != null && diskHash !== noteHash;
+  if (changed) {
+    note.conflict = true;
+    note.diskContent = incomingFile.content;
+    note.diskMeta = incomingFile.meta;
+    note.diskSize = incomingFile.sizeBytes;
+  }
+  note.missing = false;
+  return note;
 }
 
 /**
@@ -57,6 +82,10 @@ export function mergeVaultSlice(existing, vaultId, incoming) {
     const incomingFile = fileFromSnapshot(entry, vaultId);
     const previous = previousByPath.get(relPath);
     if (!previous) return incomingFile;
+    // A note in large-file mode is never copied: its text is read through an accessor that asks
+    // the editor for the pending edit, and a copy would freeze that into a value and orphan the
+    // edit. It is also never reloaded silently. A changed disk copy is flagged on the note itself.
+    if (isDeferredNote(previous)) return flagDeferredNote(previous, incomingFile);
     const prevHash = previous.meta && previous.meta.hash;
     const diskHash = incomingFile.meta && incomingFile.meta.hash;
     // Authoritative when both baselines exist: compare on-disk identity, not the
@@ -67,7 +96,7 @@ export function mergeVaultSlice(existing, vaultId, incoming) {
       : normalizeText(previous.content) !== normalizeText(incomingFile.content);
     if (!diskChanged) return previous.missing ? { ...previous, missing: false } : previous; // app-owned save / unchanged disk → keep in-memory state (incl. dirty edits)
     if (previous.dirty) {
-      return { ...previous, conflict: true, diskContent: incomingFile.content, diskMeta: incomingFile.meta, missing: false };
+      return { ...previous, conflict: true, diskContent: incomingFile.content, diskMeta: incomingFile.meta, diskSize: incomingFile.sizeBytes, missing: false };
     }
     // Clean note, changed on disk: silent reload. The baseline moves with the text (B6).
     const reloaded = {
@@ -79,11 +108,12 @@ export function mergeVaultSlice(existing, vaultId, incoming) {
       missing: false,
     };
     adoptDiskText(reloaded, incomingFile.content);
+    applyNoteSize(reloaded, incomingFile.sizeBytes);
     return reloaded;
   });
   const keptAbsent = [...previousByPath.values()]
     .filter((file) => !seenPaths.has(file.path))
-    .map((file) => ({ ...file, missing: true }));
+    .map((file) => (isDeferredNote(file) ? Object.assign(file, { missing: true }) : { ...file, missing: true }));
   const otherVaultFiles = existing.filter((file) => file.vaultId !== vaultId);
   return [...otherVaultFiles, ...merged, ...keptAbsent];
 }
@@ -174,6 +204,14 @@ export function createWorkspaceController({
   // v1.3.0: the encoding-upgrade dialog (Windows-1256 file + an unencodable character).
   // Absent (unit tests, browser lane) → an unmappable character stays a plain save error.
   confirmEncodingUpgrade = null,
+  // Large-file mode: "this note is N MB — open it in large-file mode?" Resolves true/false.
+  confirmLargeOpen = () => Promise.resolve(true),
+  // A save or reload moved a note into another size tier (large-file mode on or off): the editor
+  // is built again for it. Default: draw it again when it is the note on screen.
+  onNoteTierChange = null,
+  // QA-M9: after Save As gives a note a new identity, copy its highlights and reading
+  // position from the old key. Absent (unit tests, browser lane) → nothing to copy.
+  carryOverNoteData = noop,
   getElement = (id) => hostDocument?.getElementById(id),
 } = {}) {
   if (!state) throw new TypeError('workspace controller requires state');
@@ -216,6 +254,30 @@ export function createWorkspaceController({
     }
     return fallback;
   };
+  // MAIN-5: main could not save the grant because its profile folder is unwritable or full.
+  // That is said as such, never as a missing folder or file.
+  const openFailure = (error, key, fallback, vars) => (error === 'persist-failed'
+    ? L('toast.persistFailed', 'Could not open it: the app cannot write to its settings folder')
+    : L(key, fallback, vars));
+
+  // Large-file mode: main answers a note above the confirm size with { error: 'confirm-large',
+  // documentId, name, size } and reads nothing. Ask; on yes read it for real (null: declined).
+  // A note that is already open is shown, not asked about again and not read again.
+  async function readAfterLargeConfirm(pending, electronAPI) {
+    const openAt = pending.documentId == null ? -1 : state.files.findIndex((file) => file.documentId === pending.documentId);
+    if (openAt >= 0) { renderFile(openAt); return null; }
+    const yes = await confirmLargeOpen({ name: pending.name, size: pending.size });
+    if (!yes) return null;
+    return electronAPI.readFile(pending.documentId, { confirmLarge: true });
+  }
+  // "Cannot open X: it is N MB, the limit is M MB" for a refused size; the plain message otherwise.
+  function openRefusal(result, fallbackKey, fallback, vars) {
+    if (result && result.error === 'file-too-large' && Number.isFinite(result.size)) {
+      return L('toast.tooLargeOpen', 'Cannot open “{name}”: it is {mb} MB, and the limit is {limit} MB',
+        { name: result.name || (vars && vars.name) || '', mb: megabytes(result.size), limit: limitMb(getLimits().maxFileBytes) });
+    }
+    return openFailure(result && result.error, fallbackKey, fallback, vars);
+  }
 
   // audit QA-07: main reports per-reason skip counts on every vault read (unreadable,
   // oversized, symlink-escaped, non-regular) and the renderer used to drop them, so a
@@ -227,6 +289,13 @@ export function createWorkspaceController({
   }
   function reportSkipped(read) {
     const n = skippedCount(read);
+    const skipped = (read && read.skipped) || {};
+    // Only notes over the folder-read size were skipped: say that, with the way to open them.
+    if (skipped.oversized > 0 && skipped.oversized === n) {
+      showToast(L('toast.vaultOversized', 'Skipped {n} note(s) over {limit} MB. Open them one at a time with Open File.',
+        { n, limit: limitMb(getLimits().maxVaultFileBytes) }), 'info');
+      return;
+    }
     if (n > 0) {
       showToast(L('toast.vaultSkipped', '{n} file(s) could not be shown (unreadable, oversized, or unsafe links)', { n }), 'info');
     }
@@ -237,18 +306,22 @@ export function createWorkspaceController({
 
   // v1.2: these prompts are now Word-style Save/Don't-Save/Cancel (the renderer injects
   // the themed three-way dialog), so they became async — callers await them.
+  // QA M4: the prompt is given the dirty files it is about, so it can name a single one and
+  // "Save" saves exactly those (closing one folder saved every other folder's notes too).
   async function mayAbandonWorkspace() {
-    const dirty = state.files.filter((file) => file.dirty).length;
+    const dirtyFiles = state.files.filter((file) => file.dirty);
+    const dirty = dirtyFiles.length;
     if (dirty === 0) return true;
-    return !!(await confirmDiscard(L('dlg.saveMany', '{n} unsaved file{s}. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' })));
+    return !!(await confirmDiscard(L('dlg.saveMany', '{n} unsaved file{s}. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' }), dirtyFiles));
   }
 
   // B4: the vault-scoped counterpart of mayAbandonWorkspace -- closing ONE folder only
   // prompts about ITS OWN dirty files, never another open folder's.
   async function mayAbandonVault(targetVaultId) {
-    const dirty = state.files.filter((file) => file.vaultId === targetVaultId && file.dirty).length;
+    const dirtyFiles = state.files.filter((file) => file.vaultId === targetVaultId && file.dirty);
+    const dirty = dirtyFiles.length;
     if (dirty === 0) return true;
-    return !!(await confirmDiscard(L('dlg.saveManyVault', '{n} unsaved file{s} in this folder. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' })));
+    return !!(await confirmDiscard(L('dlg.saveManyVault', '{n} unsaved file{s} in this folder. Discard changes and continue?', { n: dirty, s: dirty === 1 ? '' : 's' }), dirtyFiles));
   }
 
   function getOpenVaults() {
@@ -300,7 +373,7 @@ export function createWorkspaceController({
   // State.activeFile's own object-literal default is 0, not null (app.js) — a fresh
   // boot with zero files never explicitly nulls it out, so `state.activeFile == null`
   // alone reads as "something is active" even on a totally empty workspace. The
-  // established idiom elsewhere (closeTab, app.js:1805) is: nothing is really active
+  // established idiom elsewhere (closeTab in app.js) is: nothing is really active
   // unless there's an actual file sitting at that index.
   function hasActiveFile() {
     return state.activeFile != null && !!state.files[state.activeFile];
@@ -332,7 +405,7 @@ export function createWorkspaceController({
         const result = await electronAPI.openFolder();
         if (!result || result.canceled) return;
         if (result.error || !result.vault?.id) {
-          if (result.error) showToast(L('toast.couldNotOpenFolder', 'Could not open folder'), 'error');
+          if (result.error) showToast(openFailure(result.error, 'toast.couldNotOpenFolder', 'Could not open folder'), 'error');
           return;
         }
         const read = normalizeVaultRead(await electronAPI.readVault(result.vault.id), result.vault);
@@ -358,8 +431,8 @@ export function createWorkspaceController({
           showToast(L('toast.folderNoNotes', 'Folder opened — no .md files found'), 'info');
         } else {
           showToast(L('toast.openedFolder', 'Opened "{name}" — {n} note{s}', { name: folderName, n: read.entries.length, s: read.entries.length === 1 ? '' : 's' }));
-        if (read.truncated) showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: read.entries.length }), 'info');
-        reportSkipped(read);
+          if (read.truncated) showToast(L('toast.vaultTruncated', 'Folder is large — showing the first {n} files', { n: read.entries.length }), 'info');
+          reportSkipped(read);
         }
         revealAfterOpen(hadActiveFile, firstNewIndex);
       } catch (error) {
@@ -435,10 +508,14 @@ export function createWorkspaceController({
     const electronAPI = api();
     if (electronAPI && typeof electronAPI.openFile === 'function') {
       try {
-        const result = await electronAPI.openFile();
+        let result = await electronAPI.openFile();
         if (!result || result.canceled) return;
+        if (result.error === 'confirm-large') {
+          result = await readAfterLargeConfirm(result, electronAPI);
+          if (!result) return; // the user said no
+        }
         if (result.error || typeof result.content !== 'string') {
-          showToast(L('toast.couldNotOpenFile', 'Could not open file'), 'error');
+          showToast(openRefusal(result, 'toast.couldNotOpenFile', 'Could not open file'), 'error');
           return;
         }
         addFile(fileFromSnapshot(result));
@@ -451,7 +528,9 @@ export function createWorkspaceController({
     if ('showOpenFilePicker' in hostWindow) {
       try {
         const [handle] = await hostWindow.showOpenFilePicker({
-          types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+          // QA-L3: .txt opens by drag and drop, so the browser pickers offer it too. The desktop
+          // Open dialog stays Markdown: main grants documents to .md / .markdown files only.
+          types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'], 'text/plain': ['.txt'] } }],
         });
         const file = await handle.getFile();
         addFile({ name: file.name, path: file.name, handle, content: await file.text(), dirty: false });
@@ -483,13 +562,43 @@ export function createWorkspaceController({
     ['conflict', ['saveReason.conflict', 'it was changed on disk']],
     ['unauthorized-capability', ['saveReason.unauthorized', 'the app no longer has access to it; open it again']],
     ['unauthorized-path', ['saveReason.unauthorized', 'the app no longer has access to it; open it again']],
-    ['file-too-large', ['saveReason.tooLarge', 'it is larger than 10 MB']],
+    ['file-too-large', ['saveReason.tooLarge', 'it is larger than {limit} MB']],
+    ['read-failed', ['saveReason.unreadable', 'the copy on disk could not be read to check for changes']],
     ['invalid-file-type', ['saveReason.fileType', 'only .md and .markdown files can be saved']],
     ['network-path-not-allowed', ['saveReason.network', 'network locations are not supported']],
   ]);
   function saveReason(code) {
     const [key, fallback] = SAVE_REASONS.get(code) || ['saveReason.other', 'the file could not be written'];
-    return L(key, fallback);
+    return L(key, fallback, { limit: limitMb(getLimits().maxFileBytes) });
+  }
+
+  // The bytes just written (or read) are the note's size now. When that moves it into another tier
+  // the editor's extensions no longer fit (they are fixed when its state is made), so it is built again.
+  function noteSized(file, bytes) {
+    if (!applyNoteSize(file, bytes)) return;
+    if (typeof onNoteTierChange === 'function') { onNoteTierChange(file); return; }
+    const idx = state.files.indexOf(file);
+    if (idx >= 0 && idx === state.activeFile) renderFile(idx);
+  }
+
+  // The disk copy of a note that changed under unsaved edits, for the Keep/Reload bar. A copy past
+  // the large-note size is not read unless `ask` (a person is at the keyboard) and says yes: the
+  // edits stay either way, and a copy that is not read leaves only its size on the note.
+  async function loadConflictDisk(file, { ask = false } = {}) {
+    const electronAPI = api();
+    if (!file.documentId || !electronAPI || typeof electronAPI.readFile !== 'function') return false;
+    let fresh = await electronAPI.readFile(file.documentId);
+    if (fresh && fresh.error === 'confirm-large') {
+      file.diskSize = fresh.size;
+      const yes = ask && await confirmLargeOpen({ name: fresh.name || file.name, size: fresh.size });
+      if (!yes) return false;
+      fresh = await electronAPI.readFile(file.documentId, { confirmLarge: true });
+    }
+    if (!fresh || typeof fresh.content !== 'string') return false;
+    file.diskContent = fresh.content;
+    file.diskMeta = fresh.meta || null;
+    if (Number.isFinite(fresh.size)) file.diskSize = fresh.size;
+    return true;
   }
 
   const saveQueues = new WeakMap();
@@ -533,6 +642,7 @@ export function createWorkspaceController({
         await writable.close();
         cleanIfUnchanged();
         noteRecreatedMissing();
+        noteSized(file, new Blob([submittedContent]).size); // a browser save has no size from main
         return 'ok';
       } catch (_) {
         return 'error';
@@ -575,6 +685,7 @@ export function createWorkspaceController({
           file.meta = result.meta || file.meta;
           cleanIfUnchanged();
           noteRecreatedMissing();
+          noteSized(file, result.size);
           return 'ok';
         }
         if (result && result.error === 'encoding-unconfirmed') {
@@ -585,15 +696,7 @@ export function createWorkspaceController({
         if (result && result.error === 'conflict') {
           // Re-read the disk copy so the Keep-mine/Reload banner has something to show.
           file.conflict = true;
-          try {
-            const fresh = electronAPI && typeof electronAPI.readFile === 'function'
-              ? await electronAPI.readFile(file.documentId)
-              : null;
-            if (fresh && typeof fresh.content === 'string') {
-              file.diskContent = fresh.content;
-              file.diskMeta = fresh.meta || null;
-            }
-          } catch (_) { /* banner still renders; reload will just no-op */ }
+          try { await loadConflictDisk(file, { ask: interactive }); } catch (_) { /* banner still renders; reload will just no-op */ }
           return 'conflict';
         }
         file._lastWriteError = (result && result.error) || 'unknown';
@@ -604,6 +707,31 @@ export function createWorkspaceController({
       }
     }
     return 'nosave';
+  }
+
+  // Tell the user why writeThrough did not save `file` (any outcome but 'ok' and 'nosave').
+  // A conflict or an unconfirmed encoding re-renders the note so its bar shows the choices.
+  function reportSaveFailure(file, outcome) {
+    if (outcome === 'encoding-declined') {
+      showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
+      return;
+    }
+    if (outcome === 'encoding-unconfirmed' || outcome === 'conflict') {
+      const idx = state.files.indexOf(file);
+      if (idx >= 0) renderFile(idx);
+      if (outcome === 'conflict') {
+        showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason('conflict') }), 'error');
+      } else {
+        showToast(L('toast.encodingConfirmFirst', 'Confirm the encoding of “{name}” first (see the bar above the note)', { name: file.name }), 'error');
+      }
+      return;
+    }
+    renderTabs();
+    if (file._lastWriteError) {
+      showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason(file._lastWriteError) }), 'error');
+    } else {
+      showToast(L('toast.couldNotSave', 'Could not save'), 'error');
+    }
   }
 
   async function saveCurrent(target) {
@@ -621,29 +749,8 @@ export function createWorkspaceController({
       showToast(L('toast.saved', 'Saved {name}', { name: file.name }));
       return;
     }
-    if (outcome === 'encoding-declined') {
-      showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
-      return;
-    }
-    if (outcome === 'encoding-unconfirmed') {
-      const idx = state.files.indexOf(file);
-      if (idx >= 0) renderFile(idx); // the bar with the choices
-      showToast(L('toast.encodingConfirmFirst', 'Confirm the encoding of “{name}” first (see the bar above the note)', { name: file.name }), 'error');
-      return;
-    }
-    if (outcome === 'conflict') {
-      const idx = state.files.indexOf(file);
-      if (idx >= 0) renderFile(idx);
-      showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason('conflict') }), 'error');
-      return;
-    }
-    if (outcome === 'error') {
-      renderTabs();
-      if (file._lastWriteError) {
-        showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason(file._lastWriteError) }), 'error');
-      } else {
-        showToast(L('toast.couldNotSave', 'Could not save'), 'error');
-      }
+    if (outcome !== 'nosave') {
+      reportSaveFailure(file, outcome);
       return;
     }
     // 'nosave': a new/untitled note (or a dragged-in file) has no on-disk identity yet,
@@ -699,7 +806,9 @@ export function createWorkspaceController({
             const metaBeforeUpgrade = file.meta;
             file.meta = { ...meta, encoding: 'utf8', bom: false };
             result = await electronAPI.saveFileAs(saveAsPayload());
-            if (!result || result.canceled) file.meta = metaBeforeUpgrade;
+            // QA H4: any outcome but a written file keeps the note's own encoding; a failed
+            // write used to leave UTF-8 here, and the next Ctrl+S re-encoded the original.
+            if (!result || !result.ok) file.meta = metaBeforeUpgrade;
           }
         }
         if (!result || result.canceled) {
@@ -711,12 +820,19 @@ export function createWorkspaceController({
           return;
         }
         const leftVault = !!file.vaultId;
+        const oldVaultId = file.vaultId || null;
+        const oldKey = fileKey(file);
         file.documentId = result.documentId;
         file.vaultId = null;
         file.name = result.name;
         file.path = result.name;
         file.meta = result.meta || file.meta;
+        // QA-M9: a note saved out of its folder is a loose tab now; with the folder flag kept
+        // it could not be closed for good and lingered as a hidden entry.
+        if (oldVaultId) { file.inventory = false; file.open = true; }
         if (file.revision === submittedRevision && file.content === submittedContent) markClean(file, submittedContent);
+        applyNoteSize(file, result.size); // the note is drawn again just below
+        try { await carryOverNoteData(oldKey, file); } catch (_) { /* the save itself succeeded */ }
         renderTabs();
         const idx = state.files.indexOf(file);
         if (idx >= 0) renderFile(idx);
@@ -724,6 +840,10 @@ export function createWorkspaceController({
         // v1.2: Save As can land anywhere on disk; when it moves the note OUT of its
         // open folder it silently lost that folder's watch/conflict protection. Say so.
         if (leftVault) showToast(L('toast.leftVault', '“{name}” was saved outside the open folder', { name: result.name }), 'info');
+        // The original note is still in the folder: re-read it so it is back in the tree.
+        if (oldVaultId && openVaultGenerations.has(oldVaultId)) {
+          await handleVaultChanged({ vaultId: oldVaultId, generation: openVaultGenerations.get(oldVaultId) });
+        }
       } catch (_) {
         showToast(L('toast.couldNotSave', 'Could not save'), 'error');
       }
@@ -749,6 +869,7 @@ export function createWorkspaceController({
         file.name = handle.name;
         file.path = handle.name;
         if (file.revision === submittedRevision && file.content === submittedContent) markClean(file, submittedContent);
+        applyNoteSize(file, new Blob([submittedContent]).size); // drawn again just below
         renderTabs();
         const idx = state.files.indexOf(file);
         if (idx >= 0) renderFile(idx);
@@ -775,8 +896,8 @@ export function createWorkspaceController({
   // promptUntitled, untitled notes go through Save As instead of being skipped
   // (choosing Save in the close prompt and watching nothing happen was v1.2.1's bug);
   // the auto-save lane must never pop a dialog, so it leaves them alone.
-  async function saveAllDirty({ promptUntitled = false } = {}) {
-    const dirty = state.files.filter((file) => file.dirty);
+  async function saveAllDirty({ promptUntitled = false, files = null } = {}) {
+    const dirty = (Array.isArray(files) ? files : state.files).filter((file) => file.dirty);
     for (const file of dirty) {
       const outcome = await writeThrough(file, { interactive: true });
       if (outcome === 'nosave') {
@@ -792,35 +913,14 @@ export function createWorkspaceController({
       // feedback — the window silently stayed open, no toast, and a conflicted file's
       // banner was never rendered. Mirror saveCurrent's per-outcome reporting so the
       // user sees exactly which file refused to save and why.
-      if (outcome === 'encoding-declined') {
-        showToast(L('toast.saveCanceled', 'Save canceled — the note is still unsaved'), 'info');
-        return false;
-      }
-      if (outcome === 'encoding-unconfirmed') {
-        const idx = state.files.indexOf(file);
-        if (idx >= 0) renderFile(idx);
-        showToast(L('toast.encodingConfirmFirst', 'Confirm the encoding of “{name}” first (see the bar above the note)', { name: file.name }), 'error');
-        return false;
-      }
-      if (outcome === 'conflict') {
-        const idx = state.files.indexOf(file);
-        if (idx >= 0) renderFile(idx);
-        showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason('conflict') }), 'error');
-        return false;
-      }
       if (outcome !== 'ok') {
-        renderTabs();
-        if (file._lastWriteError) {
-          showToast(L('toast.couldNotSaveName', 'Could not save {name}: {reason}', { name: file.name, reason: saveReason(file._lastWriteError) }), 'error');
-        } else {
-          showToast(L('toast.couldNotSave', 'Could not save'), 'error');
-        }
+        reportSaveFailure(file, outcome);
         return false;
       }
       renderTabs();
     }
     renderTabs();
-    return state.files.every((file) => !file.dirty);
+    return (Array.isArray(files) ? files : state.files).every((file) => !file.dirty);
   }
 
   // T4.1: the "Continue reading" shelf. It reuses the recents row shape and, crucially,
@@ -946,7 +1046,7 @@ export function createWorkspaceController({
       try {
         const reopened = await electronAPI.reopenVault(recent.vaultId);
         if (!reopened || !reopened.ok) {
-          showToast(L('toast.recentMissing', 'Could not re-open "{name}" — the folder may have moved', { name: recent.name }), 'error');
+          showToast(openFailure(reopened?.error, 'toast.recentMissing', 'Could not re-open "{name}" — the folder may have moved', { name: recent.name }), 'error');
           return;
         }
       } catch (_) { /* fall through and let readVault surface the error */ }
@@ -978,13 +1078,21 @@ export function createWorkspaceController({
         try {
           const reopened = await electronAPI.reopenDocument(recent.documentId);
           if (!reopened || !reopened.ok) {
-            showToast(L('toast.recentMissing', 'Could not re-open "{name}" — the file may have moved', { name: recent.name }), 'error');
+            showToast(openFailure(reopened?.error, 'toast.recentMissing', 'Could not re-open "{name}" — the file may have moved', { name: recent.name }), 'error');
             return;
           }
         } catch (_) { /* fall through and let readFile surface the error */ }
       }
       try {
-        const result = await electronAPI.readFile(recent.documentId);
+        let result = await electronAPI.readFile(recent.documentId);
+        if (result && result.error === 'confirm-large') {
+          result = await readAfterLargeConfirm({ ...result, name: result.name || recent.name }, electronAPI);
+          if (!result) return; // the user said no
+        }
+        if (result && result.error === 'file-too-large') {
+          showToast(openRefusal({ ...result, name: result.name || recent.name }, 'toast.recentOpenFailed', 'Could not open "{name}"', { name: recent.name || recent.path }), 'error');
+          return;
+        }
         if (result && !result.error && typeof result.content === 'string') {
           addFile(fileFromSnapshot({ ...result, name: result.name || recent.name, relPath: recent.path || result.name }));
           return;
@@ -998,9 +1106,21 @@ export function createWorkspaceController({
     showToast(L('toast.recentOpenFailed', 'Could not open "{name}"', { name: recent.name || recent.path }), 'error');
   }
 
-  function openExternalFile(snapshot) {
+  async function openExternalFile(snapshot) {
+    // A launch-argument note above the confirm size arrives as { error: 'confirm-large', ... }.
+    if (snapshot && snapshot.error === 'confirm-large' && snapshot.documentId) {
+      const electronAPI = api();
+      let read = null;
+      try { read = electronAPI && typeof electronAPI.readFile === 'function' ? await readAfterLargeConfirm(snapshot, electronAPI) : null; } catch (_) { read = { error: 'read-failed', name: snapshot.name }; }
+      if (!read) return; // declined
+      snapshot = read;
+    }
     // v1.2: main now reports CLI/open-with delivery failures instead of silently
     // dropping them — say so instead of opening with no file and no message.
+    if (snapshot && snapshot.error === 'file-too-large' && Number.isFinite(snapshot.size)) {
+      showToast(openRefusal(snapshot), 'error');
+      return;
+    }
     if (snapshot && snapshot.error) {
       showToast(
         snapshot.name
@@ -1199,6 +1319,7 @@ export function createWorkspaceController({
     saveAllDirty,
     needsSaveAs,
     writeThrough,
+    loadConflictDisk,
     pushRecent,
     renderRecents,
     renderContinue,

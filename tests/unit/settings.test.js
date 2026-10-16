@@ -38,9 +38,8 @@ describe('migrate (EC-D1)', () => {
     expect(migrate(42)).toEqual(defaultSettings());
   });
   test('keeps valid known fields, drops unknown/invalid', () => {
-    const m = migrate({ theme: 'ink', editorMode: 'bogus', zoomFactor: 5, evil: 1 });
+    const m = migrate({ theme: 'ink', zoomFactor: 5, evil: 1 });
     expect(m.theme).toBe('ink');
-    expect(m.editorMode).toBe('live');   // invalid → default
     expect(m.zoomFactor).toBe(2.0);      // clamped
     expect('evil' in m).toBe(false);
     expect(m.version).toBe(5); // T0.1 bumped the schema
@@ -137,6 +136,12 @@ describe('clampZoom', () => {
     expect(clampZoom(9)).toBe(2.0);
     expect(clampZoom('x')).toBe(1);
   });
+
+  // MAIN-15: Number(null) is 0, which clamped to 60 % instead of the default.
+  test('a value that is not a number falls back to 1, like the sibling clamps', () => {
+    for (const z of [null, '', [], false, '1.5', undefined]) expect(clampZoom(z), String(z)).toBe(1);
+    expect(migrate({ zoomFactor: null }).zoomFactor).toBe(1);
+  });
 });
 
 describe('reader preference migration and clamps', () => {
@@ -229,10 +234,11 @@ describe('migrate — enum + type coercion (exact, mutation kills)', () => {
     expect(migrate({ theme: 'neon' }).theme).toBe('paper');
     expect(migrate({ theme: 42 }).theme).toBe('paper');
   });
-  test('editorMode: valid kept, invalid → live', () => {
-    expect(migrate({ editorMode: 'split' }).editorMode).toBe('split');
-    expect(migrate({ editorMode: 'source' }).editorMode).toBe('source');
-    expect(migrate({ editorMode: 'zoomy' }).editorMode).toBe('live');
+  // REND-22: the textarea editor and its split/source modes are gone; an old file's
+  // editorMode is dropped like any other retired key.
+  test('a retired editorMode key is dropped', () => {
+    expect('editorMode' in migrate({ editorMode: 'split' })).toBe(false);
+    expect('editorMode' in defaultSettings()).toBe(false);
   });
   test('viewMode (T-F17): reading-first default; valid kept; invalid/missing → reading', () => {
     expect(defaultSettings().viewMode).toBe('reading');
@@ -360,7 +366,7 @@ describe('T-F19 chrome settings', () => {
     expect(migrate({}).hideStatusBar).toBe(false);
   });
 
-  test('the schema version is 4', () => {
+  test('the schema version is 5', () => {
     // migrate() never READS raw.version — it stamps the current one unconditionally
     // (src/main/settings.js). The bump is a schema label, not a migration trigger, so
     // assert only the literal and do not claim behaviour the code does not have.

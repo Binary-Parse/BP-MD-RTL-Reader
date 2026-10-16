@@ -2,7 +2,7 @@
  * bidi.test.js — T-R1/R2 + slug. Pure direction + isolation logic.
  */
 import { describe, test, expect } from 'vitest';
-import { resolveDirection, resolveBlockDirection, needsIsolation, isolate, directionAttrs, slugify, resolveDocDirection, nextCellIndex } from '../../src/renderer/bidi.js';
+import { resolveDirection, resolveBlockDirection, needsIsolation, isolate, directionAttrs, slugify, headingSlugs, resolveDocDirection, nextCellIndex } from '../../src/renderer/bidi.js';
 
 describe('nextCellIndex (T-R9 / EC-C2 logical horizontal cell traversal)', () => {
   test('LTR: ArrowRight advances, ArrowLeft retreats', () => {
@@ -225,6 +225,14 @@ describe('resolveDocDirection (T-R6 precedence: manual > front-matter > auto)', 
     expect(resolveDocDirection({})).toBe('ltr');
     expect(resolveDocDirection()).toBe('ltr');
     expect(resolveDocDirection({ manual: 'sideways', frontMatter: 'nope', content: 'rtl' })).toBe('rtl');
+  });
+});
+
+describe('headingSlugs (QA-L3)', () => {
+  test('repeated texts get -1, -2; a heading named like a suffix never collides', () => {
+    expect(headingSlugs(['Notes', 'Notes', 'Notes'])).toEqual(['notes', 'notes-1', 'notes-2']);
+    expect(headingSlugs(['a', 'a 1', 'a'])).toEqual(['a', 'a-1', 'a-2']);
+    expect(headingSlugs(['ملاحظات', 'ملاحظات'])).toEqual(['ملاحظات', 'ملاحظات-1']);
   });
 });
 

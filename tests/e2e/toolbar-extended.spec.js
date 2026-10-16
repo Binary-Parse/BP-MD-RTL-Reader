@@ -104,6 +104,28 @@ test('footnote insert adds a ref + a definition stub', async ({ page }) => {
   expect(await val(page)).toBe('see[^1] here\n\n[^1]: ');
 });
 
+test.describe('QA M11: commands keep the text around the selection', () => {
+  test('footnote goes after the selected words and keeps them', async ({ page }) => {
+    await open(page, 'see here\n');
+    await select(page, 0, 3); // "see"
+    await page.click('#tbFootnote');
+    expect(await val(page)).toBe('see[^1] here\n\n[^1]: ');
+  });
+  test('a selected line ending at the next line start formats one line only', async ({ page }) => {
+    await open(page, 'one\ntwo\n');
+    await select(page, 0, 4); // triple-click shape: "one\n"
+    await page.click('#tbQuote');
+    expect(await val(page)).toBe('> one\ntwo\n');
+  });
+  test('clear formatting leaves prose with lone ~ and * alone', async ({ page }) => {
+    const prose = 'about ~5 min or ~10 min, 2 * 3 * 4 and *em*\n';
+    await open(page, prose);
+    await select(page, 0, prose.length - 1);
+    await page.click('#tbClear');
+    expect(await val(page)).toBe('about ~5 min or ~10 min, 2 * 3 * 4 and em\n');
+  });
+});
+
 test('indent / outdent add and remove leading spaces', async ({ page }) => {
   await open(page, '- item\n');
   await caret(page, 2);

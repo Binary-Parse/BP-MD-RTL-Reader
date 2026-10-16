@@ -1,6 +1,6 @@
 /**
  * Vitest mock for the 'electron' module.
- * Provides enough surface for src/main/index.js and src/preload/index.js to load and be instrumented.
+ * Provides enough surface for src/main/index.js and src/preload/index.js to load and be tested.
  */
 
 const { vi } = require('vitest');
@@ -90,10 +90,6 @@ module.exports = {
   shell,
   dialog,
   crashReporter,
-  // Re-export internals for test inspection
-  _mockIpcHandlers: mockIpcHandlers,
-  _mockIpcListeners: mockIpcListeners,
-  _mockAppListeners: mockAppListeners,
-  _mockWindows: mockWindows,
+  // The mock window, for tests that inspect it
   _mockWin: mockWin,
 };

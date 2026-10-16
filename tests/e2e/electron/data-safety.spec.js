@@ -9,6 +9,7 @@
  *   5. closing the folder kills save authority and the failure SURFACES (DATA-02).
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -40,12 +41,7 @@ test.describe('data-safety flows against real Electron @electron', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) {
-        await page.evaluate(() => window.electronAPI.closeWindow()).catch(() => {});
-      }
-      await electronApp.close().catch(() => {});
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

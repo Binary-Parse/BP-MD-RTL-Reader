@@ -1,22 +1,5 @@
 {
   "schemaVersion": 1,
   "note": "Advisories npm audit reports that cannot be fixed today. Read by scripts/audit-deps.js: an advisory missing here fails the gate, and so does an entry npm no longer reports.",
-  "accepted": [
-    {
-      "advisory": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces",
-      "severity": "high",
-      "scope": "dev",
-      "reviewed": "2026-10-11",
-      "reason": "Stack exhaustion on a crafted brace pattern. No patched release exists (every version up to the latest, 3.0.3, is affected). It reaches the tree only through jscpd 4 (jscpd > @jscpd/finder > fast-glob > micromatch > braces), a development tool run by hand as `npm run dupcheck` on this repository's own src/ with a fixed ignore pattern; it is not packaged and never sees untrusted input. jscpd 5 drops the chain but reports a different duplicate count, so moving to it is an owner decision."
-    },
-    {
-      "advisory": "GHSA-238p-pmpm-9mq7",
-      "package": "katex",
-      "severity": "low",
-      "scope": "shipped",
-      "reviewed": "2026-10-11",
-      "reason": "A prototype pollution that already exists on the page can bypass KaTeX's trust setting. This is the KaTeX 0.16.47 copy that Mermaid's own build inlines in mermaid.min.js; the newest Mermaid (12.1.0) still depends on katex ^0.16.47, so no release fixes it. The app's own math rendering uses the vendored KaTeX 0.18.9, which is not affected, and Mermaid runs with securityLevel 'strict'."
-    }
-  ]
+  "accepted": []
 }

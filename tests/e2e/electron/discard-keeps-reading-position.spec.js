@@ -11,6 +11,7 @@
  * No fixed sleeps: every wait is on an observable state of the app or of the profile on disk.
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -29,10 +30,7 @@ test.describe('"Close without Saving" keeps the reading position @electron', () 
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) await page.evaluate(() => window.electronAPI.closeWindow()).catch(() => {});
-      await electronApp.close().catch(() => {});
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

@@ -12,7 +12,7 @@ fonts and the Reserved Font Names are respected — which this file satisfies.
 | **Inter** (variable, wght) | `inter-latin-wght-{normal,italic}.woff2` | © The Inter Project Authors (github.com/rsms/inter) | @fontsource-variable/inter |
 | **JetBrains Mono** (variable, wght) | `jetbrains-mono-latin-wght-{normal,italic}.woff2` | © The JetBrains Mono Project Authors (github.com/JetBrains/JetBrainsMono) | @fontsource-variable/jetbrains-mono |
 | **IBM Plex Sans Arabic** (static 400/500/600/700) | `ibm-plex-sans-arabic-arabic-{400,500,600,700}-normal.woff2` | © 2017 IBM Corp. (github.com/IBM/plex) | @fontsource/ibm-plex-sans-arabic |
-| **KaTeX math fonts** (20 static faces) | `../katex/fonts/KaTeX_*.woff2` | © Khan Academy (github.com/KaTeX/KaTeX) | katex@0.17.0 |
+| **KaTeX math fonts** (20 static faces) | `../katex/fonts/KaTeX_*.woff2` | © Khan Academy (github.com/KaTeX/KaTeX) | katex@0.18.11 |
 
 The full SIL OFL-1.1 text is shipped beside this notice as
 [`OFL-1.1.txt`](OFL-1.1.txt). The upstream package and project links above identify

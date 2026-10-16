@@ -1,10 +1,10 @@
 /**
  * json-store.js — the shared core of the JSON files main owns (T8.1).
  *
- * Two stores (annotations, reading stats) grew the same ~11 lines of load-and-persist code:
- * read + parse behind a version guard, and write through a temp file + rename so a crash can
- * never leave a half-written file. It is I/O-critical enough that one tested implementation
- * beats two copies, and the duplicated block was the only clone jscpd flagged in `src/main`.
+ * The settings, capabilities, annotations and reading-stats stores share this load-and-persist
+ * code: read + parse behind a version guard, and write through the shared atomic writer
+ * (atomic-rename.js, MAIN-4: the same one note saves use) so a crash can never leave a
+ * half-written file. It is I/O-critical enough that one tested implementation beats copies.
  *
  * Both helpers deliberately take `fs` as a parameter (never require it) so unit tests drive
  * them with an in-memory fs, and both return null / a typed error instead of throwing — the
@@ -13,9 +13,8 @@
 
 'use strict';
 
-const nodeCrypto = require('crypto');
 const nodePath = require('path');
-const { renameWithRetry } = require('./atomic-rename');
+const { atomicWriteFile, STALE_TEMP_AGE_MS } = require('./atomic-rename');
 
 /**
  * Best-effort sweep of `<file>.tmp-<uuid>` siblings orphaned by a crash between the
@@ -23,7 +22,7 @@ const { renameWithRetry } = require('./atomic-rename');
  * a concurrent writer's in-flight temp (or a fresh one from this very call) is never
  * touched. Failures are swallowed — the sweep must never block the real write.
  */
-function sweepStaleJsonTemps(fs, file, { maxAgeMs = 60 * 60 * 1000, now = Date.now() } = {}) {
+function sweepStaleJsonTemps(fs, file, { maxAgeMs = STALE_TEMP_AGE_MS, now = Date.now() } = {}) {
   let entries;
   let dir;
   try {
@@ -42,53 +41,17 @@ function sweepStaleJsonTemps(fs, file, { maxAgeMs = 60 * 60 * 1000, now = Date.n
 }
 
 /**
- * Write `data` to `file` atomically: temp file first, then rename onto the target.
- * @returns {{ok: true} | {error: 'write-failed'}}
+ * Write `data` to `file` atomically (UTF-8): temp file first, then rename onto the target.
+ * @returns {{ok:true}|{error:'locked'|'enospc'|'gone'|'write-failed'}}
  */
 function atomicWriteJson(fs, file, data, { sleep } = {}) {
   sweepStaleJsonTemps(fs, file);
-  // S-M6 class hardening (mirrors document-store.atomicWriteFile): a predictable
-  // `<file>.tmp` opened with the default flags follows a pre-planted symlink and
-  // lets a same-user process steer the publish target. A random UUID name plus
-  // O_EXCL ('wx') makes neither the squat nor the link possible.
-  const tmp = `${file}.tmp-${nodeCrypto.randomUUID()}`;
-  try {
-    fs.writeFileSync(tmp, data, { encoding: 'utf8', flag: 'wx' });
-    // T14 (post-review M1): flush the temp bytes BEFORE the rename publishes them. A process
-    // crash was always safe (temp + rename), but without this an OS crash / power cut could
-    // persist the rename ahead of the data and leave the store zero-length or torn — a silent
-    // total loss of annotations or reading stats with no backup. Best-effort on injected test
-    // fakes without openSync/fsyncSync; mirrors document-store.atomicWriteFile.
-    if (fs.fsyncSync) {
-      try { const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd); } catch (_) { /* best effort */ }
-    }
-    renameWithRetry(fs, tmp, file, sleep ? { sleep } : undefined); // a held target is retried (audit M14)
-    return { ok: true };
-  } catch (_) {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) { /* best effort */ }
-    return { error: 'write-failed' };
-  }
+  return atomicWriteFile(fs, file, data, 'utf8', { sleep });
 }
 
 /**
- * Read + parse `file`, returning the parsed value only when `isAcceptable` approves it.
- * A missing file, invalid JSON or an unexpected shape all degrade to null.
- * @param {object} fs injected fs
- * @param {string} file absolute path
- * @param {(parsed: any) => boolean} isAcceptable shape/version guard
- * @returns {any|null}
- */
-function readJsonFile(fs, file, isAcceptable) {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return isAcceptable(parsed) ? parsed : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-/**
- * Like readJsonFile, but says WHY there is no value (B3). The callers must tell an absent
+ * Read + parse `file`; the value is returned only when `isAcceptable` approves it, and the
+ * status says WHY there is none (B3). The callers must tell an absent
  * file (first run) from a damaged one: writing a fresh file over a damaged one destroys
  * whatever a person or a repair tool could still have recovered from it.
  *   missing     no file (or a read error that names no cause)
@@ -128,5 +91,5 @@ function setAsideCorruptFile(fs, file, now = Date.now()) {
 }
 
 module.exports = {
-  atomicWriteJson, readJsonFile, readJsonFileChecked, setAsideCorruptFile, sweepStaleJsonTemps,
+  atomicWriteJson, readJsonFileChecked, setAsideCorruptFile, sweepStaleJsonTemps,
 };

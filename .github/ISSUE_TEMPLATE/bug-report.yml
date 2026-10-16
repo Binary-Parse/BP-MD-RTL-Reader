@@ -5,14 +5,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file a bug. Please **do not** report security
-        vulnerabilities here — use the Security tab (private advisories) instead.
+        Thanks for taking the time to file a bug. Do not report a security problem here.
+        Use private vulnerability reporting instead (see SECURITY.md).
   - type: input
     id: version
     attributes:
       label: App version
       description: See Help → About, or the release you downloaded.
-      placeholder: 1.1.0
+      placeholder: 2.1.0
     validations:
       required: true
   - type: dropdown
@@ -21,8 +21,21 @@ body:
       label: Operating system
       options:
         - Windows 10/11
-        - macOS
         - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package type
+      description: The file you installed or ran.
+      options:
+        - Windows NSIS installer
+        - Windows Inno installer
+        - Windows portable
+        - Linux AppImage
+        - Linux deb
+        - Run from source
     validations:
       required: true
   - type: textarea
@@ -39,13 +52,13 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: Expected behaviour
+      label: Expected behavior
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Actual behaviour
+      label: Actual behavior
     validations:
       required: true
   - type: checkboxes

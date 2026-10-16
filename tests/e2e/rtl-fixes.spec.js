@@ -40,15 +40,6 @@ test.describe('RTL and theme bug fixes', () => {
   // T1 RTL scope tests
   // ----------------------------------------------------------------
 
-  test('[RTL-scope] after #rtlBtn click, #srcTextarea gets dir=auto', async ({ page }) => {
-    await page.goto(INDEX_URL);
-    await page.waitForLoadState('networkidle');
-
-    await page.click('#rtlBtn');
-
-    await expect(page.locator('#srcTextarea')).toHaveAttribute('dir', 'auto');
-  });
-
   test('[RTL-scope] after #rtlBtn click, #editor gets dir=rtl', async ({ page }) => {
     await page.goto(INDEX_URL);
     await page.waitForLoadState('networkidle');
@@ -110,16 +101,6 @@ test.describe('RTL and theme bug fixes', () => {
 
     const ltrState = await page.evaluate(() => window._appState.direction);
     expect(ltrState).toBe('ltr');
-  });
-
-  test('[RTL-toggle-clean] toggle on then off removes dir from #srcTextarea', async ({ page }) => {
-    await page.goto(INDEX_URL);
-    await page.waitForLoadState('networkidle');
-
-    await page.click('#rtlBtn');
-    await page.click('#rtlBtn');
-
-    await expect(page.locator('#srcTextarea')).not.toHaveAttribute('dir');
   });
 
   test('[RTL-toggle-clean] toggle on then off removes dir from #editor', async ({ page }) => {

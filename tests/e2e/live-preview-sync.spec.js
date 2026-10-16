@@ -41,7 +41,7 @@ test.describe('display/outline stay in sync with the active file (debounce race)
       a.replaceSelection('\n\n## A2 added');
       window.renderFile(1); // switch to B right away
     });
-    await page.waitForTimeout(300); // let the stale debounce (would have) fired
+    await page.waitForTimeout(300); // deliberate: the stale debounce would have fired by now
     // B is active: outline + rendered headings must be B's, not A's
     expect(await page.evaluate(() => window._appState.activeFile)).toBe(1);
     expect(await outline(page)).toEqual(['B1']);
@@ -204,5 +204,26 @@ test.describe('inline code scales with its context', () => {
     // 0.85em of the h1 (2.625rem) must dwarf 0.85em of body text (1.125rem) — a fixed
     // rem size (the previous bug) would make heading code the same tiny size as body code.
     expect(sizes.heading).toBeGreaterThan(sizes.body * 1.5);
+  });
+});
+
+// QA-M16: in Edit mode a large note no longer re-renders the hidden reading pane after each
+// pause in typing; the outline follows the source, and Reading shows the edit.
+test.describe('[QA-M16] large note in Edit mode', () => {
+  test('typing updates the outline from the source; the reading pane renders on switch', async ({ page }) => {
+    await boot(page);
+    const big = '# Start\n\n' + 'word '.repeat(60_000) + '\n';
+    await setFiles(page, [{ name: 'big.md', content: big }]);
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
+    await page.evaluate(() => {
+      const a = window.getActiveCmAdapter();
+      a.setSelection({ start: a.getValue().length });
+      a.replaceSelection('\n## **Added** heading\n');
+    });
+    await expect.poll(() => outline(page)).toEqual(['Start', 'Added heading']);
+    const renderedHeads = () => page.evaluate(() => [...document.querySelectorAll('#noteContent h1, #noteContent h2')].map((h) => h.textContent));
+    expect(await renderedHeads()).toEqual(['Start']); // the hidden pane was not rebuilt
+    await page.evaluate(() => window.setViewMode('reading'));
+    expect(await renderedHeads()).toEqual(['Start', 'Added heading']);
   });
 });

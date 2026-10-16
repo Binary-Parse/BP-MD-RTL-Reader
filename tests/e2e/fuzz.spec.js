@@ -6,14 +6,29 @@ const { test, expect } = require('@playwright/test');
  * no unhandled rejection, and the stated invariant holds.
  */
 
+// QA-L6: seeded, so a failing run can be replayed with FUZZ_SEED=<the printed seed>.
+const SEED = Number(process.env.FUZZ_SEED) || Date.now();
+let rngState = SEED >>> 0;
+function random() { // mulberry32
+  rngState = (rngState + 0x6D2B79F5) >>> 0;
+  let t = rngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 function randomString(len, charset) {
   const cs = charset || 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\n\t !@#$%^&*()_+-=[]{}|;\':",./<>?`~';
   let s = '';
-  for (let i = 0; i < len; i++) s += cs[Math.floor(Math.random() * cs.length)];
+  for (let i = 0; i < len; i++) s += cs[Math.floor(random() * cs.length)];
   return s;
 }
 
 test.describe('Fuzzing — parsers & validators', () => {
+  test.afterEach(async ({ page: _page }, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`fuzz failed; replay with FUZZ_SEED=${SEED}`);
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('file:///' + process.cwd().replace(/\\/g, '/') + '/src/renderer/index.html');
     await page.waitForSelector('#app', { state: 'visible' });
@@ -74,21 +89,6 @@ test.describe('Fuzzing — parsers & validators', () => {
     expect(result.ok, `${result.reason} on "${result.query}": ${result.err || ''}`).toBe(true);
   });
 
-  test('setEditorMode does not crash on random mode strings', async ({ page }) => {
-    const modes = ['live', 'split', 'source', '', 'unknown', null, undefined, 'LIVE', 'source\n'];
-    const result = await page.evaluate((ms) => {
-      for (const m of ms) {
-        try {
-          window.setEditorMode(m);
-        } catch (e) {
-          return { ok: false, mode: m, err: e.message };
-        }
-      }
-      return { ok: true };
-    }, modes);
-    expect(result.ok, `crash on mode ${JSON.stringify(result.mode)}: ${result.err}`).toBe(true);
-  });
-
   test('find bar does not crash on 500 random search queries', async ({ page }) => {
     await page.evaluate(() => window.loadDemo());
     const queries = Array.from({ length: 500 }, (_, i) => randomString(i % 30, null));
@@ -108,11 +108,13 @@ test.describe('Fuzzing — parsers & validators', () => {
   test('escapeHtml round-trip invariant: no literal < or > in output', async ({ page }) => {
     const inputs = Array.from({ length: 500 }, (_, i) => randomString(i % 200, '<>&"\''));
     const result = await page.evaluate((vals) => {
+      // No local stand-in: a missing export must fail here, not fuzz a copy of the function.
+      if (typeof window.escapeHtml !== 'function') return { ok: false, input: '(escapeHtml is not exposed)' };
       for (const s of vals) {
         try {
-          const out = window.escapeHtml ? window.escapeHtml(s) : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+          const out = window.escapeHtml(s);
           if (out.includes('<') || out.includes('>')) return { ok: false, input: s.slice(0, 50) };
-        } catch (e) {
+        } catch (_) {
           return { ok: false, reason: 'crash', input: s.slice(0, 50) };
         }
       }

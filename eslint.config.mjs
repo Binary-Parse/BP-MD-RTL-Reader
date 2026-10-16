@@ -54,6 +54,8 @@ const NODE = G([
 ]);
 
 export default [
+  // A frozen copy of an old page used as test input, not code of this repository.
+  { ignores: ['tests/fixtures/**'] },
   {
     files: ['**/*.html'],
     plugins: { html },
@@ -82,7 +84,7 @@ export default [
   {
     files: [
       'src/main/**/*.js', 'src/preload/**/*.js',
-      'scripts/**/*.js', 'playwright.config.js', 'playwright.electron.config.js',
+      'scripts/**/*.{js,cjs}', 'playwright.config.js', 'playwright.electron.config.js', 'playwright.perf.config.js',
     ],
     languageOptions: {
       sourceType: 'commonjs',
@@ -90,8 +92,32 @@ export default [
     },
   },
   {
+    // QA-L5: the tests are linted for correctness (undefined and unused names), not for the
+    // security rules, which flag every fixture path and regex a test builds on purpose.
+    // `npm run lint:tests`. page.evaluate() bodies run in the page, hence the browser globals.
+    files: ['tests/**/*.{js,mjs,cjs}'],
+    // Loaded, not enabled: the tests' own eslint-disable comments name these rules.
+    plugins: { security, 'no-unsanitized': noUnsanitized },
+    rules: {
+      'no-undef': CORRECTNESS_RULES['no-undef'],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      // An empty catch is the tests' stub-if-possible idiom (navigator.clipboard is not always redefinable).
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...BROWSER_AND_LIBS,
+        ...NODE,
+        ...G(['describe', 'test', 'it', 'expect', 'vi', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll']),
+        ...G(['DataTransfer', 'sessionStorage', 'DOMException', 'HTMLAnchorElement', 'createImageBitmap', 'CSSStyleRule', 'axe']),
+      },
+    },
+  },
+  {
     // ESM build scripts: `import.meta` needs sourceType module, but they still use the
-    // Node globals (audit QA-15's no-undef pass found scripts/rem-convert.mjs:33's process).
+    // Node globals such as `process` (audit QA-15's no-undef pass).
     files: ['scripts/**/*.mjs'],
     languageOptions: {
       sourceType: 'module',

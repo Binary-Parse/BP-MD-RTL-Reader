@@ -11,7 +11,7 @@ const INDEX_URL = 'file:///' + path.resolve(__dirname, '../../src/renderer/index
 
 async function boot(page, settings = {}) {
   const saved = {
-    theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'reading',
+    theme: 'paper', zoomFactor: 1, viewMode: 'reading',
     sidebarVisible: false, inspectorVisible: false, recents: [], lastSession: null,
     readerTextScale: 1.2, readerWidthCh: 84,
     ...settings,

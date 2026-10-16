@@ -1,8 +1,8 @@
 /**
  * main-lifecycle.test.js — mutation-killing assertions for the App-lifecycle
- * cluster of src/main/index.js (audit follow-up): the single-instance lock branch
- * (~L274-307), the app.on lifecycle listeners (second-instance, activate,
- * open-file, window-all-closed), and the bootstrap return object (~L313).
+ * cluster of src/main/index.js (audit follow-up): the single-instance lock branch,
+ * the app.on lifecycle listeners (second-instance, activate,
+ * open-file, window-all-closed), and the bootstrap return object.
  *
  * These tests are STRICTER than the line-coverage tests in main.vitest.test.js:
  * each assertion pins an EXACT observable value on BOTH the true and false
@@ -16,7 +16,7 @@
  * listener and assert.
  */
 
-import { describe, test, expect, vi, beforeAll } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 
@@ -49,7 +49,7 @@ async function drive({ argv = ['node', 'src/main/index.js'], lockResult = true, 
   return { electron, fs, proc, listeners, ret };
 }
 
-// ── SINGLE-INSTANCE LOCK (L274-307) ─────────────────────────────────────────
+// ── SINGLE-INSTANCE LOCK ─────────────────────────────────────────
 describe('src/main/index.js lifecycle — single-instance lock', () => {
   test('lock granted (true): app.quit NOT called; whenReady ran createWindow', async () => {
     const { electron } = await drive({ lockResult: true });
@@ -60,6 +60,18 @@ describe('src/main/index.js lifecycle — single-instance lock', () => {
     expect(electron.BrowserWindow).toHaveBeenCalledTimes(1);
     expect(electron._mockWin.loadURL).toHaveBeenCalledWith('app://ui/src/renderer/index.html');
     expect(electron._mockWin.loadFile).not.toHaveBeenCalled();
+  });
+
+  // QA-L2: the page exposes its window.* test hooks only when the URL asks for them.
+  test('a development run under the Electron test lane asks for the test hooks', async () => {
+    const before = process.env.BPMD_TEST;
+    process.env.BPMD_TEST = '1';
+    try {
+      const { electron } = await drive({ lockResult: true });
+      expect(electron._mockWin.loadURL).toHaveBeenCalledWith('app://ui/src/renderer/index.html?bpmdTest=1');
+    } finally {
+      if (before === undefined) delete process.env.BPMD_TEST; else process.env.BPMD_TEST = before;
+    }
   });
 
   test('lock granted (true): second-instance, window-all-closed, activate are wired', async () => {
@@ -92,7 +104,7 @@ describe('src/main/index.js lifecycle — single-instance lock', () => {
   });
 });
 
-// ── second-instance (L278-289): focus + restore + deliver ────────────────────
+// ── second-instance: focus + restore + deliver ────────────────────
 describe('src/main/index.js lifecycle — second-instance', () => {
   test('zero windows → returns early: no focus, no restore, no send', async () => {
     const { electron, listeners } = await drive();
@@ -203,7 +215,7 @@ describe('src/main/index.js lifecycle — second-instance', () => {
 
     listeners['second-instance']({}, ['node', 'src/main/index.js']);
 
-    // L283: isMinimized() false → restore must NOT fire (kills the
+    // isMinimized() false → restore must NOT fire (kills the
     // "always restore" / negated-condition mutant).
     expect(win.restore).not.toHaveBeenCalled();
     // focus is unconditional → must fire regardless of minimized state.
@@ -229,7 +241,26 @@ describe('src/main/index.js lifecycle — second-instance', () => {
     );
   });
 
-  test('argv with NO file (L285 false) → focus only, NO send', async () => {
+  // MAIN-1: promoting the grants writes capabilities.json; a failed write used to throw
+  // out of the event handler, and the uncaughtException handler then quit the app.
+  test('a failed capabilities.json write still delivers the file and does not throw', async () => {
+    const { electron, fs, listeners } = await drive();
+    const win = electron._mockWin;
+    fs.readFileSync.mockReturnValueOnce('# delivered body');
+    const write = fs.writeFileSync.getMockImplementation();
+    fs.writeFileSync.mockImplementation((p, ...rest) => {
+      if (String(p).includes('capabilities')) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+      return write ? write(p, ...rest) : undefined;
+    });
+    win.webContents.send.mockClear();
+    electron.BrowserWindow.getAllWindows.mockReturnValueOnce([win]);
+
+    expect(() => listeners['second-instance']({}, ['node', 'src/main/index.js', 'second.md'])).not.toThrow();
+    expect(win.webContents.send).toHaveBeenCalledWith(
+      'open-external-file', expect.objectContaining({ name: 'second.md', content: '# delivered body' }));
+  });
+
+  test('argv with NO file (file === null) → focus only, NO send', async () => {
     const { electron, listeners } = await drive();
     const win = electron._mockWin;
     win.focus.mockClear();
@@ -241,7 +272,7 @@ describe('src/main/index.js lifecycle — second-instance', () => {
     listeners['second-instance']({}, ['node', 'src/main/index.js', '--flag', 'notafile']);
 
     expect(win.focus).toHaveBeenCalledTimes(1);
-    // L285 `if (file)` false → no delivery (kills the "always deliver" mutant).
+    // `if (file)` false → no delivery (kills the "always deliver" mutant).
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
 
@@ -260,7 +291,7 @@ describe('src/main/index.js lifecycle — second-instance', () => {
   });
 });
 
-// ── activate (L295-297) ──────────────────────────────────────────────────────
+// ── activate ──────────────────────────────────────────────────────
 describe('src/main/index.js lifecycle — activate', () => {
   test('getAllWindows() empty → a NEW BrowserWindow is created', async () => {
     const { electron, listeners } = await drive();
@@ -285,7 +316,7 @@ describe('src/main/index.js lifecycle — activate', () => {
   });
 });
 
-// ── open-file (L300-306) ─────────────────────────────────────────────────────
+// ── open-file ─────────────────────────────────────────────────────
 describe('src/main/index.js lifecycle — open-file', () => {
   test('preventDefault is ALWAYS called (even for empty path)', async () => {
     const { listeners } = await drive();
@@ -296,7 +327,7 @@ describe('src/main/index.js lifecycle — open-file', () => {
     expect(ev.preventDefault).toHaveBeenCalledTimes(1);
   });
 
-  test('empty path (L302 true) → no delivery', async () => {
+  test('empty path (!filePath) → no delivery', async () => {
     const { electron, listeners } = await drive();
     const win = electron._mockWin;
     win.webContents.send.mockClear();
@@ -326,7 +357,7 @@ describe('src/main/index.js lifecycle — open-file', () => {
     );
   });
 
-  test('valid path but NO windows (L304/305 wins.length > 0 false) → no send', async () => {
+  test('valid path but NO windows (wins.length > 0 false) → no send', async () => {
     const { electron, listeners } = await drive();
     const win = electron._mockWin;
     win.webContents.send.mockClear();
@@ -341,7 +372,7 @@ describe('src/main/index.js lifecycle — open-file', () => {
   });
 });
 
-// ── window-all-closed (L309-311) ─────────────────────────────────────────────
+// ── window-all-closed ─────────────────────────────────────────────
 describe('src/main/index.js lifecycle — window-all-closed', () => {
   test('platform !== "darwin" (win32) → app.quit() called', async () => {
     const { electron, listeners } = await drive({ platform: 'win32' });
@@ -373,7 +404,7 @@ describe('src/main/index.js lifecycle — window-all-closed', () => {
   });
 });
 
-// ── bootstrap return object (L313) ───────────────────────────────────────────
+// ── bootstrap return object ───────────────────────────────────────────
 describe('src/main/index.js lifecycle — bootstrap return object', () => {
   test('returns an object exposing createWindow and registerIpcHandlers functions', async () => {
     const { ret } = await drive();
@@ -405,6 +436,24 @@ describe('--reset-chrome and display re-clamping (T-F19)', () => {
     const saved = JSON.parse(write[1]);
     expect(saved.autoHideTitlebar).toBe(false);
     expect(saved.hideStatusBar).toBe(false);
+  });
+
+  // MAIN-25: save() reports a failure in its result; the log must not claim success.
+  test('logs a warning, not success, when the reset cannot be saved', async () => {
+    const electron = buildMockElectron();
+    electron.app.requestSingleInstanceLock = vi.fn(() => true);
+    electron.app.on.mockImplementation(() => {});
+    const fs = buildMockFs();
+    const write = fs.writeFileSync.getMockImplementation();
+    fs.writeFileSync.mockImplementation((p, ...rest) => {
+      if (String(p).includes('settings.json')) throw Object.assign(new Error('read-only'), { code: 'EROFS' });
+      return write ? write(p, ...rest) : undefined;
+    });
+    bootstrap({ electron, fs, proc: buildMockProc(['node', 'src/main/index.js', '--reset-chrome']) });
+    await new Promise(r => setTimeout(r, 50));
+    const logged = fs.appendFileSync.mock.calls.map(([, line]) => String(line)).join('\n');
+    expect(logged).not.toContain('chrome visibility restored');
+    expect(logged).toMatch(/main:reset-chrome.*not saved/);
   });
 
   test('writes nothing when the flag is absent', async () => {

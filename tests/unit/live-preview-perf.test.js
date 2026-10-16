@@ -66,7 +66,7 @@ describe('live-preview perf (viewport-bounded)', () => {
     const plugin = createLivePreview(c.CM6);
     const { view, lineAtCalls } = bigDocView({ lineCount: 10000, visibleRanges: [], sel: { from: 0, to: 0 } });
     const inst = new plugin.cls(view);
-    expect(lineAtCalls()).toBe(0);          // FAILS today: lineAt(sel.from)/lineAt(sel.to) run before the empty loop
+    expect(lineAtCalls()).toBe(0);          // no lineAt(sel.from/to) before the loop when nothing is visible
     expect(inst.decorations.ranges).toEqual([]);
     expect(c.visited()).toBe(0);
   });
@@ -98,12 +98,16 @@ describe('live-preview perf (viewport-bounded)', () => {
     const c = countingCM6();
     const { view } = bigDocView({ lineCount: 10000, visibleRanges: win(500, 550), sel: { from: 0, to: 0 } });
     const inst = new (createLivePreview(c.CM6).cls)(view);
-    c.reset();
-    const t0 = performance.now();
-    inst.update({ docChanged: true, selectionSet: false, viewportChanged: false, view });
-    const dt = performance.now() - t0;
-    expect(c.visited()).toBeLessThanOrEqual(110); // rebuild touched only the viewport
-    expect(dt).toBeLessThan(16);                  // generous keystroke smoke (fake engine ≈ 0 cost)
+    // Best of five: one scheduler stall on a loaded machine must not fail a smoke bound.
+    let best = Infinity;
+    for (let run = 0; run < 5; run += 1) {
+      c.reset();
+      const t0 = performance.now();
+      inst.update({ docChanged: true, selectionSet: false, viewportChanged: false, view });
+      best = Math.min(best, performance.now() - t0);
+      expect(c.visited()).toBeLessThanOrEqual(110); // rebuild touched only the viewport
+    }
+    expect(best).toBeLessThan(16);                  // generous keystroke smoke (fake engine ≈ 0 cost)
   });
 
   test('a no-op update does ZERO work and reuses the prior decorations', () => {

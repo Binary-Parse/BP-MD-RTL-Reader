@@ -3,7 +3,7 @@
  * only an explicit user action triggers it; it sends no identifiers and never auto-downloads.
  * Drives the real bootstrap with an injected fetch.
  */
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { bootstrap } from '../../src/main/index.js';
 import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js';
 

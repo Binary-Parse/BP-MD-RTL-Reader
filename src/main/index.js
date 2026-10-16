@@ -1,7 +1,6 @@
 const path = require('path');
 const {
-  parseFileArg,
-  parseFileArgs, mergePendingFiles,
+  parseFileArg, parseFileArgs, mergePendingFiles,
   shouldResetChrome,
   isNetworkPath,
   isTooManyFiles,
@@ -19,6 +18,7 @@ const { createSettingsStore, clampWindowBounds, migrate, resetChromeSettings } =
 const { compareVersions } = require('./version');
 const { APP_RENDERER_URL } = require('./protocol');
 const { createIpcController } = require('./ipc-controller');
+const { guardIpc } = require('./ipc-guard'); // QA-M3: every handler checks the sending frame
 const { createProtocolController } = require('./protocol-controller');
 const { createWindowController } = require('./window-controller');
 const { createPinnedGithubFetch } = require('./github-tls');
@@ -26,7 +26,7 @@ const crypto = require('crypto');
 
 // ==== INJECTABLE BOOTSTRAP (audit #3) ====
 // All Electron/fs side-effects live inside bootstrap() so the module can be
-// imported (by Vitest/Stryker) WITHOUT running the real app and WITHOUT a
+// imported (by Vitest) WITHOUT running the real app and WITHOUT a
 // Module._resolveFilename hijack. The real app entry calls bootstrap() with
 // the live electron/fs/process at the bottom of this file (guarded by
 // process.versions.electron), so runtime behaviour is identical to before.
@@ -166,25 +166,28 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
         const capability = capabilityRegistry.grantDocument(filePath, { persistGrant: false });
         ipcController.sessionGrantDocument(capability.id);
         const snapshot = ipcController.readDocumentCapability(capability.id);
+        // A note above the confirm size is asked about by the renderer (documentId + size), then read.
+        if (!snapshot.error || snapshot.error === 'confirm-large') grantedIds.push(capability.id);
         if (!snapshot.error) {
-          grantedIds.push(capability.id);
           win.webContents.send('open-external-file', snapshot);
           delivered++;
         } else {
-          win.webContents.send('open-external-file', { error: snapshot.error, name: path.basename(filePath) });
+          win.webContents.send('open-external-file', { error: snapshot.error, name: path.basename(filePath), documentId: snapshot.documentId, size: snapshot.size });
         }
       } catch (_) {
         win.webContents.send('open-external-file', { error: 'read-failed', name: path.basename(filePath) });
       }
     }
-    capabilityRegistry.promoteDocuments(grantedIds); return delivered;
+    // MAIN-1: a failed registry write must not throw out of an event handler (that quits the app).
+    try { capabilityRegistry.promoteDocuments(grantedIds); } catch (err) { writeLog('warn', 'main:open-file', `grants not saved: ${err.message}`); }
+    return delivered;
   }
 
   // ==== IPC HANDLERS ====
   ipcController = createIpcController({
     app,
     BrowserWindow,
-    ipcMain,
+    ipcMain: guardIpc(ipcMain, { proc, writeLog }),
     dialog,
     session,
     fs,
@@ -235,7 +238,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     approvedCloseWindows,
     getCurrentSettings: () => currentSettings,
     persistWindowState,
-    closeVaultWatcher: () => ipcController.closeVaultWatcher(),
+    closeAllVaults: () => ipcController.closeAllVaults(),
     resetRecovery: () => ipcController.resetRecoveryForReload(),
     deliverPendingFiles,
     clampWindowBounds,
@@ -245,7 +248,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
     buildContextMenuTemplate,
     buildContextMenuLabels: () => labelsForLocale(currentSettings && currentSettings.uiLocale),
     writeLog,
-    ipcMain, crypto, Menu, nativeTheme, platform: proc.platform, dialog,
+    ipcMain: guardIpc(ipcMain, { proc, writeLog }), crypto, Menu, nativeTheme, platform: proc.platform, dialog,
   });
 
   function createWindow() {
@@ -259,8 +262,9 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
   function applyChromeResetIfAsked(argv) {
     if (!shouldResetChrome(argv) || !settingsStore) return;
     currentSettings = resetChromeSettings(currentSettings);
-    settingsStore.save(currentSettings);
-    writeLog('info', 'main:reset-chrome', 'chrome visibility restored by --reset-chrome');
+    const saved = settingsStore.save(currentSettings);
+    if (saved?.error) writeLog('warn', 'main:reset-chrome', `chrome reset not saved: ${saved.error}`);
+    else writeLog('info', 'main:reset-chrome', 'chrome visibility restored by --reset-chrome');
   }
 
   // ==== SINGLE-INSTANCE LOCK ====
@@ -293,12 +297,7 @@ function bootstrap({ electron, fs, proc = process, fetchFn = createPinnedGithubF
       registerIpcHandlers();
       protocolController.registerAppProtocol();
       protocolController.registerBpmdProtocol();
-      const win = createWindow();
-      // v1.2: pending CLI files ride did-finish-load (window-controller); if the
-      // renderer is slow, deliver on the next tick so early files aren't dropped.
-      if (pendingFilesToOpen.length > 0 && win) {
-        win.webContents.on('did-finish-load', () => deliverPendingFiles(win));
-      }
+      createWindow(); // pending CLI files go out on did-finish-load (window-controller)
       // EC-D2 follow-up (T-F19): a display can vanish mid-session and strand the
       // window off-screen, where an auto-hidden title bar leaves no drag region.
       windowController.watchDisplays();
@@ -340,9 +339,8 @@ module.exports = { bootstrap };
 // Run only inside the Electron main process. Playwright's Electron harness
 // preloads an instrumentation module, so require.main is not reliably this
 // file there; process.versions.electron remains the authoritative runtime
-// discriminator. Plain Node/Vitest/Stryker imports do not expose that value.
-// Stryker disable all — this guard is unreachable in the Node unit runner.
-if (process.versions && process.versions.electron) {
-  bootstrap({ electron: require('electron'), fs: require('fs') });
+// discriminator. Plain Node/Vitest imports do not expose that value; the guard is
+// unreachable in the Node unit runner.
+if (process.versions && process.versions.electron && !require('./launch-guard').refuseDebugSwitch({ app: require('electron').app, argv: process.argv, dirname: __dirname, testBuild: require('../../package.json').bpmdTestBuild === true, warn: (m) => process.stderr.write(`${m}\n`) })) {
+  bootstrap({ electron: require('electron'), fs: require('fs') }); // QA-L1: the guard runs first
 }
-// Stryker restore all

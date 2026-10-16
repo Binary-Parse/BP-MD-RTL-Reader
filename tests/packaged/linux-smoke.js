@@ -5,7 +5,7 @@
  *
  *   node tests/packaged/linux-smoke.js dist/linux-unpacked/bpmdrtlreader
  *
- * Needs a display (WSLg, X11 or Wayland). It starts the real packaged binary three times, each
+ * Needs a display (WSLg, X11 or Wayland). It starts the real packaged binary four times, each
  * with its own empty profile, and drives the window over the Chromium DevTools protocol:
  *   1. a note passed by path opens and is rendered;
  *   2. text typed into it is written to the file by Ctrl+S;
@@ -23,14 +23,33 @@ const { chromium } = require('@playwright/test');
 const PORT = 9333;
 const MARK = 'typed by the smoke test';
 
+const ended = (child) => child.exitCode !== null || child.signalCode !== null;
+
+/**
+ * Resolves once the child has ended: with an exit code, by a signal, or by never starting.
+ * A crashed Electron reports exitCode null and a signal such as SIGTRAP. Waiting only for an
+ * 'exit' event that had already fired emptied the event loop, and node quit with status 0.
+ */
+function waitForExit(child) {
+  return new Promise((resolve) => {
+    if (ended(child)) { resolve(); return; }
+    child.once('exit', () => resolve());
+    child.once('error', () => resolve());
+  });
+}
+
 async function withApp(binary, profile, noteArgument, run) {
   const child = spawn(binary, [`--remote-debugging-port=${PORT}`, noteArgument], {
     env: { ...process.env, XDG_CONFIG_HOME: profile }, stdio: 'ignore',
   });
+  let spawnError = null;
+  child.once('error', (error) => { spawnError = error; });
   let browser = null;
   try {
     const deadline = Date.now() + 30000;
     while (!browser) {
+      if (spawnError) throw new Error(`the app could not be started: ${spawnError.message}`);
+      if (ended(child)) throw new Error(`the app ended before its window opened (code ${child.exitCode}, signal ${child.signalCode})`);
       try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`); } catch (error) {
         if (Date.now() > deadline) throw new Error(`the app did not start: ${error.message}`);
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -42,7 +61,7 @@ async function withApp(binary, profile, noteArgument, run) {
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill();
-    await new Promise((resolve) => { if (child.exitCode !== null) resolve(); else child.once('exit', resolve); });
+    await waitForExit(child);
   }
 }
 
@@ -61,7 +80,8 @@ async function main() {
   console.log('ok  1/4 a note passed by path opens');
 
   await withApp(binary, profile('p2'), byPath, async (page) => {
-    await page.evaluate(() => window.setViewMode('edit'));
+    // A packaged build exposes no test hooks (QA-L2), so switch to Edit mode the way a user does.
+    if (!(await page.locator('.cm-content').isVisible())) await page.keyboard.press('Control+e');
     await page.click('.cm-content');
     await page.keyboard.press('Control+End');
     await page.keyboard.type(`\n${MARK}\n`);
@@ -91,4 +111,21 @@ async function main() {
   fs.rmSync(work, { recursive: true, force: true });
 }
 
-main().catch((error) => { console.error(`FAILED: ${error.message}`); process.exit(1); });
+if (require.main === module) {
+  let finished = false;
+  // Safety net: if anything ever leaves main() pending with an empty event loop, say so and
+  // fail instead of ending with status 0.
+  process.on('beforeExit', () => {
+    if (finished) return;
+    finished = true;
+    console.error('FAILED: the smoke test stopped before it finished');
+    process.exitCode = 1;
+  });
+  main().then(() => { finished = true; }, (error) => {
+    finished = true;
+    console.error(`FAILED: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { waitForExit };

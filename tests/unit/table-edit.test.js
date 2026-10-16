@@ -31,6 +31,15 @@ describe('tableAt', () => {
     expect(tableAt('just text\n', 2)).toBeNull();
     expect(tableAt('| only one line |\n', 3)).toBeNull(); // no delimiter row
   });
+  test('QA M10: a table example inside a code fence is not a table', () => {
+    const tbl = '| a | b |\n|---|---|\n| 1 | 2 |\n';
+    for (const fence of ['```md\n', '~~~\n', '````\n```\n']) {
+      const md = fence + tbl + fence.split('\n')[0] + '\n';
+      expect(tableAt(md, md.indexOf('| 1') + 2)).toBeNull();
+    }
+    const after = '```\ncode\n```\n' + tbl;
+    expect(tableAt(after, after.indexOf('| 1') + 2)).not.toBeNull();
+  });
   test('round-trips through serializeTable', () => {
     const t = tableAt(T, posIn(T, 'A'));
     expect(serializeTable(t)).toBe(T);

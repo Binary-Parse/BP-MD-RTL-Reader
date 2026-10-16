@@ -144,6 +144,12 @@ test.describe('[M19] column alignment follows the direction of the table', () =>
     expect(await sides(page, '#noteContent')).toEqual(['right', 'center', 'left']);
   });
 
+  test('QA M14: a Latin cell in an Arabic table aligns with its column', async ({ page }) => {
+    await boot(page);
+    await openReading(page, `نص عربي.\n\n| الصنف | الكمية | السعر |\n|:--|:-:|--:|\n| pen | ثلاثة | 5 USD |\n`);
+    expect(await sides(page, '#noteContent')).toEqual(['right', 'center', 'left']);
+  });
+
   test('the alignment changes with the direction the user sets by hand', async ({ page }) => {
     await boot(page);
     await openReading(page, `Some English text.\n\n${table('One', 'Two', 'Three')}`);

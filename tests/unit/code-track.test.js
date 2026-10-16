@@ -54,13 +54,15 @@ describe('activeCodeBlock', () => {
     expect(activeCodeBlock(blocks, 50, VH)).toBe(0);
   });
 
-  test('direction-agnostic: the same scroll position yields the same block scrolling up or down', () => {
+  test('the active block only moves forward as the page scrolls down, and back as it scrolls up', () => {
     const blocks = [{ top: 100 }, { top: 800 }, { top: 1500 }];
-    for (const scrollTop of [0, 200, 600, 1000, 1400, 3000]) {
-      const down = activeCodeBlock(blocks, scrollTop, VH);
-      const up = activeCodeBlock(blocks, scrollTop, VH); // same input, same rule
-      expect(up).toBe(down);
-    }
+    const positions = [0, 200, 600, 1000, 1400, 3000];
+    const down = positions.map((scrollTop) => activeCodeBlock(blocks, scrollTop, VH));
+    for (let i = 1; i < down.length; i++) expect(down[i]).toBeGreaterThanOrEqual(down[i - 1]);
+    expect(down).toContain(0);
+    expect(down.at(-1)).toBe(2);
+    const up = [...positions].reverse().map((scrollTop) => activeCodeBlock(blocks, scrollTop, VH));
+    expect(up).toEqual([...down].reverse()); // depends on the position, not on the direction
   });
 
   test('skips malformed entries instead of derailing the scan', () => {
@@ -69,5 +71,14 @@ describe('activeCodeBlock', () => {
     expect(activeCodeBlock(blocks, 0, VH)).toBe(0);
     // mid 1450: 1200 reached → last valid index wins even after malformed entries.
     expect(activeCodeBlock(blocks, 1200, VH)).toBe(3);
+  });
+
+  test('QA-N7: at the end of the note a block in the lower half still becomes current', () => {
+    const blocks = [{ top: 1815 }, { top: 1952 }, { top: 2088 }];
+    // 564 px pane scrolled to its end (2370 px of content): the midline 2088 - 1 never reaches the last block.
+    expect(activeCodeBlock(blocks, 1805, 564)).toBe(1);
+    expect(activeCodeBlock(blocks, 1805, 564, 2370)).toBe(2);
+    // Not at the end yet: the midline rule is unchanged.
+    expect(activeCodeBlock(blocks, 1700, 564, 2370)).toBe(1);
   });
 });

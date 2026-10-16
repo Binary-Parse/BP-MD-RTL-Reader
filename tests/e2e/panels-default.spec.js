@@ -24,7 +24,7 @@ async function withSettings(page, settings) {
     };
   }, settings);
 }
-const base = { theme: 'paper', zoomFactor: 1, editorMode: 'live', recents: [], lastSession: null };
+const base = { theme: 'paper', zoomFactor: 1, recents: [], lastSession: null };
 
 test('packaged default: both panels start CLOSED with their titlebar toggles collapsed', async ({ page }) => {
   await withSettings(page, { ...base, sidebarVisible: false, inspectorVisible: false });

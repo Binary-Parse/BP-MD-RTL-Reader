@@ -129,6 +129,28 @@ describe('reading stats store (T8.1)', () => {
       .toMatchObject({ today: 0, streak: 0 });
   });
 
+  // MAIN-16 / B3: the next minute tick must not overwrite two years of history with one day.
+  test('a corrupt file is moved aside before the first save, not overwritten', () => {
+    const fs = memFs({ [FILE]: '{torn' });
+    const store = storeAt('2026-01-03', fs);
+    expect(store.addMinutes(1)).toMatchObject({ ok: true, today: 1 });
+    const kept = Object.keys(fs._files).filter((p) => p.startsWith(`${FILE}.corrupt-`));
+    expect(kept).toHaveLength(1);
+    expect(fs._files[kept[0]]).toBe('{torn');
+  });
+
+  test('saving is refused while a damaged or unreadable file still sits in place', () => {
+    const stuck = memFs({ [FILE]: '{torn' });
+    stuck.renameSync.mockImplementation(() => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); });
+    expect(storeAt('2026-01-03', stuck).addMinutes(1)).toEqual({ error: 'store-unreadable' });
+    expect(stuck._files[FILE]).toBe('{torn');
+
+    const locked = memFs();
+    locked.readFileSync.mockImplementation(() => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); });
+    expect(storeAt('2026-01-03', locked).addMinutes(1)).toEqual({ error: 'store-unreadable' });
+    expect(locked.writeFileSync).not.toHaveBeenCalled();
+  });
+
   test('drops malformed day entries on load (only ISO keys with whole minutes survive)', () => {
     const seed = {
       [FILE]: JSON.stringify({

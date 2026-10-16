@@ -69,7 +69,7 @@ function harness(overrides = {}) {
     approvedCloseWindows: new Set(),
     getCurrentSettings: vi.fn(() => ({ window: { w: 1280, h: 820 } })),
     persistWindowState: vi.fn(),
-    closeVaultWatcher: vi.fn(),
+    closeAllVaults: vi.fn(),
     deliverPendingFiles: vi.fn(),
     clampWindowBounds: vi.fn(() => ({ w: 1280, h: 820 })),
     isPackaged: false,
@@ -162,8 +162,8 @@ describe('close failsafe', () => {
     expect(h.win.close).toHaveBeenCalledTimes(1);
     expect(h.deps.approvedCloseWindows.has(h.win)).toBe(true);
     expect(h.deps.persistWindowState).toHaveBeenCalledWith(h.win);
-    expect(h.deps.closeVaultWatcher).toHaveBeenCalledTimes(1);
-    const [level, tag, message] = h.deps.writeLog.mock.calls.find((c) => c[1] === 'window:close-failsafe');
+    expect(h.deps.closeAllVaults).toHaveBeenCalledTimes(1);
+    const [level, , message] = h.deps.writeLog.mock.calls.find((c) => c[1] === 'window:close-failsafe');
     expect(level).toBe('warn');
     expect(message).toContain('within 20000ms');
     expect(message).toContain('(3 unsaved file(s)');
@@ -276,7 +276,7 @@ describe('window close handler', () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(h.deps.approvedCloseWindows.has(h.win)).toBe(false);
     expect(h.deps.persistWindowState).toHaveBeenCalledWith(h.win);
-    expect(h.deps.closeVaultWatcher).toHaveBeenCalledTimes(1);
+    expect(h.deps.closeAllVaults).toHaveBeenCalledTimes(1);
     expect(h.win.close).not.toHaveBeenCalled();
   });
 
@@ -288,7 +288,7 @@ describe('window close handler', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
     expect(h.deps.approvedCloseWindows.has(h.win)).toBe(true);
     expect(h.deps.persistWindowState).toHaveBeenCalledWith(h.win);
-    expect(h.deps.closeVaultWatcher).toHaveBeenCalledTimes(1);
+    expect(h.deps.closeAllVaults).toHaveBeenCalledTimes(1);
     expect(h.win.close).toHaveBeenCalledTimes(1);
     expect(h.webContents.send).not.toHaveBeenCalledWith('app:request-close');
   });

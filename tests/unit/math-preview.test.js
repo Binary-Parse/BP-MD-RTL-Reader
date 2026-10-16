@@ -5,7 +5,7 @@
  * active line, raw on it; widget DOM from the injected renderMath).
  */
 import { describe, test, expect } from 'vitest';
-import { findMath, buildMathDecorations } from '../../src/renderer/editor/math-preview.js';
+import { findMath, buildMathDecorations, createMathPreview } from '../../src/renderer/editor/math-preview.js';
 
 describe('findMath', () => {
   test('inline $x$ → one span, display:false', () => {
@@ -79,7 +79,6 @@ describe('buildMathDecorations', () => {
   });
 });
 
-import { createMathPreview } from '../../src/renderer/editor/math-preview.js';
 
 describe('createMathPreview (ViewPlugin) + widget methods', () => {
   const DOC = 'heading\nsee $x+1$ here\nend';

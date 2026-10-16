@@ -32,15 +32,3 @@ export function escapeHtml(s) {
 export function escapeReg(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
-// ── Arabic typography helpers (T-R3/R5) ─────────────────────────────────────
-
-/** True if the text contains Arabic diacritics (tashkeel) — needs taller leading. */
-export function hasTashkeel(text) {
-  return typeof text === 'string' && /[\u064B-\u065F\u0670\u0640]/.test(text);
-}
-
-/** Recommended line-height for an Arabic block (T-R3): looser when tashkeel present. */
-export function arabicLineHeight(text) {
-  return hasTashkeel(text) ? 2.0 : 1.8;
-}

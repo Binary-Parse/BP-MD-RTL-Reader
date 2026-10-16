@@ -17,7 +17,7 @@ test.describe('[T-F13] CM6 as the single live-preview editor (default, no opt-in
     await page.waitForSelector('#app');
     await page.evaluate(() => window.loadDemo());
     await expect(page.locator('.cm-mount .cm-editor')).toHaveCount(1, { timeout: 8000 });
-    expect(await page.evaluate(() => window._appState.editorMode)).toBe('live');
+    expect(await page.evaluate(() => 'editorMode' in window._appState)).toBe(false);
     const size = await page.evaluate(() => {
       const r = document.querySelector('.cm-mount .cm-editor').getBoundingClientRect();
       return r.width > 0 && r.height > 0;
@@ -70,7 +70,7 @@ test.describe('[T-F13] CM6 as the single live-preview editor (default, no opt-in
         closeWindow: noop, minimizeWindow: noop, maximizeWindow: noop,
         openFolder: async () => ({ canceled: true }), readVault: async () => [],
         writeFile: async () => ({ ok: true }),
-        getSettings: async () => ({ theme: 'paper', zoomFactor: 1, editorMode: 'live', sidebarVisible: true, inspectorVisible: true, uiDirection: 'ltr', uiLocale: 'en', calendar: 'gregorian', arabicKashida: false, italicRecolor: true, recents: [], lastSession: null }),
+        getSettings: async () => ({ theme: 'paper', zoomFactor: 1, sidebarVisible: true, inspectorVisible: true, uiDirection: 'ltr', uiLocale: 'en', calendar: 'gregorian', arabicKashida: false, italicRecolor: true, recents: [], lastSession: null }),
         setSettings: async () => ({ ok: true }),
         exportPDF: async () => ({ ok: true }), editCommand: noop, onOpenFile: noop, onVaultChanged: noop,
         checkForUpdate: async () => ({}), logError: noop,
@@ -170,4 +170,35 @@ test.describe('[T-F13] CM6 as the single live-preview editor (default, no opt-in
     await expect(img).toHaveCount(1, { timeout: 8000 });
     expect(await img.first().getAttribute('src')).toBe('https://example.com/x.png');
   });
+});
+
+// REND-22: with the textarea fallback gone, a CM6 load failure must leave the note readable
+// in the rendered pane, and an edit must say why it did nothing instead of changing the note.
+test('CM6 failing to load: the note stays readable and an edit is refused with the reason', async ({ page }) => {
+  await page.addInitScript(() => {
+    const append = Node.prototype.appendChild;
+    Node.prototype.appendChild = function (el) {
+      if (el && el.tagName === 'SCRIPT' && /codemirror\.min\.js$/.test(el.src || '')) {
+        setTimeout(() => el.onerror && el.onerror(new Event('error')));
+        return el;
+      }
+      return append.call(this, el);
+    };
+  });
+  await page.goto(INDEX_URL);
+  await page.waitForSelector('#app');
+  await expect(page.locator('#toast')).toContainText('editor engine could not load');
+  await page.evaluate(() => {
+    window._appState.files = [{ name: 'r.md', path: 'r.md', content: '# Readable\n\nbody text', dirty: false }];
+    window.renderFile(0);
+  });
+  await expect(page.locator('.cm-mount')).toHaveCount(0);
+  await expect(page.locator('#noteContent h1')).toHaveText('Readable');
+  await expect(page.locator('#noteContent h1')).toBeVisible();
+
+  await page.evaluate(() => { document.getElementById('toast').textContent = ''; window.wrapSelection('**', '**'); });
+  await expect(page.locator('#toast')).toContainText('editor engine could not load');
+  const f = await page.evaluate(() => window._appState.files[0]);
+  expect(f.content).toBe('# Readable\n\nbody text');
+  expect(f.dirty).toBe(false);
 });

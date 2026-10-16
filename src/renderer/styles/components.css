@@ -331,11 +331,9 @@ html[data-chrome~="autohide"] .titlebar:focus-within { transform: none; }
 html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows: 1fr; }
 
 /* ============ DROPDOWN MENU ============ */
-.dropdown {
-  position: absolute;
-  top: var(--top-h);
-  min-width: 17.5rem;
-  max-width: 21rem;
+/* The menu-bar dropdowns and the context menu share one glass surface. */
+.dropdown,
+.ctx {
   padding: 0.3rem;
   background: color-mix(in srgb, var(--paper) 95%, transparent);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
@@ -343,11 +341,17 @@ html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows
   border: 1px solid var(--rule-2);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-pop);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.dropdown {
+  position: absolute;
+  top: var(--top-h);
+  min-width: 17.5rem;
+  max-width: 21rem;
   z-index: 200;
   display: none;
   max-height: calc(100vh - 90px);
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 .dropdown.open { display: block; }
 
@@ -355,17 +359,8 @@ html[data-chrome~="autohide"][data-chrome~="nostatus"] .app { grid-template-rows
   position: fixed;
   min-width: 16.75rem;
   max-width: 24rem;
-  padding: 0.3rem;
-  background: color-mix(in srgb, var(--paper) 95%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.35);
-  backdrop-filter: blur(18px) saturate(1.35);
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-pop);
   z-index: 500;
   max-height: calc(100vh - 24px);
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 .ctx[hidden] { display: none; }
 
@@ -438,7 +433,7 @@ html[lang="ar"] .cr-label { font: 500 0.86rem/1.4 var(--arabic); }
   min-height: 1.5rem;
   padding-inline: 0.6rem;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink-mute);
   font: 600 0.6875rem/1 var(--mono);
@@ -555,6 +550,18 @@ html[lang="ar"] .dd-section-label { font: 600 0.75rem/1.3 var(--arabic); letter-
 html[dir="rtl"] #sidebarToggleBtn .ic,
 html[dir="rtl"] #inspectorToggleBtn .ic { transform: scaleX(-1); }
 
+/* QA-L7: directional glyphs mirror in the Arabic UI wherever they are drawn (toolbar, menus,
+   palette, context menu), keyed to the symbol so no call site has to opt in. Glyphs whose
+   meaning does not depend on reading direction (rotate, checks, code, math, letterforms,
+   logos) are left alone, per the Mozilla and Material RTL guidelines. */
+html[dir="rtl"] svg.ic:has(> use[href="#ic-indent-increase"]),
+html[dir="rtl"] svg.ic:has(> use[href="#ic-indent-decrease"]),
+html[dir="rtl"] svg.ic:has(> use[href="#ic-list"]),
+html[dir="rtl"] svg.ic:has(> use[href="#ic-undo-2"]),
+html[dir="rtl"] svg.ic:has(> use[href="#ic-redo-2"]),
+html[dir="rtl"] svg.ic:has(> use[href="#ic-panel-left"]),
+html[dir="rtl"] svg.ic:has(> use[href="#ic-panel-right"]) { transform: scaleX(-1); }
+
 .sidebar {
   position: relative;
   display: flex;
@@ -669,6 +676,7 @@ html[lang="ar"] .sb-foot button { font-family: var(--arabic); font-style: normal
   font: 700 1.2rem/1.2 var(--serif);
 }
 .sb-empty p { margin-bottom: 1rem; font-size: 0.8125rem; line-height: 1.6; }
+.sb-empty p code { font-family: var(--mono); font-size: 0.6875rem; background: var(--paper); padding: 1px 4px; border-radius: 3px; }
 .sb-empty .actions { display: flex; flex-direction: column; gap: 0.4rem; }
 .sb-empty button {
   display: flex;
@@ -756,7 +764,9 @@ html[lang="ar"] .tree-root .tree-count { font: 500 0.75rem/1.3 var(--arabic); le
 .tree-dir .tree-name { flex: 0 1 auto; }
 .tree-dir .tree-name.arabic { font: 700 0.76rem/1.3 var(--arabic); letter-spacing: 0; text-transform: none; }
 .tree-rule { flex: 1; min-width: 0.5rem; height: 1px; background: var(--rule-2); }
-.tree-dir .tree-count { color: var(--ink-faint); font-weight: 500; }
+/* QA-M23: text in --ink-faint read at 2.1–3.1:1 on the sidebar; --ink-mute is the lightest
+   ink that reaches 4.5:1 there in all four themes. --ink-faint stays for ornaments only. */
+.tree-dir .tree-count { color: var(--ink-mute); font-weight: 500; }
 
 .tree-file { --dc: var(--ink-faint); padding-block: 0.45rem; }
 .tree-file[data-d="ltr"] { --dc: var(--ltr); }
@@ -916,7 +926,6 @@ html[dir="rtl"] .tree-prog i { margin-inline-start: auto; }
 }
 
 /* Find bar */
-/* v10: bar radius 6->12px, input radius 4->8px. */
 .find-bar {
   position: absolute;
   top: calc(var(--titlebar-h) + 0.75rem);
@@ -944,7 +953,6 @@ html[dir="rtl"] .tree-prog i { margin-inline-start: auto; }
   background: transparent;
   color: var(--ink);
 }
-.find-bar input:focus { border-color: var(--accent); }
 .find-bar input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .find-info { font-family: var(--mono); font-size: 0.6875rem; color: var(--ink-mute); padding: 0 6px; }
 .find-btn {
@@ -961,13 +969,13 @@ html[dir="rtl"] .tree-prog i { margin-inline-start: auto; }
 
 mark.find-hit {
   background: var(--find-hit);
-  color: var(--ink);
+  color: var(--find-ink);
   border-radius: 2px;
   padding: 0 1px;
 }
 mark.find-hit.current { background: var(--ink); color: var(--paper); }
 /* The same matches in the editor (audit N1). No padding: it would move the text being edited. */
-.cm-mount .cm-searchMatch { background: var(--find-hit); color: var(--ink); border-radius: 2px; }
+.cm-mount .cm-searchMatch { background: var(--find-hit); color: var(--find-ink); border-radius: 2px; }
 
 /* ============ EDITOR ============ */
 /* v10 redesign (2026-08-25): a subtle tiling paper-grain texture (feTurbulence,
@@ -1138,6 +1146,9 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
   border-radius: var(--r-md);
 }
 .cm-mount .cm-content { position: relative; isolation: isolate; color: var(--ink); caret-color: var(--accent); max-width: 800px; margin: 0 auto; padding-inline: 20px; }
+/* CodeMirror draws its own caret (drawSelection hides the native one) in black by default:
+   invisible on the dark paper of Ink and Oasis (QA H6). Same colour as caret-color above. */
+.cm-mount .cm-cursor, .cm-mount .cm-dropCursor { border-left-color: var(--accent); }
 /* v1.2.2: "Start writing…" hint for an empty document — a DOM overlay, never document
    content. The old scaffold put the text IN the note, so saving an untouched new note
    wrote the placeholder to disk; now the file starts empty. Positioned over
@@ -1172,7 +1183,14 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
 .cm-mount .cm-line[dir="rtl"] { font-family: var(--arabic); line-height: 1.95; }
 .cm-mount .cm-editor.cm-focused { outline: none; }
 .cm-mount .cm-activeLine { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.cm-mount .cm-selectionBackground, .cm-mount .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* drawSelection() paints the selection on a layer BEHIND .cm-content (CM6 sets z-index: -2
+   inline), and the opaque paper sheet (.cm-content::before) covers it — the selection was
+   drawn but invisible in every theme. Lift the layer above the text (!important beats the
+   inline style); it takes no pointer events, so the text stays clickable. The fill must stay
+   translucent to keep the text readable, so the selector outranks CM6's own opaque
+   `.ͼ1.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground` colour. */
+.cm-mount .cm-scroller > .cm-selectionLayer { z-index: 1 !important; }
+.cm-mount .cm-editor .cm-scroller > .cm-selectionLayer .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 /* T-F13 parity: live-preview BLOCK widgets (rendered tables/math/… inline in the single CM6 surface) */
 .cm-mount .cm-lp-block { margin: 12px 0; }
 /* v10: same ledger treatment as .editor table -- no vertical borders. */
@@ -1181,6 +1199,12 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
 .cm-mount .cm-lp-block th[align="left"], .cm-mount .cm-lp-block td[align="left"] { text-align: start; }
 .cm-mount .cm-lp-block th[align="right"], .cm-mount .cm-lp-block td[align="right"] { text-align: end; }
 .cm-mount .cm-lp-block th[align="center"], .cm-mount .cm-lp-block td[align="center"] { text-align: center; }
+/* QA M14: a cell with its own direction (a Latin cell in an Arabic table) still aligns by the
+   direction of the table, so a column lines up. Browsers without :dir() keep the rules above. */
+.cm-mount .cm-lp-block table:dir(rtl) th[align="left"], .cm-mount .cm-lp-block table:dir(rtl) td[align="left"] { text-align: right; }
+.cm-mount .cm-lp-block table:dir(rtl) th[align="right"], .cm-mount .cm-lp-block table:dir(rtl) td[align="right"] { text-align: left; }
+.cm-mount .cm-lp-block table:dir(ltr) th[align="left"], .cm-mount .cm-lp-block table:dir(ltr) td[align="left"] { text-align: left; }
+.cm-mount .cm-lp-block table:dir(ltr) th[align="right"], .cm-mount .cm-lp-block table:dir(ltr) td[align="right"] { text-align: right; }
 .cm-mount .cm-lp-block th {
   background: transparent;
   border-bottom: 2px solid var(--rule);
@@ -1198,16 +1222,12 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
    pane and forcing a horizontal scrollbar. Constrain to the content width, keep aspect ratio. */
 /* v10: same rounded corners + soft shadow as #noteContent img. */
 .cm-mount .cm-content img, .cm-mount .cm-lp-block img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: 0 8px 24px -12px rgba(0,0,0,.3); }
-.editor-area.split .source-pane { display: block; border-inline-end: 1px solid var(--rule); }
-.editor-area.source .source-pane { display: block; }
-.editor-area.source .preview-pane { display: none; }
-.editor-area.split .source-pane { flex: 1; }
-.editor-area.split .preview-pane { flex: 1; }
-/* T-F13 single live-preview mode (behind ?cm=1): the CM6 source pane IS the rendered
-   surface (its own live-preview decorations), so show it and hide the redundant markdown
-   preview. :not(.split) keeps Split View reachable via the palette/View menu. */
+/* T-F13 single live-preview mode (.cm-single, set once CM6 mounts): the CM6 source pane
+   IS the rendered surface (its own live-preview decorations), so show it and hide the
+   redundant markdown preview. Until CM6 mounts (or if it fails to load) the rendered
+   preview pane shows the note. */
 .editor-area.cm-single .source-pane { display: block; flex: 1; }
-.editor-area.cm-single:not(.split) .preview-pane { display: none; }
+.editor-area.cm-single .preview-pane { display: none; }
 /* T-F13: the welcome card lives in the preview pane, which cm-single hides. When no file is
    open, show the preview pane (welcome) and hide the empty CM6 surface instead. */
 .editor-area.cm-single.welcome .preview-pane { display: block; flex: 1; }
@@ -1218,31 +1238,12 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
 .editor-area.cm-single.reading .source-pane { display: none; }
 /* A document open in ANY mode owns its measure via --reader-width (#noteContent) or
    .cm-mount .cm-content, so the 800px document shell must not re-cap it — that throttled
-   "increase content width" past ~75ch in Reading, and left Split View and the
-   CM6-failed-to-load two-pane fallback hard-capped at 640px regardless of window size
+   "increase content width" past ~75ch in Reading, and left the CM6-failed-to-load
+   rendered view hard-capped at 640px regardless of window size
    (A7, v10 redesign follow-up; was scoped to .reading only). The welcome shell is included:
    it is a home page, not a reading column, so it takes the pane width and its own grid
    (.welcome-card) decides the columns. */
 .editor-area .editor { max-width: none; }
-
-.source-textarea {
-  width: 100%;
-  height: 100%;
-  border: none;
-  outline: none;
-  resize: none;
-}
-.source-textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
-.source-textarea {
-  padding: 56px 60px 120px;
-  font-family: var(--mono);
-  font-size: 0.875rem;
-  line-height: 1.7;
-  background: var(--paper-deep);
-  color: var(--ink);
-  display: block;
-  min-height: 100%;
-}
 
 .editor {
   /* A7 (v10 redesign follow-up): fixed 80px inline padding taxed a fixed 160px off the
@@ -1409,8 +1410,8 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
 }
 .editor a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
-.wikilink {
-  color: var(--accent) !important;
+.wikilink, .editor a.wikilink {
+  color: var(--accent);
   /* Neutral surface (not the warm --hl-bg) so accent pill text clears WCAG AA 4.5:1 in the
      dark theme: accent #D9885F on --paper-edge #2A2F36 = 4.9:1 (on --hl-bg it was only 4.0:1). */
   background: var(--paper-edge);
@@ -1419,9 +1420,9 @@ mark.find-hit.current { background: var(--ink); color: var(--paper); }
   border-radius: var(--r-sm);
   font-weight: 500;
   cursor: pointer;
-  text-decoration: none !important;
+  text-decoration: none;
 }
-.wikilink:hover { background: var(--accent-fill); color: white !important; }
+.wikilink:hover, .editor a.wikilink:hover { background: var(--accent-fill); color: white; }
 .wikilink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* audit UX-12: a note-relative vault image whose file is gone renders as this named
@@ -1608,7 +1609,9 @@ pre[data-mermaid-error] { border: 1px solid var(--caution); border-radius: var(-
    while the reader scrolls (top set in content coordinates by updateCodeTrack,
    so it scrolls with the block between moves). Code blocks are always LTR, so
    the physical right edge is correct under both UI directions. */
-.code-copy-float {
+/* QA-N7: [data-tip] { position: relative } comes later with the same specificity; without
+   the attribute here the button was laid out after the note instead of beside its block. */
+.code-copy-float[data-tip] {
   position: absolute;
   right: 10px;
   width: 1.75rem;
@@ -1628,6 +1631,75 @@ pre[data-mermaid-error] { border: 1px solid var(--caution); border-radius: var(-
 .code-copy-float:hover { background: var(--accent-soft); color: var(--accent); }
 .code-copy-float.copied { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .code-copy-float[hidden] { display: none; }
+/* Block-direction badge (design-mock feature 1): one round chip in the reading column's start
+   margin, beside the block under the pointer; ع for a right-to-left block, A for left-to-right,
+   filled when the block's direction is pinned in the note. Placed by showDirBadge (app.js). */
+.dir-badge[data-tip] {
+  position: absolute;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--ltr);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ltr-ink);
+  font: 600 0.72rem/1 var(--sans);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.dir-badge.is-rtl { color: var(--rtl-ink); border-color: var(--rtl); font-family: var(--arabic); font-size: 0.82rem; }
+.dir-badge.pinned { background: var(--ltr); color: var(--paper); }
+.dir-badge.pinned.is-rtl { background: var(--rtl); }
+.dir-badge.is-code { font: 500 0.62rem/1 var(--mono); border-color: var(--rule); color: var(--ink-mute); cursor: default; }
+.dir-badge:not(.pinned):not(.is-code) { border-style: dashed; } /* dashed = Auto (no pin) */
+.dir-badge:hover, .dir-badge:focus-visible, .dir-badge[aria-expanded="true"] { opacity: 1; }
+.dir-badge[hidden] { display: none; }
+/* The badge's menu: RTL / LTR / Auto, the current state checked. Placed by openDirMenu. */
+.dir-menu {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 22px -8px rgba(0,0,0,.35);
+}
+.dir-menu[hidden] { display: none; }
+.dir-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink);
+  font: 500 0.8rem/1.2 var(--sans);
+  text-align: start;
+  cursor: pointer;
+}
+html[lang="ar"] .dir-menu-item { font-family: var(--arabic); }
+.dir-menu-item:hover, .dir-menu-item:focus-visible { background: var(--accent-soft); }
+.dir-menu-item.checked { color: var(--accent); font-weight: 600; }
+.dir-menu-item.checked .dir-menu-name::after { content: '✓'; margin-inline-start: 8px; } /* not color alone */
+.dir-menu-glyph { width: 1.2rem; text-align: center; font-weight: 600; }
+.dir-menu-item[data-dir="rtl"] .dir-menu-glyph { font-family: var(--arabic); }
+/* Tooltips beside the items, not over the next one. */
+.dir-menu [data-tip]:hover::after, .dir-menu [data-tip]:focus-visible::after {
+  top: 50%; left: auto; inset-inline-start: calc(100% + 8px); transform: translateY(-50%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dir-badge:not(.is-code):hover { transform: scale(1.08); }
+}
+/* The pin line in the editor is markup: kept left to right and dimmed. */
+.cm-mount .cm-line.cm-dir-pin { color: var(--ink-mute); font-family: var(--mono); font-size: 0.85em; opacity: 0.7; }
 /* v10 redesign (2026-08-25): an accent-tinted chip, no border -- was a neutral
    --paper-deep/--rule chip. */
 .editor code {
@@ -1667,6 +1739,12 @@ pre[data-mermaid-error] { border: 1px solid var(--caution); border-radius: var(-
 .editor th[align="left"], .editor td[align="left"] { text-align: start; }
 .editor th[align="right"], .editor td[align="right"] { text-align: end; }
 .editor th[align="center"], .editor td[align="center"] { text-align: center; }
+/* QA M14: a cell with its own direction (a Latin cell in an Arabic table) still aligns by the
+   direction of the table, so a column lines up. Browsers without :dir() keep the rules above. */
+.editor table:dir(rtl) th[align="left"], .editor table:dir(rtl) td[align="left"] { text-align: right; }
+.editor table:dir(rtl) th[align="right"], .editor table:dir(rtl) td[align="right"] { text-align: left; }
+.editor table:dir(ltr) th[align="left"], .editor table:dir(ltr) td[align="left"] { text-align: left; }
+.editor table:dir(ltr) th[align="right"], .editor table:dir(ltr) td[align="right"] { text-align: right; }
 .editor th:focus, .editor td:focus { outline: 2px solid var(--accent); outline-offset: -2px; } /* T-R9 traversal focus ring */
 .editor th {
   background: transparent;
@@ -2044,7 +2122,7 @@ html[lang="ar"] .insp-section h4 { font: 700 0.92rem/1.4 var(--arabic); }
 }
 .toc-item::before {
   content: attr(data-no);
-  color: var(--ink-faint);
+  color: var(--ink-mute); /* QA-M23: text, so 4.5:1 */
   font: 500 0.6875rem/1 var(--mono);
   letter-spacing: 0.04em;
   direction: ltr;
@@ -2114,7 +2192,7 @@ html[lang="ar"] .prop-key { font-style: normal; }
   color: var(--tip-fg);
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 0.35rem 0.75rem;
   cursor: pointer;
 }
@@ -2129,7 +2207,7 @@ html[lang="ar"] .note-empty { font: 400 0.85rem/1.7 var(--arabic); }
   gap: 0.7rem;
   padding-block: 0.55rem;
   padding-inline: 0.35rem;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 .note-row::before { content: ''; flex: none; align-self: stretch; width: 3px; border-radius: 3px; background: var(--mark-solid); }
 .note-row:hover { background: var(--desk-3); }
@@ -2327,7 +2405,7 @@ html[dir="rtl"] .pal-input-wrap::before { transform: scaleX(-1); }
 }
 html[lang="ar"] .pal-input { font: 500 1.35rem/1.5 var(--arabic); letter-spacing: 0; }
 .pal-input:focus-visible { box-shadow: none; }
-.pal-input::placeholder { color: var(--ink-faint); font-style: italic; font-weight: 400; }
+.pal-input::placeholder { color: var(--ink-mute); font-style: italic; font-weight: 400; } /* QA-M23 */
 .pal-results {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
@@ -2351,7 +2429,7 @@ html[lang="ar"] .pal-input { font: 500 1.35rem/1.5 var(--arabic); letter-spacing
   padding-block: 0.45rem;
   padding-inline: 0.6rem;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
@@ -2741,7 +2819,10 @@ html[lang="ar"] .modal-body h3 { font: 700 0.85rem/1.3 var(--arabic); letter-spa
 html[lang="ar"] [data-tip]:hover::after, html[lang="ar"] [data-tip]:focus-visible::after { font-family: var(--arabic); letter-spacing: 0; }
 .statusbar [data-tip]::after { top: auto; bottom: calc(100% + 8px); }
 .win-controls [data-tip]::after { left: auto; inset-inline-end: 4px; transform: none; }
-.tb-lead [data-tip]::after { left: 0; transform: none; }
+/* QA-L7: logical, not physical: in the Arabic UI the lead slot and the folder status sit at
+   the right edge, and a left-anchored bubble grew off the window. */
+.tb-lead [data-tip]::after,
+.statusbar #sbVault[data-tip]::after { left: auto; inset-inline-start: 0; transform: none; }
 
 /* v10: the tab strip's shared floating tooltip (see index.html's #floatingTip and
    positionFloatingTip() in app.js) -- same visual language as [data-tip]::after,
@@ -2976,3 +3057,27 @@ mark.user-hl.on { outline: 2px solid var(--ink); outline-offset: 1px; }
 .drop-overlay .di span { padding: 0.15rem 0.5rem; border: 1px solid var(--rule-3); border-radius: var(--r-sm); font: 500 0.75rem/1.2 var(--mono); color: var(--ink-soft); }
 .drop-overlay .dt { margin-bottom: 0.4rem; color: var(--ink); font: 600 1.7rem/1.2 var(--serif); letter-spacing: -0.02em; }
 .drop-overlay .ds { max-width: 26rem; margin-inline: auto; color: var(--ink-mute); font-size: 0.875rem; line-height: 1.6; }
+
+/* QA-M23: Windows High Contrast (forced colors). The browser repaints colours with the
+   system palette and drops every box-shadow, so anything drawn only by a shadow or a
+   background colour must get a border or an outline in a system colour (MDN forced-colors). */
+@media (forced-colors: active) {
+  .dd-opt:focus-visible,
+  .search-input:focus,
+  .find-bar input:focus-visible,
+  .pal-input:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+  mark, mark.find-hit, .cm-mount .cm-searchMatch, .cm-mount .cm-hl {
+    forced-color-adjust: none;
+    background: Mark;
+    color: MarkText;
+    outline: 1px solid CanvasText;
+  }
+  mark.find-hit.current, mark.user-hl.on { background: Highlight; color: HighlightText; outline: 2px solid CanvasText; }
+  .set-switch { border-color: ButtonText; }
+  .set-switch::after { forced-color-adjust: none; background: ButtonText; }
+  .set-switch[aria-checked="true"] { forced-color-adjust: none; background: Highlight; border-color: Highlight; }
+  .set-switch[aria-checked="true"]::after { background: HighlightText; }
+  .cr-swatches .dd-opt { forced-color-adjust: none; border: 1px solid ButtonText; }
+  .cr-swatches .dd-opt[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 2px; }
+  [data-tip]:hover::after, [data-tip]:focus-visible::after, #floatingTip, .toast { border: 1px solid CanvasText; }
+}

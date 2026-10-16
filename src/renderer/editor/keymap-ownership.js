@@ -7,7 +7,7 @@
  * had just changed (the whole paragraph italicised, the line commented out). The editor must not
  * bind chords the app owns.
  *
- * Pure and CodeMirror-free so the coverage + mutation gates see it (the adapter is e2e-only).
+ * Pure and CodeMirror-free so the coverage gate sees it (the adapter is e2e-only).
  */
 export const APP_OWNED_KEYS = Object.freeze(['Mod-i', 'Mod-/']);
 

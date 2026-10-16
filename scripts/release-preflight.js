@@ -55,7 +55,6 @@ function extractReleaseNotes(changelog, version) {
 
 function validateRelease(options) {
   const errors = [];
-  const expectedTag = `v${options.packageVersion}`;
   try {
     assertReleaseVersion(options.packageVersion);
   } catch {
@@ -95,32 +94,22 @@ function validateRelease(options) {
     try {
       errors.push(...verifyChecksums(options.releaseDir, options.packageVersion));
     } catch (error) {
-      errors.push(`${error.message} — build the release per docs/BUILD.md or pass --skip-artifact-check`);
-    }
-  }
-
-  if (options.publish) {
-    if (options.visibility !== 'public') errors.push('publishing requires a public repository');
-    if (options.refType !== 'tag') errors.push(`publishing is allowed only from an annotated ${expectedTag} tag`);
-    if (options.refName !== expectedTag) {
-      errors.push(`release tag ${options.refName} does not match package version ${options.packageVersion}`);
+      errors.push(`${error.message} — build the release per docs/RELEASING.md or pass --skip-artifact-check`);
     }
   }
   return errors;
 }
 
 function parseArgs(argv) {
-  let writeNotes = '';
   let skipSbomStaleness = false;
   let skipArtifactCheck = false;
   const argumentsIterator = argv[Symbol.iterator]();
   for (const argument of argumentsIterator) {
-    if (argument === '--write-notes') writeNotes = argumentsIterator.next().value || '';
-    else if (argument === '--skip-sbom-staleness') skipSbomStaleness = true;
+    if (argument === '--skip-sbom-staleness') skipSbomStaleness = true;
     else if (argument === '--skip-artifact-check') skipArtifactCheck = true;
     else throw new Error(`Unknown argument: ${argument}`);
   }
-  return { writeNotes, skipSbomStaleness, skipArtifactCheck };
+  return { skipSbomStaleness, skipArtifactCheck };
 }
 
 function main(argv = process.argv.slice(2), environment = process.env) {
@@ -131,10 +120,6 @@ function main(argv = process.argv.slice(2), environment = process.env) {
     packageVersion: pkg.version,
     changelog,
     repository: environment.GITHUB_REPOSITORY || repositorySlugFromPackage(),
-    visibility: environment.REPOSITORY_VISIBILITY || '',
-    publish: environment.RELEASE_PUBLISH === 'true',
-    refType: environment.GITHUB_REF_TYPE || '',
-    refName: environment.GITHUB_REF_NAME || '',
     // audit CMP-05: the local scan artifacts and the lockfile they were produced from.
     sbomPath: path.join(ROOT, '.secreports', 'sbom.json'),
     osvPath: path.join(ROOT, '.secreports', 'osv-scanner.txt'),
@@ -147,12 +132,7 @@ function main(argv = process.argv.slice(2), environment = process.env) {
   };
   const errors = validateRelease(options);
   if (errors.length) throw new Error(`Release preflight failed:\n - ${errors.join('\n - ')}`);
-  if (args.writeNotes) {
-    const target = path.resolve(args.writeNotes);
-    fs.writeFileSync(target, `${extractReleaseNotes(changelog, pkg.version)}\n`, { encoding: 'utf8', flag: 'wx' });
-    console.log(`Wrote release notes to ${target}.`);
-  }
-  console.log(`Release preflight passed for ${pkg.version} (publish=${options.publish}).`);
+  console.log(`Release preflight passed for ${pkg.version}.`);
 }
 
 if (require.main === module) {

@@ -125,7 +125,7 @@ describe('bpmd:// protocol wiring (T-AI2)', () => {
   });
 
   test('a non-bpmd / malformed URL is a 404', async () => {
-    const vaultId = await openVault('/vault');
+    await openVault('/vault');
     const res = await handler({ url: 'bpmd://evil/x.png' });
     expect(res.status).toBe(404);
   });

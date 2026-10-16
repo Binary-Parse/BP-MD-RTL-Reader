@@ -12,6 +12,7 @@
  *
  * CM6 is injected so this stays decoupled from the heavy vendored engine and testable.
  */
+import { activeLineSpan, atomicDecorationPlugin } from './syntax-guards.js';
 
 // Prose markers hidden by an empty replace. EmphasisMark covers BOTH emphasis and strong
 // (@lezer/markdown has no separate 'StrongEmphasisMark'); CodeMark covers inline + fences;
@@ -34,7 +35,7 @@ function parentName(node) {
 }
 
 export function createLivePreview(CM6) {
-  const { ViewPlugin, Decoration, syntaxTree, EditorView, WidgetType } = CM6;
+  const { Decoration, syntaxTree, WidgetType } = CM6;
 
   // A decorative inline glyph that stands in for a structural marker. aria-hidden because
   // it is purely visual — the real marker text is untouched in the document.
@@ -75,11 +76,9 @@ export function createLivePreview(CM6) {
     // Nothing on screen (collapsed/unfocused editor) → skip even the two doc.lineAt calls below.
     if (view.visibleRanges.length === 0) return Decoration.set([], true);
     const ranges = [];
-    const sel = view.state.selection.main;
     // The active region = every line the selection spans (inclusive). Markers on these
     // lines stay visible so the user can edit the raw markdown.
-    const activeFrom = view.state.doc.lineAt(sel.from).from;
-    const activeTo = view.state.doc.lineAt(sel.to).to;
+    const { activeFrom, activeTo } = activeLineSpan(view);
     const onActiveLine = (from, to) => to >= activeFrom && from <= activeTo;
 
     for (const { from, to } of view.visibleRanges) {
@@ -98,32 +97,16 @@ export function createLivePreview(CM6) {
     return Decoration.set(ranges, true);
   }
 
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) { this.decorations = buildDecorations(view); }
-      update(u) {
-        if (u.docChanged || u.selectionSet || u.viewportChanged) {
-          this.decorations = buildDecorations(u.view);
-        }
-      }
-    },
-    {
-      decorations: (v) => v.decorations,
-      // Make the hidden markers atomic so the caret / shift-arrow selection step OVER a
-      // collapsed glyph instead of landing inside it (the standard companion to a
-      // replace-based live preview — keeps offset-based commands like wrapSelection sane).
-      provide: (plugin) => EditorView.atomicRanges.of(
-        (view) => view.plugin(plugin)?.decorations || Decoration.set([]),
-      ),
-    },
-  );
+  // The hidden markers are atomic so the caret / shift-arrow selection step OVER a collapsed
+  // glyph instead of landing inside it (keeps offset-based commands like wrapSelection sane).
+  return atomicDecorationPlugin(CM6, buildDecorations);
 }
 
 // Muted styling for the structural marker widgets. Returned separately so the adapter can
 // add it alongside the plugin; kept optional/cosmetic (the glyphs render without it).
 export function livePreviewTheme(CM6) {
   return CM6.EditorView.theme({
-    '.cm-lp-bullet': { color: 'var(--muted-fg, #8a8a8a)' },
-    '.cm-lp-quote': { color: 'var(--muted-fg, #8a8a8a)', marginInlineEnd: '0.35em' },
+    '.cm-lp-bullet': { color: 'var(--ink-mute)' },
+    '.cm-lp-quote': { color: 'var(--ink-mute)', marginInlineEnd: '0.35em' },
   });
 }

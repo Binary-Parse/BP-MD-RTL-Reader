@@ -48,6 +48,18 @@ function isDelim(line) { return /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s
 function alignOf(cell) { const l = cell.startsWith(':'), r = cell.endsWith(':'); return l && r ? 'center' : r ? 'right' : l ? 'left' : 'none'; }
 function delimCell(a) { return a === 'center' ? ':---:' : a === 'right' ? '---:' : a === 'left' ? ':---' : '---'; }
 
+// QA M10: a table example inside a ``` or ~~~ code block is text, not a table to edit.
+function inFence(lines, li) {
+  let open = null;
+  for (let i = 0; i < li; i++) {
+    const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    if (!open) { if (m[1][0] !== '`' || !m[2].includes('`')) open = m[1]; }
+    else if (m[1][0] === open[0] && m[1].length >= open.length && m[2].trim() === '') open = null;
+  }
+  return !!open;
+}
+
 /** Parse the table around `pos`, or null. Returns model + caret cell {rowKind,row,col}. */
 export function tableAt(text, pos) {
   const lines = String(text).split('\n');
@@ -55,7 +67,7 @@ export function tableAt(text, pos) {
   for (const l of lines) { starts.push(off); off += l.length + 1; }
   let li = lines.length - 1;
   for (let i = 0; i < lines.length; i++) { if (pos >= starts[i] && pos <= starts[i] + lines[i].length) { li = i; break; } }
-  if (!isRow(lines[li])) return null;
+  if (!isRow(lines[li]) || inFence(lines, li)) return null;
   let top = li, bot = li;
   while (top > 0 && isRow(lines[top - 1])) top--;
   while (bot < lines.length - 1 && isRow(lines[bot + 1])) bot++;

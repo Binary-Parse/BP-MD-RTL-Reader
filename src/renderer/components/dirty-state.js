@@ -1,3 +1,5 @@
+import { applyNoteSize } from './large-file.js';
+
 // A note is "dirty" only while its text differs from the last text that was loaded from
 // or saved to disk. The baseline lives on the file as `savedContent`; a note that was never
 // saved (new, copy, restored snapshot) has no baseline and stays dirty.
@@ -30,9 +32,11 @@ export function discardEdits(file) {
   adoptDiskText(file, target);
   if (conflictPending) {
     if (file.diskMeta) file.meta = file.diskMeta;
+    applyNoteSize(file, file.diskSize); // the disk copy is what the note is now
     file.conflict = false;
     file.diskContent = null;
     file.diskMeta = null;
+    file.diskSize = null;
   }
   return true;
 }

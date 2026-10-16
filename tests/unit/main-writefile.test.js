@@ -54,6 +54,15 @@ describe('fs:writeFile (T-B1)', () => {
     expect(await writeFile({}, { documentId: 'cap-missing', content: 1 })).toEqual({ error: 'invalid' });
   });
 
+  // QA-L2: the line ending is written between every line, so only LF and CRLF are accepted.
+  test('rejects a line ending, BOM or final-newline flag the app never sends', async () => {
+    for (const extra of [{ eol: '\n<script>' }, { eol: '\r' }, { bom: 'yes' }, { finalNewline: 1 }]) {
+      expect(await writeFile({}, { documentId: 'cap-missing', content: 'x', ...extra }), JSON.stringify(extra)).toEqual({ error: 'invalid' });
+    }
+    expect(await writeFile({}, { documentId: 'cap-missing', content: 'x', eol: '\r\n', bom: false, finalNewline: true }))
+      .toEqual({ error: 'unauthorized-capability' });
+  });
+
   test('a raw network path cannot be used as a capability', async () => {
     expect(await writeFile({}, { documentId: '\\\\srv\\s\\a.md', content: 'x' }))
       .toEqual({ error: 'unauthorized-capability' });

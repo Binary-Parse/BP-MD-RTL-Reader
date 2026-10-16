@@ -13,6 +13,7 @@ const SETTINGS_VERSION = 5;
 const CAPABILITY_ID = /^cap-[A-Za-z0-9_-]{1,128}$/;
 const READING_PROGRESS_CAP = 30;
 const { atomicWriteJson, readJsonFileChecked, setAsideCorruptFile } = require('./json-store');
+const { BACKGROUNDS } = require('./window-background');
 
 const DEFAULTS = Object.freeze({
   version: SETTINGS_VERSION,
@@ -20,7 +21,6 @@ const DEFAULTS = Object.freeze({
   zoomFactor: 1,
   readerTextScale: 1,
   readerWidthCh: 72,
-  editorMode: 'live',
   viewMode: 'reading', // T-F17: Reading (clean read-only render) vs 'edit' (CM6); reading-first default
 
   // Side panels start CLOSED out-of-the-box (clean editor-first view); a saved choice is
@@ -57,13 +57,12 @@ const DEFAULTS = Object.freeze({
   lastSession: null,
 });
 
-const THEMES = ['paper', 'ink', 'sepia', 'oasis'];
-const MODES = ['live', 'source', 'split'];
+// One list of themes: the window background table (window-background.js) owns it.
+const THEMES = Object.keys(BACKGROUNDS);
 
 function clampZoom(z) {
-  const n = Number(z);
-  if (!Number.isFinite(n)) return 1;
-  return Math.min(2.0, Math.max(0.6, n));
+  if (typeof z !== 'number' || !Number.isFinite(z)) return 1;
+  return Math.min(2.0, Math.max(0.6, z));
 }
 
 function clampReaderTextScale(scale) {
@@ -114,7 +113,6 @@ function migrate(raw) {
   const out = defaultSettings();
   if (!raw || typeof raw !== 'object') return out;
   if (THEMES.includes(raw.theme)) out.theme = raw.theme;
-  if (MODES.includes(raw.editorMode)) out.editorMode = raw.editorMode;
   if (raw.viewMode === 'reading' || raw.viewMode === 'edit') out.viewMode = raw.viewMode; // T-F17
   out.zoomFactor = clampZoom(raw.zoomFactor);
   out.readerTextScale = clampReaderTextScale(raw.readerTextScale);

@@ -5,7 +5,7 @@ import { describe, test, expect, vi, afterEach } from 'vitest';
 import path from 'node:path';
 import nodeCrypto from 'node:crypto';
 import {
-  createDocumentStore, hasBOM, detectEol, applyEol, hasMixedEol, applyEolPreserving, normalize, hashContent, isInsideRoot, atomicWriteFile, sweepStaleTempFiles,
+  createDocumentStore, hasBOM, stripBOM, detectEol, applyEol, hasMixedEol, applyEolPreserving, normalize, hashContent, isInsideRoot, atomicWriteFile, sweepStaleTempFiles,
   decodeBuffer, decodeBufferAs, utf8Profile, REOPEN_ENCODINGS, encodeBuffer, encodeWindows1256, firstUnmappableWindows1256Char, unmappableWindows1256Summary, validateWriteTarget,
 } from '../../src/main/document-store.js';
 
@@ -424,38 +424,8 @@ describe('watch (T-B9 — external-change notification, EC-A2)', () => {
   });
 });
 
-describe('listMarkdown (EC-A5)', () => {
-  function dirent(name, kind) {
-    return { name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' };
-  }
-  test('recurses subfolders, returns relPaths, cycle-safe', () => {
-    const tree = {
-      '/v': [dirent('a.md', 'f'), dirent('sub', 'd')],
-      '/v/sub': [dirent('b.md', 'f'), dirent('loop', 'd')],
-      '/v/sub/loop': [dirent('c.txt', 'f')], // non-md ignored; loop realpath -> /v
-    };
-    const realpaths = { '/v': '/v', '/v/sub': '/v/sub', '/v/sub/loop': '/v' };
-    const fs = {
-      realpathSync: (p) => realpaths[p] || p,
-      readdirSync: (p) => tree[p] || [],
-    };
-    const store = createDocumentStore({ fs, path: path.posix });
-    const out = store.listMarkdown('/v').map(x => x.relPath);
-    expect(out).toEqual(['a.md', 'sub/b.md']); // loop pruned, .txt excluded
-  });
-  test('respects maxFiles', () => {
-    const fs = {
-      realpathSync: (p) => p,
-      readdirSync: () => [dirent('1.md', 'f'), dirent('2.md', 'f'), dirent('3.md', 'f')],
-    };
-    const store = createDocumentStore({ fs, path: path.posix });
-    expect(store.listMarkdown('/v', { maxFiles: 2 })).toHaveLength(2);
-  });
-});
-
 // ── Mutation-hardening (audit F-3): EOL heuristic, hash fallback, read meta, write
 //    encoding/conflict/atomic/error branches, and the vault-walk guards. ──
-import { stripBOM } from '../../src/main/document-store.js';
 
 describe('encoding helpers — exact branches (mutation kills)', () => {
   test('detectEol: pure/mixed/equal/none', () => {
@@ -558,31 +528,8 @@ describe('write — encoding, conflict, atomic, error branches (mutation kills)'
   });
 });
 
-describe('listMarkdown — guard branches (mutation kills)', () => {
-  const dirent = (name, kind) => ({ name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' });
-  test('maxDepth stops recursion', () => {
-    const tree = { '/v': [dirent('a.md', 'f'), dirent('sub', 'd')], '/v/sub': [dirent('b.md', 'f')] };
-    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
-    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v', { maxDepth: 0 }).map((x) => x.relPath)).toEqual(['a.md']);
-  });
-  test('realpathSync throwing skips the dir (no crash)', () => {
-    const fs = { realpathSync: () => { throw new Error('eacces'); }, readdirSync: () => [dirent('a.md', 'f')] };
-    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v')).toEqual([]);
-  });
-  test('readdirSync throwing skips the dir', () => {
-    const fs = { realpathSync: (p) => p, readdirSync: () => { throw new Error('eperm'); } };
-    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v')).toEqual([]);
-  });
-  test('symlinked .md is included; results are sorted', () => {
-    const fs = { realpathSync: (p) => p, readdirSync: () => [dirent('z.md', 'f'), dirent('a.md', 's'), dirent('img.png', 'f')] };
-    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath)).toEqual(['a.md', 'z.md']);
-  });
-});
-
 // ── Mutation-hardening round 2: kill the residual survivors precisely. ───────
 describe('document-store — residual mutation survivors', () => {
-  const dirent = (name, kind) => ({ name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' });
-
   // 13:10 — hasBOM's `typeof content === 'string' &&` guard (ConditionalExpression→true).
   test('hasBOM returns false for non-string input (guard not just true)', () => {
     expect(hasBOM(0xFEFF)).toBe(false);     // a number whose value equals BOM code point
@@ -723,53 +670,6 @@ describe('document-store — residual mutation survivors', () => {
     const r = createDocumentStore({ fs, path: path.posix }).write('/v/a.md', 'x', { root: '/v', eol: '\n' });
     expect(r).toEqual({ error: 'locked' }); // audit M14
     expect(fs.unlinkSync).not.toHaveBeenCalled();
-  });
-
-  // 109:31 — `out.length >= maxFiles` top-of-walk guard (>= vs >, and →false).
-  // With maxFiles:1 and two md files, exactly one is returned; a `>` mutant would
-  // allow a 2nd dir-recursion to overshoot.
-  test('listMarkdown maxFiles is an inclusive cap across nested dirs (>= not >)', () => {
-    const tree = {
-      '/v': [dirent('a.md', 'f'), dirent('sub', 'd')],
-      '/v/sub': [dirent('b.md', 'f')],
-    };
-    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
-    const out = createDocumentStore({ fs, path: path.posix }).listMarkdown('/v', { maxFiles: 1 });
-    expect(out.map((x) => x.relPath)).toEqual(['a.md']); // recursion into /sub blocked by the guard
-  });
-
-  // 112:11 — visited cycle guard: a self-loop dir must be visited only once.
-  test('listMarkdown cycle guard: realpath repeat is pruned (visited.has)', () => {
-    const tree = {
-      '/v': [dirent('a.md', 'f'), dirent('loop', 'd')],
-      '/v/loop': [dirent('b.md', 'f'), dirent('again', 'd')],
-      '/v/loop/again': [dirent('c.md', 'f')],
-    };
-    // /v/loop/again resolves back to /v/loop → already visited → pruned (c.md excluded)
-    const real = { '/v': '/v', '/v/loop': '/v/loop', '/v/loop/again': '/v/loop' };
-    const fs = { realpathSync: (p) => real[p] || p, readdirSync: (p) => tree[p] || [] };
-    const out = createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath);
-    expect(out).toEqual(['a.md', 'loop/b.md']);
-  });
-
-  // 115:43 / 115:60 — readdirSync second arg `{ withFileTypes: true }`.
-  test('readdirSync is called with { withFileTypes: true }', () => {
-    let opts;
-    const fs = { realpathSync: (p) => p, readdirSync: (p, o) => { opts = o; return [dirent('a.md', 'f')]; } };
-    createDocumentStore({ fs, path: path.posix }).listMarkdown('/v');
-    expect(opts).toEqual({ withFileTypes: true });
-  });
-
-  // 120:19 / 120:56 — entry classification: only (isFile||isSymbolicLink) AND /\.(md|markdown)$/i.
-  test('a directory named like markdown is recursed, not pushed (isFile/isSymlink guard)', () => {
-    const tree = {
-      '/v': [dirent('a.md', 'd'), dirent('real.md', 'f'), dirent('note.markdown', 'f'), dirent('x.mdx', 'f'), dirent('y.md.txt', 'f')],
-      '/v/a.md': [dirent('inner.md', 'f')],
-    };
-    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
-    const out = createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map((x) => x.relPath).sort();
-    // a.md (dir) recursed → a.md/inner.md; .mdx and .md.txt excluded by the anchored regex
-    expect(out).toEqual(['a.md/inner.md', 'note.markdown', 'real.md']);
   });
 
   // 137:9 — watch's `typeof fs.watch !== 'function'` guard (ConditionalExpression→false
@@ -1329,16 +1229,15 @@ describe('readAsync — the async vault lane', () => {
 describe('sweepStaleTempFiles recursion (HYG-02)', () => {
   const AGED = 'a.md.tmp-33333333-3333-4333-8333-333333333333';
   const FRESH = 'b.md.tmp-44444444-4444-4444-8444-444444444444';
-  const { vi: viMod } = { vi };
   test('an aged temp in a subdirectory is swept; a fresh one survives', () => {
     const fs = {
-      readdirSync: viMod.fn((dir) => (dir === '/v' ? ['sub'] : dir === '/v/sub' ? [AGED, FRESH] : [])),
-      statSync: viMod.fn((p) => ({
+      readdirSync: vi.fn((dir) => (dir === '/v' ? ['sub'] : dir === '/v/sub' ? [AGED, FRESH] : [])),
+      statSync: vi.fn((p) => ({
         isFile: () => !p.endsWith('sub'),
         isDirectory: () => p.endsWith('sub'),
         mtimeMs: p.includes(AGED.slice(0, 12)) ? 1 : 2e12 - 100,
       })),
-      unlinkSync: viMod.fn(),
+      unlinkSync: vi.fn(),
     };
     const removed = sweepStaleTempFiles(fs, path.posix, '/v', { now: 2e12, maxAgeMs: 1000 });
     expect(removed).toBe(1);
@@ -1347,9 +1246,9 @@ describe('sweepStaleTempFiles recursion (HYG-02)', () => {
   test('the depth cap bounds the walk', () => {
     let calls = 0;
     const fs = {
-      readdirSync: viMod.fn((dir) => { calls++; return ['d']; }),
-      statSync: viMod.fn(() => ({ isFile: () => false, isDirectory: () => true, mtimeMs: 0 })),
-      unlinkSync: viMod.fn(),
+      readdirSync: vi.fn(() => { calls++; return ['d']; }),
+      statSync: vi.fn(() => ({ isFile: () => false, isDirectory: () => true, mtimeMs: 0 })),
+      unlinkSync: vi.fn(),
     };
     sweepStaleTempFiles(fs, path.posix, '/v', { now: 1e12 });
     expect(calls).toBeLessThanOrEqual(13);
@@ -1482,28 +1381,5 @@ describe('atomicWriteFile hardening lanes (GATE-01)', () => {
     expect(unlinked).toHaveLength(1);
     const gone = { ...fs, writeFileSync: () => { const e = new Error('x'); e.code = 'ENOENT'; throw e; }, existsSync: () => false };
     expect(atomicWriteFile(gone, '/v/a.md', 'new')).toEqual({ error: 'gone' });
-  });
-});
-
-describe('listMarkdown caps (GATE-01)', () => {
-  test('file-count and depth caps stop the walk', () => {
-    const tree = new Map([
-      ['/v', [{ name: 'a.md', file: true }, { name: 'b.md', file: true }, { name: 'c.md', file: true }, { name: 'd.md', file: true }, { name: 'sub', file: false }]],
-      ['/v/sub', [{ name: 'deep.md', file: true }]],
-    ]);
-    const entry = (e) => ({
-      name: e.name,
-      isFile: () => !!e.file,
-      isDirectory: () => !e.file,
-      isSymbolicLink: () => false,
-    });
-    const fs = {
-      realpathSync: (p) => p,
-      readdirSync: (dir) => (tree.get(dir) || []).map(entry),
-    };
-    const store = createDocumentStore({ fs, path: path.posix });
-    const res = store.listMarkdown('/v', { maxFiles: 3, maxDepth: 1 });
-    expect(res.length).toBe(3);
-    expect(res.every((f) => f.relPath.endsWith('.md'))).toBe(true);
   });
 });

@@ -5,8 +5,31 @@ const WORDS_PER_MINUTE = 220;
 const STRONG_LETTER = /\p{L}/u;
 const FENCE = /^\s*(```|~~~)/;
 
+// Large notes (large-file mode): counting every word, splitting every line and voting on every
+// block of a 100 MB note costs seconds and hundreds of MB, and the Inspector asks again on each
+// pause in typing. Above SAMPLE_ABOVE characters the figures come from three slices of the text
+// (start, middle, end) and the word count is scaled to the whole length: an estimate, cheap and
+// stable. Notes below the threshold are counted exactly, as before.
+export const SAMPLE_ABOVE = 2_000_000;
+const SAMPLE_PART = 200_000;
+const NEWLINES = String.fromCharCode(10, 10); // a blank line between the slices
+function sampleOf(text) {
+  const mid = Math.floor(text.length / 2) - SAMPLE_PART / 2;
+  const parts = [text.slice(0, SAMPLE_PART), text.slice(mid, mid + SAMPLE_PART), text.slice(text.length - SAMPLE_PART)];
+  return parts.join(NEWLINES);
+}
+
 export function wordCount(text) {
   const { body } = parseFrontMatter(text == null ? '' : text);
+  return bodyWordCount(body);
+}
+
+/** Words in a note body whose front matter is already stripped (estimated above SAMPLE_ABOVE characters). */
+export function bodyWordCount(body) {
+  if (body.length > SAMPLE_ABOVE) {
+    const sample = sampleOf(body);
+    return Math.round(((sample.match(/\S+/g) || []).length * body.length) / sample.length);
+  }
   return (body.match(/\S+/g) || []).length;
 }
 
@@ -40,7 +63,8 @@ function votingBlocks(body) {
 
 export function fileDirKind(text, forced = null) {
   if (forced === 'rtl' || forced === 'ltr') return forced;
-  const { data, body } = parseFrontMatter(text == null ? '' : text);
+  const whole = text == null ? '' : String(text);
+  const { data, body } = parseFrontMatter(whole.length > SAMPLE_ABOVE ? sampleOf(whole) : whole);
   const declared = frontMatterDirection(data);
   if (declared) return declared;
   let rtl = 0;

@@ -15,6 +15,7 @@
  * the note got a new id when it was opened again, and its highlights were deleted as orphans.)
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -77,8 +78,7 @@ test.describe('highlights are never deleted behind the user\'s back @electron', 
     if (!electronApp) return;
     const app = electronApp;
     electronApp = null;
-    if (page && !page.isClosed()) await page.evaluate(() => window.electronAPI.closeWindow()).catch(() => {});
-    await app.close().catch(() => {});
+    await closeApp(app, page);
   }
   const fileInfo = (name) => page.evaluate((n) => {
     const f = window._appState.files.find((x) => x.name === n);

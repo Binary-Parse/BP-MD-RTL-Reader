@@ -94,16 +94,14 @@ test.describe('smoke tests', () => {
     await page.waitForLoadState('networkidle');
 
     const html = page.locator('html');
-    const srcTextarea = page.locator('#srcTextarea');
     const editor = page.locator('#editor');
     const appBody = page.locator('#appBody');
 
     // Initially LTR — html element must not have dir=rtl
     await expect(html).not.toHaveAttribute('dir', 'rtl');
 
-    // Toggle RTL on — dir must land on #srcTextarea and #editor, NOT html
+    // Toggle RTL on — dir must land on #editor, NOT html
     await page.click('#rtlBtn');
-    await expect(srcTextarea).toHaveAttribute('dir', 'auto');
     await expect(editor).toHaveAttribute('dir', 'rtl');
     // html element must NOT gain a dir attribute
     await expect(html).not.toHaveAttribute('dir', 'rtl');
@@ -118,7 +116,6 @@ test.describe('smoke tests', () => {
 
     // Toggle RTL off — dir removed from content elements
     await page.click('#rtlBtn');
-    await expect(srcTextarea).not.toHaveAttribute('dir');
     await expect(editor).not.toHaveAttribute('dir');
 
     // Computed direction must return to ltr after toggle off

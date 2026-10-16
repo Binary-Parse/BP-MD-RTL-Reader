@@ -2,10 +2,10 @@
  * coverage-gaps.test.js — pins remaining edge branches across new modules.
  */
 import { describe, test, expect } from 'vitest';
-import { sanitizeHtml, sanitizeSvg, renderTrusted } from '../../src/renderer/markdown/trusted.js';
+import { sanitizeHtml, sanitizeSvg } from '../../src/renderer/markdown/trusted.js';
 import { parseFrontMatter } from '../../src/renderer/markdown/frontmatter.js';
 import { t } from '../../src/renderer/locale.js';
-import { extractHeadings, activeHeading } from '../../src/renderer/components/outline.js';
+import { activeHeading } from '../../src/renderer/components/outline.js';
 import { resolveDirection } from '../../src/renderer/bidi.js';
 import { migrate, createSettingsStore, defaultSettings } from '../../src/main/settings.js';
 import path from 'node:path';
@@ -15,9 +15,6 @@ describe('trusted.js guards', () => {
     expect(sanitizeHtml('<p>x</p>', null)).toBe('');
     expect(sanitizeSvg('<svg/>', undefined)).toBe('');
   });
-  test('renderTrusted with no escapeHtml + no marked → String(md)', () => {
-    expect(renderTrusted('raw')).toBe('raw');
-  });
 });
 
 describe('frontmatter edge', () => {
@@ -26,16 +23,12 @@ describe('frontmatter edge', () => {
 
 describe('locale fallback', () => {
   test('missing key in ar falls back to en', () => {
-    expect(t('status.ready', 'ar')).toBe('جاهز');
+    expect(t('status.markdown', 'ar')).toBe('ماركداون');
     expect(t('menu.file', 'zz')).toBe('File'); // unknown locale → en table
   });
 });
 
 describe('outline guards', () => {
-  test('no md / no marked → []', () => {
-    expect(extractHeadings('', {})).toEqual([]);
-    expect(extractHeadings('# x', {})).toEqual([]);
-  });
   test('activeHeading empty offsets', () => expect(activeHeading(0, [])).toBe(-1));
 });
 

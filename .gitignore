@@ -19,11 +19,10 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 *.AppImage
 *.tgz
 
-# Coverage, reports, and mutation output
+# Coverage and reports
 /coverage/
 /reports/
 .nyc_output/
-.stryker-tmp/
 *.lcov
 
 # Playwright output and browser caches (unanchored: Playwright may nest these)

@@ -106,6 +106,13 @@ describe('history-store (audit B1: one undo history per file)', () => {
     expect(store.take('c', 'C')).not.toBeNull();
   });
 
+  it('QA-N2: a reload with exactly the parked text keeps that history (nothing was replaced)', () => {
+    const store = createHistoryStore(textOf);
+    const edited = st('same text', 'with undo steps');
+    store.put('a', edited);
+    expect(store.take('a', 'same text')).toBe(edited);
+  });
+
   it('retain accepts a Set and an empty list frees everything', () => {
     const store = createHistoryStore(textOf);
     store.put('a', st('A'));

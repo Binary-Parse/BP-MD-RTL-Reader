@@ -13,7 +13,7 @@ const INDEX_URL = `file:///${INDEX_PATH.replace(/\\/g, '/')}`;
 // Smallest rendered font-size (and a sample) among visible text elements matching `sel`,
 // excluding the rendered note/editor panes (prose has its own scale).
 const scanChrome = (page, sel) => page.evaluate((selector) => {
-  const inContent = (el) => el.closest('#noteContent, #editor, #srcTextarea, .preview-pane, .modal-body');
+  const inContent = (el) => el.closest('#noteContent, #editor, .source-pane, .preview-pane, .modal-body');
   const out = [];
   document.querySelectorAll(selector).forEach((el) => {
     if (inContent(el)) return;

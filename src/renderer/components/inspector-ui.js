@@ -2,6 +2,8 @@ import { parseFrontMatter } from '../markdown/frontmatter.js';
 import { crumbSegments, fileMeta } from './doc-meta.js';
 import { parseAtxHeading, isFenceLine } from './outline.js';
 
+const TITLE_SCAN_CHARS = 1_000_000;
+
 const ENCODING_LABELS = new Map([
   ['utf8', 'UTF-8'],
   ['utf-8', 'UTF-8'],
@@ -25,7 +27,9 @@ function firstH1Text(body) {
 }
 
 export function docTitle(content, name) {
-  const { body } = parseFrontMatter(content == null ? '' : content);
+  const whole = content == null ? '' : String(content);
+  // A huge note's title is in its first pages; scanning 100 MB of lines for a missing H1 is not worth it.
+  const { body } = parseFrontMatter(whole.length > TITLE_SCAN_CHARS ? whole.slice(0, TITLE_SCAN_CHARS) : whole);
   const heading = firstH1Text(body).replace(/[*_`~]/g, '').trim();
   return heading || String(name || '').replace(/\.(md|markdown|txt)$/i, '');
 }
@@ -35,14 +39,14 @@ export function encodingLabel(meta) {
   return ENCODING_LABELS.get(raw.toLowerCase()) || raw.toUpperCase();
 }
 
-export function eolLabel(meta, content) {
+export function eolLabel(meta, content, mixedLabel = 'Mixed') {
   // audit M5: a file with more than one ending style keeps each line's own ending on save.
-  if (meta && meta.eolMixed === true) return 'Mixed';
+  if (meta && meta.eolMixed === true) return mixedLabel;
   if (meta && (meta.eol === '\r\n' || meta.eol === '\n')) return meta.eol === '\r\n' ? 'CRLF' : 'LF';
   return /\r\n/.test(content || '') ? 'CRLF' : 'LF';
 }
 
-export function inspectorData({ file, ratio, rootName }) {
+export function inspectorData({ file, ratio, rootName, mixedLabel }) {
   if (!file) return null;
   const meta = fileMeta(file);
   const encoding = encodingLabel(file.meta);
@@ -54,7 +58,7 @@ export function inspectorData({ file, ratio, rootName }) {
     minutes: meta.minutes,
     percent: Math.round(ratio * 100),
     encoding,
-    eol: eolLabel(file.meta, file.content),
+    eol: eolLabel(file.meta, file.content, mixedLabel),
     legacyEncoding: encoding !== 'UTF-8',
   };
 }

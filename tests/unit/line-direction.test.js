@@ -8,7 +8,9 @@
  * CM6 is injected, so we drive createLineDirection with a fake CM6 + fake view.
  */
 import { describe, test, expect } from 'vitest';
-import { createLineDirection } from '../../src/renderer/editor/line-direction.js';
+import fc from 'fast-check';
+import { createLineDirection, autoLineDirection, directionSample, MAX_DIRECTION_CHARS } from '../../src/renderer/editor/line-direction.js';
+import { resolveBlockDirection } from '../../src/renderer/bidi.js';
 
 function fakeCM6() {
   const Decoration = {
@@ -212,5 +214,92 @@ describe('createLineDirection inside a code block (audit M18)', () => {
     tree = { iterate() {} };
     inst.update({ docChanged: false, viewportChanged: false, view, state: view.state });
     expect(inst.decorations).not.toBe(before);
+  });
+});
+
+// Design-mock feature 1: `<!-- dir: … -->` pins the block under it in the editor too.
+describe('pinned blocks', () => {
+  function numberedView(docText, visibleFrom = 0) {
+    const view = fakeView(docText, [{ from: visibleFrom, to: docText.length }]);
+    const lines = docText.split('\n');
+    let off = 0;
+    const numbered = lines.map((text, i) => { const l = { from: off, to: off + text.length, text, number: i + 1 }; off += text.length + 1; return l; });
+    view.state.doc.lineAt = (pos) => numbered.find((l) => pos >= l.from && pos <= l.to) || numbered[numbered.length - 1];
+    view.state.doc.line = (n) => numbered[n - 1];
+    return view;
+  }
+  const dirs = (inst) => inst.decorations.ranges.map((r) => r.spec.attributes.dir);
+
+  test('a pin line pins its block up to the blank line, over a forced direction; the pin line is LTR markup', () => {
+    const ext = createLineDirection(fakeCM6(), () => 'ltr', () => 'rtl');
+    const inst = new ext[1].cls(numberedView('<!-- dir: ltr -->\nمرحبا\nبالعالم\n\nمرحبا'));
+    expect(dirs(inst)).toEqual(['ltr', 'ltr', 'ltr', 'rtl', 'rtl']);
+    expect(inst.decorations.ranges[0].spec.attributes.class).toBe('cm-dir-pin');
+  });
+
+  test('a view that opens in the middle of a pinned block still knows the pin', () => {
+    const text = '<!-- dir: rtl -->\nhello\nworld\n\nhello';
+    const { inst } = build(fakeCM6(), numberedView(text, text.indexOf('world')));
+    expect(dirs(inst)).toEqual(['rtl', 'ltr', 'ltr']); // world (pinned), the blank line, hello
+  });
+});
+
+// A line's direction is decided by its leading text. Reading every character of a 25-million-
+// character line on each keystroke cost 1.2-2 s (measured); the cap keeps it to a fixed amount.
+describe('direction work is bounded per line', () => {
+  // The rule before the cap: the whole line, inline code spans stripped.
+  const before = (text, base) => resolveBlockDirection(text.replace(/(```[^`]*```|`[^`]*`)/g, ' '), base);
+  const alphabet = [
+    'a', 'b', 'z', 'ا', 'ب', 'م', 'ح', '1', '2', ' ', ' ', '.', '،', '`', '``', '```', '$', '[', ']', '(', ')',
+    'https://x.example/', 'user@mail.example', '	', 'مرحبا', 'hello', '<!-- dir: rtl -->', '*',
+  ];
+  const lineArb = fc.array(fc.constantFrom(...alphabet), { maxLength: 400 }).map((parts) => parts.join(''));
+
+  test('lines shorter than the cap get exactly the direction they had before', () => {
+    fc.assert(fc.property(lineArb, fc.constantFrom('ltr', 'rtl'), (text, base) => {
+      expect(text.length).toBeLessThan(MAX_DIRECTION_CHARS);
+      expect(autoLineDirection(text, base)).toBe(before(text, base));
+    }), { numRuns: 2000 });
+  });
+
+  test('a line of exactly the cap is read whole; one more character is cut', () => {
+    const exact = 'a'.repeat(MAX_DIRECTION_CHARS);
+    expect(directionSample(exact)).toBe(exact);
+    expect(directionSample(`${exact}b`)).toHaveLength(MAX_DIRECTION_CHARS);
+    expect(directionSample('short')).toBe('short');
+  });
+
+  test('the same holds through the editor plugin, line by line', () => {
+    fc.assert(fc.property(fc.array(lineArb, { minLength: 1, maxLength: 6 }), (lines) => {
+      const { inst } = build(fakeCM6(), fakeView(lines.join('\n')), () => 'ltr');
+      const got = inst.decorations.ranges.map((r) => r.spec.attributes.dir);
+      expect(got).toHaveLength(lines.length);
+      lines.forEach((text, i) => {
+        // pins are decided by the pin rule, not by script: leave those lines to their own tests
+        if (/^<!-- dir: (rtl|ltr) -->[ 	]*$/.test(text)) return;
+        const expected = before(text, 'ltr');
+        if (i === 0 || lines[i - 1].trim() === '') expect(got[i]).toBe(expected);
+      });
+    }), { numRuns: 300 });
+  });
+
+  test('a long line is judged by its leading text, not by a count over all of it', () => {
+    // Latin for the first screenful, then a great deal of Arabic: counted whole it is "mostly
+    // Arabic" (rtl); judged by what the reader meets first it is Latin (ltr).
+    const head = 'hello '.repeat(Math.ceil(MAX_DIRECTION_CHARS / 6));
+    const text = head + 'مرحبا '.repeat(200000);
+    expect(before(text, 'ltr')).toBe('rtl');
+    const { inst } = build(fakeCM6(), fakeView(text), () => 'ltr');
+    expect(inst.decorations.ranges[0].spec.attributes.dir).toBe('ltr');
+  });
+
+  test('a 25-million-character line is decorated in a fraction of a second', () => {
+    const text = 'word '.repeat(5_000_000);
+    const view = fakeView(text);
+    const started = performance.now();
+    const { inst } = build(fakeCM6(), view, () => 'ltr');
+    const elapsed = performance.now() - started;
+    expect(inst.decorations.ranges).toHaveLength(1);
+    expect(elapsed).toBeLessThan(250); // 1.2 s and more before the cap
   });
 });

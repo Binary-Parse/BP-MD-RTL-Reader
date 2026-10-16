@@ -55,6 +55,20 @@ test.describe('[DATA-03] save-dialog autosave gate', () => {
       .toEqual(['cancel', 'cancel', 'discard']);
   });
 
+  test('QA-M16: a note dialog closed with Escape leaves no settler behind', async ({ page }) => {
+    await page.evaluate(() => { window.__n = window._askNoteText('some text'); });
+    await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => window.__n)).toBe('');
+    expect(await page.evaluate(() => window._pendingModalSettlers())).toBe(0);
+    // A later dialog superseded by another one is settled only once, by the supersede.
+    await page.evaluate(() => { window.__b = window._askSaveChanges({ name: 'b.md' }); });
+    await page.evaluate(() => { window.__c = window._askSaveChanges({ name: 'c.md' }); });
+    await page.locator('#dlgDontSaveBtn').click();
+    expect(await page.evaluate(() => Promise.all([window.__b, window.__c]))).toEqual(['cancel', 'discard']);
+    expect(await page.evaluate(() => window._pendingModalSettlers())).toBe(0);
+  });
+
   test('a second close request while the close flow waits on a dialog is a no-op', async ({ page }) => {
     await page.addInitScript(() => {
       window.__closeCalls = { closeWindow: 0 };
@@ -156,5 +170,93 @@ test.describe('[B2] Don\'t Save discards the edit', () => {
     await page.waitForFunction(() => window.__closeCalls.closeWindow >= 1);
     const state = await page.evaluate(() => window._appState.files.map((f) => [f.name, f.content, f.dirty]));
     expect(state).toEqual([['a.md', 'SAVED', false], ['c.md', 'C', false]]);
+  });
+
+  // QA-N3: a never-saved note stayed dirty, so the recovery mirror could still offer it.
+  test('"Close without Saving" also leaves a never-saved Untitled note clean', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__closeCalls = { closeWindow: 0 };
+      window.electronAPI = {
+        onCloseRequested: (cb) => { window.__closeCb = cb; },
+        closeWindow: () => { window.__closeCalls.closeWindow += 1; },
+      };
+    });
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+    await page.waitForFunction(() => typeof window.__closeCb === 'function');
+    await page.evaluate(() => {
+      window._appState.files.push({ name: 'Untitled.md', path: 'Untitled.md', content: 'draft', dirty: true, revision: 1 });
+      window.renderFile(0);
+    });
+    await page.evaluate(() => window.__closeCb());
+    await page.locator('#dlgDontSaveBtn').click();
+    await page.waitForFunction(() => window.__closeCalls.closeWindow >= 1);
+    expect(await page.evaluate(() => window._appState.files.filter((f) => f.dirty).length)).toBe(0);
+  });
+});
+
+// QA M5, M6: closing tabs.
+test.describe('[QA] closing tabs', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.electronAPI = { onContextMenu: (cb) => { window.__showCtx = cb; } };
+    });
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app', { state: 'visible' });
+  });
+
+  test('M6: closing a loose tab never reopens a closed folder note', async ({ page }) => {
+    await page.evaluate(() => {
+      window._appState.files.push(
+        { name: 'a.md', path: 'a.md', vaultId: 'v1', inventory: true, open: false, content: 'A', dirty: false },
+        { name: 'b.md', path: 'b.md', vaultId: 'v1', inventory: true, open: false, content: 'B', dirty: false },
+        { name: 'Untitled.md', path: 'Untitled.md', content: '', dirty: false },
+      );
+      window.renderFile(2);
+    });
+    await page.evaluate(() => window.closeTab(2));
+    const s = await page.evaluate(() => ({ active: window._appState.activeFile, open: window._appState.files.filter((f) => f.open !== false).map((f) => f.name) }));
+    expect(s).toEqual({ active: null, open: [] });
+    await expect(page.locator('.tab')).toHaveCount(0);
+  });
+
+  // APP-3: the folder-note branch re-rendered the first open tab even when the closed tab
+  // was in the background, so the user was moved off the note they were reading.
+  test('closing a background folder note keeps the active tab', async ({ page }) => {
+    await page.evaluate(() => {
+      const note = (name) => ({ name, path: name, vaultId: 'v1', inventory: true, open: true, content: name.toUpperCase(), savedContent: name.toUpperCase(), dirty: false });
+      window._appState.files.push(note('a.md'), note('b.md'), note('c.md'));
+      window.renderFile(1);
+    });
+    await page.evaluate(() => window.closeTab(2));
+    const s = await page.evaluate(() => ({
+      active: window._appState.files[window._appState.activeFile].name,
+      open: window._appState.files.filter((f) => f.open !== false).map((f) => f.name),
+    }));
+    expect(s).toEqual({ active: 'b.md', open: ['a.md', 'b.md'] });
+    await expect(page.locator('.tab')).toHaveCount(2);
+    await expect(page.locator('.tab.active')).toContainText('b.md');
+  });
+
+  test('M5: Close All closes folder notes too and stops at Cancel', async ({ page }) => {
+    await page.evaluate(() => {
+      window._appState.files.push(
+        { name: 'f.md', path: 'f.md', vaultId: 'v1', inventory: true, open: true, content: 'F', savedContent: 'F', dirty: false },
+        { name: 'one.md', path: 'one.md', content: 'x', dirty: true, revision: 1 },
+        { name: 'two.md', path: 'two.md', content: 'y', dirty: true, revision: 1 },
+      );
+      window.renderFile(0);
+    });
+    await page.locator('.tab').first().click({ button: 'right' });
+    await page.evaluate(() => window.__showCtx({ nonce: 'n', descriptors: [], appCommands: [], x: 10, y: 10 }));
+    await page.locator('#ctxMenu').getByText('Close All Tabs').first().click();
+    await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+    await expect(page.locator('#modalOverlay')).toContainText('one.md');
+    await page.locator('#dlgCancelBtn').click();
+    await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/);
+    await page.waitForTimeout(300); // deliberate: a second prompt would have opened by now
+    await expect(page.locator('#modalOverlay')).not.toHaveClass(/open/); // no second prompt
+    const open = await page.evaluate(() => window._appState.files.filter((f) => f.open !== false).map((f) => f.name));
+    expect(open).toEqual(['one.md', 'two.md']); // the folder note closed, the run stopped at one.md
   });
 });

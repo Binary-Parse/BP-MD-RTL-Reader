@@ -7,7 +7,12 @@
  * the renderer's job; this module stays pure so the logic is unit-tested.
  */
 
-const CAPABILITY_ID = /^cap-/;
+// The id shape main issues and accepts (capabilities.js, settings.js); main stays the authority.
+const CAPABILITY_ID = /^cap-[A-Za-z0-9_-]{1,128}$/;
+/** True for a main-issued capability id (`cap-` plus 1-128 of [A-Za-z0-9_-]). */
+export function isCapabilityId(value) {
+  return typeof value === 'string' && CAPABILITY_ID.test(value);
+}
 
 /**
  * Build the persisted lastSession from ALL open vaults (audit UX-04: restoring only
@@ -21,15 +26,14 @@ export function buildSession(files, activeIndex) {
   if (!Array.isArray(files) || !files.length) return null;
   const byVault = new Map();
   for (const f of files) {
-    if (!f || typeof f.vaultId !== 'string' || !CAPABILITY_ID.test(f.vaultId)) continue;
+    if (!f || !isCapabilityId(f.vaultId)) continue;
     if (!byVault.has(f.vaultId)) byVault.set(f.vaultId, []);
     byVault.get(f.vaultId).push(f);
   }
   if (!byVault.size) return null;
   const active = activeIndex != null ? files[activeIndex] : null;
   const activePath = active && typeof active.path === 'string' ? active.path : undefined;
-  const activeVaultId = active && typeof active.vaultId === 'string' && CAPABILITY_ID.test(active.vaultId)
-    ? active.vaultId : undefined;
+  const activeVaultId = active && isCapabilityId(active.vaultId) ? active.vaultId : undefined;
   const vaults = [];
   for (const [vaultId, vFiles] of byVault) {
     const openPaths = vFiles.filter((f) => f.open !== false)

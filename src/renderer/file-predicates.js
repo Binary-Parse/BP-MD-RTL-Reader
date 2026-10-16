@@ -19,12 +19,14 @@ export function isDroppableFile(name) {
  * with a surviving one after a tab was closed. File systems here are case-insensitive, so names
  * are compared in lower case.
  * @param {Iterable<string>} [openNames]  the names of the notes that are open now
+ * @param {string} [base]  the name in the interface language ("Untitled", "بلا عنوان")
  * @returns {string}
  */
-export function nextUntitledName(openNames) {
+export function nextUntitledName(openNames, base = 'Untitled') {
+  const stem = typeof base === 'string' && base.trim() ? base.trim() : 'Untitled';
   const taken = new Set();
   if (openNames) for (const name of openNames) if (typeof name === 'string') taken.add(name.toLowerCase());
-  let name = 'Untitled.md';
-  for (let n = 1; taken.has(name.toLowerCase()); n++) name = `Untitled-${n}.md`;
+  let name = `${stem}.md`;
+  for (let n = 1; taken.has(name.toLowerCase()); n++) name = `${stem}-${n}.md`;
   return name;
 }

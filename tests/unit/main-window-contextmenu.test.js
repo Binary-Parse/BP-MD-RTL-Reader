@@ -1,12 +1,11 @@
 /**
- * main-window-contextmenu.test.js — MUTATION-STRENGTHENING tests for src/main/index.js.
+ * main-window-contextmenu.test.js — exact-value tests for the main window.
  *
- * Cluster: createWindow() BrowserWindow options (src/main/index.js ~215-230) and the
- * webContents `context-menu` handler (~249-268).
+ * Cluster: createWindow()'s BrowserWindow options and the webContents `context-menu`
+ * handler, both in src/main/window-controller.js.
  *
  * These tests do NOT just execute the code — they pin the EXACT observable
- * values so that any value/operator/flag/string/object mutation flips a branch
- * or a literal and makes an assertion FAIL. They drive the REAL code via the
+ * values, so a changed value, operator, flag or string makes an assertion fail. They drive the REAL code via the
  * injectable `bootstrap({ electron, fs, proc })` seam (audit #3) using the
  * shared harness mocks (no Module hijack).
  *

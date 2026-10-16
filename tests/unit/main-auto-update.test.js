@@ -140,7 +140,8 @@ describe('boot auto check (T7.1)', () => {
     const [fn, delay] = setIntervalSpy.mock.calls[0];
     expect(delay).toBe(24 * 60 * 60 * 1000);
     expect(typeof fn).toBe('function');
-    // registerIpcHandlers ran; the timer exists and is unref'd (mock Timers expose unref).
+    const timer = setIntervalSpy.mock.results[0].value;
+    expect(timer.hasRef(), 'the daily timer must not hold the app open').toBe(false);
     expect(getAppOn(electron, 'browser-window-created')).toBeDefined();
   });
 });

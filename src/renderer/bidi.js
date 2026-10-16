@@ -227,6 +227,27 @@ export function slugify(text) {
 }
 
 /**
+ * One unique id per heading text, GitHub style: the second "Notes" is `notes-1`. QA-L3: a
+ * heading that is itself called "Notes 1" can no longer take the same id, and the reading
+ * view and the exports (HTML, PDF, EPUB) share this one rule.
+ * @param {string[]} texts heading texts in document order
+ * @returns {string[]}
+ */
+export function headingSlugs(texts) {
+  const used = new Set();
+  const counts = new Map();
+  return texts.map((text) => {
+    const base = slugify(text);
+    let n = counts.has(base) ? counts.get(base) + 1 : 0;
+    let slug = n === 0 ? base : `${base}-${n}`;
+    while (used.has(slug)) { n += 1; slug = `${base}-${n}`; }
+    counts.set(base, n);
+    used.add(slug);
+    return slug;
+  });
+}
+
+/**
  * Logical horizontal cell index for arrow-key table traversal (T-R9 / EC-C2).
  * In an RTL table the physical arrows are swapped so ArrowLeft advances in reading
  * order. Clamped to [0, len-1]; never wraps. Non-arrow keys return the index as-is.

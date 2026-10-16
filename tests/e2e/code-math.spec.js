@@ -172,7 +172,8 @@ test.describe('floating copy button tracks the visible code block', () => {
 
   async function scrollTopTo(page, value) {
     await page.evaluate((v) => { document.querySelector('.preview-pane').scrollTop = v; }, value);
-    await page.waitForTimeout(200); // scroll → rAF-throttled track update
+    // scroll → rAF-throttled track update: two frames and it has run.
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   }
 
   test.beforeEach(async ({ page }) => {
@@ -226,10 +227,42 @@ test.describe('floating copy button tracks the visible code block', () => {
     await scrollTopTo(page, tops[1] - 200);
     const btn = page.locator('#codeCopyFloat');
     await expect(btn).toHaveAttribute('data-current', '1');
+    // QA-N7: the button sits beside its block, so the click needs no scroll.
+    expect(await btn.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const pane = el.parentElement.getBoundingClientRect();
+      return r.top >= pane.top && r.bottom <= pane.bottom;
+    })).toBe(true);
+    // The system clipboard is shared with everything else on the machine; a stub keeps what
+    // this click wrote, and nothing else.
+    await page.evaluate(() => {
+      window.__clip = null;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: (t) => { window.__clip = t; return Promise.resolve(); }, readText: () => Promise.resolve(window.__clip) },
+      });
+    });
     await btn.click();
-    const clip = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clip).toBe('go build ./...');
+    await expect.poll(() => page.evaluate(() => window.__clip)).toBe('go build ./...');
     await expect(page.locator('#toast')).toHaveClass(/show/);
     await expect(btn).toHaveClass(/copied/);
   });
+});
+
+// APP-16: the copy button is built in the current UI language; applyLocale took that
+// (Arabic) text as the English original, so switching back to English kept it.
+test('the code copy button follows a switch back to English after it was built in Arabic', async ({ page }) => {
+  await page.goto(INDEX_URL);
+  await page.waitForSelector('#app');
+  await page.evaluate(() => {
+    window.setUiLocale('ar');
+    window._appState.files = [{ name: 'doc.md', path: 'doc.md', handle: null, content: '```js\nx\n```', dirty: false }];
+    window.renderFile(0);
+    window.setViewMode('reading');
+  });
+  const btn = page.locator('#codeCopyFloat');
+  await expect(btn).toHaveAttribute('aria-label', 'نسخ الكود');
+  await page.evaluate(() => window.setUiLocale('en'));
+  await expect(btn).toHaveAttribute('aria-label', 'Copy code');
+  await expect(btn).toHaveAttribute('data-tip', 'Copy code');
 });

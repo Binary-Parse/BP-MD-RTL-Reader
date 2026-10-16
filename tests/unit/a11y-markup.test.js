@@ -2,7 +2,7 @@
  * a11y-markup.test.js — T-F2/F3 static accessibility assertions on index.html.
  * Runs in Node (no browser): parses the HTML and checks ARIA affordances.
  */
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';

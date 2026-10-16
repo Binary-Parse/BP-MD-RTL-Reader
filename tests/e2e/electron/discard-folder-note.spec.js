@@ -22,6 +22,7 @@
  * No fixed sleeps: every wait is on an observable state of the app, the disk or the main process.
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -83,9 +84,8 @@ test.describe('"Don\'t Save" on a folder note really discards it @electron', () 
         const win = BrowserWindow.getAllWindows()[0];
         if (win && globalThis.__veto) win.removeListener('close', globalThis.__veto);
       }).catch(() => {});
-      if (page && !page.isClosed()) await page.evaluate(() => window.electronAPI.closeWindow()).catch(() => {});
-      await electronApp.close().catch(() => {});
     }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

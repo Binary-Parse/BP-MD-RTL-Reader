@@ -14,7 +14,7 @@ const path = require('path');
 const INDEX_URL = `file:///${path.resolve(__dirname, '../../src/renderer/index.html').replace(/\\/g, '/')}`;
 
 const DEFAULTS = {
-  theme: 'paper', zoomFactor: 1, editorMode: 'live',
+  theme: 'paper', zoomFactor: 1,
   sidebarVisible: true, inspectorVisible: true,
   uiDirection: 'ltr', uiLocale: 'en',
   calendar: 'gregorian', arabicKashida: false, italicRecolor: true,
@@ -33,7 +33,7 @@ async function bootWithBridge(page) {
         return window.__writeResult || { error: 'write-failed' };
       },
       readFile: async () => ({ content: '# On disk', meta: { bom: false, eol: '\n', finalNewline: true, hash: 'disk' } }),
-      getSettings: async () => settings,
+      getSettings: async () => { window.__settingsReads = (window.__settingsReads || 0) + 1; return settings; },
       setSettings: async () => ({ ok: true }),
       exportPDF: async () => ({ ok: true }),
       editCommand: noop, onOpenFile: noop, onVaultChanged: noop,
@@ -47,7 +47,8 @@ async function bootWithBridge(page) {
 test.describe('[QA-01] autosave write outcomes', () => {
   test('a persistent write failure surfaces a one-time toast', async ({ page }) => {
     await bootWithBridge(page);
-    await page.waitForTimeout(150); // let the settings restore settle
+    await page.waitForFunction(() => window.__settingsReads >= 2); // theme-boot and the settings restore
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
     await page.evaluate(() => {
       window._appState.autosave = true;
@@ -71,9 +72,30 @@ test.describe('[QA-01] autosave write outcomes', () => {
     await expect(page.locator('#toast')).not.toContainText('Auto-save could not write');
   });
 
+  // MAIN-10: main refuses to overwrite a disk copy it cannot read to check for changes.
+  test('a save main refuses as read-failed names the reason', async ({ page }) => {
+    await bootWithBridge(page);
+    await page.waitForFunction(() => window.__settingsReads >= 2);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.evaluate(() => {
+      window.__writeResult = { error: 'read-failed' };
+      window._appState.files.push({
+        name: 'busy.md', path: 'busy.md', handle: null, content: '# Busy',
+        dirty: true, documentId: 'cap-busy', vaultId: null,
+        meta: { bom: false, eol: '\n', finalNewline: true, hash: 'h' },
+        revision: 1, inventory: false, open: true, _editedAt: 0,
+      });
+      window.renderFile(window._appState.files.length - 1);
+    });
+    await page.evaluate(() => window.saveCurrent());
+    await expect(page.locator('#toast')).toContainText(
+      'Could not save busy.md: the copy on disk could not be read to check for changes');
+  });
+
   test('M10: a note with an open conflict banner is not tried again on every tick', async ({ page }) => {
     await bootWithBridge(page);
-    await page.waitForTimeout(150);
+    await page.waitForFunction(() => window.__settingsReads >= 2);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
     await page.evaluate(() => {
       window.__writeResult = { error: 'conflict' };
@@ -99,4 +121,21 @@ test.describe('[QA-01] autosave write outcomes', () => {
     const rendered = await page.evaluate(() => document.querySelector('#noteContent').firstElementChild.dataset.m10);
     expect(rendered).toBe('kept');
   });
+});
+
+// APP-24: with no settings bridge, the restore success handler read the theme mirror
+// unguarded. A throw there skipped the editor mount and every data-safety loop, which the
+// rejection handler (DATA-04) exists to prevent.
+test('blocked theme storage with no settings bridge still mounts the editor', async ({ page }) => {
+  await page.addInitScript(() => {
+    const proto = Object.getPrototypeOf(window.localStorage);
+    const get = proto.getItem;
+    proto.getItem = function (key) {
+      if (key === 'bpmdrtlreader-theme') throw new DOMException('blocked', 'SecurityError');
+      return get.call(this, key);
+    };
+  });
+  await page.goto(INDEX_URL);
+  await page.waitForSelector('#app');
+  await page.waitForFunction(() => !!(window.getActiveCmAdapter && window.getActiveCmAdapter()), null, { timeout: 8000 });
 });

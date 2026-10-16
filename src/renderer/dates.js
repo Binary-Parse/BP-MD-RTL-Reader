@@ -21,7 +21,7 @@ export function hijriParts(date) {
 }
 
 /** Hijri YYYY-MM-DD (Umm al-Qura). */
-export function hijriYMD(date) {
+function hijriYMD(date) {
   const h = hijriParts(date);
   return `${h.year}-${pad(h.month)}-${pad(h.day)}`;
 }

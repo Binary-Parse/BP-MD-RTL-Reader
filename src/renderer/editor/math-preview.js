@@ -9,8 +9,8 @@
  * may come from a ViewPlugin; the actual TeX→DOM render is INJECTED (renderMath) + LTR-isolated.
  */
 
-import { MAX_MATH_BYTES, isEscaped, utf8ByteLength } from '../limits.js';
-import { syntaxRangeAllowed } from './syntax-guards.js';
+import { MAX_MATH_BYTES, MAX_PREVIEW_CHARS, isEscaped, utf8ByteLength } from '../limits.js';
+import { atomicDecorationPlugin, syntaxRangeAllowed } from './syntax-guards.js';
 
 // Block $$…$$ (single line) first, then inline $…$ — both require non-space adjacency so prose
 // dollar amounts aren't treated as math.
@@ -19,6 +19,7 @@ const MATH_RE = /\$\$(?=\S)([^\n]+?)(?<=\S)\$\$|\$(?!\$)(?=\S)([^$\n]+?)(?<=\S)\
 /** Math spans in a single line of text: [{ start, end, tex, display }]. Exported for tests. */
 export function findMath(text) {
   const out = [];
+  if (text.length > MAX_PREVIEW_CHARS) return out; // QA H5: quadratic on a long hostile line
   MATH_RE.lastIndex = 0;
   let m;
   while ((m = MATH_RE.exec(text)) !== null) {
@@ -81,18 +82,6 @@ export function buildMathDecorations(CM6, renderMath, view) {
 }
 
 export function createMathPreview(CM6, renderMath) {
-  const { ViewPlugin, Decoration, EditorView } = CM6;
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) { this.decorations = buildMathDecorations(CM6, renderMath, view); }
-      update(u) {
-        if (u.docChanged || u.selectionSet || u.viewportChanged) this.decorations = buildMathDecorations(CM6, renderMath, u.view);
-      }
-    },
-    {
-      decorations: (v) => v.decorations,
-      // Atomic so the caret steps over a rendered formula instead of into the hidden TeX.
-      provide: (plugin) => EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations || Decoration.set([])),
-    },
-  );
+  // Atomic so the caret steps over a rendered formula instead of into the hidden TeX.
+  return atomicDecorationPlugin(CM6, (view) => buildMathDecorations(CM6, renderMath, view));
 }

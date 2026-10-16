@@ -76,6 +76,21 @@ test.describe('[T-B9] vault watch → renderer reconcile (EC-A2)', () => {
     await expect(page.locator('#conflictBar .conflict-banner')).toHaveCount(0);
   });
 
+  // QA H3: with no disk text to take, "Reload" marked the edits clean and they were lost on close.
+  test('"Reload from disk" with an unreadable disk copy keeps the edits unsaved and says so', async ({ page }) => {
+    await seed(page,
+      [{ name: 'a.md', path: 'a.md', content: '# My edits', dirty: true }],
+      [{ name: 'a.md', relPath: 'a.md', content: '# Disk version' }]);
+    await page.evaluate(() => window.handleVaultChanged({ vaultId: 'cap-vault', generation: 1, files: ['a.md'] }));
+    await page.evaluate(() => { window._appState.files[0].diskContent = null; });
+    await page.locator('#conflictBar .cf-reload').click();
+    const f = await page.evaluate(() => window._appState.files[0]);
+    expect(f.content).toBe('# My edits');
+    expect(f.dirty).toBe(true);
+    expect(f.conflict).toBe(true);
+    await expect(page.locator('#toast')).toContainText('could not be read');
+  });
+
   test('EC-A2 resolve: "Keep my edits" retains edits + dirty, clears the banner', async ({ page }) => {
     await seed(page,
       [{ name: 'a.md', path: 'a.md', content: '# My edits', dirty: true }],

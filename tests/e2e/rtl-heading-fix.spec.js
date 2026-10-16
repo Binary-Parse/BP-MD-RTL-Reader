@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Tests for the RTL heading alignment fix (run_id=20260513T185208Z-816).
+ * Tests for the RTL heading alignment fix.
  *
  * Covers AC1-AC8 from spec.md:
  *   AC1 -- h1 text-align: right in RTL mode

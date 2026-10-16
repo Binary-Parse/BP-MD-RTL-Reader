@@ -83,6 +83,7 @@ describe('all GitHub workflows pin actions to a full commit SHA', () => {
   // v2.20.0 is the first release that can enforce egress blocking on Windows and
   // macOS runners, so any job left in audit mode there must say why.
   test('every audit-mode egress policy carries a justification', () => {
+    expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       const lines = readWorkflow(file).split('\n');
       lines.forEach((line, index) => {
@@ -106,5 +107,30 @@ describe('all GitHub workflows pin actions to a full commit SHA', () => {
       }
     }
     expect(seen).toBeGreaterThan(0);
+  });
+});
+
+// The same tool version is written in more than one file. Nothing ties the copies
+// together but comments, so a bump that misses one would drift silently.
+describe('duplicated tool pins agree', () => {
+  test('the Playwright container tag matches the @playwright/test version', () => {
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const version = pkg.devDependencies['@playwright/test'];
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const tags = [
+      ...readWorkflow('ci.yml').matchAll(/mcr\.microsoft\.com\/playwright:v([0-9.]+)-/g),
+      ...readFileSync(path.join(root, 'CONTRIBUTING.md'), 'utf8').matchAll(/mcr\.microsoft\.com\/playwright:v([0-9.]+)-/g),
+    ].map(match => match[1]);
+    expect(tags.length).toBeGreaterThan(0);
+    for (const tag of tags) expect(tag).toBe(version);
+  });
+
+  test('CI and the full-tree secret scan use the same gitleaks release', () => {
+    const ci = /^\s*GL=([0-9.]+)\s*$/m.exec(readWorkflow('ci.yml'));
+    const script = /const GITLEAKS_VERSION = '([0-9.]+)';/.exec(
+      readFileSync(path.join(root, 'scripts/audit-secrets-fulltree.js'), 'utf8'));
+    expect(ci, 'GL= pin in ci.yml').toBeTruthy();
+    expect(script, 'GITLEAKS_VERSION in audit-secrets-fulltree.js').toBeTruthy();
+    expect(ci[1]).toBe(script[1]);
   });
 });

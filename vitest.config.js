@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { readFileSync } from 'fs';
 
-// ✅ الحل البديل لـ __dirname في ESM
+// __dirname is not defined in an ES module.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const coverageThresholds = JSON.parse(
   readFileSync(resolve(__dirname, 'config/coverage-thresholds.json'), 'utf8'),
@@ -14,16 +14,9 @@ export default defineConfig({
     name: 'node',
     environment: 'node',
     globals: true,
-    include: ['tests/unit/**/*.test.js', 'tests/unit/**/*.spec.js'],
-    exclude: [
-      'tests/e2e/**',              // safety: never let Playwright specs slip in
-      'tests/**/*.e2e.spec.js',    // safety: same
-    ],
-    server: {
-      deps: {
-        inline: [/src[\\/]main[\\/]main-logic\.js/],
-      },
-    },
+    include: ['tests/unit/**/*.test.js'],
+    // QA-L6: a test that asserts nothing fails instead of passing silently.
+    expect: { requireAssertions: true },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
@@ -37,7 +30,7 @@ export default defineConfig({
       // <script> they replaced, they are exercised by the Playwright e2e suite, not unit
       // tests — the PURE logic they import (i18n/theme/state/markdown/bidi/…) stays fully
       // unit-covered. Excluding them keeps the gate measuring unit-testable product code.
-      exclude: ['node_modules/', 'dist/', 'coverage/', 'tests/**', 'src/renderer/app.js', 'src/renderer/theme-boot.js', 'src/renderer/trusted-types-boot.js', 'src/renderer/editor/codemirror-adapter.js'],
+      exclude: ['src/renderer/app.js', 'src/renderer/theme-boot.js', 'src/renderer/trusted-types-boot.js', 'src/renderer/editor/codemirror-adapter.js'],
       // Coverage gate (audit #5): SAFE thresholds set BELOW current measured
       // coverage (≈98% stmt / 95% branch / 100% func / 98% lines) so the gate
       // enforces a regression floor without false-failing on normal runs.
@@ -46,7 +39,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // ✅ استخدم resolve بدلاً من path.resolve
       electron: resolve(__dirname, 'tests/__mocks__/electron.cjs'),
     },
   },

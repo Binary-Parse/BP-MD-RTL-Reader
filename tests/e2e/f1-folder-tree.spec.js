@@ -138,6 +138,28 @@ test.describe('[T-F1] collapsible folder tree', () => {
     expect(await page.locator('.tree-file').count()).toBe(4);
   });
 
+  test('QA M15: keyboard focus stays on the row after collapse, expand and open', async ({ page }) => {
+    const focusedName = () => page.evaluate(() => document.activeElement?.closest('[role="treeitem"]')?.getAttribute('aria-label') || document.activeElement?.tagName);
+    const docs = page.locator('.tree-dir', { hasText: 'docs' });
+    await docs.focus();
+    await page.keyboard.press('ArrowLeft');
+    expect(await focusedName()).toBe('docs');
+    await page.keyboard.press('ArrowRight');
+    expect(await focusedName()).toBe('docs');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    expect(await page.evaluate(() => window._appState.files[window._appState.activeFile].name)).toBe('a.md');
+    expect(await focusedName()).toBe('a.md');
+  });
+
+  test('QA M15: an arrow key on a tab keeps keyboard focus on the tab strip', async ({ page }) => {
+    await page.evaluate(() => window.renderFile(0));
+    await page.locator('.tab.active').focus();
+    await page.keyboard.press('ArrowRight');
+    const f = await page.evaluate(() => ({ tab: document.activeElement?.classList.contains('tab'), active: document.activeElement?.classList.contains('active') }));
+    expect(f).toEqual({ tab: true, active: true });
+  });
+
   test('clicking a nested file opens it by its State.files index', async ({ page }) => {
     await page.locator('.tree-file', { hasText: 'c.md' }).click();
     // c.md is index 3 in State.files

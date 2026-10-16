@@ -5,7 +5,7 @@
 import { describe, test, expect } from 'vitest';
 import { JSDOM } from 'jsdom';
 import createDOMPurify from 'dompurify';
-import { sanitizeHtml, sanitizeSvg, sanitizeMath, katexOptions, isSafeHref, isAllowedHref, renderTrusted } from '../../src/renderer/markdown/trusted.js';
+import { MAX_NOTE_DEPTH, sanitizeHtml, sanitizeSvg, sanitizeMath, katexOptions } from '../../src/renderer/markdown/trusted.js';
 
 function fakeDOMPurify(records) {
   return {
@@ -26,6 +26,20 @@ describe('sanitizeHtml', () => {
     expect(rec[0].cfg.ADD_ATTR).toEqual(expect.arrayContaining(['dir', 'lang']));
     // the inline style="" attribute is forbidden too (CSS-exfil defense, AI2/B4)
     expect(rec[0].cfg.FORBID_ATTR).toEqual(expect.arrayContaining(['style', 'onerror']));
+  });
+
+  // QA-M16: the reading pane takes the sanitized nodes, so the page does not parse and
+  // sanitize the same HTML a second time.
+  test('fragment mode returns the sanitized nodes, with the same result as the string', () => {
+    const { window } = new JSDOM('');
+    const purify = createDOMPurify(window);
+    const html = '<h1 id="t">Title</h1><p onclick="x()">a <img src="x" onerror="y()"></p><script>bad()</script>';
+    const frag = sanitizeHtml(html, purify, { fragment: true });
+    expect(frag.nodeType).toBe(11); // DocumentFragment
+    const holder = window.document.createElement('div');
+    holder.appendChild(frag);
+    expect(holder.innerHTML).toBe(sanitizeHtml(html, purify));
+    expect(holder.innerHTML).not.toMatch(/onclick|onerror|<script/);
   });
 });
 
@@ -62,29 +76,6 @@ describe('katexOptions (EC-B4)', () => {
     expect(o.trust).toBe(false);
     expect(o.maxExpand).toBeLessThanOrEqual(1000);
     expect(o.throwOnError).toBe(false);
-  });
-});
-
-describe('isSafeHref (EC-B5/B6)', () => {
-  test('allows http(s)/mailto/tel/#/bpmd', () => {
-    for (const h of ['https://x', 'http://x', 'mailto:a@b', 'tel:+1', '#h', 'bpmd://vault/a.png']) {
-      expect(isSafeHref(h)).toBe(true);
-    }
-  });
-  test('blocks javascript/data/blob', () => {
-    for (const h of ['javascript:x', 'data:x', 'blob:x', 5]) expect(isSafeHref(h)).toBe(false);
-  });
-});
-
-describe('renderTrusted', () => {
-  test('falls back to escapeHtml when marked missing', () => {
-    expect(renderTrusted('<b>', { escapeHtml: (s) => s.replace('<', '&lt;') })).toBe('&lt;b>');
-  });
-  test('parses then sanitizes', () => {
-    const rec = [];
-    const marked = { parse: (m) => `<p>${m}</p><script>x</script>` };
-    const out = renderTrusted('hi', { marked, DOMPurify: fakeDOMPurify(rec) });
-    expect(out).toBe('<p>hi</p>');
   });
 });
 
@@ -127,51 +118,6 @@ describe('sanitizer guards — every absent/invalid DOMPurify → empty string',
       expect(fn('<x>', { sanitize: 'nope' })).toBe('');    // sanitize not a function
     });
   }
-  test('renderTrusted with a real marked but null DOMPurify yields the sanitized empty string', () => {
-    const marked = { parse: (m) => `<p>${m}</p>` };
-    expect(renderTrusted('hi', { marked, DOMPurify: null })).toBe('');
-  });
-  test('renderTrusted with no escapeHtml escapes md when marked missing (never a raw sink)', () => {
-    expect(renderTrusted('<b>', {})).toBe('&lt;b&gt;');
-    expect(renderTrusted('<img src=x onerror=alert(1)>', {})).not.toContain('<img');
-    expect(renderTrusted(null, {})).toBe('');
-    expect(renderTrusted(undefined, { marked: { parse: 'x' } })).toBe(''); // marked.parse not a fn
-  });
-});
-
-describe('isAllowedHref', () => {
-  test('allows relative image paths and safe schemes', () => {
-    expect(isAllowedHref('./pic.png')).toBe(true);
-    expect(isAllowedHref('images/a.png')).toBe(true);
-    expect(isAllowedHref('/images/a.png')).toBe(true);
-    expect(isAllowedHref('https://example.com')).toBe(true);
-    expect(isAllowedHref('bpmd://vault/a.png')).toBe(true);
-  });
-  test('blocks javascript, protocol-relative, and non-image data URIs', () => {
-    expect(isAllowedHref('javascript:alert(1)')).toBe(false);
-    expect(isAllowedHref('//evil.example/x')).toBe(false);
-    expect(isAllowedHref('data:text/html,x')).toBe(false);
-  });
-  // Browsers normalize `\` to `/` in special URLs, so every backslash spelling of a
-  // protocol-relative URL must be blocked exactly like its `//` form.
-  test('blocks backslash protocol-relative spellings (regexp + guard)', () => {
-    for (const h of ['\\\\evil.com', '/\\evil.com', '\\/evil.com', '\\\\evil.com/x']) {
-      expect(isAllowedHref(h), h).toBe(false);
-    }
-    expect(isAllowedHref('images\\\\evil')).toBe(true); // interior backslash is a plain path char
-  });
-});
-
-describe('isSafeHref — anchoring + trim (kills regex/trim mutants)', () => {
-  test('the scheme must be at the START (anchored ^) — embedded scheme is unsafe', () => {
-    expect(isSafeHref('xhttps://evil')).toBe(false);
-    expect(isSafeHref('data:text/html,https://x')).toBe(false);
-    expect(isSafeHref('javascript:void(https://x)')).toBe(false);
-  });
-  test('leading/trailing whitespace is trimmed before the scheme test', () => {
-    expect(isSafeHref('   https://x  ')).toBe(true);   // trim() makes this pass
-    expect(isSafeHref('\tmailto:a@b')).toBe(true);
-  });
 });
 
 describe('katexOptions — exact hardened values', () => {
@@ -299,6 +245,29 @@ describe('data: URIs are stripped from non-media elements (audit 1b)', () => {
 // because the id prefix lives in a hook the recording fake above never calls.
 const realPurify = () => createDOMPurify(new JSDOM('<!doctype html>').window);
 const clean = (html) => sanitizeHtml(html, realPurify());
+const keepsHref = (href) => clean(`<a href="${href}">x</a>`).includes('href=');
+
+describe('link allow-list (ALLOWED_URI_REGEXP through the real DOMPurify)', () => {
+  test('keeps relative paths and the safe schemes', () => {
+    for (const h of ['./pic.png', 'images/a.png', '/images/a.png', 'https://example.com', 'http://x',
+      'mailto:a@b', 'tel:+1', '#h', 'bpmd://vault/a.png']) {
+      expect(keepsHref(h), h).toBe(true);
+    }
+  });
+  test('drops javascript, blob, protocol-relative and non-image data URIs', () => {
+    for (const h of ['javascript:alert(1)', 'blob:x', '//evil.example/x', 'data:text/html,x', 'xhttps://evil']) {
+      expect(keepsHref(h), h).toBe(false);
+    }
+  });
+  // Browsers normalize `\` to `/` in special URLs, so every backslash spelling of a
+  // protocol-relative URL must be blocked exactly like its `//` form.
+  test('drops backslash protocol-relative spellings', () => {
+    for (const h of ['\\\\evil.com', '/\\evil.com', '\\/evil.com', '\\\\evil.com/x']) {
+      expect(keepsHref(h), h).toBe(false);
+    }
+    expect(keepsHref('images\\\\evil')).toBe(true); // interior backslash is a plain path char
+  });
+});
 
 describe('M1: an id or name written in a note cannot take the place of an app element', () => {
   test('every id and name from a note gets the prefix', () => {
@@ -321,6 +290,28 @@ describe('M1: an id or name written in a note cannot take the place of an app el
     expect(out).toContain('href="#user-content-fn-1"');
     expect(out).toContain('id="user-content-fn-1"');
     expect(out).toContain('href="#user-content-fnref-1"');
+  });
+
+  // QA M1: `<label for="themeBtn">` in a note clicked the app's theme button.
+  test('attributes that point at an element by id follow the prefix', () => {
+    const out = clean('<label for="themeBtn">x</label><input list="opts" aria-labelledby="a b" aria-controls="winCloseBtn"><button popovertarget="settings">s</button>');
+    expect(out).toContain('for="user-content-themeBtn"');
+    expect(out).toContain('list="user-content-opts"');
+    expect(out).toContain('aria-labelledby="user-content-a user-content-b"');
+    expect(out).toContain('aria-controls="user-content-winCloseBtn"');
+    expect(out).not.toMatch(/for="themeBtn"|aria-controls="winCloseBtn"|popovertarget="settings"/);
+  });
+
+  // QA H5: `<u>a <u>a …` nested 511 deep and every paint of the note took most of a second.
+  test('elements nested deeper than MAX_NOTE_DEPTH are replaced by their content', () => {
+    const out = clean('<p>' + '<u>a '.repeat(120) + '</p>');
+    const doc = new JSDOM('<!doctype html><body>' + out + '</body>').window.document;
+    let depth = 0; let el = doc.body;
+    while (el.firstElementChild) { el = el.lastElementChild; depth++; }
+    expect(depth).toBeLessThanOrEqual(MAX_NOTE_DEPTH);
+    expect(doc.body.textContent.split('a').length - 1).toBe(120); // no text is lost
+    const shallow = '<ul><li><p><u>keep</u> <a href="#x">me</a></p></li></ul>';
+    expect(clean(shallow)).toBe(shallow);
   });
 
   test('a link to a heading slug (an id the app sets later) is left alone', () => {

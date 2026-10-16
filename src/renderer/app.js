@@ -8,9 +8,10 @@ import { NEEDS_FOLD, normalizeArabic, normalizeArabicWithMap, mapEnd } from './c
 import { configureMarked, parseMarkdown as _parseMarkdown, parseCalloutHeader, lastRenderLimited } from './markdown/markdown.js';
 import { execEditCmd as _execEditCmdImpl } from './editor/edit-commands.js';
 import { applyBidi } from './bidi-dom.js';
-import { resolveBlockDirection, proseText, slugify, resolveDocDirection, nextCellIndex } from './bidi.js';
+import { resolveBlockDirection, proseText, headingSlugs, resolveDocDirection, nextCellIndex } from './bidi.js';
 import { transformCallouts } from './markdown/callouts.js';
 import { activeCodeBlock } from './markdown/code-track.js';
+import { flipEdit, markerDirection, markerRanges, pinEdit } from './markdown/block-direction.js';
 import { activeHeading, sourceHeadingPositions } from './components/outline.js';
 import { parseFrontMatter, frontMatterDirection } from './markdown/frontmatter.js';
 import { dailyNoteName } from './dates.js';
@@ -19,11 +20,11 @@ import { mathExtension, restoreMath, renderTex } from './markdown/math.js';
 import { sanitizeHtml, sanitizeSvg } from './markdown/trusted.js';
 import { renderMermaid } from './markdown/mermaid.js';
 import { tableEdit } from './components/table-edit.js';
-import { applyEdit, markClean, adoptDiskText, discardEdits } from './components/dirty-state.js';
+import { applyEdit, adoptDiskText, discardEdits } from './components/dirty-state.js';
 import { wrapTablesInFrames } from './components/table-frame.js';
 import { getFocusable, trapTab, rovingNext } from './components/focus.js';
-import { t as tr, tPlural, localeDirection, formatMessage } from './locale.js';
-import { buildExportDocAsync as buildExportDocImpl } from './markdown/export.js';
+import { t as tr, tPlural, localeDirection, formatMessage, isolateLatinVars } from './locale.js';
+import { buildExportDocAsync as buildExportDocImpl, isLanguageTag } from './markdown/export.js';
 // T6.1c: the EPUB path (renderer builds the whole archive; main only writes the bytes).
 import { buildEpubFromNoteAsync } from './markdown/epub.js';
 import { createCodeMirrorAdapter } from './editor/codemirror-adapter.js';
@@ -38,14 +39,34 @@ import { scrollRatio, progressEntryFor, upsertProgress, relativeTime } from './r
 import { applyHighlights, findSingleTextNodeSelection, newHighlightId, noteExcerpt } from './markdown/annotations.js';
 import { extractTagsFromFiles } from './components/tags.js';
 import { createWorkspaceController } from './components/workspace-controller.js';
+import {
+  TIER, applyLimits, getLimits, noteTier, megabytes, limitMb, inLargeMode, skipsEditPreview, needsRenderPrompt,
+  isLargeExport, exportFailureKind, renderSlice, RENDER_ANYWAY_CHARS, MIB, applyNoteSize, mirrorSignature, serialQueue,
+} from './components/large-file.js';
 import { createSettingsController } from './components/settings-controller.js';
-import { fileDirKind, crumbSegments, fileMeta, shelfRatio, outlineNumbers } from './components/doc-meta.js';
+import { fileDirKind, crumbSegments, fileMeta, shelfRatio, outlineNumbers, bodyWordCount, readMinutes } from './components/doc-meta.js';
 import { inspectorData, renderInspectorDoc, renderInspectorProgress, renderZoom } from './components/inspector-ui.js';
 import { createMarginNotes, placeMarginHost, pickMarginMode } from './components/margin-notes.js';
 import { streakGrid } from './components/streak-grid.js';
 import { ctxIconName, ctxHeader, ctxRows, buildCtxHeader, buildCtxRow, surfaceActions } from './components/context-menu-items.js';
 import { svgIcon, hydrateIcons } from './icons.js';
 import { shortcutLetter, hitKey, hitCode } from './shortcut-keys.js';
+
+// QA-L2: about 110 functions and the app state used to sit on `window` for the test suites,
+// where any script running in the page could call them. They are exposed only to a test run:
+// the browser lane loads the page from file://, the Electron lane adds ?bpmdTest=1 (added by
+// window-controller for a development build under BPMD_TEST=1, never for a packaged one).
+const testHooks = (location.protocol === 'file:' || new URLSearchParams(location.search).has('bpmdTest')) ? window : {};
+
+// APP-12: the gates that pause autosave, the close flow and the recovery prompt are module
+// state. Only a test run sees them, as testHooks._saveDialogOpen and so on.
+const gates = { saveDialogOpen: false, closeFlowActive: false, recoveryPromptOpen: false, recoveryDismissed: false };
+Object.defineProperties(testHooks, {
+  _saveDialogOpen: { configurable: true, get: () => gates.saveDialogOpen, set: (v) => { gates.saveDialogOpen = v; } },
+  _closeFlowActive: { configurable: true, get: () => gates.closeFlowActive, set: (v) => { gates.closeFlowActive = v; } },
+  _recoveryPromptOpen: { configurable: true, get: () => gates.recoveryPromptOpen, set: (v) => { gates.recoveryPromptOpen = v; } },
+  _recoveryDismissed: { configurable: true, get: () => gates.recoveryDismissed, set: (v) => { gates.recoveryDismissed = v; } },
+});
 
 // =====================================================================
 // OBSERVABILITY — renderer-side error capture (audit #25)
@@ -89,7 +110,6 @@ const { state: State, subscribe } = createState({
   // Ephemeral by design — not persisted; resets to AUTO on each launch (front-matter
   // `direction:` is the durable per-note mechanism).
   forcedDir: null,
-  editorMode: 'live',
   // viewMode (T-F17): 'reading' = clean read-only rendered view (#noteContent shown, CM6 hidden,
   // copy yields clean prose, no markdown-on-click); 'edit' = the CM6 live-preview editor.
   // In-memory dev/test default is 'edit' (browser/dev with no settings bridge); the PACKAGED app
@@ -137,8 +157,8 @@ const { state: State, subscribe } = createState({
 });
 
 // Export for testing via window (smoke tests only)
-window._appState = State;
-window._appSubscribe = subscribe;
+testHooks._appState = State;
+testHooks._appSubscribe = subscribe;
 
 // Created after the renderer actions it injects have been declared. Toasts consult
 // the controller during restore so applying persisted values stays quiet.
@@ -169,7 +189,6 @@ const modalTitle = $('modalTitle');
 const modalBody = $('modalBody');
 const noteList = $('noteList'); // T5.1c: the Inspector "Notes" list (present in index.html)
 const editorArea = $('editorArea');
-const srcTextarea = $('srcTextarea');
 const readerControlsEl = $('readerControls');
 const readerControlsButton = $('readerControlsButton');
 const readerControlsPopover = $('readerControlsPopover');
@@ -186,6 +205,19 @@ marked.use(mathExtension());
 
 function parseMarkdown(md) {
   return _parseMarkdown(md, { marked, DOMPurify, escapeHtml });
+}
+// QA-M16: the note body as sanitized nodes, appended to the page as they are. Assigning the
+// HTML string instead made the page parse it again and the Trusted Types default policy
+// sanitize it a second time. The string fallbacks (no marked / DOMPurify) still go through it.
+function noteBodyNodes(md) {
+  hideDirBadge(); // the blocks it pointed at are about to be replaced
+  const out = _parseMarkdown(md, { marked, DOMPurify, escapeHtml, fragment: true, sourceLines: true });
+  if (typeof out !== 'string') return out;
+  const holder = document.createElement('div');
+  holder.innerHTML = out;
+  const frag = document.createDocumentFragment();
+  while (holder.firstChild) frag.appendChild(holder.firstChild);
+  return frag;
 }
 // audit M4: the render ran out of its time budget and part of the note is shown as literal
 // text. Said once per note, right after the parse it refers to; not on every keystroke.
@@ -250,7 +282,6 @@ function rewriteVaultImages(container) {
     }, { once: true });
   });
 }
-window.rewriteVaultImages = rewriteVaultImages;
 
 // Apply per-block direction + inline bidi isolation to the rendered note
 // (T-R1/R2). baseDir is the inherited direction for neutral-only blocks: the
@@ -269,6 +300,13 @@ function applyBidiToNote(content) {
     content: resolveBlockDirection(proseText(body), 'ltr'), // prose only (no code/math, audit H8); dominant-script: an Arabic-majority note reads RTL even if it opens with English
   });
   applyBidi(noteContent, { baseDir: docDir, escape: escapeHtml, forceDir: forcedDir });
+  // QA-M22: the note no longer inherits the interface's language (an English note in the
+  // Arabic UI was announced with an Arabic voice). Its blocks carry the front matter's
+  // `lang:`, or lang="" ("unknown") so a screen reader uses its own default; a guess would
+  // mislabel half of a mixed Arabic/English note (EC-C6). Set on the blocks, not on
+  // #noteContent, whose aria-label is in the interface language.
+  const noteLang = isLanguageTag(data && data.lang) ? data.lang : '';
+  for (const block of noteContent.children) block.setAttribute('lang', noteLang);
   if (cmAdapter) cmAdapter.setDirection(docDir, forcedDir); // keep the CM6 editor in sync (also closes the front-matter gap)
   wrapTablesInFrames(noteContent, { locale: State.uiLocale });
   wireTableNav(noteContent); // T-R9: logical (EC-C2) arrow-key cell traversal in rendered tables
@@ -276,34 +314,17 @@ function applyBidiToNote(content) {
   // otherwise the container stays neutral and each block resolves its own (R1/R2).
   const editorEl = $('editor');
   if (editorEl) {
-    if (State.forcedDir === 'rtl') {
-      // Forced RTL: explicit container dir to override the ltr default (blocks already forced).
-      editorEl.setAttribute('dir', 'rtl');
-      if (State.direction !== 'rtl') State.direction = 'rtl';
-      updateDirUI();
-    } else if (State.forcedDir === 'ltr') {
-      // Forced LTR: container stays neutral (ltr is the default); blocks are forced via forceDir.
-      editorEl.removeAttribute('dir');
-      if (State.direction !== 'ltr') State.direction = 'ltr';
-      updateDirUI();
-    } else if (fmDir) {
-      // Front matter governs: keep the indicator/inspector in sync with it.
-      editorEl.setAttribute('dir', docDir);
-      if (State.direction !== docDir) State.direction = docDir;
-      updateDirUI();
-    } else {
-      // Neutral container (per-block AUTO) — but the document's OVERALL direction still
-      // follows its dominant script (RTL-M2): the indicator must show RTL for an
-      // Arabic-majority note, and the CM6 widgets inherit State.direction as their
-      // baseDir, so pinning 'ltr' here made editor widgets disagree with the reading
-      // pane on neutral-only blocks (an all-dates table mirrored one way, not the other).
-      editorEl.removeAttribute('dir');
-      if (State.direction !== docDir) State.direction = docDir;
-      updateDirUI();
-    }
+    // The container carries `dir` for forced RTL and for a front-matter direction (unless the
+    // toggle forces LTR, the default). Otherwise it stays neutral and each block resolves its
+    // own, but the document's OVERALL direction still follows its dominant script (RTL-M2):
+    // the indicator must show RTL for an Arabic-majority note, and the CM6 widgets inherit
+    // State.direction as their baseDir.
+    if (State.forcedDir === 'rtl' || (State.forcedDir !== 'ltr' && fmDir)) editorEl.setAttribute('dir', docDir);
+    else editorEl.removeAttribute('dir');
+    if (State.direction !== docDir) State.direction = docDir;
+    updateDirUI();
   }
 }
-window.applyBidiToNote = applyBidiToNote;
 
 // T-R9: make rendered table cells keyboard-navigable with LOGICAL arrow keys (EC-C2).
 // Roving tabindex (one focusable cell) + a per-table keydown handler; all the
@@ -370,11 +391,11 @@ function decorateCodeAndMath() {
   }
   scheduleCodeTrack(); // floating copy button follows the visible code block (reading view)
 }
-window.decorateCodeAndMath = decorateCodeAndMath;
 
-// Lazy-load the vendored Mermaid engine once (3 MB — never on the critical path).
+// Lazy-load the vendored Mermaid engine once (5 MB — never on the critical path).
 // securityLevel:'strict' + htmlLabels:false → SVG-native text (no <foreignObject>),
-// so the SVG profile sanitizer keeps the labels.
+// so the SVG profile sanitizer keeps the labels. Layout, theme and look are named so a
+// Mermaid upgrade cannot change how an existing diagram is drawn (D11).
 let _mmdSeq = 0;
 let _mermaidPromise = null;
 function loadMermaid() {
@@ -383,7 +404,10 @@ function loadMermaid() {
     const init = (ns) => {
       const m = (ns && (ns.default || ns));
       if (!m || typeof m.render !== 'function') return reject(new Error('mermaid unavailable'));
-      m.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: { htmlLabels: false } });
+      m.initialize({
+        startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: { htmlLabels: false },
+        layout: 'dagre', theme: 'default', look: 'classic',
+      });
       resolve(m);
     };
     // Mermaid's official UMD distribution exposes `window.mermaid`.  Older
@@ -402,7 +426,7 @@ function loadMermaid() {
   _mermaidPromise.catch(() => { _mermaidPromise = null; });
   return _mermaidPromise;
 }
-window.loadMermaid = loadMermaid;
+testHooks.loadMermaid = loadMermaid;
 
 // Lazy-load the vendored highlight.js (1.08 MB = 76% of the old blocking payload — audit
 // PERF-07). Only notes that actually contain a fenced block pay for it; a transient
@@ -424,27 +448,29 @@ function loadHighlightJs() {
   return _hljsPromise;
 }
 
-window.isArabicHeavy = isArabicHeavy;
+testHooks.isArabicHeavy = isArabicHeavy;
 
 // =====================================================================
 // TOAST
 // =====================================================================
 const TOAST_MS = 2200;
 const TOAST_WITH_ACTION_MS = 6000;
+function hideToast() {
+  clearTimeout(toastEl._t);
+  toastEl.classList.remove('show', 'has-action');
+  toastEl.querySelector('.toast-action')?.remove(); // no focusable control in a hidden toast
+}
 /**
  * Show a short message. `action` ({ label, onClick }) adds one button to it, for a step
  * the user can take back; such a toast stays longer and takes pointer input.
  */
-function showToast(msg, kind, action) {
+function showToast(msg, kind, action, { sticky = false, ms = 0 } = {}) {
   if (settingsController?.isRestoring()) return;
   toastEl.textContent = msg;
   toastEl.classList.remove('error', 'info', 'has-action');
   if (kind === 'error') toastEl.classList.add('error');
   else if (kind === 'info') toastEl.classList.add('info');
-  const hide = () => {
-    toastEl.classList.remove('show', 'has-action');
-    toastEl.querySelector('.toast-action')?.remove(); // no focusable control in a hidden toast
-  };
+  const hide = hideToast;
   const hasAction = !!action && typeof action.label === 'string' && typeof action.onClick === 'function';
   if (hasAction) {
     const button = document.createElement('button');
@@ -461,9 +487,12 @@ function showToast(msg, kind, action) {
   }
   toastEl.classList.add('show');
   clearTimeout(toastEl._t);
-  toastEl._t = setTimeout(hide, hasAction ? TOAST_WITH_ACTION_MS : TOAST_MS);
+  // `sticky`: a busy message that stays until the work ends (the next toast or hideToast).
+  // `ms`: a notice that needs longer than a confirmation to be read.
+  if (!sticky) toastEl._t = setTimeout(hide, ms || (hasAction ? TOAST_WITH_ACTION_MS : TOAST_MS));
 }
-window.showToast = showToast;
+testHooks.showToast = showToast;
+testHooks.hideToast = hideToast;
 
 // =====================================================================
 // THEME
@@ -476,7 +505,6 @@ function catalogName(prefix, id) {
   return !name || name === key ? String(id) : name;
 }
 const themeName = (id) => catalogName('theme.', id);
-const modeName = (id) => catalogName('mode.', id);
 const capitalised = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 function setThemeLabel(id) {
   if ($('themeLabel')) $('themeLabel').textContent = themeName(id);
@@ -485,7 +513,6 @@ function setThemeLabel(id) {
 // the interface language writes them again.
 function localizeStateLabels() {
   setThemeLabel(State.theme);
-  if ($('propMode')) $('propMode').textContent = modeName(State.editorMode);
   setVaultUi();
   // A11y: name the two menu containers for screen readers.
   ctxMenu.setAttribute('aria-label', tl('ctxmenu.label'));
@@ -494,27 +521,33 @@ function localizeStateLabels() {
 // The kind of a palette command ("command", "view", "help"); a file shows its path instead.
 const paletteMeta = (it) => (it.act && it.key && it.meta ? catalogName('palette.meta.', it.meta) : (it.meta || ''));
 
-function cycleTheme() {
-  const next = getNextTheme(State.theme);
-  State.theme = next;
+// Show `theme`: the root attribute, the theme button, its icon and its label.
+function applyThemeToDom(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  $('themeBtn')?.classList.toggle('active', theme !== 'paper');
+  updateThemeIcon(theme);
+  setThemeLabel(theme);
+}
+
+// The user picked `theme`: apply it, mirror it for the pre-paint boot, and say so.
+function chooseTheme(theme) {
+  State.theme = theme;
   // T2.1: an explicit choice ends the system-follow, so the OS scheme cannot fight the
   // user's theme on the next launch.
   State.themeFollowSystem = false;
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('bpmdrtlreader-theme', next);
-  $('themeBtn').classList.toggle('active', next !== 'paper'); updateThemeIcon(next);
-  setThemeLabel(next);
+  applyThemeToDom(theme);
+  try { localStorage.setItem('bpmdrtlreader-theme', theme); } catch (_) { /* storage off */ }
+}
+
+function cycleTheme() {
+  const next = getNextTheme(State.theme);
+  chooseTheme(next);
   showToast(tl('toast.theme', { name: capitalised(themeName(next)) }), 'info');
 }
-window.cycleTheme = cycleTheme;
+testHooks.cycleTheme = cycleTheme;
 
 function setTheme(t) {
-  State.theme = t;
-  State.themeFollowSystem = false; // T2.1: see cycleTheme
-  document.documentElement.setAttribute('data-theme', t);
-  localStorage.setItem('bpmdrtlreader-theme', t);
-  $('themeBtn').classList.toggle('active', t !== 'paper'); updateThemeIcon(t);
-  setThemeLabel(t);
+  chooseTheme(t);
   closeMenu();
   showToast(tl('toast.theme', { name: capitalised(themeName(t)) }), 'info');
 }
@@ -527,15 +560,12 @@ function toggleRTL() {
   // AUTO = smart per-block detection (default). RTL/LTR force EVERY block of the note.
   applyForcedDir(State.forcedDir === null ? 'rtl' : State.forcedDir === 'rtl' ? 'ltr' : null);
 }
-window.toggleRTL = toggleRTL;
+testHooks.toggleRTL = toggleRTL;
 
 function applyForcedDir(next) {
   State.forcedDir = next;
   appBody._manualRTL = State.forcedDir === 'rtl'; // back-compat mirror for existing RTL tests/export
   const editorEl = $('editor');
-  // #srcTextarea must be dir=auto for RTL and NEVER literal rtl (spec §Constraints); cleared otherwise.
-  if (State.forcedDir === 'rtl') srcTextarea.setAttribute('dir', 'auto');
-  else srcTextarea.removeAttribute('dir');
   // #editor container: explicit 'rtl' ONLY for forced RTL (to override the ltr default). Forced
   // LTR and AUTO leave the container neutral — ltr is the default and blocks are forced per-block
   // (forceDir) regardless, so an explicit dir='ltr' here is unnecessary.
@@ -550,7 +580,7 @@ function applyForcedDir(next) {
   if (af) applyBidiToNote(af.content || '');
   syncMarginNotes(); // the notes column mirrors with the reading column's direction
   updateDirUI();
-  showToast(tl('toast.direction', { dir: State.forcedDir ? State.forcedDir.toUpperCase() : 'Auto' }));
+  showToast(tl('toast.direction', { dir: State.forcedDir ? State.forcedDir.toUpperCase() : tl('dir.auto') }));
 }
 
 function updateDirUI() {
@@ -583,7 +613,7 @@ function applyPanelLayout() {
   $('sidebarToggleBtn')?.setAttribute('aria-expanded', String(State.sidebarVisible));
   $('inspectorToggleBtn')?.setAttribute('aria-expanded', String(State.inspectorVisible));
 }
-window.applyPanelLayout = applyPanelLayout;
+testHooks.applyPanelLayout = applyPanelLayout;
 
 // =====================================================================
 // T-F19: CHROME VISIBILITY (auto-hide title bar / hide status bar)
@@ -613,9 +643,9 @@ function setChromePeek(on) {
 // anchoring to .app keeps the two lanes honest about the same pixels. Computed on first
 // use and cached, because this runs from a pointer handler.
 function ensureChromeThresholds() {
-  const bar = $('titlebar') || document.querySelector('.titlebar');
+  const bar = document.querySelector('.titlebar');
   if (!chromeRevealThreshold && bar) {
-    const appEl = $('app') || document.querySelector('.app');
+    const appEl = $('app');
     const appTop = appEl ? appEl.getBoundingClientRect().top : 0;
     chromeRevealThreshold = appTop + CHROME_REVEAL_BAND;
     chromePeekThreshold = appTop + bar.getBoundingClientRect().height + 8;
@@ -682,7 +712,7 @@ function applyChromeLayout() {
     chromeLeaveHandler = null;
   }
 }
-window.applyChromeLayout = applyChromeLayout;
+testHooks.applyChromeLayout = applyChromeLayout;
 
 function setAutoHideTitlebar(on) {
   State.autoHideTitlebar = !!on;
@@ -692,7 +722,7 @@ function setAutoHideTitlebar(on) {
   }
 }
 function toggleAutoHideTitlebar() { setAutoHideTitlebar(!State.autoHideTitlebar); }
-window.toggleAutoHideTitlebar = toggleAutoHideTitlebar;
+testHooks.toggleAutoHideTitlebar = toggleAutoHideTitlebar;
 
 function setHideStatusBar(on) {
   State.hideStatusBar = !!on;
@@ -702,7 +732,7 @@ function setHideStatusBar(on) {
   }
 }
 function toggleHideStatusBar() { setHideStatusBar(!State.hideStatusBar); }
-window.toggleHideStatusBar = toggleHideStatusBar;
+testHooks.toggleHideStatusBar = toggleHideStatusBar;
 
 // =====================================================================
 // T-F19: OS WINDOW TITLE
@@ -729,14 +759,13 @@ function syncWindowTitle() {
     ? PRODUCT_NAME
     : `${file.dirty ? '\u2022 ' : ''}${FSI}${file.name}${PDI}`;
 }
-window.syncWindowTitle = syncWindowTitle;
+testHooks.syncWindowTitle = syncWindowTitle;
 
 function setWindowTitleMode(mode) {
   if (mode !== 'app' && mode !== 'file') return;
   State.windowTitleMode = mode; // persisted via the PERSISTED_KEYS subscribe hook
   syncWindowTitle();
 }
-window.setWindowTitleMode = setWindowTitleMode;
 
 function toggleSidebar() {
   State.sidebarVisible = !State.sidebarVisible;
@@ -750,7 +779,7 @@ function toggleInspector() {
   closeMenu();
   showToast(tl('toast.inspector', { state: State.inspectorVisible ? tl('toast.shown') : tl('toast.hidden') }), 'info');
 }
-window.toggleInspector = toggleInspector;
+testHooks.toggleInspector = toggleInspector;
 
 // =====================================================================
 // FULLSCREEN (v10 redesign, 2026-08-25)
@@ -766,15 +795,14 @@ function updateFullscreenUi() {
   if (!btn) return;
   const isFull = _nativeFullscreen || !!document.fullscreenElement;
   const key = isFull ? 'titlebar.exitFullscreen' : 'titlebar.fullscreen';
-  const enText = isFull ? 'Exit full screen' : 'Full screen';
+  const enText = tr(key, 'en');
   btn.setAttribute('aria-pressed', String(isFull));
   btn.querySelector('use')?.setAttribute('href', isFull ? '#ic-shrink' : '#ic-expand');
   btn.dataset.i18nTip = key;
   btn.dataset.i18nAriaLabel = key;
   btn.dataset.i18nTipOrig = enText;
   btn.dataset.i18nAriaLabelOrig = enText;
-  const locale = State.uiLocale || 'en';
-  const label = locale === 'en' ? enText : tr(key, locale);
+  const label = tr(key, State.uiLocale || 'en');
   btn.setAttribute('data-tip', label);
   btn.setAttribute('aria-label', label);
 }
@@ -794,7 +822,6 @@ function toggleFullscreen() {
     $('app')?.requestFullscreen();
   }
 }
-window.toggleFullscreen = toggleFullscreen;
 document.addEventListener('fullscreenchange', updateFullscreenUi);
 if (window.electronAPI && typeof window.electronAPI.onFullscreenChanged === 'function') {
   window.electronAPI.onFullscreenChanged((flag) => {
@@ -855,9 +882,8 @@ function closeModal() {
 function tl(key, vars) {
   // A counted sentence (vars.n is a number) takes the plural form of the language (audit M20).
   const template = tPlural(key, vars ? vars.n : undefined, State.uiLocale);
-  return formatMessage(template === key ? key : template, vars);
+  return formatMessage(template, localeDirection(State.uiLocale) === 'rtl' ? isolateLatinVars(vars) : vars);
 }
-window._tl = tl; // exposed for e2e checks of the localized strings
 
 // =====================================================================
 // WORD-STYLE SAVE DIALOG (v1.2) — Save / Don't Save / Cancel
@@ -873,15 +899,7 @@ window._tl = tl; // exposed for e2e checks of the localized strings
 function setBadgeIcon(badgeId) {
   const badge = $(badgeId);
   if (!badge || badge.querySelector('svg')) return;
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', 'ic');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  const useEl = document.createElementNS(NS, 'use');
-  useEl.setAttribute('href', '#ic-file');
-  svg.appendChild(useEl);
-  badge.appendChild(svg);
+  badge.appendChild(svgIcon('file'));
 }
 
 // v1.3.0 (DATA-03): the autosave gate is a COUNT, not a boolean. openModal settles a
@@ -892,165 +910,165 @@ function setBadgeIcon(badgeId) {
 let _saveDialogCount = 0;
 function saveDialogOpened() {
   _saveDialogCount += 1;
-  window._saveDialogOpen = true;
+  gates.saveDialogOpen = true;
 }
 function saveDialogClosed() {
   _saveDialogCount = Math.max(0, _saveDialogCount - 1);
-  window._saveDialogOpen = _saveDialogCount > 0;
+  gates.saveDialogOpen = _saveDialogCount > 0;
+}
+
+/**
+ * One answer from the modal. A button settles it with its value (a function is called at
+ * click time); Escape, the backdrop or ✕ close the modal without a button, and that settles
+ * it as `abandon`. QA-M16: a second settle is a no-op and no settler outlives the dialog, so
+ * a later supersede cannot close an unrelated dialog.
+ */
+function askModal(title, html, { buttons, abandon, focus, badge, onSettle } = {}) {
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (!modalOverlay.classList.contains('open')) { observer.disconnect(); abandoned(); }
+    });
+    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
+    openModal(title, html);
+    if (badge) setBadgeIcon(badge);
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      if (onSettle) onSettle();
+      observer.disconnect();
+      pendingModalSettlers.delete(abandoned);
+      closeModal();
+      resolve(value);
+    };
+    const abandoned = () => settle(abandon);
+    pendingModalSettlers.add(abandoned);
+    for (const [id, value] of Object.entries(buttons || {})) {
+      $(id)?.addEventListener('click', () => settle(typeof value === 'function' ? value() : value));
+    }
+    // The chosen control owns initial focus: openModal's own focus lands on ✕, this later
+    // 0 ms timer wins.
+    if (focus) setTimeout(() => $(focus)?.focus(), 0);
+  });
 }
 
 function askSaveChanges({ name, count = 0 } = {}) {
   // Autosave must not write behind a Save/Don't-Save answer — a trailing tick landing
   // after "Don't Save" would persist exactly what the user declined to keep.
   saveDialogOpened();
-  return new Promise((resolve) => {
-    // Escape or the backdrop both run closeModal() without touching our buttons —
-    // watch the overlay and settle as 'cancel' if it closes under us. Disconnected
-    // first in the button handlers so a choice never races the observer.
-    const observer = new MutationObserver(() => {
-      if (!modalOverlay.classList.contains('open')) {
-        observer.disconnect();
-        abandoned();
-      }
-    });
-    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
-    const many = count > 1;
-    // Centered-icon design (v1.2, user-picked): the file name is bolded inline, so the
-    // sentence is assembled from prefix + bold name + postfix instead of one template.
-    const msgHtml = many
-      ? escapeHtml(tl('dlg.saveMany', { n: count }))
-      : `${escapeHtml(tl('dlg.saveOnePre'))}<bdi dir="ltr" class="doc-name">“${escapeHtml(name || '')}”</bdi>${escapeHtml(tl('dlg.saveOnePost'))}`;
-    const saveLabel = many ? tl('dlg.saveAll') : tl('dlg.save');
-    const dontLabel = many ? tl('dlg.closeWithoutSaving') : tl('dlg.dontSave');
-    const html = `
-      <div class="dlg-body">
-        <div class="dlg-badge" id="dlgBadge"></div>
-        <div class="dlg-title">${escapeHtml(tl('dlg.unsavedTitle'))}</div>
-        <div class="dlg-msg">${msgHtml}</div>
-        <div class="dlg-hint">${escapeHtml(tl('dlg.hint'))}</div>
-      </div>
-      <div class="dlg-actions">
-        <button type="button" class="dlg-btn dlg-danger" id="dlgDontSaveBtn">${escapeHtml(dontLabel)}</button>
-        <button type="button" class="dlg-btn" id="dlgCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
-        <button type="button" class="dlg-btn dlg-primary" id="dlgSaveBtn">${escapeHtml(saveLabel)}</button>
-      </div>`;
-    openModal(tl('dlg.unsavedTitle'), html);
-    setBadgeIcon('dlgBadge');
-    let settled = false;
-    const settle = (choice) => {
-      if (settled) return;
-      settled = true;
-      saveDialogClosed();
-      observer.disconnect();
-      pendingModalSettlers.delete(abandoned);
-      closeModal();
-      resolve(choice);
-    };
-    const abandoned = () => settle('cancel');
-    pendingModalSettlers.add(abandoned);
-    $('dlgSaveBtn')?.addEventListener('click', () => settle('save'));
-    $('dlgDontSaveBtn')?.addEventListener('click', () => settle('discard'));
-    $('dlgCancelBtn')?.addEventListener('click', () => settle('cancel'));
-    // Word convention: the affirmative choice owns initial focus. openModal's own
-    // focus lands on the modal's ✕ (first focusable); this later 0ms timer wins.
-    setTimeout(() => $('dlgSaveBtn')?.focus(), 0);
+  const many = count > 1;
+  // Centered-icon design (v1.2, user-picked): the file name is bolded inline, so the
+  // sentence is assembled from prefix + bold name + postfix instead of one template.
+  const msgHtml = many
+    ? escapeHtml(tl('dlg.saveMany', { n: count }))
+    : `${escapeHtml(tl('dlg.saveOnePre'))}<bdi dir="ltr" class="doc-name">“${escapeHtml(name || '')}”</bdi>${escapeHtml(tl('dlg.saveOnePost'))}`;
+  const saveLabel = many ? tl('dlg.saveAll') : tl('dlg.save');
+  const dontLabel = many ? tl('dlg.closeWithoutSaving') : tl('dlg.dontSave');
+  const html = `
+    <div class="dlg-body">
+      <div class="dlg-badge" id="dlgBadge"></div>
+      <div class="dlg-title">${escapeHtml(tl('dlg.unsavedTitle'))}</div>
+      <div class="dlg-msg">${msgHtml}</div>
+      <div class="dlg-hint">${escapeHtml(tl('dlg.hint'))}</div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-btn dlg-danger" id="dlgDontSaveBtn">${escapeHtml(dontLabel)}</button>
+      <button type="button" class="dlg-btn" id="dlgCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
+      <button type="button" class="dlg-btn dlg-primary" id="dlgSaveBtn">${escapeHtml(saveLabel)}</button>
+    </div>`;
+  // Word convention: the affirmative choice owns initial focus.
+  return askModal(tl('dlg.unsavedTitle'), html, {
+    badge: 'dlgBadge',
+    onSettle: saveDialogClosed,
+    abandon: 'cancel',
+    buttons: { dlgSaveBtn: 'save', dlgDontSaveBtn: 'discard', dlgCancelBtn: 'cancel' },
+    focus: 'dlgSaveBtn',
   });
 }
 
 // Word behavior for the close flow: 'save' saves everything — untitled notes included,
 // each through its Save As dialog (a canceled Save As aborts the close) — 'discard'
 // proceeds, 'cancel' stays open.
-async function resolveCloseChoice(choice) {
+async function resolveCloseChoice(choice, files = null) {
   if (choice === 'cancel') return false;
-  if (choice === 'save') return workspaceController.saveAllDirty({ promptUntitled: true });
+  if (choice === 'save') return workspaceController.saveAllDirty({ promptUntitled: true, files });
   return true;
 }
-window._askSaveChanges = askSaveChanges; // e2e hook
+testHooks._askSaveChanges = askSaveChanges; // e2e hook
+testHooks._askNoteText = (excerpt) => askNoteText(excerpt); // e2e hook (QA-M16)
+testHooks._pendingModalSettlers = () => pendingModalSettlers.size; // e2e hook (QA-M16)
 
 // v1.3.0: the encoding-upgrade dialog (Sublime/Visual-Studio pattern). A legacy
 // Windows-1256 file whose note now holds a character the code page cannot carry offers
 // to upgrade THAT file to UTF-8 and complete the save; Cancel keeps the note dirty.
 function askEncodingUpgrade({ name, encoding, count, samples }) {
-  return new Promise((resolve) => {
-    const observer = new MutationObserver(() => {
-      if (!modalOverlay.classList.contains('open')) {
-        observer.disconnect();
-        abandoned();
-      }
-    });
-    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
-    const html = `
-      <div class="dlg-body">
-        <div class="dlg-badge" id="encBadge"></div>
-        <div class="dlg-title">${escapeHtml(tl('dlg.encodingTitle'))}</div>
-        <div class="dlg-msg" dir="auto">${escapeHtml(tl('dlg.encodingBody', {
-          name: name || '',
-          encoding: encoding || '',
-          n: count || 0,
-          samples: (samples || []).join(' '),
-        }))}</div>
-        <div class="dlg-hint">${escapeHtml(tl('dlg.hint'))}</div>
-      </div>
-      <div class="dlg-actions">
-        <button type="button" class="dlg-btn" id="encCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
-        <button type="button" class="dlg-btn dlg-primary" id="encUpgradeBtn">${escapeHtml(tl('dlg.encodingUpgrade'))}</button>
-      </div>`;
-    openModal(tl('dlg.encodingTitle'), html);
-    setBadgeIcon('encBadge');
-    let settled = false;
-    const settle = (choice) => {
-      if (settled) return;
-      settled = true;
-      observer.disconnect();
-      pendingModalSettlers.delete(abandoned);
-      closeModal();
-      resolve(choice);
-    };
-    const abandoned = () => settle(false);
-    pendingModalSettlers.add(abandoned);
-    $('encUpgradeBtn')?.addEventListener('click', () => settle(true));
-    $('encCancelBtn')?.addEventListener('click', () => settle(false));
-    setTimeout(() => $('encUpgradeBtn')?.focus(), 0);
+  const html = `
+    <div class="dlg-body">
+      <div class="dlg-badge" id="encBadge"></div>
+      <div class="dlg-title">${escapeHtml(tl('dlg.encodingTitle'))}</div>
+      <div class="dlg-msg" dir="auto">${escapeHtml(tl('dlg.encodingBody', {
+        name: name || '',
+        encoding: encoding || '',
+        n: count || 0,
+        samples: (samples || []).join(' '),
+      }))}</div>
+      <div class="dlg-hint">${escapeHtml(tl('dlg.hint'))}</div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-btn" id="encCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
+      <button type="button" class="dlg-btn dlg-primary" id="encUpgradeBtn">${escapeHtml(tl('dlg.encodingUpgrade'))}</button>
+    </div>`;
+  return askModal(tl('dlg.encodingTitle'), html, {
+    badge: 'encBadge',
+    abandon: false,
+    buttons: { encUpgradeBtn: true, encCancelBtn: false },
+    focus: 'encUpgradeBtn',
   });
 }
-window._askEncodingUpgrade = askEncodingUpgrade; // e2e hook
 
 /** audit M7: reopening with another encoding reads the disk again; unsaved edits go. */
 function askReopenDiscard(name) {
-  return new Promise((resolve) => {
-    const observer = new MutationObserver(() => {
-      if (!modalOverlay.classList.contains('open')) {
-        observer.disconnect();
-        abandoned();
-      }
-    });
-    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
-    const html = `
-      <div class="dlg-body">
-        <div class="dlg-title">${escapeHtml(tl('dlg.reopenTitle'))}</div>
-        <div class="dlg-msg" dir="auto">${escapeHtml(tl('dlg.reopenBody', { name: name || '' }))}</div>
-      </div>
-      <div class="dlg-actions">
-        <button type="button" class="dlg-btn" id="reopenCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
-        <button type="button" class="dlg-btn dlg-primary" id="reopenConfirmBtn">${escapeHtml(tl('dlg.reopenConfirm'))}</button>
-      </div>`;
-    openModal(tl('dlg.reopenTitle'), html);
-    let settled = false;
-    const settle = (choice) => {
-      if (settled) return;
-      settled = true;
-      observer.disconnect();
-      pendingModalSettlers.delete(abandoned);
-      closeModal();
-      resolve(choice);
-    };
-    const abandoned = () => settle(false);
-    pendingModalSettlers.add(abandoned);
-    $('reopenConfirmBtn')?.addEventListener('click', () => settle(true));
-    $('reopenCancelBtn')?.addEventListener('click', () => settle(false));
-    setTimeout(() => $('reopenCancelBtn')?.focus(), 0);
+  const html = `
+    <div class="dlg-body">
+      <div class="dlg-title">${escapeHtml(tl('dlg.reopenTitle'))}</div>
+      <div class="dlg-msg" dir="auto">${escapeHtml(tl('dlg.reopenBody', { name: name || '' }))}</div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-btn" id="reopenCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
+      <button type="button" class="dlg-btn dlg-primary" id="reopenConfirmBtn">${escapeHtml(tl('dlg.reopenConfirm'))}</button>
+    </div>`;
+  return askModal(tl('dlg.reopenTitle'), html, {
+    abandon: false,
+    buttons: { reopenConfirmBtn: true, reopenCancelBtn: false },
+    focus: 'reopenCancelBtn',
   });
 }
+
+/** Large-file mode: "this note is N MB — open it in large-file mode?" Resolves true to open. */
+// Two notes asked about at once (several files dropped, a launch argument and a drop) must be
+// asked one after the other: a second dialog replaces the first one's controls, and the first
+// answer would never come.
+const largeOpenQueue = serialQueue();
+function askLargeOpen(info) { return largeOpenQueue(() => askLargeOpenNow(info)); }
+function askLargeOpenNow({ name, size }) {
+  const html = `
+    <div class="dlg-body">
+      <div class="dlg-title">${escapeHtml(tl('dlg.largeOpenTitle'))}</div>
+      <div class="dlg-msg" dir="auto"><bdi dir="ltr" class="doc-name">“${escapeHtml(name || '')}”</bdi></div>
+      <div class="dlg-msg" dir="auto">${escapeHtml(tl('dlg.largeOpenBody', { mb: megabytes(size) }))}</div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-btn" id="largeOpenCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
+      <button type="button" class="dlg-btn dlg-primary" id="largeOpenConfirmBtn">${escapeHtml(tl('dlg.largeOpenConfirm'))}</button>
+    </div>`;
+  return askModal(tl('dlg.largeOpenTitle'), html, {
+    abandon: false,
+    buttons: { largeOpenConfirmBtn: true, largeOpenCancelBtn: false },
+    focus: 'largeOpenConfirmBtn',
+  });
+}
+testHooks.askLargeOpen = askLargeOpen;
+testHooks.applyLimits = applyLimits; // e2e: lower the size tiers so a small note exercises large-file mode
 
 function showShortcuts() {
   closeMenu();
@@ -1068,7 +1086,7 @@ function showShortcuts() {
     ]],
     ['menu.edit', [
       ['menu.undo','Ctrl+Z'],
-      ['menu.redo','Ctrl+Y'],
+      ['menu.redo','Ctrl+Y Ctrl+Shift+Z'],
       ['menu.cut','Ctrl+X'],
       ['menu.copy','Ctrl+C'],
       ['menu.paste','Ctrl+V'],
@@ -1076,8 +1094,8 @@ function showShortcuts() {
       ['menu.find','Ctrl+F'],
       ['menu.bold','Ctrl+B'],
       ['menu.italic','Ctrl+I'],
-      ['menu.insertLink','Ctrl+L'],
-      ['menu.insertWikilink','Ctrl+K Ctrl+W']
+      ['tb.heading','Ctrl+1–6'],
+      ['menu.insertLink','Ctrl+L']
     ]],
     ['menu.view', [
       ['palette.toggleReading','Ctrl+E'],
@@ -1085,9 +1103,11 @@ function showShortcuts() {
       ['titlebar.toggleInspector','Ctrl+Shift+I'],
       ['sc.cycleTheme','Ctrl+Shift+D'],
       ['menu.flipDirection','Ctrl+Shift+L'],
+      ['palette.flipBlock','Ctrl+D'],
       ['menu.zoomIn','Ctrl+='],
       ['menu.zoomOut','Ctrl+-'],
       ['menu.resetZoom','Ctrl+0'],
+      ['titlebar.fullscreen','F11'],
       ['menu.commandPalette','Ctrl+K'],
       [toggleMenuKey('autoHideTitlebar'), CHROME_TOGGLES.autoHideTitlebar.menuShortcut],
       [toggleMenuKey('hideStatusBar'), CHROME_TOGGLES.hideStatusBar.menuShortcut],
@@ -1096,10 +1116,7 @@ function showShortcuts() {
     ['menu.help', [['menu.shortcuts','Ctrl+/']]]
   ];
   const loc = State.uiLocale;
-  const label = (k) => {
-    const v = tr(k, loc);
-    return escapeHtml(!v || v === k ? k : v);
-  };
+  const label = (k) => escapeHtml(tr(k, loc)); // tr falls back to English, then to the key
   let html = '';
   groups.forEach(([headingKey, rows]) => {
     html += `<h3>${label(headingKey)}</h3>`;
@@ -1108,8 +1125,7 @@ function showShortcuts() {
       html += `<div class="shortcut-row"><span class="shortcut-name">${label(n)}</span><span class="shortcut-keys">${keys}</span></div>`;
     });
   });
-  const title = tr('menu.shortcuts', loc);
-  openModal(!title || title === 'menu.shortcuts' ? 'Keyboard Shortcuts' : title, html, 'wide');
+  openModal(tr('menu.shortcuts', loc), html, 'wide');
 }
 
 let _aboutVersion = null;
@@ -1125,17 +1141,17 @@ async function showAbout() {
   const html = `
     <div class="about-logo">BP</div>
     <div class="about-name">BP MD RTL Reader</div>
-    <div class="about-version">version ${escapeHtml(_aboutVersion || '2.0.0')} · ${new Date().getFullYear()}</div>
-    <p class="about-tagline">A markdown reader that treats prose like a literary object.</p>
+    <div class="about-version">${escapeHtml(tl('about.version', { version: _aboutVersion || '2.1.0' }))} · ${new Date().getFullYear()}</div>
+    <p class="about-tagline">${escapeHtml(tl('about.tagline'))}</p>
     <p style="text-align: center; color: var(--ink-soft); font-size: 13px; line-height: 1.6;">
-      Bilingual to its core — first-class English and Arabic.<br>
-      Plain <code style="font-family: var(--mono); font-size: 12px; background: var(--paper-deep); padding: 1px 5px; border-radius: 3px;">.md</code> files on disk. No proprietary format.
+      ${escapeHtml(tl('about.bilingual'))}<br>
+      ${escapeHtml(tl('about.plainFiles'))}
     </p>
     <p style="text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 16px;">
-      <strong>Binary Parse</strong> &middot; MIT License
+      <strong>Binary Parse</strong> &middot; ${escapeHtml(tl('about.license'))}
     </p>
   `;
-  openModal('About', html);
+  openModal(tl('menu.about'), html); // QA-L2: the About dialog was English in the Arabic interface
 }
 
 // T-Q6: opt-in update CHECK (user-initiated only; never auto-checks/downloads). Asks the
@@ -1154,7 +1170,7 @@ async function checkForUpdate() {
   else showUpdateFailure(res && res.error === 'untrusted' ? 'untrusted' : 'failed');
   return res;
 }
-window.checkForUpdate = checkForUpdate;
+testHooks.checkForUpdate = checkForUpdate;
 
 // ── T7.1: the opt-in update notice ───────────────────────────────────────────────────
 // Main sends `update:available` when the daily auto check (or the settings switch) finds a
@@ -1175,7 +1191,6 @@ function showUpdateNotice(info) {
 function showUpdateFailure(kind) {
   return showUpdateBar(tl(kind === 'untrusted' ? 'update.untrusted' : 'update.checkFailed'), tl('update.openReleases'));
 }
-window.showUpdateFailure = showUpdateFailure;
 
 function showUpdateBar(message, actionLabel) {
   if (!_updateBar) {
@@ -1212,8 +1227,7 @@ function showUpdateBar(message, actionLabel) {
 function hideUpdateNotice() {
   if (_updateBar) _updateBar.hidden = true;
 }
-window.showUpdateNotice = showUpdateNotice;
-window.hideUpdateNotice = hideUpdateNotice;
+testHooks.showUpdateNotice = showUpdateNotice;
 
 // v10 redesign: a single source of truth for the two chrome-visibility toggles' on/off
 // display text, so the four surfaces that show them (View menu, palette, right-click
@@ -1239,7 +1253,7 @@ const CHROME_TOGGLES = {
 function toggleMenuKey(id) { const t = CHROME_TOGGLES[id]; return t.isOn() ? t.menuOnKey : t.menuOffKey; }
 function togglePaletteKey(id) { const t = CHROME_TOGGLES[id]; return t.isOn() ? t.paletteOnKey : t.paletteOffKey; }
 function toggleFallback(id) { const t = CHROME_TOGGLES[id]; return t.isOn() ? t.onFallback : t.offFallback; }
-window.CHROME_TOGGLES = CHROME_TOGGLES;
+testHooks.CHROME_TOGGLES = CHROME_TOGGLES;
 
 // =====================================================================
 // DROPDOWN MENUS
@@ -1411,7 +1425,7 @@ function buildMenu(name) {
     const i = parseInt(el.dataset.i);
     const activate = () => { try { def.items[i].action(); } catch(err) { console.error(err); } };
     // Don't let mousedown blur the editor before the action runs — Copy/Cut/Undo
-    // need the textarea to stay focused with its selection intact.
+    // need the editor to stay focused with its selection intact.
     el.addEventListener('mousedown', e => e.preventDefault());
     el.onclick = activate;
     el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } };
@@ -1445,55 +1459,48 @@ function openFind() {
   findBar.classList.add('open');
   setTimeout(() => $('findInput').focus(), 50);
 }
+/** Unwrap every reading-view match and forget both match lists. */
+function clearFindMarks() {
+  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
+    m.parentNode.replaceChild(document.createTextNode(m.textContent), m);
+  });
+  noteContent.normalize();
+  State.findHits = [];
+  State.findSourceMatches = []; // APP-25: stale offsets must not survive a close
+}
 function closeFind() {
   const findBar = $('findBar');
+  const hadFocus = findBar.contains(document.activeElement);
   findBar.classList.remove('open');
   if (cmAdapter) cmAdapter.setSearchHighlight(''); // F13: clear the .cm-searchMatch highlights
-  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
-    const text = document.createTextNode(m.textContent);
-    m.parentNode.replaceChild(text, m);
-  });
-  noteContent.normalize();
-  State.findHits = [];
+  clearFindMarks();
   setFindInfo(0, 0);
+  // QA M15: the keyboard goes back to the note (the editor, at the last match) instead of
+  // falling to <body>, where typing did nothing.
+  if (hadFocus) {
+    if (State.viewMode !== 'reading' && cmAdapter) cmAdapter.focus();
+    else if (noteContent.offsetParent !== null) noteContent.focus();
+  }
 }
+let _findFile = null; // the note the find bar last searched (QA M7)
 function runFind(q) {
-  noteContent.querySelectorAll('mark.find-hit').forEach(m => {
-    const t = document.createTextNode(m.textContent);
-    m.parentNode.replaceChild(t, m);
-  });
-  noteContent.normalize();
-  State.findHits = [];
-  State.findSourceMatches = [];  // positions for source mode
+  _findFile = State.activeFile != null ? State.files[State.activeFile] : null;
+  clearFindMarks();
 
-  // Source mode: search inside the source editor, since the preview is hidden. Re-homed
-  // onto the active EditorPort (T-F13) so it works for both the textarea and CodeMirror.
-  // `|| cmAdapter`: in single CM6 mode the editor stays 'live' but the searchable surface
-  // is the CM6 source (the markdown preview pane is hidden). cmAdapter is null without ?cm=1,
-  // so the default textarea path is unchanged.
-  if (State.viewMode !== 'reading' && (State.editorMode === 'source' || cmAdapter)) {
+  // Edit view: search the CM6 source (T-F13), since the markdown preview pane is hidden.
+  // cmAdapter is null only while CM6 is still loading or failed to load; the rendered note
+  // is searched then.
+  if (State.viewMode !== 'reading' && cmAdapter) {
     // F13: highlight EVERY match in the CM6 editor (.cm-searchMatch), not just the selected
-    // one. Cleared when the query is empty / on closeFind. No-op for the textarea fallback.
-    if (cmAdapter) cmAdapter.setSearchHighlight(q);
+    // one. Cleared when the query is empty / on closeFind.
+    cmAdapter.setSearchHighlight(q);
     if (!q) { setFindInfo(0, 0); return; }
-    let matches;
-    if (cmAdapter) {
-      matches = cmAdapter.find(q);
-    } else {
-      const re = new RegExp(escapeReg(q), 'gi');
-      const val = srcTextarea.value;
-      let m; matches = [];
-      while ((m = re.exec(val)) !== null) {
-        matches.push({ start: m.index, end: m.index + m[0].length });
-        if (m.index === re.lastIndex) re.lastIndex++; // safety
-      }
-    }
+    const matches = cmAdapter.find(q);
     State.findSourceMatches = matches;
     State.findIdx = 0;
-    if (matches.length) {
-      if (cmAdapter) { cmAdapter.focus(); cmAdapter.setSelection(matches[0]); }
-      else { srcTextarea.focus(); srcTextarea.setSelectionRange(matches[0].start, matches[0].end); }
-    }
+    // QA H2: the keyboard stays in the find field. Focusing the editor here put the next
+    // typed letter of the query over the selected match, and autosave wrote that to disk.
+    if (matches.length) cmAdapter.setSelection(matches[0], { scroll: true });
     setFindInfo(matches.length ? 1 : 0, matches.length);
     return;
   }
@@ -1576,14 +1583,12 @@ function scrollMarkIntoPane(mark) {
 }
 
 function findStep(d) {
-  // Source mode (or single CM6 mode): navigate source/EditorPort match positions.
-  if (State.viewMode !== 'reading' && (State.editorMode === 'source' || cmAdapter)) {
+  // Edit view: navigate the CM6 match positions.
+  if (State.viewMode !== 'reading' && cmAdapter) {
     const matches = State.findSourceMatches || [];
     if (!matches.length) return;
     State.findIdx = (State.findIdx + d + matches.length) % matches.length;
-    const m = matches[State.findIdx];
-    if (cmAdapter) { cmAdapter.focus(); cmAdapter.setSelection(m); }      // T-F13
-    else { srcTextarea.focus(); srcTextarea.setSelectionRange(m.start, m.end); }
+    cmAdapter.setSelection(matches[State.findIdx], { scroll: true }); // T-F13; QA H2: no focus move
     setFindInfo(State.findIdx + 1, matches.length);
     return;
   }
@@ -1607,6 +1612,15 @@ function buildExportDoc(f, { includeAnnotations = false } = {}) {
   // T5.1c: the Notes appendix only belongs to the document the loaded annotations describe.
   const withNotes = includeAnnotations && ownAnnotationCount(f) > 0;
   return buildExportDocImpl(f, {
+    ...exportRenderOptions(),
+    annotations: withNotes ? _annotations : [],
+    annotationsLabel: tl('panel.notes'),
+  });
+}
+
+/** What the HTML and EPUB exports render with: the configured parser, the manual direction, the globals. */
+function exportRenderOptions() {
+  return {
     direction: State.forcedDir || 'auto',
     parseMarkdown,
     katex: (typeof katex !== 'undefined') ? katex : null,
@@ -1614,9 +1628,7 @@ function buildExportDoc(f, { includeAnnotations = false } = {}) {
     hljs: (typeof hljs !== 'undefined') ? hljs : null,
     sanitizeHighlight: (html) => sanitizeHtml(html, DOMPurify),
     loadMermaid,
-    annotations: withNotes ? _annotations : [],
-    annotationsLabel: tl('panel.notes'),
-  });
+  };
 }
 
 /** How many highlights and notes of the reader belong to this file (0 when another file's are loaded). */
@@ -1630,35 +1642,48 @@ function ownAnnotationCount(f) {
 async function askExportAnnotations(f) {
   const count = ownAnnotationCount(f);
   if (count === 0) return false;
-  return new Promise((resolve) => {
-    const observer = new MutationObserver(() => {
-      if (!modalOverlay.classList.contains('open')) { observer.disconnect(); resolve(null); }
-    });
-    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
-    const html = `
-      <div class="dlg-body">
-        <div class="dlg-title">${escapeHtml(tl('export.notesTitle'))}</div>
-        <div class="dlg-msg">${escapeHtml(tl('export.notesBody', { n: count }))}</div>
-        <div class="dlg-hint">${escapeHtml(tl('export.notesHint'))}</div>
-      </div>
-      <div class="dlg-actions">
-        <button type="button" class="dlg-btn" id="exportWithNotesBtn">${escapeHtml(tl('export.withNotes'))}</button>
-        <button type="button" class="dlg-btn dlg-primary" id="exportWithoutNotesBtn">${escapeHtml(tl('export.withoutNotes'))}</button>
-      </div>`;
-    openModal(tl('export.notesTitle'), html);
-    const settle = (value) => {
-      observer.disconnect();
-      pendingModalSettlers.delete(abandoned);
-      closeModal();
-      resolve(value);
-    };
-    const abandoned = () => settle(null);
-    pendingModalSettlers.add(abandoned);
-    $('exportWithNotesBtn')?.addEventListener('click', () => settle(true));
-    $('exportWithoutNotesBtn')?.addEventListener('click', () => settle(false));
-    setTimeout(() => $('exportWithoutNotesBtn')?.focus(), 0);
+  const html = `
+    <div class="dlg-body">
+      <div class="dlg-title">${escapeHtml(tl('export.notesTitle'))}</div>
+      <div class="dlg-msg">${escapeHtml(tl('export.notesBody', { n: count }))}</div>
+      <div class="dlg-hint">${escapeHtml(tl('export.notesHint'))}</div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-btn" id="exportWithNotesBtn">${escapeHtml(tl('export.withNotes'))}</button>
+      <button type="button" class="dlg-btn dlg-primary" id="exportWithoutNotesBtn">${escapeHtml(tl('export.withoutNotes'))}</button>
+    </div>`;
+  return askModal(tl('export.notesTitle'), html, {
+    abandon: null,
+    buttons: { exportWithNotesBtn: true, exportWithoutNotesBtn: false },
+    focus: 'exportWithoutNotesBtn',
   });
 }
+
+// A large note makes a slow export. Before the work starts the reader is told so, and the
+// message stays up (sticky) while the note is built, handed to main and written; the result
+// toast replaces it, and a cancelled save hides it. Returns true when the notice was shown.
+const nextPaint = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+async function noticeLargeExport(file) {
+  const size = Math.max(Number(file.sizeBytes) || 0, (file.content || '').length);
+  if (!isLargeExport(size)) return false;
+  showToast(tl('toast.exportLarge'), 'info', undefined, { sticky: true });
+  await nextPaint(); // let the message paint before the build blocks the page
+  return true;
+}
+// Why an export failed, in words: too large (with the limit), timed out (PDF only), or failed.
+function exportFailureMessage(format, res) {
+  const kind = exportFailureKind(res);
+  const limits = getLimits();
+  if (format === 'pdf') {
+    if (kind === 'too-large') return tl('toast.pdfTooLarge', { limit: limitMb(limits.maxPdfExportBytes) });
+    return kind === 'timeout' ? tl('toast.pdfTimeout') : tl('toast.pdfFailed');
+  }
+  if (format === 'html') {
+    return kind === 'too-large' ? tl('toast.htmlTooLarge', { limit: limitMb(limits.maxHtmlExportBytes) }) : tl('toast.htmlFailed');
+  }
+  return kind === 'too-large' ? tl('toast.epubTooLarge', { limit: limitMb(limits.maxEpubBytes) }) : tl('toast.epubFailed');
+}
+testHooks.exportFailureMessage = exportFailureMessage;
 
 async function exportHTML() {
   closeMenu();
@@ -1668,19 +1693,27 @@ async function exportHTML() {
   const file = State.files[State.activeFile];
   const includeAnnotations = await askExportAnnotations(file);
   if (includeAnnotations === null) return; // the question was dismissed: no export
-  const { fullHtml, baseName } = await buildExportDoc(file, { includeAnnotations });
+  await noticeLargeExport(file);
+  // QA M13: a note that fails to build (a broken diagram, a renderer bug) says so.
+  let built;
+  try { built = await buildExportDoc(file, { includeAnnotations }); } catch (err) {
+    logExportError('html', err);
+    showToast(tl('toast.htmlFailed'), 'error'); return;
+  }
+  const { fullHtml, baseName } = built;
   // audit L3: in the desktop app main asks where to save and writes the file, so "Exported"
   // is said only after the write, and a cancelled dialog says nothing.
   if (window.electronAPI && typeof window.electronAPI.exportHtml === 'function') {
     let res;
     try {
       res = await window.electronAPI.exportHtml({ html: fullHtml, defaultName: baseName + '.html' });
-    } catch (_) {
+    } catch (err) {
+      logExportError('html', err);
       res = { error: 'ipc-failed' };
     }
     if (res && res.ok) showToast(tl('toast.exported', { name: baseName + '.html' }));
-    else if (res && res.canceled) { /* user cancelled — stay quiet */ }
-    else showToast(tl('toast.htmlFailed'), 'error');
+    else if (res && res.canceled) hideToast(); // user cancelled — stay quiet
+    else showToast(exportFailureMessage('html', res), 'error');
     return fullHtml;
   }
   const blob = new Blob([fullHtml], { type: 'text/html' });
@@ -1693,7 +1726,17 @@ async function exportHTML() {
   showToast(tl('toast.exported', { name: a.download }));
   return fullHtml; // also returned so the export markup is unit/e2e-testable
 }
-window.exportHTML = exportHTML;
+testHooks.exportHTML = exportHTML;
+
+// APP-29: the toast says an export failed; the local log keeps why.
+function logExportError(format, err) {
+  try {
+    window.electronAPI?.logError?.({
+      message: `export-${format}-failed: ${err instanceof Error ? err.message : String(err)}`,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+  } catch (_) { /* never crash reporting */ }
+}
 
 // Export the current note to PDF (T-F6). Reuses the standalone export document and
 // hands it to the main process (T-B6), which renders it offscreen and printToPDFs it.
@@ -1709,20 +1752,28 @@ async function exportPDF() {
   const file = State.files[State.activeFile];
   const includeAnnotations = await askExportAnnotations(file);
   if (includeAnnotations === null) return { canceled: true }; // the question was dismissed: no export
-  const { fullHtml, baseName } = await buildExportDoc(file, { includeAnnotations });
-  showToast(tl('toast.exportingPdf'));
+  const large = await noticeLargeExport(file);
+  let built;
+  try { built = await buildExportDoc(file, { includeAnnotations }); } catch (err) {
+    logExportError('pdf', err);
+    showToast(tl('toast.pdfFailed'), 'error'); return { error: 'build-failed' };
+  }
+  const { fullHtml, baseName } = built;
+  // A large export keeps the "may take a while" message up until main answers.
+  if (!large) showToast(tl('toast.exportingPdf'));
   let res;
   try {
     res = await window.electronAPI.exportPDF({ html: fullHtml, defaultName: baseName + '.pdf' });
-  } catch (_) {
+  } catch (err) {
+    logExportError('pdf', err);
     res = { error: 'ipc-failed' };
   }
   if (res && res.ok) showToast(tl('toast.exported', { name: `${baseName}.pdf` }));
-  else if (res && res.canceled) { /* user cancelled — stay quiet */ }
-  else showToast(tl('toast.pdfFailed'), 'error');
+  else if (res && res.canceled) hideToast(); // user cancelled — stay quiet
+  else showToast(exportFailureMessage('pdf', res), 'error');
   return res;
 }
-window.exportPDF = exportPDF;
+testHooks.exportPDF = exportPDF;
 
 // Export the current note as an EPUB (T6.1c). The archive is built entirely in the renderer
 // (markdown → bidi-aware XHTML → stored ZIP, dependency-free) and handed to main as BYTES;
@@ -1735,40 +1786,35 @@ async function exportEpub() {
   if (!window.electronAPI || typeof window.electronAPI.exportEpub !== 'function') {
     showToast(tl('toast.epubNeedsDesktop'), 'error'); return { error: 'no-bridge' };
   }
+  const large = await noticeLargeExport(State.files[State.activeFile]);
   let built;
   try {
     // The async build runs the same Mermaid stage the HTML export gets, so a diagram
     // note exports as a rendered figure instead of a raw code fence.
-    built = await buildEpubFromNoteAsync(State.files[State.activeFile], {
-      direction: State.forcedDir || 'auto',
-      parseMarkdown,
-      katex: (typeof katex !== 'undefined') ? katex : null,
-      DOMPurify: (typeof DOMPurify !== 'undefined') ? DOMPurify : null,
-      hljs: (typeof hljs !== 'undefined') ? hljs : null,
-      sanitizeHighlight: (html) => sanitizeHtml(html, DOMPurify),
-      loadMermaid,
-    });
-  } catch (_) {
+    built = await buildEpubFromNoteAsync(State.files[State.activeFile], exportRenderOptions());
+  } catch (err) {
+    logExportError('epub', err);
     showToast(tl('toast.epubFailed'), 'error');
     return { error: 'build-failed' };
   }
-  showToast(tl('toast.exportingEpub'));
+  if (!large) showToast(tl('toast.exportingEpub'));
   let res;
   try {
     res = await window.electronAPI.exportEpub({
       bytes: built.bytes,
       defaultName: `${built.baseName}.epub`,
     });
-  } catch (_) {
+  } catch (err) {
+    logExportError('epub', err);
     res = { error: 'ipc-failed' };
   }
   if (res && res.ok) showToast(tl('toast.exported', { name: `${built.baseName}.epub` }));
-  else if (res && res.canceled) { /* user cancelled — stay quiet */ }
-  else showToast(tl('toast.epubFailed'), 'error');
+  else if (res && res.canceled) hideToast(); // user cancelled — stay quiet
+  else showToast(exportFailureMessage('epub', res), 'error');
   return res;
 }
-window.exportEpub = exportEpub;
-window.buildExportDoc = buildExportDoc;
+testHooks.exportEpub = exportEpub;
+testHooks.buildExportDoc = buildExportDoc;
 
 // =====================================================================
 // NEW DAILY NOTE
@@ -1797,7 +1843,7 @@ function setCalendar(cal) {
   closeMenu();
   showToast(tl('toast.calendar', { name: cal === 'hijri' ? tr('menu.hijri', State.uiLocale) : tr('menu.gregorian', State.uiLocale) }), 'info');
 }
-window.setCalendar = setCalendar;
+testHooks.setCalendar = setCalendar;
 
 // T-R10: Arabic justification. Default OFF = ragged (the typographically safe default for
 // Arabic). When ON, RTL blocks fill the measure via inter-character distribution (the
@@ -1810,8 +1856,7 @@ function setKashida(on) {
   if (!settingsController?.isRestoring()) showToast(tl('toast.kashida', { state: State.arabicKashida ? tl('toast.kashidaOn') : tl('toast.kashidaOff') }), 'info');
 }
 function toggleKashida() { setKashida(!State.arabicKashida); }
-window.setKashida = setKashida;
-window.toggleKashida = toggleKashida;
+testHooks.setKashida = setKashida;
 
 // T-F11: italic recolor is ON by default (rendered <em> picks up the plum accent). This is an
 // OPT-OUT — when disabled, emphasis keeps the body ink colour (only the slant distinguishes it).
@@ -1824,8 +1869,7 @@ function setItalicRecolor(on) {
   if (!settingsController?.isRestoring()) showToast(tl('toast.italicRecolor', { state: State.italicRecolor ? tl('toast.on') : tl('toast.off') }), 'info');
 }
 function toggleItalicRecolor() { setItalicRecolor(!State.italicRecolor); }
-window.setItalicRecolor = setItalicRecolor;
-window.toggleItalicRecolor = toggleItalicRecolor;
+testHooks.setItalicRecolor = setItalicRecolor;
 
 // ── T-R7: full RTL/Arabic UI (mirror + localize), persisted via F8 ──────────────
 // Localize chrome strings tagged with data-i18n. The original (English) innerHTML is
@@ -1896,18 +1940,18 @@ function setArabicUI(on) {
   if (!settingsController?.isRestoring()) showToast(on ? tl('toast.arabicUIOn') : tl('toast.arabicUIOff'), 'info');
 }
 function toggleArabicUI() { setArabicUI(State.uiDirection !== 'rtl'); }
-window.setUiLocale = setUiLocale;
-window.setUiDirection = setUiDirection;
-window.setArabicUI = setArabicUI;
-window.toggleArabicUI = toggleArabicUI;
+testHooks.setUiLocale = setUiLocale;
+testHooks.setUiDirection = setUiDirection;
+testHooks.setArabicUI = setArabicUI;
+testHooks.toggleArabicUI = toggleArabicUI;
 
 // =====================================================================
 // EDIT MENU COMMANDS
 // =====================================================================
 
-// Track the last-focused editable element (textarea or input). This is needed
-// because clicking the Edit menu blurs the textarea — by the time execEditCmd
-// runs, document.activeElement is the menu DIV, not the textarea.
+// Track the last-focused editable field (textarea or input). This is needed
+// because clicking the Edit menu blurs the field — by the time execEditCmd
+// runs, document.activeElement is the menu DIV, not the field.
 let _lastFocusedEditable = null;
 document.addEventListener('focusin', (e) => {
   const t = e.target;
@@ -1916,6 +1960,17 @@ document.addEventListener('focusin', (e) => {
   }
 }, true);
 
+// QA-L2: editor/edit-commands.js is a pure module whose messages are English; they are
+// translated here so the Arabic interface shows Arabic.
+const EDIT_TOAST_KEYS = new Map([
+  ['The reading view is read-only', 'toast.readOnlyView'],
+  ['Copy failed', 'toast.copyFailed'],
+  ['Cut failed', 'toast.cutFailed'],
+  ['Paste failed', 'toast.pasteFailed'],
+  ['Paste not supported in this context', 'toast.pasteUnsupported'],
+  ['Cut not supported in preview', 'toast.cutPreview'],
+  ['Paste not supported in preview', 'toast.pastePreview'],
+]);
 function execEditCmd(cmd) {
   // All logic lives in src/renderer/editor/edit-commands.js (testable + mutatable).
   // This shim builds the deps object and forwards. Critically: selectAll is
@@ -1923,26 +1978,24 @@ function execEditCmd(cmd) {
   // would select the entire renderer DOM (titlebar/sidebar/statusbar).
   const deps = {
     electronAPI: cmd === 'selectAll' ? null : (window.electronAPI || null),
-    getMode: () => State.editorMode,
-    // v10 redesign: selectAll is routed by VIEW mode (reading vs edit), never by editor
-    // mode above — CM6 mounts unconditionally at launch, so it can exist while Reading
-    // mode has it hidden behind #noteContent. See edit-commands.js's selectAll().
+    // v10 redesign: selectAll is routed by VIEW mode (reading vs edit) — CM6 mounts
+    // unconditionally at launch, so it can exist while Reading mode has it hidden behind
+    // #noteContent. See edit-commands.js's selectAll().
     getViewMode: () => State.viewMode,
     hasDocument: () => State.activeFile !== null && !!State.files.at(State.activeFile),
     getCmAdapter: () => cmAdapter, // T-F13: CM6 is the live editor — Edit menu acts on it
-    getSrcTextarea: () => srcTextarea,
     getNoteContent: () => noteContent,
     getLastFocusedEditable: () => _lastFocusedEditable,
     getActiveElement: () => document.activeElement,
     getSelection: () => window.getSelection(),
     createRange: () => document.createRange(),
     clipboard: (navigator && navigator.clipboard) || null,
-    showToast: (m, l) => showToast(m, l),
+    showToast: (m, l) => showToast(EDIT_TOAST_KEYS.has(m) ? tl(EDIT_TOAST_KEYS.get(m)) : m, l),
     closeMenu: () => closeMenu(),
   };
   return _execEditCmdImpl(cmd, deps);
 }
-window.execEditCmd = execEditCmd;
+testHooks.execEditCmd = execEditCmd;
 
 // =====================================================================
 // CONTEXT MENU (v10 redesign, D1) — themed HTML menu drawn from main's descriptors over
@@ -2174,14 +2227,16 @@ async function dispatchLocalCtxItem(id) {
     case 'local:tab-close':
       if (idx != null) await closeTab(idx);
       break;
+    // QA M5: folder notes are tabs too (they were skipped), and Cancel on one unsaved tab
+    // stops the run instead of asking about the next one.
     case 'local:tab-close-others': {
-      const others = State.files.filter((f, i) => i !== idx && !f.inventory && f.open !== false);
-      for (const f of others) { const i = State.files.indexOf(f); if (i >= 0) await closeTab(i); }
+      const others = State.files.filter((f, i) => i !== idx && f.open !== false);
+      for (const f of others) { const i = State.files.indexOf(f); if (i >= 0 && !(await closeTab(i))) break; }
       break;
     }
     case 'local:tab-close-all': {
-      const all = State.files.filter((f) => !f.inventory && f.open !== false);
-      for (const f of all) { const i = State.files.indexOf(f); if (i >= 0) await closeTab(i); }
+      const all = State.files.filter((f) => f.open !== false);
+      for (const f of all) { const i = State.files.indexOf(f); if (i >= 0 && !(await closeTab(i))) break; }
       break;
     }
     case 'local:tab-duplicate': {
@@ -2294,10 +2349,9 @@ function openCtxMenu({ nonce, descriptors, appCommands, x, y }) {
     ctxMenu.appendChild(el);
   }
   if (surfaceItems.length && showApp) ctxMenu.appendChild(renderCtxItem({ kind: 'separator' }, -1));
-  appCommands.forEach((item, k) => {
-    if (!showApp) return;
-    ctxMenu.appendChild(renderCtxItem(item, descriptors.length + k));
-  });
+  if (showApp) {
+    appCommands.forEach((item, k) => ctxMenu.appendChild(renderCtxItem(item, descriptors.length + k)));
+  }
 
   ctxMenu.hidden = false;
   // Clamp to the viewport (T-T4-alike: a menu opened near an edge must stay fully visible).
@@ -2394,7 +2448,7 @@ function switchSbPane(name) {
 function vaultSearch(query) {
   return _vaultSearch(query, State.files);
 }
-window.vaultSearch = vaultSearch;
+testHooks.vaultSearch = vaultSearch;
 
 // ==== SIDEBAR SEARCH RENDERER ====
 // Builds result DOM entirely via createElement + textContent (no innerHTML injection).
@@ -2476,24 +2530,6 @@ function scheduleSidebarSearch(q) {
 }
 
 // =====================================================================
-// EDITOR MODE
-// =====================================================================
-function setEditorMode(mode) {
-  if (!mode || typeof mode !== 'string') return;
-  State.editorMode = mode;
-  editorArea.classList.remove('split', 'source');
-  if (mode === 'split') editorArea.classList.add('split');
-  else if (mode === 'source') editorArea.classList.add('source');
-  // The 3 mode buttons were removed when CM6 became the sole editor (T-F13); guard the
-  // toggles so the dead textarea-fallback path (ensureSourceFocus) can't throw on null.
-  $('modeLive')?.classList.toggle('active', mode === 'live');
-  $('modeSplit')?.classList.toggle('active', mode === 'split');
-  $('modeSource')?.classList.toggle('active', mode === 'source');
-  $('propMode').textContent = modeName(mode);
-}
-window.setEditorMode = setEditorMode;
-
-// =====================================================================
 // ZOOM (T-T4) — app-wide: scale the rem BASE on :root. All chrome + content is sized
 // in rem, so the whole UI scales together, while the .app frame stays viewport-sized
 // (height: calc(100vh - …)) so nothing is pushed off-screen — the grid re-lays-out
@@ -2522,10 +2558,10 @@ function setZoom(factor) {
 function zoomIn()    { setZoom(State.zoomFactor * 1.1); }
 function zoomOut()   { setZoom(State.zoomFactor / 1.1); }
 function zoomReset() { setZoom(1); }
-window.setZoom   = setZoom;
-window.zoomIn    = zoomIn;
-window.zoomOut   = zoomOut;
-window.zoomReset = zoomReset;
+testHooks.setZoom   = setZoom;
+testHooks.zoomIn    = zoomIn;
+testHooks.zoomOut   = zoomOut;
+testHooks.zoomReset = zoomReset;
 
 // =====================================================================
 // READER CONTROLS — document text scale/measure only (separate from app zoom)
@@ -2573,8 +2609,8 @@ function syncReaderControls() {
   readerControlsEl.classList.toggle('with-toolbar', hasDocument && State.viewMode !== 'reading');
   updateReaderControlValues();
 }
-window.setReaderTextScale = setReaderTextScale;
-window.setReaderWidthCh = setReaderWidthCh;
+testHooks.setReaderTextScale = setReaderTextScale;
+testHooks.setReaderWidthCh = setReaderWidthCh;
 
 // =====================================================================
 // TABS
@@ -2588,9 +2624,10 @@ function reportDirtyCount() {
   _lastDirtyReport = n;
   try { window.electronAPI?.reportDirtyState?.(n); } catch (_) { /* browser lane: no bridge */ }
 }
-window._reportDirtyCount = reportDirtyCount;
 
 function renderTabs() {
+  // QA M15: rebuilding the strip removes the focused tab; keyboard focus then fell to <body>.
+  const tabHadFocus = !!document.activeElement?.closest?.('.tab') && tabsEl.contains(document.activeElement);
   tabsEl.querySelectorAll('.tab').forEach(t => t.remove());
   State.files.forEach((f, i) => {
     if (f.open === false) return;
@@ -2640,6 +2677,7 @@ function renderTabs() {
     });
     tabsEl.appendChild(tab);
   });
+  if (tabHadFocus) (tabsEl.querySelector('.tab.active') || tabsEl.querySelector('.tab'))?.focus();
   syncWindowTitle(); // T-F19: tab set or dirty flags changed
   renderCrumbs();
   reportDirtyCount();
@@ -2647,7 +2685,7 @@ function renderTabs() {
 
 function syncInspector() {
   const f = State.activeFile !== null ? State.files.at(State.activeFile) : null;
-  renderInspectorDoc(document, f ? inspectorData({ file: f, ratio: shelfRatio(State.readingProgress, fileKey(f)), rootName: rootNameFor(f) }) : null);
+  renderInspectorDoc(document, f ? inspectorData({ file: f, ratio: shelfRatio(State.readingProgress, fileKey(f)), rootName: rootNameFor(f), mixedLabel: tl('dir.mixed') }) : null);
 }
 
 function rootNameFor(f) {
@@ -2707,6 +2745,8 @@ function updateTabState(idx) {
   reportDirtyCount();
 }
 
+// Resolves true when the tab closed, false when the user kept it (Cancel, or a Save that
+// did not complete).
 async function closeTab(idx) {
   let f = State.files[idx];
   if (f && f.dirty) {
@@ -2714,10 +2754,10 @@ async function closeTab(idx) {
     // default (OK) discarded the user's edits. Save actually saves first — and a
     // canceled Save As aborts the close.
     const choice = await askSaveChanges({ name: f.name });
-    if (choice === 'cancel') return;
+    if (choice === 'cancel') return false;
     if (choice === 'save') {
       await saveCurrent(f);
-      if (f.dirty) { showToast(tl('toast.saveCanceled'), 'info'); return; }
+      if (f.dirty) { showToast(tl('toast.saveCanceled'), 'info'); return false; }
     }
     // B2: "Don't Save" really throws the edits away. A folder note's file object outlives its
     // tab (the folder's file list keeps it), so it goes back to its saved text and is clean --
@@ -2727,15 +2767,17 @@ async function closeTab(idx) {
   }
   // The dialog above awaited — tabs may have shifted; close by identity, not index.
   const at = State.files.indexOf(f);
-  if (at < 0) return;
+  if (at < 0) return true;
   f = State.files[at];
   if (cmAdapter && f._historyId != null) cmAdapter.releaseHistory(f._historyId); // B1: a closed tab frees its undo history
   if (f.inventory) {
     f.open = false;
+    // A background tab: the file stays in State.files, so activeFile does not shift.
+    if (State.activeFile !== at) { renderTabs(); persistSettings(); return true; }
     const next = State.files.findIndex((file, i) => i !== at && file.open !== false);
-    if (next < 0) { State.activeFile = null; showWelcome(); persistSettings(); return; }
+    if (next < 0) { State.activeFile = null; showWelcome(); persistSettings(); return true; }
     renderFile(next);
-    return;
+    return true;
   }
   // T14 (post-review H1): capture the CLOSED tab's reading position by identity BEFORE the
   // splice. After it, State.activeFile still points at `at` — which now holds the shifted-in
@@ -2747,11 +2789,18 @@ async function closeTab(idx) {
   // B4: a loose (non-inventory) file is tree-visible under @loose, so removing it here
   // must refresh the tree too -- every remaining file's fileIdx shifted by the splice.
   renderTree(State.files);
-  if (State.files.length === 0) { State.activeFile = null; showWelcome(); persistSettings(); return; }
+  // QA M6: the next tab is an OPEN one. A folder's closed notes stay in State.files, and
+  // "the previous entry" used to reopen one of them instead of showing the welcome card.
+  const isOpen = (file) => file.open !== false;
+  let neighbour = -1;
+  for (let i = Math.min(at, State.files.length) - 1; i >= 0 && neighbour < 0; i--) if (isOpen(State.files[i])) neighbour = i;
+  for (let i = at; i < State.files.length && neighbour < 0; i++) if (isOpen(State.files[i])) neighbour = i;
+  if (closingActive && neighbour < 0) { State.activeFile = null; showWelcome(); persistSettings(); return true; }
+  if (State.files.length === 0) { State.activeFile = null; showWelcome(); persistSettings(); return true; }
   if (closingActive) {
     // Pre-point activeFile at the file renderFile is about to display, so the outgoing-capture
     // guard (files[activeFile] !== incoming) never sees the shifted array and double-fires.
-    State.activeFile = Math.max(0, at - 1);
+    State.activeFile = neighbour;
     renderFile(State.activeFile);
   }
   else {
@@ -2762,8 +2811,9 @@ async function closeTab(idx) {
     // M6 persist; the active-tab branch already persists through renderFile.
     persistSettings();
   }
+  return true;
 }
-window.closeTab = closeTab; // test hook (mirrors window.renderFile)
+testHooks.closeTab = closeTab; // test hook (mirrors window.renderFile)
 
 // v10 redesign: .tabs clips vertically (overflow-y: hidden), so a [data-tip]::after tooltip
 // on a .tab or #tabAddBtn would render fully outside the visible box (see index.html's
@@ -2856,42 +2906,161 @@ function showWelcome() {
 // Rebuild the rendered #noteContent from the active file's CURRENT content, so entering
 // reading mode reflects unsaved edits even within the live-edit debounce window. Mirrors the
 // renderFile/applyEditorInput preview pipeline but does NOT touch the CM6 editor.
-function renderReadingContent() {
-  const f = State.files[State.activeFile];
-  if (!f) return;
-  const { body } = parseFrontMatter(f.content || '');
-  const html = parseMarkdown(body);
-  noteRenderLimit(f);
-  const wordCount = (body.match(/\S+/g) || []).length;
+// The word count and reading time, in the Inspector and the status bar.
+function showWordCounts(words) {
+  const readTime = tl('doc.readTime', { n: readMinutes(words) });
+  $('propWords').textContent = words;
+  $('propRead').textContent = readTime;
+  $('readTime').textContent = readTime;
+  $('wordCount').textContent = tl('status.nWords', { n: words });
+}
+
+// Render a note body into #noteContent: the doc-meta strip, the sanitized nodes (QA-M16: no
+// string round trip), then the passes that rewrite them in place — note-relative images to
+// bpmd:// (R10), callouts (F14) and code + math (F9) before per-block direction (R1/R2) —
+// and the wikilink clicks. Callers keep their own counters, outline and scroll handling.
+function renderNoteBody(file, bodyNodes, wordCount) {
   noteContent.innerHTML = `
     <div class="doc-meta" aria-hidden="true">
       <span>${escapeHtml(tl('doc.note'))}</span><span>·</span>
       <span>${tl('status.nWords', { n: wordCount })}</span><span>·</span>
-      <span>${escapeHtml(f.path)}</span>${f.dirty ? '<span>·</span><span style="color: var(--accent);">● ' + escapeHtml(tl('doc.unsaved')) + '</span>' : ''}
+      <span>${escapeHtml(file.path)}</span>${file.dirty ? '<span>·</span><span style="color: var(--accent);">● ' + escapeHtml(tl('doc.unsaved')) + '</span>' : ''}
     </div>
-    ${html}
   `;
-  rewriteVaultImages(noteContent);                                            // R10
-  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection }); // F14
-  decorateCodeAndMath();                                                      // F9
-  applyBidiToNote(f.content || '');                                           // R1/R2
-  buildTOC();
-  void loadAnnotations(f); // T5.1c: needs buildTOC's heading ids to re-anchor highlights
-  $('propWords').textContent = wordCount;
-  $('propRead').textContent = tl('doc.readTime', { n: Math.max(1, Math.round(wordCount / 220)) });
-  $('readTime').textContent = tl('doc.readTime', { n: Math.max(1, Math.round(wordCount / 220)) });
-  $('wordCount').textContent = tl('status.nWords', { n: wordCount });
-  syncInspector();
+  noteContent.append(bodyNodes);
+  rewriteVaultImages(noteContent);
+  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection });
+  decorateCodeAndMath();
+  applyBidiToNote(file.content || '');
   noteContent.querySelectorAll('a.wikilink').forEach(a => {
     a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
   });
+}
+
+// ── Large notes (large-file.js) ───────────────────────────────────────────────────────────────
+// A note of 5-20 MB (LARGE) shows no preview while it is edited; it renders when Reading mode
+// is on. A note of 20-100 MB (HUGE, large-file mode) is never rendered on its own: Reading mode
+// shows a notice with a "Render anyway" button, and the outline is not built.
+function previewDeferred(file) {
+  return needsRenderPrompt(file) || (skipsEditPreview(file) && State.viewMode !== 'reading');
+}
+// The direction of a huge note comes from its first pages: reading 100 MB of prose for a vote
+// is not worth the wait.
+const DIRECTION_SAMPLE_CHARS = 200_000;
+function renderDeferredNote(file) {
+  noteContent.textContent = '';
+  if (needsRenderPrompt(file)) {
+    const box = document.createElement('div');
+    box.className = 'conflict-banner large-notice'; // the banner look the conflict and encoding bars already have
+    box.setAttribute('role', 'status');
+    const message = document.createElement('span');
+    message.className = 'cf-msg';
+    message.textContent = `${tl('large.title')} — ${tl('large.body')}`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cf-btn cf-reload';
+    button.id = 'renderAnywayBtn';
+    button.textContent = tl('large.render');
+    button.addEventListener('click', () => { void renderLargeAnyway(file); });
+    box.append(message, button);
+    noteContent.appendChild(box);
+  }
+  applyBidiToNote((file.content || '').slice(0, DIRECTION_SAMPLE_CHARS));
+}
+// The outline of a deferred note: LARGE notes read it from the source (the existing rule),
+// HUGE notes have none (splitting 100 MB into lines costs more than the outline is worth).
+function buildDeferredToc(file) {
+  if (inLargeMode(file)) {
+    tocList.className = 'toc-empty';
+    tocList.textContent = tl('outline.largeFile');
+    _tocHeadings = [];
+    return;
+  }
+  buildSourceTOC(file.content || '');
+}
+// A LARGE or HUGE note about to be drawn in Reading mode takes seconds to minutes (measured: about
+// 30 s for 19 MB). The reader is told first, the message gets a frame to paint, and only then is the
+// note rendered: renderFile and setViewMode show the notice and hand the render to this schedule.
+// One render can be waiting at a time; anything that changes what is on screen cancels it.
+let heavyRender = null; // { file, notice } while a render waits for the notice to paint
+const readingRenderIsHeavy = (file) => !!file && State.viewMode === 'reading' && skipsEditPreview(file) && !needsRenderPrompt(file);
+function noticeHeavyRender(file) {
+  const rendering = tl('toast.renderingLarge');
+  // The "this note is large" message is said once per open (announceLargeNote); here it leads the
+  // notice so that it is read BEFORE the wait instead of after it.
+  const notice = file._largeToldOpen ? rendering : `${tl('toast.largeNote', { mb: megabytes(file.sizeBytes) })} ${rendering}`;
+  file._largeToldOpen = true;
+  showToast(notice, 'info', undefined, { sticky: true });
+  heavyRender = { file, notice };
+}
+function scheduleHeavyRender(file, { focus = false } = {}) {
+  const mine = heavyRender;
+  void nextPaint().then(() => {
+    if (heavyRender !== mine) return; // superseded: whoever did it already cleaned up
+    heavyRender = null;
+    const stillShown = State.files[State.activeFile] === file && State.viewMode === 'reading';
+    hideToast(); // the notice has painted; the render below blocks the page, then its own toasts show
+    if (!stillShown) { _progressSuspended = false; return; }
+    renderReadingContent();
+    restoreReadingScroll(file, () => { _progressSuspended = false; });
+    if (focus) noteContent.focus(); // focusable scroll region (a11y)
+  });
+}
+function cancelHeavyRender() {
+  const pending = heavyRender;
+  if (!pending) return;
+  heavyRender = null;
+  _progressSuspended = false;
+  if (toastEl.textContent === pending.notice) hideToast();
+}
+// "Render anyway": tell the reader it may take a while, let that paint, then render.
+async function renderLargeAnyway(file) {
+  if (!file || State.files[State.activeFile] !== file) return;
+  file.renderAnyway = true;
+  showToast(tl('toast.renderingLarge'), 'info', undefined, { sticky: true });
+  await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  try { if (State.files[State.activeFile] === file && State.viewMode === 'reading') renderReadingContent(); }
+  finally { hideToast(); }
+}
+testHooks.renderLargeAnyway = () => renderLargeAnyway(State.files[State.activeFile]);
+// Said once per open of the note (not on every tab switch).
+function announceLargeNote(file) {
+  if (!file || file._largeToldOpen || !(file.largeTier >= TIER.LARGE)) return;
+  file._largeToldOpen = true;
+  if (inLargeMode(file)) showToast(tl('toast.largeMode'), 'info', undefined, { ms: 7000 });
+  else showToast(tl('toast.largeNote', { mb: megabytes(file.sizeBytes) }), 'info', undefined, { ms: 7000 });
+}
+
+function renderReadingContent() {
+  const f = State.files[State.activeFile];
+  if (!f) return;
+  if (needsRenderPrompt(f)) {
+    renderDeferredNote(f);
+    buildDeferredToc(f);
+    showWordCounts(bodyWordCount(parseFrontMatter(f.content || '').body));
+    syncInspector();
+    return;
+  }
+  const whole = parseFrontMatter(f.content || '').body;
+  const { body, cut } = renderSlice(f, whole);
+  const bodyNodes = noteBodyNodes(body);
+  noteRenderLimit(f);
+  const wordCount = bodyWordCount(whole);
+  renderNoteBody(f, bodyNodes, wordCount);
+  if (cut) showToast(tl('toast.renderCut', { mb: Math.round(RENDER_ANYWAY_CHARS / MIB) }), 'info', undefined, { ms: 9000 });
+  buildTOC();
+  void loadAnnotations(f); // T5.1c: needs buildTOC's heading ids to re-anchor highlights
+  showWordCounts(wordCount);
+  syncInspector();
 }
 
 // Apply a view mode: 'reading' shows the clean rendered note (#noteContent) and hides the CM6
 // editor + writing toolbar; 'edit' shows the CM6 surface. Persisted via the PERSISTED_KEYS hook.
 function setViewMode(mode) {
   if (mode !== 'reading' && mode !== 'edit') return;
+  if (mode === 'edit') cancelHeavyRender(); // the note was never drawn; Edit does not need it
   State.viewMode = mode;
+  hideDirBadge(); // the block-direction badge belongs to the reading view
   editorArea.classList.toggle('reading', mode === 'reading');
   const open = State.activeFile !== null && State.files[State.activeFile];
   toolbarStrip.style.display = (mode === 'reading') ? 'none' : (open ? 'flex' : 'none');
@@ -2907,21 +3076,31 @@ function setViewMode(mode) {
       // assigns scrollTop — both fire scroll events that must not be measured mid-restore
       // (with rAFs paused in a hidden window a ~0 ratio would persist to the shelf). Same
       // cancel + suspend + settle pattern renderFile uses since T10 (BUG-1).
-      cancelPendingProgressCapture();
-      _progressSuspended = true;
-      renderReadingContent();
-      restoreReadingScroll(State.files[State.activeFile], () => { _progressSuspended = false; });
-      noteContent.focus(); // focusable scroll region (a11y)
+      const note = State.files[State.activeFile];
+      if (heavyRender && heavyRender.file === note) {
+        // renderFile already told the reader and scheduled this note's render
+      } else {
+        cancelPendingProgressCapture();
+        _progressSuspended = true;
+        if (readingRenderIsHeavy(note)) {
+          noteContent.textContent = ''; // not the stale preview of an earlier edit state
+          noticeHeavyRender(note);
+          scheduleHeavyRender(note, { focus: true });
+        } else {
+          renderReadingContent();
+          restoreReadingScroll(note, () => { _progressSuspended = false; });
+          noteContent.focus(); // focusable scroll region (a11y)
+        }
+      }
     }
   } else if (cmAdapter && typeof cmAdapter.focus === 'function') {
     cmAdapter.focus();
     // Reading wires the preview listener; rebuild after returning to Edit so CM6 owns sync.
-    if (open) buildTOC();
+    if (open) { const note = State.files[State.activeFile]; if (previewDeferred(note)) buildDeferredToc(note); else buildTOC(); }
   }
 }
-window.setViewMode = setViewMode;
+testHooks.setViewMode = setViewMode;
 function toggleViewMode() { setViewMode(State.viewMode === 'reading' ? 'edit' : 'reading'); }
-window.toggleViewMode = toggleViewMode;
 
 // =====================================================================
 // RENDER FILE
@@ -2934,6 +3113,8 @@ function fileIndexByKey(key) {
 function renderFile(idx) {
   const file = State.files[idx];
   if (!file) return;
+  cancelHeavyRender(); // a render still waiting for its notice belonged to the note being left
+  flushEditorChanges(); // a large note's pending text belongs to the note being left
   // T4.1: capture where the OUTGOING note was scrolled BEFORE the DOM is replaced —
   // State.activeFile still points at it here.
   if (State.activeFile != null && State.files[State.activeFile] && State.files[State.activeFile] !== file) {
@@ -2945,11 +3126,9 @@ function renderFile(idx) {
   // Per-note toolbar direction (PARTIAL-01): restore this tab's own forced choice.
   // A note with no stored choice resolves to AUTO. applyBidiToNote (below) sets the
   // #editor dir, syncs the CM6 adapter, and calls updateDirUI(); here we only sync the
-  // bits it doesn't cover — the #srcTextarea dir and the appBody._manualRTL mirror.
+  // appBody._manualRTL mirror it doesn't cover.
   State.forcedDir = file.forcedDir ?? null;
   appBody._manualRTL = State.forcedDir === 'rtl';
-  if (State.forcedDir === 'rtl') srcTextarea.setAttribute('dir', 'auto');
-  else srcTextarea.removeAttribute('dir');
 
   welcomeEl.style.display = 'none';
   noteContent.style.display = 'block';
@@ -2960,15 +3139,20 @@ function renderFile(idx) {
   toolbarStrip.style.display = (State.viewMode === 'reading') ? 'none' : 'flex';
   syncReaderControls();
 
-  loadIntoEditor(file); // textarea (fallback) or CodeMirror — T-F13; one undo history per file (B1)
+  loadIntoEditor(file); // CodeMirror (T-F13); one undo history per file (B1)
   syncEditorEmptyHint(file.content);
 
   // Strip YAML front matter (T-R6) so it never renders as body text.
-  const { body } = parseFrontMatter(file.content || '');
-  const html = parseMarkdown(body);
-  noteRenderLimit(file);
-  const wordCount = (body.match(/\S+/g) || []).length;
-  const readMin = Math.max(1, Math.round(wordCount / 220));
+  const whole = parseFrontMatter(file.content || '').body;
+  const heavy = readingRenderIsHeavy(file); // told first, drawn after a frame (scheduleHeavyRender below)
+  if (heavy) noticeHeavyRender(file);
+  const deferred = previewDeferred(file) || heavy; // a large note is not rendered here: see "Large notes" above
+  const slice = deferred ? { body: '', cut: false } : renderSlice(file, whole);
+  const body = slice.body;
+  const bodyNodes = deferred ? null : noteBodyNodes(body);
+  if (!deferred) noteRenderLimit(file);
+  const wordCount = bodyWordCount(whole);
+  if (slice.cut) showToast(tl('toast.renderCut', { mb: Math.round(RENDER_ANYWAY_CHARS / MIB) }), 'info', undefined, { ms: 9000 });
 
   // EC-A2 (T-B9): when the open file diverged on disk while it had unsaved edits, show a
   // resolve banner — Keep my edits (retain) or Reload from disk (take the disk version).
@@ -2979,18 +3163,7 @@ function renderFile(idx) {
       <button class="cf-btn cf-reload" type="button">${escapeHtml(tl('banner.reload'))}</button>
     </div>` : '';
 
-  noteContent.innerHTML = `
-    <div class="doc-meta" aria-hidden="true">
-      <span>${escapeHtml(tl('doc.note'))}</span>
-      <span>·</span>
-      <span>${tl('status.nWords', { n: wordCount })}</span>
-      <span>·</span>
-      <span>${escapeHtml(file.path)}</span>
-      ${file.dirty ? '<span>·</span><span style="color: var(--accent);">● ' + escapeHtml(tl('doc.unsaved')) + '</span>' : ''}
-    </div>
-    ${html}
-  `;
-  rewriteVaultImages(noteContent); // R10: note-relative images → bpmd://vault/<vaultId>/<rel>
+  if (deferred) renderDeferredNote(file); else renderNoteBody(file, bodyNodes, wordCount);
   // EC-A2 (T-B9): the conflict banner must stay VISIBLE — render it in the dedicated
   // #conflictBar above the editor, not inside #noteContent (which is hidden behind the CM6
   // surface now, T-F13). Cleared when the file is not in conflict.
@@ -3006,25 +3179,12 @@ function renderFile(idx) {
     if (file.documentId && file.meta && file.meta.encodingUncertain) conflictBar.appendChild(buildEncodingBanner(file));
   }
 
-  // Callouts (T-F14): rewrite `> [!TYPE]` blockquotes into styled callouts BEFORE
-  // the bidi pass so callout bodies still get per-block direction (R1/R2).
-  transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection });
-  // Code highlighting + math (T-F9): also before the bidi pass.
-  decorateCodeAndMath();
-  // Per-block direction + inline bidi isolation (T-R1/R2), replacing the old
-  // whole-document isArabicHeavy flip. The manual ⇄ toggle remains the override.
-  applyBidiToNote(file.content || '');
-
   $('propFile').textContent = file.name;
-  $('propWords').textContent = wordCount;
-  $('propRead').textContent = tl('doc.readTime', { n: readMin });
-  $('readTime').textContent = tl('doc.readTime', { n: readMin });
-  $('wordCount').textContent = tl('status.nWords', { n: wordCount });
+  showWordCounts(wordCount);
   $('cursorPos').textContent = tl('status.lnCol', { l: 1, c: 1 });
-  $('propMode').textContent = modeName(State.editorMode);
   syncInspector();
 
-  buildTOC();
+  if (deferred) buildDeferredToc(file); else buildTOC();
   void loadAnnotations(file); // T5.1c: re-anchor this note's highlights after the rebuild
   renderTabs();
   highlightTreeActive();
@@ -3039,17 +3199,18 @@ function renderFile(idx) {
   _progressSuspended = true;
   const _previewScroller = previewScroller();
   if (_previewScroller) _previewScroller.scrollTop = 0;
-  if (State.viewMode === 'reading') restoreReadingScroll(file, () => { _progressSuspended = false; });
+  if (heavy) scheduleHeavyRender(file); // keeps _progressSuspended until the note is drawn
+  else if (State.viewMode === 'reading') restoreReadingScroll(file, () => { _progressSuspended = false; });
   else _progressSuspended = false;
 
-  // Wire wikilink clicks
-  noteContent.querySelectorAll('a.wikilink').forEach(a => {
-    a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
-  });
-  file._lastRenderedSource = body; // a debounce tick right after this render is a no-op (audit PERF-01)
+  file._lastRenderedSource = deferred ? null : whole; // a debounce tick right after this render is a no-op (audit PERF-01)
+  announceLargeNote(file);
   persistSettings(); // M6: the active tab changed — snapshot the session (debounced, no-op while restoring)
+  // QA M7: an open find bar searches the note now on screen, not the one it was opened on
+  // (its matches were offsets and marks of the previous note).
+  if (_findFile && _findFile !== file && $('findBar').classList.contains('open')) runFind($('findInput').value);
 }
-window.renderFile = renderFile;
+testHooks.renderFile = renderFile;
 
 // ── audit M7 (decision D10): a guessed encoding is confirmed before the first save ──
 const ENCODING_NAMES = new Map([
@@ -3104,6 +3265,7 @@ async function resolveEncoding(idx, encoding, reopen) {
   if (reopen) {
     adoptDiskText(f, result.content); // the disk text in the chosen encoding is the baseline
     f.meta = result.meta || f.meta;
+    applyNoteSize(f, result.size); // the note is drawn again just below
   } else {
     const meta = { ...f.meta };
     delete meta.encodingUncertain;
@@ -3115,16 +3277,30 @@ async function resolveEncoding(idx, encoding, reopen) {
   renderTabs();
   if (!f.meta.encodingUncertain) showToast(tl('toast.encodingConfirmed', { encoding: encodingName(f.meta.encoding) }), 'info');
 }
-window._resolveEncoding = resolveEncoding; // e2e hook
 
 // EC-A2 resolve (T-B9): apply the user's choice for a disk-conflicted file.
 function resolveConflict(idx, action) {
   const f = State.files[idx];
   if (!f || !f.conflict) return;
+  // The disk copy is larger than a large note and was not read when the conflict arose: ask now
+  // (the reader chose this action), read it, and carry on with the answer.
+  if (f.diskContent == null && Number.isFinite(f.diskSize) && f.documentId) {
+    void (async () => {
+      let loaded = false;
+      try { loaded = await workspaceController.loadConflictDisk(f, { ask: true }); } catch (_) { /* reported below */ }
+      if (!loaded) { showToast(tl('toast.diskUnreadable', { name: f.name }), 'error'); return; }
+      resolveConflict(State.files.indexOf(f), action);
+    })();
+    return;
+  }
   if (action === 'reload') {
+    // QA H3: with no disk text to take (its re-read failed) "Reload" used to mark the edits
+    // clean while they stayed on screen: no close prompt, no autosave, lost on close. The
+    // banner stays and the edits stay unsaved until the disk copy can be read.
+    if (f.diskContent == null) { showToast(tl('toast.diskUnreadable', { name: f.name }), 'error'); return; }
     // take the disk version, discarding local edits; the disk text becomes the baseline
-    if (f.diskContent != null) adoptDiskText(f, f.diskContent);
-    else markClean(f);
+    adoptDiskText(f, f.diskContent);
+    applyNoteSize(f, f.diskSize); // the note is drawn again just below
   } else if (f.diskContent != null) {
     // 'keep' → retain the edits; the baseline still moves to the disk text we just
     // acknowledged (typing back to the OLD baseline must not look clean while disk differs)
@@ -3134,52 +3310,65 @@ function resolveConflict(idx, action) {
   f.conflict = false;
   f.diskContent = null;
   f.diskMeta = null;
+  f.diskSize = null;
   renderFile(idx);
   showToast(action === 'reload' ? tl('toast.reloaded') : tl('toast.keptEdits'), 'info');
 }
-window.resolveConflict = resolveConflict;
 
 // Outline (T-F7): full h1–h6 tree with Arabic-aware slugs, matching ids on the
 // rendered headings (click-to-scroll), and scroll-sync highlighting.
 let _tocHeadings = []; // [{ el, item, pos }] in document order, for scroll-sync (pos = CM6 source offset)
 
-// Scan the CM6 source for ATX heading lines → [{ pos, level, text }] in document order.
-// Skips fenced code blocks so a `# comment` inside ``` isn't mistaken for a heading. Used to
-// map each rendered-DOM outline entry back to a position in the editor (CM6 is the sole surface
-// now, so the outline must scroll the editor, not the hidden preview pane).
-// (audit QA-09: this was a 1-line pass-through to sourceHeadingPositions; the wrapper is gone
-// and callers use the import directly.)
+// Heading text compared loosely (case, runs of spaces) when an outline entry from the
+// rendered DOM is matched to a heading found by sourceHeadingPositions in the editor source.
 const _normHeading = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+/** Empty the outline; with nothing to list, show the "no headings" note and return false. */
+function resetToc(count) {
+  _tocHeadings = [];
+  if (!count) {
+    tocList.className = 'toc-empty';
+    tocList.textContent = tl('outline.noHeadings');
+    return false;
+  }
+  tocList.className = '';
+  tocList.innerHTML = '';
+  return true;
+}
+/** One outline row; a click scrolls to the rendered heading `el` or the editor offset `pos`. */
+function addTocItem(level, text, no, el, pos) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = `toc-item h${level}` + (_tocHeadings.length === 0 ? ' active' : '');
+  item.textContent = text;
+  item.dataset.no = no;
+  // Same resolver as the heading itself (bidi-dom.js), so the outline entry and its heading
+  // always agree. dir="auto" is plain first-strong and disagrees on "API دليل المستخدم".
+  item.setAttribute('dir', resolveBlockDirection(text, State.direction === 'rtl' ? 'rtl' : 'ltr'));
+  const entry = { el, item, pos };
+  item.addEventListener('click', () => scrollToHeading(entry));
+  tocList.appendChild(item);
+  _tocHeadings.push(entry);
+}
 function buildTOC() {
   // Derive the outline from the RENDERED DOM headings (the source of truth for
   // what's displayed) rather than from marked.lexer tokens index-aligned to the
   // DOM: the lexer only emits top-level headings, so a heading nested in a
   // blockquote/callout/list (or raw HTML) would desync the index and mis-assign
-  // ids/labels/scroll-targets. Slug + GitHub-style de-dup mirror outline.js, using
-  // the same Arabic-aware slugify, so ids/labels/targets are inherently consistent.
+  // ids/labels/scroll-targets. Slugs come from bidi.headingSlugs, the one id rule
+  // the exports use too, so ids/labels/targets are consistent.
   const rendered = [...noteContent.querySelectorAll('h1, h2, h3, h4, h5, h6')];
-
-  _tocHeadings = [];
-  if (!rendered.length) {
-    tocList.className = 'toc-empty';
-    tocList.textContent = tl('outline.noHeadings');
-    return;
-  }
-  tocList.className = '';
-  tocList.innerHTML = '';
+  if (!resetToc(rendered.length)) return;
   // CM6 source heading offsets, to map each rendered heading → an editor position. Aligned by
   // index (rendered heading i ↔ source heading i), with a text-match fallback for the cases
   // where counts drift (e.g. an inline-styled heading whose rendered text differs).
   const srcHeads = cmAdapter ? sourceHeadingPositions(cmAdapter.getValue()) : [];
   const usedSrc = new Set();
-  const seen = new Map();
+  const slugs = headingSlugs(rendered.map((el) => (el.textContent || '').trim()));
   const outlineNos = outlineNumbers(rendered.map((el) => Number(el.tagName.charAt(1))));
   rendered.forEach((el, i) => {
     const text = (el.textContent || '').trim();
-    let slug = slugify(text);
-    if (seen.has(slug)) { const k = seen.get(slug) + 1; seen.set(slug, k); slug = `${slug}-${k}`; }
-    else seen.set(slug, 0);
+    let slug = slugs[i];
     // audit M1: a heading called "Editor" or "Toast" must not get the id (and with it the
     // CSS and the lookups) of an app element.
     const owner = slug ? document.getElementById(slug) : null;
@@ -3196,22 +3385,24 @@ function buildTOC() {
         else if (srcHeads[i] && !usedSrc.has(i)) { pos = srcHeads[i].pos; usedSrc.add(i); } // last-resort index
       }
     }
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = `toc-item h${el.tagName.charAt(1)}` + (_tocHeadings.length === 0 ? ' active' : '');
-    item.textContent = text; // clean rendered text (no raw markdown punctuation)
-    item.dataset.no = outlineNos.at(i);
-    // Same resolver as the heading itself (bidi-dom.js), so the outline entry and its heading
-    // always agree. dir="auto" is plain first-strong and disagrees on "API دليل المستخدم".
-    item.setAttribute('dir', resolveBlockDirection(text, State.direction === 'rtl' ? 'rtl' : 'ltr'));
-    const entry = { el, item, pos };
-    item.addEventListener('click', () => scrollToHeading(entry));
-    tocList.appendChild(item);
-    _tocHeadings.push(entry);
+    addTocItem(Number(el.tagName.charAt(1)), text, outlineNos.at(i), el, pos); // clean rendered text
   });
   setupScrollSync();
 }
-window.buildTOC = buildTOC; // test hook + used to rebuild the outline after the async CM6 mount
+testHooks.buildTOC = buildTOC; // test hook + used to rebuild the outline after the async CM6 mount
+
+// QA-M16: above this size an edit no longer re-renders the hidden reading pane (about half a
+// second of work at this size, growing with the note).
+const LARGE_EDIT_NOTE_CHARS = 200_000;
+// The Edit-mode outline of such a note, read from the source: each entry carries its editor
+// position and no rendered heading (scrollToHeading then uses the position).
+function buildSourceTOC(md) {
+  const heads = sourceHeadingPositions(md);
+  if (!resetToc(heads.length)) return;
+  const outlineNos = outlineNumbers(heads.map((h) => h.level));
+  heads.forEach((h, i) => addTocItem(h.level, h.text.replace(/[*_`~]+/g, '').trim(), outlineNos.at(i), null, h.pos));
+  setupScrollSync();
+}
 
 // The rendered note scrolls inside .preview-pane (.editor-area is overflow:hidden,
 // so .editor-wrap itself never scrolls).
@@ -3309,7 +3500,7 @@ function restoreReadingScroll(file, onSettled) {
   };
   requestAnimationFrame(() => requestAnimationFrame(apply));
 }
-window._captureReadingProgress = captureReadingProgress;
+testHooks._captureReadingProgress = captureReadingProgress;
 
 // ── T8.1: reading minutes + streak (local only) ──────────────────────────────────────
 // One minute per tick while a note is actually on screen in Reading mode. Deliberately simple:
@@ -3367,7 +3558,6 @@ async function refreshReadingStats() {
   try { State.readingStats = await bridge.statsGet(); } catch (_) { /* keep the last known line */ }
   renderStreakLine();
 }
-window._refreshReadingStats = refreshReadingStats;
 
 /** Count a minute only when the reading view is genuinely the visible surface. */
 function readingMinuteTick() {
@@ -3384,7 +3574,7 @@ function readingMinuteTick() {
     }
   }).catch(() => { /* a failed tick is silent — stats must never nag */ });
 }
-window._readingMinuteTick = readingMinuteTick;
+testHooks._readingMinuteTick = readingMinuteTick;
 
 function startReadingStats() {
   if (_statsTimer) return;
@@ -3434,7 +3624,26 @@ async function loadAnnotations(file) {
   applyHighlights(noteContent, _annotations);
   renderNoteList();
 }
-window._loadAnnotations = loadAnnotations;
+
+// QA-M9: Save As gives a note a new key (a new document, or out of its folder), and its
+// highlights and reading position stayed behind under the old one. They are copied, not
+// moved: the original file is still on disk and keeps its own.
+async function carryOverNoteData(oldKey, file) {
+  const newKey = fileKey(file);
+  if (!oldKey || !newKey || oldKey === newKey) return;
+  const shelved = State.readingProgress.find((item) => item && item.key === oldKey);
+  const ratio = shelved ? shelved.ratio : file.scrollRatio;
+  const entry = typeof ratio === 'number' ? progressEntryFor(file, ratio, Date.now()) : null;
+  if (entry && (shelved || ratio > 0)) {
+    State.readingProgress = upsertProgress(State.readingProgress, entry);
+    persistSettings();
+  }
+  const bridge = annotationsBridge();
+  if (!bridge) return;
+  const res = await bridge.annotationsGet(oldKey);
+  const highlights = res && Array.isArray(res.highlights) ? res.highlights : [];
+  if (highlights.length) await bridge.annotationsPut({ docKey: newKey, highlights });
+}
 
 // The longest highlight text or note the store accepts (MAX_TEXT in
 // src/main/annotations-store.js). The store refuses the WHOLE list when one entry is
@@ -3555,7 +3764,6 @@ function renderNoteList() {
   }
   syncMarginNotes();
 }
-window._renderNoteList = renderNoteList;
 if (typeof ResizeObserver === 'function') {
   const marginObserver = new ResizeObserver(() => syncMarginNotes());
   marginObserver.observe(previewScroller());
@@ -3577,9 +3785,7 @@ function scrollToHighlight(id) {
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   pane.scrollTo({ top: Math.max(0, top - 24), behavior: reduceMotion ? 'auto' : 'smooth' });
 }
-window._scrollToHighlight = scrollToHighlight;
 
-/** Delete one highlight: unwrap its <mark>, then persist the shorter list. */
 /** Take one highlight's <mark> out of the reading DOM, leaving its text in place. */
 function unwrapHighlightMark(id) {
   const mark = highlightMark(id);
@@ -3632,7 +3838,6 @@ async function removeHighlight(id) {
     onClick: () => { void restoreHighlight(removed, index, docKey); },
   });
 }
-window._removeHighlight = removeHighlight;
 
 /** The floating Highlight/Note bar (created once, reused). */
 function ensureHighlightBar() {
@@ -3699,33 +3904,20 @@ function onNoteMouseUp() {
 
 /** The note prompt: the existing modal with one textarea. Resolves '' when cancelled. */
 function askNoteText(excerpt) {
-  return new Promise((resolve) => {
-    const observer = new MutationObserver(() => {
-      if (!modalOverlay.classList.contains('open')) { observer.disconnect(); resolve(''); }
-    });
-    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
-    const html = `
-      <div class="dlg-body">
-        <blockquote class="note-excerpt" dir="auto">${escapeHtml(noteExcerpt(excerpt, 160))}</blockquote>
-        <textarea class="note-field" id="noteField" dir="auto" rows="4" maxlength="${HIGHLIGHT_MAX_TEXT}"
-          placeholder="${escapeHtml(tl('hl.notePlaceholder'))}"></textarea>
-      </div>
-      <div class="dlg-actions">
-        <button type="button" class="dlg-btn" id="noteCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
-        <button type="button" class="dlg-btn dlg-primary" id="noteSaveBtn">${escapeHtml(tl('dlg.save'))}</button>
-      </div>`;
-    openModal(tl('hl.noteTitle'), html);
-    const settle = (value) => {
-      observer.disconnect();
-      pendingModalSettlers.delete(abandoned);
-      closeModal();
-      resolve(value);
-    };
-    const abandoned = () => settle('');
-    pendingModalSettlers.add(abandoned);
-    $('noteSaveBtn')?.addEventListener('click', () => settle($('noteField').value));
-    $('noteCancelBtn')?.addEventListener('click', () => settle(''));
-    setTimeout(() => $('noteField')?.focus(), 0);
+  const html = `
+    <div class="dlg-body">
+      <blockquote class="note-excerpt" dir="auto">${escapeHtml(noteExcerpt(excerpt, 160))}</blockquote>
+      <textarea class="note-field" id="noteField" dir="auto" rows="4" maxlength="${HIGHLIGHT_MAX_TEXT}"
+        placeholder="${escapeHtml(tl('hl.notePlaceholder'))}"></textarea>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-btn" id="noteCancelBtn">${escapeHtml(tl('dlg.cancel'))}</button>
+      <button type="button" class="dlg-btn dlg-primary" id="noteSaveBtn">${escapeHtml(tl('dlg.save'))}</button>
+    </div>`;
+  return askModal(tl('hl.noteTitle'), html, {
+    abandon: '',
+    buttons: { noteSaveBtn: () => $('noteField').value, noteCancelBtn: '' },
+    focus: 'noteField',
   });
 }
 
@@ -3769,7 +3961,7 @@ async function addHighlight(mode) {
   }
   showToast(tl('hl.saved'), 'info');
 }
-window._addHighlight = addHighlight;
+testHooks._addHighlight = addHighlight;
 
 // Dismiss the bar whenever the gesture that produced it is over: a click elsewhere, a
 // scroll that moves the anchor, or Escape.
@@ -3792,9 +3984,14 @@ function scrollToHeading(entry) {
     // stale the moment anything is typed above the heading, and the outline used to
     // jump to a pre-edit offset. The rendered heading's text is the stable identity.
     const want = entry.el ? _normHeading(entry.el.textContent) : null;
-    const hit = want != null
-      ? sourceHeadingPositions(cmAdapter.getValue()).find((h) => _normHeading(h.text) === want)
-      : null;
+    // QA-L3: the second of two headings with the same text jumped to the first one. Take
+    // the source heading with the same place among the headings of that text.
+    const nth = _tocHeadings.slice(0, Math.max(0, _tocHeadings.indexOf(entry)))
+      .filter((e) => e.el && _normHeading(e.el.textContent) === want).length;
+    const same = want != null
+      ? sourceHeadingPositions(cmAdapter.getValue()).filter((h) => _normHeading(h.text) === want)
+      : [];
+    const hit = same[nth] || same[0] || null;
     if (hit) entry.pos = hit.pos;
     const pos = hit ? hit.pos : entry.pos;
     if (pos != null) { cmAdapter.scrollToPos(pos, { select: true }); return; }
@@ -3830,14 +4027,14 @@ function setupScrollSync() {
     sc.addEventListener('scroll', sync, { passive: true });
     return;
   }
-  // Reading mode and the textarea fallback share the visible rendered preview pane.
+  // Reading mode (and a CM6 load failure) show the rendered preview pane.
   const wrap = previewScroller();
   if (!wrap || wrap._tocSyncWired) return;
   wrap._tocSyncWired = true;
   wrap.addEventListener('scroll', () => {
     if (!_tocHeadings.length) return;
     const wrapTop = wrap.getBoundingClientRect().top;
-    const offsets = _tocHeadings.map(({ el }) => el.getBoundingClientRect().top - wrapTop + wrap.scrollTop);
+    const offsets = _tocHeadings.map(({ el }) => (el ? el.getBoundingClientRect().top - wrapTop + wrap.scrollTop : 0));
     const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 2;
     const idx = atBottom ? _tocHeadings.length - 1 : activeHeading(wrap.scrollTop, offsets);
     _tocHeadings.forEach(({ item }, i) => item.classList.toggle('active', i === idx));
@@ -3869,15 +4066,12 @@ function ensureCodeCopyButton(sc) {
   btn.setAttribute('data-i18n-aria-label', 'codeCopy.copy');
   btn.setAttribute('data-tip', label);
   btn.setAttribute('data-i18n-tip', 'codeCopy.copy');
+  // applyLocale restores English from these; without them it would cache `label`, which is
+  // already in the current UI language (cf. updateFullscreenUi).
+  btn.dataset.i18nTipOrig = tr('codeCopy.copy', 'en');
+  btn.dataset.i18nAriaLabelOrig = tr('codeCopy.copy', 'en');
   btn.hidden = true;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'ic');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', '#ic-copy');
-  svg.appendChild(use);
-  btn.appendChild(svg);
+  btn.appendChild(svgIcon('copy'));
   btn.addEventListener('click', async () => {
     const codes = State.viewMode === 'reading'
       ? Array.from(noteContent.querySelectorAll('pre > code:not(.language-mermaid)'))
@@ -3928,7 +4122,7 @@ function updateCodeTrack() {
     // viewport-relative offset inside the pane + scrollTop = content coordinate.
     return pre.getBoundingClientRect().top - scRect.top + sc.scrollTop;
   });
-  const idx = activeCodeBlock(tops.map((top) => ({ top })), sc.scrollTop, sc.clientHeight);
+  const idx = activeCodeBlock(tops.map((top) => ({ top })), sc.scrollTop, sc.clientHeight, sc.scrollHeight);
   if (idx < 0) {
     btn.hidden = true;
     _codeTrackCurrent = -2;
@@ -3941,6 +4135,302 @@ function updateCodeTrack() {
   }
   btn.hidden = false;
 }
+
+// =====================================================================
+// BLOCK DIRECTION — pin one block RTL or LTR (design-mock feature 1)
+// =====================================================================
+// One floating badge in the reading column's start margin follows the block under the
+// pointer (or the keyboard focus), like the code-copy button above. It shows the block's
+// direction (ع / A): dashed while the block is automatic, filled while it is pinned. A click
+// opens a three-choice menu: right to left, left to right, or Auto (no pin). The pin is a
+// `<!-- dir: … -->` line above the block in the note (block-direction.js), written through
+// the editor so undo, the dirty dot and autosave follow. Ctrl+D flips without the menu.
+let _dirBadge = null;
+let _dirBadgeBlock = null;
+let _dirMenu = null;
+// Where the pointer was when a menu choice closed the menu: the pointer now rests over another
+// block, and the badge stays on its own block until the pointer really moves.
+let _dirHoldAt = null;
+
+function hideDirBadge() {
+  closeDirMenu();
+  _dirBadgeBlock = null;
+  if (_dirBadge) _dirBadge.hidden = true;
+}
+
+function ensureDirBadge(sc) {
+  if (_dirBadge && _dirBadge.isConnected) return _dirBadge;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'dirBadge';
+  btn.className = 'dir-badge';
+  btn.hidden = true;
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.addEventListener('click', (e) => {
+    if (dirMenuOpen()) closeDirMenu();
+    else if (_dirBadgeBlock) openDirMenu(_dirBadgeBlock, e.detail === 0);
+  });
+  // Moving from the block onto the badge (or into its open menu) must not hide it.
+  btn.addEventListener('mouseleave', (e) => {
+    if (!noteContent.contains(e.relatedTarget) && !dirMenuOpen()) hideDirBadge();
+  });
+  sc.appendChild(btn);
+  _dirBadge = btn;
+  return btn;
+}
+
+/** The top-level block of the note that `node` is in, or null. */
+function dirBlockOf(node) {
+  const el = node instanceof Element ? node : node && node.parentElement;
+  const block = el && el.closest('#noteContent [data-src-line]');
+  return block && noteContent.contains(block) ? block : null;
+}
+
+const blockIsCode = (block) => block.matches('pre, .mermaid');
+function blockDirection(block) {
+  return block.getAttribute('dir') || block.querySelector('[dir]')?.getAttribute('dir') || State.direction || 'ltr';
+}
+const blockPin = (block) => block.getAttribute('data-pinned') || null;
+const dirMenuOpen = () => !!(_dirMenu && !_dirMenu.hidden);
+
+function showDirBadge(block) {
+  const sc = previewScroller();
+  if (!sc || State.viewMode !== 'reading' || !block) { hideDirBadge(); return; }
+  const btn = ensureDirBadge(sc);
+  _dirBadgeBlock = block;
+  const code = blockIsCode(block);
+  const pin = code ? null : blockPin(block);
+  const dir = blockDirection(block);
+  btn.textContent = code ? '{}' : (dir === 'rtl' ? 'ع' : 'A');
+  btn.disabled = code;
+  btn.classList.toggle('pinned', !!pin);
+  btn.classList.toggle('is-rtl', !code && dir === 'rtl');
+  btn.classList.toggle('is-code', code);
+  const dirWord = tl(dir === 'rtl' ? 'blockDir.rtlWord' : 'blockDir.ltrWord');
+  const label = code ? tl('blockDir.code') : tl(pin ? 'blockDir.statePinned' : 'blockDir.stateAuto', { dir: dirWord });
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('data-tip', label);
+  // Content coordinates inside the scroller, on the interface's start side of the column.
+  const scRect = sc.getBoundingClientRect();
+  const rect = block.getBoundingClientRect();
+  const column = noteContent.getBoundingClientRect();
+  const uiRtl = document.documentElement.getAttribute('dir') === 'rtl';
+  const gap = 8;
+  const size = 26;
+  const left = uiRtl ? column.right - scRect.left + gap : column.left - scRect.left - size - gap;
+  btn.style.top = `${Math.round(rect.top - scRect.top + sc.scrollTop)}px`;
+  btn.style.left = `${Math.round(Math.max(0, left) + sc.scrollLeft)}px`;
+  btn.hidden = false;
+}
+
+// The badge menu's three states. `value` is the pin: null is Auto (no pin line).
+const DIR_CHOICES = [
+  { value: 'rtl', glyph: 'ع', key: 'blockDir.optRtl', tip: 'blockDir.pinRtl' },
+  { value: 'ltr', glyph: 'A', key: 'blockDir.optLtr', tip: 'blockDir.pinLtr' },
+  { value: null, glyph: '⇆', key: 'blockDir.optAuto', tip: 'blockDir.unpin' },
+];
+
+function ensureDirMenu(sc) {
+  if (_dirMenu && _dirMenu.isConnected) return _dirMenu;
+  const menu = document.createElement('div');
+  menu.id = 'dirMenu';
+  menu.className = 'dir-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  for (const choice of DIR_CHOICES) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'dir-menu-item';
+    item.setAttribute('role', 'menuitemradio');
+    item.dataset.dir = choice.value || 'auto';
+    const glyph = document.createElement('span');
+    glyph.className = 'dir-menu-glyph';
+    glyph.textContent = choice.glyph;
+    const name = document.createElement('span');
+    name.className = 'dir-menu-name';
+    item.append(glyph, name);
+    item.addEventListener('click', (e) => {
+      const block = _dirBadgeBlock;
+      _dirHoldAt = e.detail ? { x: e.clientX, y: e.clientY } : null;
+      closeDirMenu();
+      if (block) setBlockPin(block, choice.value);
+    });
+    menu.appendChild(item);
+  }
+  menu.addEventListener('keydown', (e) => {
+    const items = [...menu.querySelectorAll('.dir-menu-item')];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    } else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDirMenu(true); }
+    else if (e.key === 'Tab') closeDirMenu();
+  });
+  menu.addEventListener('mouseleave', (e) => {
+    if (!noteContent.contains(e.relatedTarget) && e.relatedTarget !== _dirBadge) hideDirBadge();
+  });
+  sc.appendChild(menu);
+  _dirMenu = menu;
+  return menu;
+}
+
+/** The badge's menu for `block`: the three states, the current one checked. */
+function openDirMenu(block, fromKeyboard = false) {
+  const sc = previewScroller();
+  if (!sc || !_dirBadge || blockIsCode(block)) return;
+  const menu = ensureDirMenu(sc);
+  menu.setAttribute('aria-label', tl('blockDir.menu'));
+  const pin = blockPin(block);
+  const items = menu.querySelectorAll('.dir-menu-item');
+  DIR_CHOICES.forEach((choice, i) => {
+    const item = items.item(i);
+    const checked = choice.value === pin;
+    item.setAttribute('aria-checked', String(checked));
+    item.classList.toggle('checked', checked);
+    item.querySelector('.dir-menu-name').textContent = tl(choice.key);
+    item.setAttribute('data-tip', tl(choice.tip));
+  });
+  // Below the badge, aligned on the badge's start edge.
+  menu.hidden = false;
+  const top = parseFloat(_dirBadge.style.top) || 0;
+  const left = parseFloat(_dirBadge.style.left) || 0;
+  const uiRtl = document.documentElement.getAttribute('dir') === 'rtl';
+  const x = uiRtl ? left + _dirBadge.offsetWidth - menu.offsetWidth : left;
+  menu.style.top = `${Math.round(top + _dirBadge.offsetHeight + 4)}px`;
+  menu.style.left = `${Math.round(Math.max(0, x))}px`;
+  _dirBadge.setAttribute('aria-expanded', 'true');
+  if (fromKeyboard) (menu.querySelector('.dir-menu-item.checked') || menu.querySelector('.dir-menu-item')).focus();
+}
+
+function closeDirMenu(restoreFocus = false) {
+  if (!dirMenuOpen()) return;
+  _dirMenu.hidden = true;
+  if (!_dirBadge) return;
+  _dirBadge.setAttribute('aria-expanded', 'false');
+  if (restoreFocus && _dirBadge.isConnected && !_dirBadge.hidden) _dirBadge.focus();
+}
+document.addEventListener('click', (e) => {
+  if (dirMenuOpen() && !_dirMenu.contains(e.target) && !(_dirBadge && _dirBadge.contains(e.target))) closeDirMenu();
+});
+
+noteContent.addEventListener('mouseover', (e) => {
+  if (State.viewMode !== 'reading' || dirMenuOpen()) return; // an open menu keeps its block
+  if (_dirHoldAt && e.clientX === _dirHoldAt.x && e.clientY === _dirHoldAt.y) return;
+  _dirHoldAt = null;
+  const block = dirBlockOf(e.target);
+  if (block && block !== _dirBadgeBlock) showDirBadge(block);
+});
+noteContent.addEventListener('focusin', (e) => {
+  if (State.viewMode === 'reading' && !dirMenuOpen()) showDirBadge(dirBlockOf(e.target));
+});
+
+/** How many lines the front matter takes: the rendered body's lines start after it. */
+function frontMatterLines(content) {
+  const text = content || '';
+  const { body } = parseFrontMatter(text);
+  const head = text.slice(0, text.length - body.length);
+  return (head.match(/\n/g) || []).length;
+}
+
+function noteSourceText() {
+  return cmAdapter ? cmAdapter.getValue() : (State.files[State.activeFile]?.content || '');
+}
+
+function applyPinEdit(edit) {
+  if (!edit || !editorReady()) return null;
+  cmAdapter.replaceRange(edit.from, edit.to, edit.insert);
+  showToast(edit.dir ? tl(edit.dir === 'rtl' ? 'blockDir.pinnedRtl' : 'blockDir.pinnedLtr') : tl('blockDir.auto'));
+  return edit;
+}
+
+function applyFlip(line, currentDir) {
+  return applyPinEdit(flipEdit(noteSourceText(), line, currentDir === 'rtl' ? 'ltr' : 'rtl'));
+}
+
+/** The note line (0-based, front matter included) a rendered block starts on, or null. */
+function blockSourceLine(block) {
+  const f = State.files[State.activeFile];
+  if (!f || !block || !block.isConnected || blockIsCode(block)) return null;
+  const line = Number(block.getAttribute('data-src-line')) + frontMatterLines(noteSourceText());
+  return Number.isInteger(line) ? line : null;
+}
+
+// Render now instead of after the typing debounce, and keep the badge on the block: a pin line
+// added above it moved it down `shift` lines, a removed one moved it up.
+function rerenderKeepingBadge(block, shift) {
+  const moved = Number(block.getAttribute('data-src-line')) + shift;
+  clearTimeout(_srcDebounce);
+  renderReadingContent();
+  const again = noteContent.querySelector(`[data-src-line="${moved}"]`);
+  if (again) showDirBadge(again);
+}
+
+/** Reading view: flip the pin of a rendered block (Ctrl+D). */
+function flipBlock(block) {
+  if (block && block.isConnected && blockIsCode(block)) { showToast(tl('blockDir.code'), 'info'); return; }
+  const line = blockSourceLine(block);
+  if (line === null) return;
+  const edit = applyFlip(line, blockDirection(block));
+  if (edit) rerenderKeepingBadge(block, edit.dir ? 1 : -1);
+}
+
+/** Reading view: the badge menu's choice for a block, 'rtl' | 'ltr' | null (Auto). */
+function setBlockPin(block, dir) {
+  const line = blockSourceLine(block);
+  if (line === null) return;
+  const edit = applyPinEdit(pinEdit(noteSourceText(), line, dir));
+  if (edit) rerenderKeepingBadge(block, edit.shift);
+}
+
+/** Edit mode: the block under the caret — its lines up to a blank line or a pin line above. */
+function caretBlockLine(text, caret) {
+  const lines = text.split('\n');
+  let line = text.slice(0, caret).split('\n').length - 1;
+  const here = lines.at(line);
+  if (here !== undefined && markerDirection(here)) line++; // on the pin line itself
+  while (line > 0 && lines[line - 1].trim() !== '' && !markerDirection(lines[line - 1])) line--;
+  return { line, text: lines.slice(line).join('\n').split(/\n\s*\n/)[0] };
+}
+
+function flipCurrentBlock() {
+  const f = State.files[State.activeFile];
+  if (!f) { showToast(tl('blockDir.noNote'), 'error'); return; }
+  if (State.viewMode === 'reading') {
+    let block = _dirBadgeBlock && _dirBadgeBlock.isConnected ? _dirBadgeBlock : null;
+    if (!block) {
+      const sc = previewScroller();
+      const top = sc ? sc.getBoundingClientRect().top : 0;
+      block = [...noteContent.querySelectorAll('[data-src-line]')].find((el) => el.getBoundingClientRect().bottom > top) || null;
+    }
+    if (block) flipBlock(block);
+    return;
+  }
+  if (!editorReady()) return;
+  const text = noteSourceText();
+  const { line, text: blockText } = caretBlockLine(text, cmAdapter.getSelection().start);
+  const { data } = parseFrontMatter(text);
+  const current = State.forcedDir || frontMatterDirection(data) || resolveBlockDirection(blockText, State.direction || 'ltr');
+  applyFlip(line, current);
+}
+
+function resetBlockDirections() {
+  const f = State.files[State.activeFile];
+  if (!f) { showToast(tl('blockDir.noNote'), 'error'); return; }
+  const text = noteSourceText();
+  const ranges = markerRanges(text);
+  if (!ranges.length) { showToast(tl('blockDir.noneToReset'), 'info'); return; }
+  if (!editorReady()) return;
+  const removed = ranges.length;
+  // One edit for the whole note: a single undo brings every pin back.
+  cmAdapter.applyChanges(ranges.map(({ from, to }) => ({ from, to, insert: '' })));
+  if (State.viewMode === 'reading') { clearTimeout(_srcDebounce); renderReadingContent(); }
+  showToast(tl('blockDir.resetDone', { n: removed }));
+}
+testHooks.flipCurrentBlock = flipCurrentBlock;
+testHooks.resetBlockDirections = resetBlockDirections;
 
 // =====================================================================
 // TREE
@@ -3971,12 +4461,6 @@ function saveTreeCollapsed() {
 // close, only individual tabs.
 const LOOSE_ROOT_ID = '@loose';
 
-// Build a nested, collapsible folder tree from State.files (T-F1/M3, forest since B4).
-// Vault-scoped files group into one named root per open folder (buildForest); loose
-// files fold into the @loose pseudo-root. Each row is indented by depth; dir/root rows
-// toggle (click / Enter / Space / Arrow), file rows open, and a non-loose root row also
-// closes (× button or Delete/Backspace) via workspaceController.closeVault. State.files
-// index travels as fileIdx (assigned by ORIGINAL position, before grouping) so
 // audit PERF-06: warm the search index in idle chunks after the tree settles, so the
 // first real query doesn't pay the whole toLowerCase pass on the UI thread.
 let _warmTimer = null;
@@ -3997,8 +4481,16 @@ function scheduleSearchWarm() {
   }, 400);
 }
 
+// Build a nested, collapsible folder tree from State.files (T-F1/M3, forest since B4).
+// Vault-scoped files group into one named root per open folder (buildForest); loose
+// files fold into the @loose pseudo-root. Each row is indented by depth; dir/root rows
+// toggle (click / Enter / Space / Arrow), file rows open, and a non-loose root row also
+// closes (× button or Delete/Backspace) via workspaceController.closeVault. State.files
+// index travels as fileIdx (assigned by ORIGINAL position, before grouping) so
 // highlightTreeActive + open still work regardless of which group a file lands in.
 function renderTree(entries) {
+  // QA M15: keep keyboard focus on the same row across the rebuild (expand, collapse, open).
+  const focusKey = treeEl.contains(document.activeElement) ? document.activeElement.closest('[role="treeitem"]')?.dataset.treeKey : null;
   treeEl.innerHTML = '';
   treeEl.style.display = entries.length ? 'block' : 'none';
   sbEmptyEl.style.display = entries.length ? 'none' : 'block';
@@ -4029,6 +4521,7 @@ function renderTree(entries) {
     node.setAttribute('role', 'treeitem');
     node.setAttribute('tabindex', treeEl.childElementCount === 0 ? '0' : '-1');
     node.setAttribute('aria-label', row.name);
+    node.dataset.treeKey = row.type === 'dir' || row.type === 'root' ? row.path : `file:${row.fileIdx}`;
     // v10 redesign (2026-08-25): indent is expressed as a custom property, consumed by
     // components.css's calc(), not a literal inline pixel value -- padding-inline-start
     // stays depth-aware (this app allows arbitrary nesting; the reference's fixed 32px
@@ -4046,6 +4539,28 @@ function renderTree(entries) {
       next?.focus();
       return true;
     };
+    // Dir and root rows: click / Enter / Space toggle, the arrows open and close. v1.2: under
+    // the RTL chrome the hierarchy mirrors, so the arrows flip too (WAI-ARIA treeview: Right
+    // always means "into", Left "out of"). `onOtherKey` sees every other key.
+    const wireToggle = (onOtherKey) => {
+      const setOpen = (open) => {
+        if (open === !collapsed.has(row.path)) return; // no change
+        if (open) collapsed.delete(row.path); else collapsed.add(row.path);
+        saveTreeCollapsed(); renderTree(entries);
+      };
+      node.addEventListener('click', (e) => {
+        if (e.target.closest('.tree-root-close')) return; // the close button handles its own click
+        setOpen(collapsed.has(row.path));
+      });
+      node.addEventListener('keydown', e => {
+        if (moveFocus(e)) return;
+        const rtl = document.documentElement.dir === 'rtl';
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(collapsed.has(row.path)); }
+        else if (e.key === (rtl ? 'ArrowLeft' : 'ArrowRight')) { e.preventDefault(); setOpen(true); }
+        else if (e.key === (rtl ? 'ArrowRight' : 'ArrowLeft')) { e.preventDefault(); setOpen(false); }
+        else if (onOtherKey) onOtherKey(e);
+      });
+    };
     const nameIsAr = isArabicHeavy(row.name);
     const nameHtml = `<span class="tree-name${nameIsAr ? ' arabic' : ''}"${nameIsAr ? ' dir="rtl"' : ''}>${escapeHtml(row.name)}</span>`;
     if (row.type === 'dir') {
@@ -4057,23 +4572,7 @@ function renderTree(entries) {
       // Swapping the glyph AND rotating it would double-encode the state (a rotated
       // "already-pointing-left" triangle would point up when collapsed).
       node.innerHTML = `<span class="tree-twisty">▾</span>${nameHtml}<i class="tree-rule"></i><span class="tree-count">${fileCounts.get(row.path) || 0}</span>`;
-      const setOpen = (open) => {
-        if (open === !collapsed.has(row.path)) return; // no change
-        if (open) collapsed.delete(row.path); else collapsed.add(row.path);
-        saveTreeCollapsed(); renderTree(entries);
-      };
-      node.addEventListener('click', () => setOpen(collapsed.has(row.path)));
-      node.addEventListener('keydown', e => {
-        if (moveFocus(e)) return;
-        // v1.2: under the RTL chrome the hierarchy mirrors, so expand/collapse arrows
-        // flip too (WAI-ARIA treeview: Right always means "into", Left "out of").
-        const rtl = document.documentElement.dir === 'rtl';
-        const expandKey = rtl ? 'ArrowLeft' : 'ArrowRight';
-        const collapseKey = rtl ? 'ArrowRight' : 'ArrowLeft';
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(collapsed.has(row.path)); }
-        else if (e.key === expandKey) { e.preventDefault(); setOpen(true); }
-        else if (e.key === collapseKey) { e.preventDefault(); setOpen(false); }
-      });
+      wireToggle(null);
     } else if (row.type === 'root') {
       // B4: a named folder root behaves like a dir (click/Enter/Space/Arrow toggle) but
       // also owns a close affordance — except the @loose pseudo-root, which has no
@@ -4084,28 +4583,8 @@ function renderTree(entries) {
       node.setAttribute('aria-expanded', String(!isCollapsed));
       const rootCount = fileCounts.get(row.path) || 0;
       node.innerHTML = `<span class="tree-twisty">▾</span>${nameHtml}<span class="tree-count">${escapeHtml(tl('lib.noteCount', { n: rootCount }))}</span>`;
-      const setOpen = (open) => {
-        if (open === !collapsed.has(row.path)) return;
-        if (open) collapsed.delete(row.path); else collapsed.add(row.path);
-        saveTreeCollapsed(); renderTree(entries);
-      };
-      node.addEventListener('click', (e) => {
-        if (e.target.closest('.tree-root-close')) return; // the close button handles its own click
-        setOpen(collapsed.has(row.path));
-      });
-      node.addEventListener('keydown', e => {
-        if (moveFocus(e)) return;
-        // v1.2: mirror expand/collapse under the RTL chrome (see the tree-dir handler).
-        const rtl = document.documentElement.dir === 'rtl';
-        const expandKey = rtl ? 'ArrowLeft' : 'ArrowRight';
-        const collapseKey = rtl ? 'ArrowRight' : 'ArrowLeft';
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(collapsed.has(row.path)); }
-        else if (e.key === expandKey) { e.preventDefault(); setOpen(true); }
-        else if (e.key === collapseKey) { e.preventDefault(); setOpen(false); }
-        else if (!isLoose && (e.key === 'Delete' || e.key === 'Backspace')) {
-          e.preventDefault();
-          workspaceController.closeVault(row.id);
-        }
+      wireToggle(isLoose ? null : (e) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); workspaceController.closeVault(row.id); }
       });
       if (!isLoose) {
         const closeBtn = document.createElement('button');
@@ -4139,6 +4618,11 @@ function renderTree(entries) {
   renderTags();
   scheduleSearchWarm();
   highlightTreeActive(); // re-mark the active file: this in-tree rebuild (folder toggle) would otherwise drop it (F1/M3)
+  const refocus = focusKey != null && [...treeEl.querySelectorAll('[role="treeitem"]')].find((n) => n.dataset.treeKey === focusKey);
+  if (refocus) {
+    treeEl.querySelectorAll('[role="treeitem"]').forEach((n) => { n.tabIndex = n === refocus ? 0 : -1; });
+    refocus.focus();
+  }
 }
 
 async function openFromTree(idx) {
@@ -4214,7 +4698,8 @@ function setVaultUi(_folderName) {
   if (!status) return;
   const vaults = workspaceController.getOpenVaults();
   if (vaults.length === 0) {
-    status.textContent = tl('status.noFolder');
+    // The demo notes name a folder (State.vaultName) without opening one (APP-33).
+    status.textContent = State.vaultName ? tl('status.folder', { name: State.vaultName }) : tl('status.noFolder');
     status.removeAttribute('data-tip');
   } else if (vaults.length === 1) {
     status.textContent = tl('status.folder', { name: vaults[0].name });
@@ -4222,6 +4707,19 @@ function setVaultUi(_folderName) {
   } else {
     status.textContent = tl('status.folders', { n: vaults.length });
     status.dataset.tip = vaults.map((v) => v.name).join(', ');
+  }
+}
+
+// A save or a reload moved the note on screen into another size tier (large-file mode on or off):
+// the editor's extensions are fixed when its state is made, so the note is shown again. The caret
+// stays where it was (this can happen while the reader types, on an autosave).
+function rebuildForTier(file) {
+  const idx = State.files.indexOf(file);
+  if (idx < 0 || idx !== State.activeFile) return; // a note off screen is built when it is shown
+  const selection = cmAdapter ? cmAdapter.getSelection() : null;
+  renderFile(idx);
+  if (selection && cmAdapter && State.viewMode !== 'reading') {
+    cmAdapter.setSelection({ start: selection.start, end: selection.end }, { scroll: true });
   }
 }
 
@@ -4236,12 +4734,17 @@ const workspaceController = createWorkspaceController({
   // v1.2: the old pass-through to native confirm() is gone — the controller's discard
   // prompts now get the themed Word-style dialog. Save-all must succeed for the
   // destructive action to proceed; a canceled Save As keeps the workspace open.
-  confirmDiscard: async () => {
-    const dirtyCount = State.files.filter((f) => f.dirty).length;
-    const choice = await askSaveChanges({ count: dirtyCount });
-    return resolveCloseChoice(choice);
+  confirmDiscard: async (_message, files) => {
+    const dirty = (Array.isArray(files) ? files : State.files).filter((f) => f.dirty);
+    // QA M4: one dirty note is named ("save the changes to “”?" before), and "Save" saves
+    // only the notes this prompt is about.
+    const choice = await askSaveChanges(dirty.length === 1 ? { name: dirty[0].name } : { count: dirty.length });
+    return resolveCloseChoice(choice, dirty);
   },
   confirmEncodingUpgrade: (info) => askEncodingUpgrade(info),
+  confirmLargeOpen: (info) => askLargeOpen(info),
+  onNoteTierChange: rebuildForTier,
+  carryOverNoteData,
   addFile,
   renderFile,
   renderTree,
@@ -4263,15 +4766,14 @@ const {
   openExternalFile,
   handleVaultChanged,
   markUserIntent,
-  mayAbandonWorkspace,
 } = workspaceController;
-window.openVault = openVault;
-window.openSingleFile = openSingleFile;
-window.saveCurrent = saveCurrent;
-window.saveAllDirty = saveAllDirty;
-window.openRecent = openRecent;
-window.openExternalFile = openExternalFile;
-window.handleVaultChanged = handleVaultChanged;
+testHooks.openVault = openVault;
+testHooks.openSingleFile = openSingleFile;
+testHooks.saveCurrent = saveCurrent;
+testHooks.saveAllDirty = saveAllDirty;
+testHooks.openRecent = openRecent;
+testHooks.openExternalFile = openExternalFile;
+testHooks.handleVaultChanged = handleVaultChanged;
 
 
 // v1.3.0: dropped/picked files carry no path, so encoding detection must run on the
@@ -4289,26 +4791,50 @@ async function readFileBytesDecoded(file) {
   return { text: await file.text(), meta: undefined };
 }
 
-const OPEN_FILE_MAX_BYTES = 10 * 1024 * 1024; // matches main's per-file cap (UI-02)
-fileInput.addEventListener('change', async () => {
-  for (const file of fileInput.files) {
-    // The picker lane used to read and ship the whole file across the bridge before
-    // main rejected it — mirror the drop lane's pre-check so the message is the honest
-    // "too large" one and no multi-hundred-MB buffer is ever built.
-    if (file.size > OPEN_FILE_MAX_BYTES) {
-      showToast(tl('toast.skippedSize', { name: file.name }), 'error');
-      continue;
-    }
-    try {
-      const decoded = await readFileBytesDecoded(file);
-      addFile({ name: file.name, path: file.name, handle: null, content: decoded.text, dirty: false, meta: decoded.meta });
-    } catch {
-      showToast(tl('toast.couldNotRead', { name: file.name }), 'error');
-    }
+// The picker and drop lanes hold a File, not a path, so the size is known before any byte is
+// read. Same tiers as the path lanes (large-file.js): over the limit is refused here so no
+// multi-hundred-MB buffer is built (main refuses it again, UI-02), a HUGE note asks first.
+// Resolves true when the note was added.
+async function loadLooseFile(file) {
+  const tier = noteTier(file.size);
+  if (tier === TIER.REFUSED) {
+    showToast(tl('toast.skippedSize', { name: file.name, limit: limitMb(getLimits().maxFileBytes) }), 'error');
+    return false;
   }
-  if (fileInput.files.length > 0) showToast(tl('toast.openedNFiles', { n: fileInput.files.length }));
+  if (tier === TIER.HUGE && !(await askLargeOpen({ name: file.name, size: file.size }))) return false;
+  try {
+    const decoded = await readFileBytesDecoded(file);
+    const name = looseDropName(file.name, decoded.text);
+    addFile({ name, path: name, handle: null, content: decoded.text, dirty: false, meta: decoded.meta, sizeBytes: file.size, largeTier: tier });
+    return true;
+  } catch {
+    showToast(tl('toast.couldNotRead', { name: file.name }), 'error');
+    return false;
+  }
+}
+fileInput.addEventListener('change', async () => {
+  let toldLarge = false;
+  for (const file of fileInput.files) {
+    if (await loadLooseFile(file) && noteTier(file.size) >= TIER.LARGE) toldLarge = true;
+  }
+  if (fileInput.files.length > 0 && !toldLarge) showToast(tl('toast.openedNFiles', { n: fileInput.files.length }));
   fileInput.value = '';
 });
+
+// QA DROP: a dropped file has no real path, only its name. Two different files with one name
+// (notes.md from two folders) used to share one tab, a false conflict and one set of
+// highlights. A different text gets its own name, "notes (2).md"; the same text reuses the tab.
+function looseDropName(name, text) {
+  const looseAt = (n) => State.files.find((x) => !x.vaultId && !x.documentId && x.path === n);
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 1; ; i++) {
+    const candidate = i === 1 ? name : `${stem} (${i})${ext}`;
+    const open = looseAt(candidate);
+    if (!open || (open.content || '') === text) return candidate;
+  }
+}
 
 function addFile(f) {
   if (!Number.isInteger(f.revision)) f.revision = 0;
@@ -4330,6 +4856,7 @@ function addFile(f) {
       cur.conflict = true;
       cur.diskContent = f.content;
       cur.diskMeta = f.meta || null;
+      cur.diskSize = f.sizeBytes;
       renderTree(State.files);
       renderFile(existing);
       showToast(tl('toast.reopenedConflict', { name: f.name }), 'info');
@@ -4346,7 +4873,7 @@ function addFile(f) {
 function newNote() {
   closeMenu();
   markUserIntent();
-  const name = nextUntitledName(State.files.map((f) => f.name)); // first free name (audit H10)
+  const name = nextUntitledName(State.files.map((f) => f.name), tl('file.untitled')); // first free name (audit H10); QA-L2: in the interface language
   // v1.2.2: a pristine note starts EMPTY and clean. The old scaffold (`# Untitled\n\n
   // Start writing…`) was real document content, so saving an untouched note wrote the
   // placeholder text to disk. The visible "Start writing…" is now a DOM-only hint
@@ -4354,7 +4881,7 @@ function newNote() {
   // Save prompt — the first keystroke marks it dirty via applyEditorInput.
   addFile({ name, path: name, handle: null, content: '', dirty: false });
 }
-window.newNote = newNote;
+testHooks.newNote = newNote;
 
 
 // =====================================================================
@@ -4384,19 +4911,11 @@ function navWikilink(target) {
 // =====================================================================
 // DEMO
 // =====================================================================
+// QA-M8 (decision D10): the demo notes are added beside what is open. Load Demo used to close
+// every folder and replace the saved folder session, so the folders were gone after a relaunch.
 async function loadDemo() {
   closeMenu();
   markUserIntent();
-  if (!(await mayAbandonWorkspace())) return;
-  // Release main's watchers for any open folder BEFORE dropping the renderer-side
-  // identity — clearVaultIdentity() only clears renderer maps, so skipping this leaked
-  // every previously open folder's fs.watch until restart.
-  if (window.electronAPI && typeof window.electronAPI.closeVault === 'function') {
-    for (const open of workspaceController.getOpenVaults()) {
-      try { await window.electronAPI.closeVault(open.id); } catch (_) { /* best-effort */ }
-    }
-  }
-  workspaceController.clearVaultIdentity();
   const demos = [
     { name: 'on-reading.md', path: 'essays/on-reading.md', dirty: false, handle: null,
       content: `# On the act of reading\n\nThe page is not a screen. A reader does not scroll — they *turn*.\n\n**Slowness** is not the enemy of attention. It is its precondition.\n\n#reading #prose\n\n## A short list\n\n- Slow tools beget slow thought.\n- See [[the-quiet-page]] for further argument.\n\n> "A book is a thing among things." — Borges\n\n## Code\n\n\`\`\`js\nconst reader = (words) => words.slow();\n\`\`\`\n\n---\n\nTo be continued. See also [[slow-tools]].`
@@ -4408,15 +4927,22 @@ async function loadDemo() {
       content: `# في فعلِ القراءة\n\nالصفحةُ ليست شاشةً، والقارئُ لا يُمرِّر النصَّ بل يقلِبُه.\n\n#قراءة #أدب\n\n## قائمةٌ موجزة\n\n- الأدواتُ البطيئة تولّدُ فكراً بطيئاً.\n\n> "الكتابُ شيءٌ بين الأشياء." — بورخيس`
     }
   ];
-  workspaceController.clearVaultIdentity();
-  State.files = demos;
-  State.vaultName = 'demo';
-  $('sbVault').textContent = tl('status.folder', { name: 'demo' });
-  renderTree(demos);
-  renderFile(0);
+  // A demo note that is already open (perhaps edited) is kept as it is, never replaced.
+  const openAt = (demo) => State.files.findIndex((f) => fileKey(f) === fileKey(demo));
+  for (const demo of demos) {
+    const at = openAt(demo);
+    if (at < 0) { State.files.push({ ...demo, revision: 0, savedContent: demo.content }); continue; }
+    State.files[at].open = true;
+  }
+  if (!workspaceController.getOpenVaults().length) {
+    State.vaultName = 'demo';
+    setVaultUi();
+  }
+  renderTree(State.files);
+  renderFile(openAt(demos[0]));
   showToast(tl('toast.demoLoaded'));
 }
-window.loadDemo = loadDemo;
+testHooks.loadDemo = loadDemo;
 
 // =====================================================================
 // v1.2.2: the "Start writing…" affordance is a DOM overlay, never document content.
@@ -4428,7 +4954,8 @@ function syncEditorEmptyHint(content) {
   editorArea.classList.toggle('doc-empty', (content || '') === '');
 }
 
-// SOURCE TEXTAREA INPUT
+// =====================================================================
+// EDITOR INPUT
 // =====================================================================
 let _srcDebounce = null;
 // ln/col status readout for a caret that moved WITHOUT an edit (click, arrows, selection).
@@ -4438,29 +4965,25 @@ function updateCursorReadout() {
   const { line, col } = cmAdapter.lineAt(cmAdapter.getSelection().start);
   $('cursorPos').textContent = tl('status.lnCol', { l: line, c: col });
 }
-// Shared by the textarea engine and the CodeMirror engine (T-F13): apply an edit from
-// whichever source editor is active. `val` is the full doc text, `pos` the caret offset.
-function applyEditorInput(val, pos) {
+// Apply an edit from the CodeMirror editor (T-F13). `val` is the full doc text, `pos` the
+// caret offset.
+function applyEditorInput(val, pos, target = null) {
   if (State.activeFile === null || !State.files[State.activeFile]) return;
-  const f = State.files[State.activeFile];
+  // `target` is the note a deferred (large-file mode) change belongs to; it can differ from the
+  // active note when the text is handed over late. Everything else belongs to the active note.
+  const f = target || State.files[State.activeFile];
   applyEdit(f, val); // content + dirty vs the saved baseline (undo back to saved text clears the dot)
   f.revision = (Number.isInteger(f.revision) ? f.revision : 0) + 1;
   f._editedAt = Date.now();
-  syncEditorEmptyHint(val);
-  updateTabState(State.activeFile);
-  // Fast: cursor position update on every keystroke. audit PERF-08: with CM6 mounted, ask
-  // the editor for {line, col} (an O(log n) line-index lookup) instead of copying the whole
-  // document and splitting it — the textarea lane keeps the original string math.
-  let ln;
-  let col;
-  if (cmAdapter && typeof cmAdapter.lineAt === 'function') {
-    ({ line: ln, col } = cmAdapter.lineAt(pos));
-  } else {
-    const upto = val.slice(0, pos);
-    ln = upto.split('\n').length;
-    col = pos - upto.lastIndexOf('\n');
+  if (f === State.files[State.activeFile]) syncEditorEmptyHint(val);
+  updateTabState(State.files.indexOf(f));
+  // Fast: cursor position update on every keystroke. audit PERF-08: ask the editor for
+  // {line, col} (an O(log n) line-index lookup) instead of copying the whole document and
+  // splitting it.
+  if (cmAdapter) {
+    const { line, col } = cmAdapter.lineAt(pos);
+    $('cursorPos').textContent = tl('status.lnCol', { l: line, c: col });
   }
-  $('cursorPos').textContent = tl('status.lnCol', { l: ln, c: col });
   // Heavy: markdown render debounced at 150ms
   clearTimeout(_srcDebounce);
   _srcDebounce = setTimeout(() => {
@@ -4471,44 +4994,33 @@ function applyEditorInput(val, pos) {
     if (State.activeFile === null || State.files[State.activeFile] !== f) return;
     const body0 = parseFrontMatter(f.content).body; // T-R6: keep front matter out of the body
     if (f._lastRenderedSource === body0) return;    // nothing changed since the last render (audit PERF-01)
+    // QA-M16: in Edit mode the reading pane is hidden, and re-rendering a large note there
+    // after every pause in typing froze the window for seconds. Only the cheap parts run:
+    // counts and an outline read from the source. Switching to Reading renders the note.
+    if (cmAdapter && (previewDeferred(f) || (State.viewMode !== 'reading' && body0.length > LARGE_EDIT_NOTE_CHARS))) {
+      showWordCounts(bodyWordCount(body0));
+      syncInspector();
+      buildDeferredToc(f);
+      return;
+    }
     const body = body0;
-    const html = parseMarkdown(body);
-    const wordCount = (body.match(/\S+/g) || []).length;
-    const readMin = Math.max(1, Math.round(wordCount / 220));
-    noteContent.innerHTML = `
-      <div class="doc-meta" aria-hidden="true">
-        <span>${escapeHtml(tl('doc.note'))}</span><span>·</span>
-        <span>${tl('status.nWords', { n: wordCount })}</span><span>·</span>
-        <span>${escapeHtml(f.path)}</span>${f.dirty ? '<span>·</span><span style="color: var(--accent);">● ' + escapeHtml(tl('doc.unsaved')) + '</span>' : ''}
-      </div>
-      ${html}
-    `;
-    rewriteVaultImages(noteContent); // R10: note-relative images → bpmd://vault/<vaultId>/<rel>
-    transformCallouts(noteContent, { parseCalloutHeader, resolveDirection: resolveBlockDirection });
-    decorateCodeAndMath();
-    applyBidiToNote(f.content);
-    $('propWords').textContent = wordCount;
-    $('propRead').textContent = tl('doc.readTime', { n: readMin });
-    $('readTime').textContent = tl('doc.readTime', { n: readMin });
+    const bodyNodes = noteBodyNodes(body);
+    const wordCount = bodyWordCount(body);
+    renderNoteBody(f, bodyNodes, wordCount);
+    showWordCounts(wordCount);
     syncInspector();
-    $('wordCount').textContent = tl('status.nWords', { n: wordCount });
     // UX-03: rebuild on EVERY source change — CM6 offsets shift with any edit above a
     // heading, and the old heading-text-only gate left _tocHeadings positions stale
     // (outline clicks landed mid-paragraph; the scroll-sync highlight drifted).
     buildTOC();
-    noteContent.querySelectorAll('a.wikilink').forEach(a => {
-      a.addEventListener('click', e => { e.preventDefault(); navWikilink(a.dataset.target); });
-    });
     f._lastRenderedSource = body;
   }, 150);
 }
-function onSourceInput() { applyEditorInput(srcTextarea.value, srcTextarea.selectionStart); }
-srcTextarea.addEventListener('input', onSourceInput);
-
 // ── T-F13: CodeMirror 6 is the ONE and ONLY editor — a single live-preview surface mounted
-// on launch (no source/split modes, no opt-in flag). The textarea (#srcTextarea) stays in the
-// DOM purely as a fallback if the CM6 bundle fails to load. cmAdapter conforms to EditorPort. ──
-let cmAdapter = null;   // non-null ⇒ CodeMirror is the active source engine
+// on launch. There is no second editor: if the CM6 bundle fails to load, notes still open
+// in the rendered view, and every edit says the editor is unavailable. cmAdapter conforms
+// to EditorPort. ──
+let cmAdapter = null;   // non-null ⇒ CodeMirror is mounted
 let cmLoading = false;  // suppress onChange while we load a doc programmatically
 let _cmPromise = null;
 // audit QA-08: one user-visible + one logged report per session for a CM6 load failure.
@@ -4520,6 +5032,13 @@ function reportCm6Unavailable() {
   _cm6FailureReported = true;
   try { window.electronAPI?.logError?.({ message: 'cm6-load-failed', kind: 'cm6' }); } catch (_) { /* never crash reporting */ }
   showToast(tl('toast.cm6Failed'), 'error');
+}
+// Every edit asks this first. False while the editor is not mounted: before CM6 has loaded
+// (silently), or after it failed to (the failure notice again).
+function editorReady() {
+  if (cmAdapter) return true;
+  if (_cm6FailureReported) showToast(tl('toast.cm6Failed'), 'error');
+  return false;
 }
 function loadCM6() {
   if (_cmPromise) return _cmPromise;
@@ -4601,19 +5120,16 @@ function renderCmMath(tex, display) {
 }
 
 async function initCM6Editor() {
-  // T-F13: CM6 is now the ONE and ONLY editor — mount it unconditionally on launch. The
-  // textarea remains in the DOM purely as a fallback if the CM6 bundle fails to load.
+  // T-F13: CM6 is the ONE and ONLY editor — mount it unconditionally on launch.
   if (cmAdapter) return false;
   let CM6;
   try { CM6 = await loadCM6(); } catch (_) {
-    // audit QA-08: the engine failing to load used to be a silent degradation — the user
-    // was left in a plain textarea with no explanation. Say so, and log it locally.
+    // audit QA-08: say so, and log it locally. Notes stay readable in the rendered view.
     reportCm6Unavailable();
     return false;
   }
   const pane = document.querySelector('.source-pane');
   if (!pane) return false;
-  srcTextarea.style.display = 'none';
   const mount = document.createElement('div');
   mount.className = 'cm-mount';
   pane.appendChild(mount);
@@ -4621,19 +5137,21 @@ async function initCM6Editor() {
   cmAdapter = createCodeMirrorAdapter(mount, {
     CM6,
     doc: active ? active.content : '',
+    largeMode: inLargeMode(active),
     dir: State.direction === 'rtl' ? 'rtl' : 'ltr',
     forceDir: State.forcedDir, // honor a forced direction chosen before the editor mounts
-    onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start); },
+    onChange: (val) => { if (!cmLoading) applyEditorInput(val, cmAdapter.getSelection().start, inLargeMode(editorOwner) ? editorOwner : null); },
+    onDeferredChange: markDeferredEdit,
     renderBlock: renderCmBlock, // T-F13: inline block rendering (tables…) in the single CM6 surface
     renderMath: renderCmMath,   // T-F13 × F9: inline KaTeX rendering in the single CM6 surface
     onWikilink: navWikilink,    // R09: clicking a rendered [[wikilink]] in the editor navigates
     onSelectionChange: () => { updateToolbarActiveState(); updateCursorReadout(); }, // toolbar state + ln/col follow the caret
     onTab: tableTab,            // Tab/Shift-Tab navigate table cells when inside a table
   });
-  window.__cmActive = true;
-  // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane,
-  // hides the redundant markdown preview pane + the 3 mode buttons). Added ONLY after a
-  // successful mount, so a CM6 load failure leaves the full 3-mode UI intact.
+  // T-F13: collapse to the single CM6 live-preview surface (CSS shows the source pane and
+  // hides the redundant markdown preview pane). Added ONLY after a successful mount, so a
+  // CM6 load failure leaves the rendered note in view.
+  if (active) claimEditorOwner(active);
   editorArea.classList.add('cm-single');
   toolbarStrip.classList.add('cm-single');
   // CM6 mounts async + unawaited at startup, so a file may already be open (its outline built
@@ -4642,112 +5160,92 @@ async function initCM6Editor() {
   if (State.activeFile != null && noteContent.querySelector('h1,h2,h3,h4,h5,h6')) buildTOC();
   return true;
 }
-// Load a document into whichever source engine is active (used by renderFile).
+// Load a document into the editor (used by renderFile). Before CM6 mounts, initCM6Editor
+// picks up the active file itself.
 // Audit B1: `file` selects the editor state (and so the undo history) the text is shown in —
 // each open file has its own, and loading is never an undoable step.
-function loadIntoEditor(file) {
-  const content = file.content || '';
-  if (cmAdapter) {
-    cmLoading = true;
-    try { cmAdapter.load(content, historyKeyOf(file)); } finally { cmLoading = false; }
-    // Files that are gone (closed tab, closed folder) free their history here — after the load,
-    // which parks the file just left; everything still open keeps it. Keys are only read, never
-    // created, for files never shown.
-    cmAdapter.retainHistory(State.files.map((f) => f._historyId).filter((k) => k != null));
-  }
-  else { srcTextarea.value = content; }
+// Large-file mode hands the editor text to the app at most every 400 ms (see the adapter), so
+// the note being edited keeps its pending text in the editor. `content` on that note becomes an
+// accessor whose getter first asks the editor to hand over what it has: every reader (save,
+// autosave, recovery mirror, export, close flow) then sees the current text with no change to
+// their code.
+let editorOwner = null;
+function releaseEditorOwner() {
+  const prev = editorOwner;
+  if (!prev) return;
+  const d = Object.getOwnPropertyDescriptor(prev, 'content');
+  // The getter hands over the editor's pending text only while the note still owns the editor, so
+  // the read comes BEFORE the owner is cleared (after it, the pending edit was left behind).
+  const text = d && d.get ? prev.content : null;
+  editorOwner = null;
+  if (text === null) return;
+  Object.defineProperty(prev, 'content', { value: text, writable: true, enumerable: true, configurable: true });
 }
-window.loadCM6 = loadCM6;
-window.initCM6Editor = initCM6Editor;
-window.createCodeMirrorAdapter = createCodeMirrorAdapter;
+function claimEditorOwner(file) {
+  releaseEditorOwner();
+  editorOwner = file;
+  if (!inLargeMode(file)) return;
+  let raw = file.content;
+  Object.defineProperty(file, 'content', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      if (editorOwner === file && cmAdapter && cmAdapter.hasPendingChange()) cmAdapter.flushChanges();
+      return raw;
+    },
+    set(v) {
+      if (editorOwner === file && cmAdapter) cmAdapter.discardPendingChange();
+      raw = v;
+    },
+  });
+}
+// The first keystroke of a burst in large-file mode: mark the note unsaved at once; the text
+// follows with the flush.
+function markDeferredEdit() {
+  const f = editorOwner;
+  if (!f || cmLoading) return;
+  if (f.savedContent === undefined && !f.dirty) {
+    editorOwner = null; // read the stored text; the getter would hand over the pending change
+    try { f.savedContent = f.content; } finally { editorOwner = f; }
+  }
+  f.dirty = true;
+  const idx = State.files.indexOf(f);
+  if (idx >= 0) updateTabState(idx);
+}
+// Hand a pending large-mode change to the active note now (before the note changes).
+function flushEditorChanges() {
+  if (cmAdapter && cmAdapter.hasPendingChange()) cmAdapter.flushChanges();
+}
+function loadIntoEditor(file) {
+  if (!cmAdapter) return;
+  claimEditorOwner(file);
+  // Read the text before the loading flag goes up: a note in large-file mode hands over a pending
+  // edit when its text is read, and that change must reach onChange, which ignores a load.
+  const text = file.content || '';
+  cmLoading = true;
+  try { cmAdapter.load(text, historyKeyOf(file), { large: inLargeMode(file) }); } finally { cmLoading = false; }
+  // Files that are gone (closed tab, closed folder) free their history here — after the load,
+  // which parks the file just left; everything still open keeps it. Keys are only read, never
+  // created, for files never shown.
+  cmAdapter.retainHistory(State.files.map((f) => f._historyId).filter((k) => k != null));
+}
+testHooks.loadCM6 = loadCM6;
+testHooks._loadIntoEditor = loadIntoEditor; // e2e: the owner hand-over of a note in large-file mode
+testHooks.createCodeMirrorAdapter = createCodeMirrorAdapter;
 // Test hook: the live CM6 EditorPort (or null before mount). Lets e2e tests set selections /
 // read the value precisely against the single editor surface.
-window.getActiveCmAdapter = () => cmAdapter;
-
-// DEAD-01: CM6 is the ONE and ONLY editor and mounts unconditionally at boot — the old
-// persisted cmEditor toggle and its comments described a conditional, default-off mount
-// that no longer exists.
-
-// Bug 7 fix: blockquote Enter handling.
-// - Empty blockquote line (body is whitespace-only): strip prefix, place cursor on blank line.
-// - Non-empty blockquote line: continue with the > prefix on the next line.
-// Only fires when cursor is on a blockquote line. Non-blockquote Enter passes through unmodified.
-function handleBlockquoteEnter(e) {
-  // Guard: ignore IME composition (prevents double-handling on CJK/Arabic input)
-  if (e.isComposing) return;
-  if (e.key !== 'Enter' || e.shiftKey) return;
-
-  const ta = srcTextarea;
-  const pos = ta.selectionStart;
-  const val = ta.value;
-
-  // Find the start and end of the current line
-  const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-  const lineEndRaw = val.indexOf('\n', pos);
-  const lineEnd = lineEndRaw < 0 ? val.length : lineEndRaw;
-  // Use the full line (not just up-to-cursor) to detect emptiness after prefix,
-  // so that a cursor sitting in the middle of "> " still triggers the exit path.
-  const fullLine = val.slice(lineStart, lineEnd);
-  // Also compute the cursor-relative line slice used for prefix detection
-  const currentLine = val.slice(lineStart, pos);
-
-  // Detect blockquote prefix: one or more ">", each optionally preceded by whitespace,
-  // followed by optional trailing whitespace. The non-capturing group (?:\s*>)+ ensures
-  // the full prefix for nested blockquotes (e.g., "> > > ") is captured correctly.
-  const prefixMatch = /^((?:\s*>)+\s*)/.exec(currentLine);
-  if (!prefixMatch) return; // not a blockquote line — let default Enter run
-
-  const prefix = prefixMatch[1];
-  // Emptiness is determined against the full line (not just up-to-cursor slice)
-  const body = fullLine.slice(prefix.length);
-
-  e.preventDefault();
-
-  if (body.trim() === '') {
-    // Empty blockquote line: replace the prefix with a blank non-blockquote line.
-    replaceInTextarea(ta, lineStart, pos, '\n');
-    ta.selectionStart = ta.selectionEnd = lineStart + 1;
-  } else {
-    // Non-empty blockquote line: continue with the same prefix on the next line.
-    replaceInTextarea(ta, pos, pos, '\n' + prefix);
-    ta.selectionStart = ta.selectionEnd = pos + 1 + prefix.length;
-  }
-}
-
-srcTextarea.addEventListener('keydown', handleBlockquoteEnter);
-
-for (const evt of ['keyup', 'click', 'mouseup']) srcTextarea.addEventListener(evt, () => {
-  const pos = srcTextarea.selectionStart;
-  const upto = srcTextarea.value.slice(0, pos);
-  const ln = upto.split('\n').length;
-  const col = pos - upto.lastIndexOf('\n');
-  $('cursorPos').textContent = tl('status.lnCol', { l: ln, c: col });
-});
+testHooks.getActiveCmAdapter = () => cmAdapter;
 
 // =====================================================================
 // TOOLBAR MARKDOWN HELPERS
 // =====================================================================
-function ensureSourceFocus() {
-  // Switch to source mode if needed, then focus SYNCHRONOUSLY so the
-  // execCommand-based edits below run against a focused, editable textarea.
-  if (State.editorMode === 'live') setEditorMode('source');
-  srcTextarea.focus();
-}
-// Replace [start,end) in the textarea with `text` while keeping it on the NATIVE
-// undo stack (execCommand('insertText')), so Ctrl+Z and Undo (Edit menu +
-// right-click) can reverse toolbar/blockquote edits. execCommand fires a native
-// 'input' event, which drives onSourceInput. Falls back to a value-splice (with
-// a manual 'input' dispatch) only if execCommand can't run in this context.
-function replaceInTextarea(ta, start, end, text) {
-  ta.focus();
-  ta.setSelectionRange(start, end);
-  let ok = false;
-  try { ok = document.execCommand('insertText', false, text); } catch (_) { ok = false; }
-  if (!ok) {
-    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
-    ta.selectionStart = ta.selectionEnd = start + text.length;
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-  }
+// QA H1 (2026-10-12): Reading mode is read-only. The formatting shortcuts (Ctrl+B, Ctrl+I,
+// Ctrl+L, Ctrl+1-6) and the Edit menu reached the hidden editor at its last caret, changed the
+// note and autosave wrote the change to disk. Every editing command asks this first.
+function readOnlyRefusal() {
+  if (State.viewMode !== 'reading') return false;
+  showToast(tl('toast.readOnlyView'), 'info');
+  return true;
 }
 // Word boundaries around `pos` in `v`, excluding markdown punctuation so a caret in a word
 // expands to the word (not adjacent markers). null when there's no word at the caret.
@@ -4766,196 +5264,134 @@ function wordBounds(v, pos) {
 // non-blank line's content individually (inline marks can't span newlines). A selection stays
 // selected afterward.
 function wrapSelection(left, right) {
-  if (cmAdapter) { // T-F13: route through the active EditorPort, NOT the hidden textarea
-    cmAdapter.focus();
-    let { start, end } = cmAdapter.getSelection();
-    const v = cmAdapter.getValue();
-    if (start === end) { const w = wordBounds(v, start); if (w) { start = w.start; end = w.end; } }
-    const sel = v.slice(start, end);
-    // multi-line → per-line wrap/unwrap
-    if (sel.includes('\n')) {
-      const lines = sel.split('\n');
-      const ne = lines.filter((l) => l.trim() !== '');
-      const wrapped = (core) => core.length >= left.length + right.length && core.startsWith(left) && core.endsWith(right);
-      const allWrapped = ne.length > 0 && ne.every((l) => wrapped(l.trim()));
-      const out = lines.map((l) => {
-        if (l.trim() === '') return l;
-        const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(l); const lead = m[1], core = m[2], trail = m[3];
-        return lead + (allWrapped ? core.slice(left.length, core.length - right.length) : left + core + right) + trail;
-      }).join('\n');
-      cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(out);
-      cmAdapter.setSelection({ start, end: start + out.length });
-      return;
-    }
-    // markers INSIDE the selection → unwrap
-    if (isWrappedInside(sel, left, right)) {
-      const inner = sel.slice(left.length, sel.length - right.length);
-      cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(inner);
-      cmAdapter.setSelection({ start, end: start + inner.length });
-      return;
-    }
-    // markers just OUTSIDE the selection → unwrap
-    if (isWrappedOutside(v, start, end, left, right)) {
-      cmAdapter.setSelection({ start: start - left.length, end: end + right.length });
-      cmAdapter.replaceSelection(sel);
-      cmAdapter.setSelection({ start: start - left.length, end: start - left.length + sel.length });
-      return;
-    }
-    if (!sel) { // no word at caret → empty delimiters, caret between them
-      cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(left + right);
-      cmAdapter.setSelection({ start: start + left.length });
-      return;
-    }
-    cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(left + sel + right);
-    cmAdapter.setSelection({ start: start + left.length, end: start + left.length + sel.length });
+  if (readOnlyRefusal()) return;
+  if (!editorReady()) return;
+  cmAdapter.focus();
+  let { start, end } = cmAdapter.getSelection();
+  const v = cmAdapter.getValue();
+  if (start === end) { const w = wordBounds(v, start); if (w) { start = w.start; end = w.end; } }
+  const sel = v.slice(start, end);
+  // multi-line → per-line wrap/unwrap
+  if (sel.includes('\n')) {
+    const lines = sel.split('\n');
+    const ne = lines.filter((l) => l.trim() !== '');
+    const wrapped = (core) => core.length >= left.length + right.length && core.startsWith(left) && core.endsWith(right);
+    const allWrapped = ne.length > 0 && ne.every((l) => wrapped(l.trim()));
+    const out = lines.map((l) => {
+      if (l.trim() === '') return l;
+      const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(l); const lead = m[1], core = m[2], trail = m[3];
+      return lead + (allWrapped ? core.slice(left.length, core.length - right.length) : left + core + right) + trail;
+    }).join('\n');
+    cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(out);
+    cmAdapter.setSelection({ start, end: start + out.length });
     return;
   }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end);
-  replaceInTextarea(ta, start, end, left + sel + right);
-  ta.selectionStart = start + left.length;
-  ta.selectionEnd = start + left.length + sel.length;
+  // markers INSIDE the selection → unwrap
+  if (isWrappedInside(sel, left, right)) {
+    const inner = sel.slice(left.length, sel.length - right.length);
+    cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(inner);
+    cmAdapter.setSelection({ start, end: start + inner.length });
+    return;
+  }
+  // markers just OUTSIDE the selection → unwrap
+  if (isWrappedOutside(v, start, end, left, right)) {
+    cmAdapter.setSelection({ start: start - left.length, end: end + right.length });
+    cmAdapter.replaceSelection(sel);
+    cmAdapter.setSelection({ start: start - left.length, end: start - left.length + sel.length });
+    return;
+  }
+  if (!sel) { // no word at caret → empty delimiters, caret between them
+    cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(left + right);
+    cmAdapter.setSelection({ start: start + left.length });
+    return;
+  }
+  cmAdapter.setSelection({ start, end }); cmAdapter.replaceSelection(left + sel + right);
+  cmAdapter.setSelection({ start: start + left.length, end: start + left.length + sel.length });
 }
 function insertText(left, right) {
-  if (cmAdapter) {
-    cmAdapter.focus();
-    const { start, end } = cmAdapter.getSelection();
-    const sel = cmAdapter.getValue().slice(start, end);
-    cmAdapter.setSelection({ start, end });
-    cmAdapter.replaceSelection(left + sel + right);
-    cmAdapter.setSelection({ start: start + left.length + sel.length });
-    return;
-  }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end);
-  replaceInTextarea(ta, start, end, left + sel + right);
-  ta.selectionStart = ta.selectionEnd = start + left.length + sel.length;
-}
-function lineStart(prefix) {
-  if (cmAdapter) {
-    cmAdapter.focus();
-    const { start } = cmAdapter.getSelection();
-    const ls = cmAdapter.getValue().slice(0, start).lastIndexOf('\n') + 1;
-    cmAdapter.setSelection({ start: ls, end: ls });
-    cmAdapter.replaceSelection(prefix);
-    cmAdapter.setSelection({ start: start + prefix.length });
-    return;
-  }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart;
-  const before = ta.value.slice(0, start);
-  const ls = before.lastIndexOf('\n') + 1;
-  replaceInTextarea(ta, ls, ls, prefix);
-  ta.selectionStart = ta.selectionEnd = start + prefix.length;
+  if (readOnlyRefusal()) return;
+  if (!editorReady()) return;
+  cmAdapter.focus();
+  const { start, end } = cmAdapter.getSelection();
+  const sel = cmAdapter.getValue().slice(start, end);
+  cmAdapter.setSelection({ start, end });
+  cmAdapter.replaceSelection(left + sel + right);
+  cmAdapter.setSelection({ start: start + left.length + sel.length });
 }
 // Insert a block (callout / table / hr / image) on its OWN line — never splitting the caret's
 // line mid-word (the prior bug: "hel|lo" + Table → "hel\n<table>\nlo"). If the caret is on a
 // blank line the block lands there; otherwise it goes on a fresh, blank-line-separated line
 // AFTER the current line. The caret is placed at the start of the inserted block.
 function insertBlock(text) {
+  if (readOnlyRefusal()) return;
   const block = String(text).replace(/\n+$/, '');
-  if (cmAdapter) {
-    cmAdapter.focus();
-    const v = cmAdapter.getValue();
-    const { end } = cmAdapter.getSelection();
-    const lineStartIdx = v.slice(0, end).lastIndexOf('\n') + 1;
-    let lineEnd = v.indexOf('\n', end); if (lineEnd === -1) lineEnd = v.length;
-    if (v.slice(lineStartIdx, lineEnd).trim() === '') {
-      cmAdapter.setSelection({ start: lineStartIdx, end: lineEnd });
-      cmAdapter.replaceSelection(block);
-      cmAdapter.setSelection({ start: lineStartIdx });
-    } else {
-      cmAdapter.setSelection({ start: lineEnd, end: lineEnd });
-      cmAdapter.replaceSelection('\n\n' + block);
-      cmAdapter.setSelection({ start: lineEnd + 2 });
-    }
-    return;
-  }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart;
-  let lineEnd = ta.value.indexOf('\n', start); if (lineEnd === -1) lineEnd = ta.value.length;
-  const lineStartIdx = ta.value.slice(0, start).lastIndexOf('\n') + 1;
-  if (ta.value.slice(lineStartIdx, lineEnd).trim() === '') {
-    replaceInTextarea(ta, lineStartIdx, lineEnd, block);
-    ta.selectionStart = ta.selectionEnd = lineStartIdx;
+  if (!editorReady()) return;
+  cmAdapter.focus();
+  const v = cmAdapter.getValue();
+  const { end } = cmAdapter.getSelection();
+  const lineStartIdx = v.slice(0, end).lastIndexOf('\n') + 1;
+  let lineEnd = v.indexOf('\n', end); if (lineEnd === -1) lineEnd = v.length;
+  if (v.slice(lineStartIdx, lineEnd).trim() === '') {
+    cmAdapter.setSelection({ start: lineStartIdx, end: lineEnd });
+    cmAdapter.replaceSelection(block);
+    cmAdapter.setSelection({ start: lineStartIdx });
   } else {
-    replaceInTextarea(ta, lineEnd, lineEnd, '\n\n' + block);
-    ta.selectionStart = ta.selectionEnd = lineEnd + 2;
+    cmAdapter.setSelection({ start: lineEnd, end: lineEnd });
+    cmAdapter.replaceSelection('\n\n' + block);
+    cmAdapter.setSelection({ start: lineEnd + 2 });
   }
 }
 // Fenced code block on its OWN line. With a selection, fence it in place (caret start at a
 // line boundary so it never splits text); empty, drop an empty fence on a fresh line after the
 // current one (or on the current blank line) with the caret inside, ready to type.
 function insertCodeBlock() {
-  if (cmAdapter) {
-    cmAdapter.focus();
-    const v = cmAdapter.getValue();
-    const { start, end } = cmAdapter.getSelection();
-    const body = v.slice(start, end);
-    if (body) {
-      const atLineStart = start === 0 || v[start - 1] === '\n';
-      const lead = atLineStart ? '' : '\n';
-      cmAdapter.setSelection({ start, end });
-      cmAdapter.replaceSelection(lead + '```\n' + body + '\n```');
-      const pos = start + lead.length + 4; // after the opening ```\n
-      cmAdapter.setSelection({ start: pos, end: pos + body.length });
+  if (readOnlyRefusal()) return;
+  if (!editorReady()) return;
+  cmAdapter.focus();
+  const v = cmAdapter.getValue();
+  const { start, end } = cmAdapter.getSelection();
+  const body = v.slice(start, end);
+  if (body) {
+    const atLineStart = start === 0 || v[start - 1] === '\n';
+    const lead = atLineStart ? '' : '\n';
+    cmAdapter.setSelection({ start, end });
+    cmAdapter.replaceSelection(lead + '```\n' + body + '\n```');
+    const pos = start + lead.length + 4; // after the opening ```\n
+    cmAdapter.setSelection({ start: pos, end: pos + body.length });
+  } else {
+    const lineStartIdx = v.slice(0, start).lastIndexOf('\n') + 1;
+    let lineEnd = v.indexOf('\n', start); if (lineEnd === -1) lineEnd = v.length;
+    if (v.slice(lineStartIdx, lineEnd).trim() === '') {
+      cmAdapter.setSelection({ start: lineStartIdx, end: lineEnd });
+      cmAdapter.replaceSelection('```\n\n```');
+      cmAdapter.setSelection({ start: lineStartIdx + 4 });
     } else {
-      const lineStartIdx = v.slice(0, start).lastIndexOf('\n') + 1;
-      let lineEnd = v.indexOf('\n', start); if (lineEnd === -1) lineEnd = v.length;
-      if (v.slice(lineStartIdx, lineEnd).trim() === '') {
-        cmAdapter.setSelection({ start: lineStartIdx, end: lineEnd });
-        cmAdapter.replaceSelection('```\n\n```');
-        cmAdapter.setSelection({ start: lineStartIdx + 4 });
-      } else {
-        cmAdapter.setSelection({ start: lineEnd, end: lineEnd });
-        cmAdapter.replaceSelection('\n\n```\n\n```');
-        cmAdapter.setSelection({ start: lineEnd + 2 + 4 });
-      }
+      cmAdapter.setSelection({ start: lineEnd, end: lineEnd });
+      cmAdapter.replaceSelection('\n\n```\n\n```');
+      cmAdapter.setSelection({ start: lineEnd + 2 + 4 });
     }
-    return;
   }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const body = ta.value.slice(start, end);
-  const atLineStart = start === 0 || ta.value[start - 1] === '\n';
-  const lead = atLineStart ? '' : '\n';
-  replaceInTextarea(ta, start, end, lead + '```\n' + body + '\n```');
-  const pos = start + lead.length + 4;
-  ta.selectionStart = pos; ta.selectionEnd = pos + body.length;
 }
 // Operate on EVERY line the selection spans: fn(lines[]) -> lines[]. Replaces that block
-// and keeps it selected so a repeated click toggles the same region. cmAdapter-aware; the
-// textarea path mirrors it (CM6-load-failure fallback only). Powers the smart line tools
+// and keeps it selected so a repeated click toggles the same region. Powers the smart line tools
 // below so headings/quote/lists REPLACE or TOGGLE rather than stacking markers.
+// QA M11: a selection that ends at the start of a line (a triple-click, a drag past the
+// line end) does not include that next line.
+function blockEnd(v, start, end) {
+  return end > start && v[end - 1] === '\n' ? end - 1 : end;
+}
 function applyBlock(fn) {
-  if (cmAdapter) {
-    cmAdapter.focus();
-    const v = cmAdapter.getValue();
-    const { start, end } = cmAdapter.getSelection();
-    const from = v.slice(0, start).lastIndexOf('\n') + 1;
-    let to = v.indexOf('\n', end); if (to === -1) to = v.length;
-    const out = fn(v.slice(from, to).split('\n')).join('\n');
-    cmAdapter.setSelection({ start: from, end: to });
-    cmAdapter.replaceSelection(out);
-    cmAdapter.setSelection({ start: from, end: from + out.length });
-    return;
-  }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const v = ta.value;
-  const start = ta.selectionStart, end = ta.selectionEnd;
+  if (readOnlyRefusal()) return;
+  if (!editorReady()) return;
+  cmAdapter.focus();
+  const v = cmAdapter.getValue();
+  const { start, end } = cmAdapter.getSelection();
   const from = v.slice(0, start).lastIndexOf('\n') + 1;
-  let to = v.indexOf('\n', end); if (to === -1) to = v.length;
+  let to = v.indexOf('\n', blockEnd(v, start, end)); if (to === -1) to = v.length;
   const out = fn(v.slice(from, to).split('\n')).join('\n');
-  replaceInTextarea(ta, from, to, out);
-  ta.selectionStart = from; ta.selectionEnd = from + out.length;
+  cmAdapter.setSelection({ start: from, end: to });
+  cmAdapter.replaceSelection(out);
+  cmAdapter.setSelection({ start: from, end: from + out.length });
 }
 
 const HEADING_RE = /^(#{1,6})[ \t]+/;
@@ -5013,40 +5449,38 @@ function toggleList(kind) {
 // Strip inline formatting markers (**bold**, *em*, ~~strike~~, `code`, ==hl==, <u>, ~sub~, ^sup^)
 // from the selection (or the word at the caret). Pairs only; leaves prose untouched.
 function clearFormatting() {
+  if (readOnlyRefusal()) return;
+  // QA M11: a marker pair counts only when it hugs its text (`*a*`, not `2 * 3 *`), and
+  // ~sub~ has no spaces, so prose like `~5 min or ~10 min` is left alone.
   const strip = (s) => s
-    .replace(/\*\*([\s\S]*?)\*\*/g, '$1').replace(/__([\s\S]*?)__/g, '$1')
-    .replace(/\*([\s\S]*?)\*/g, '$1').replace(/(?<!\w)_([\s\S]*?)_(?!\w)/g, '$1')
-    .replace(/~~([\s\S]*?)~~/g, '$1').replace(/==([\s\S]*?)==/g, '$1')
+    .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '$1').replace(/__(?=\S)([\s\S]*?\S)__/g, '$1')
+    .replace(/\*(?=\S)([^*\n]*?\S)\*/g, '$1').replace(/(?<!\w)_(?=\S)([^_\n]*?\S)_(?!\w)/g, '$1')
+    .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '$1').replace(/==(?=\S)([\s\S]*?\S)==/g, '$1')
     .replace(/`([^`]*?)`/g, '$1').replace(/<\/?u>/gi, '')
-    .replace(/\^([^^\s]+?)\^/g, '$1').replace(/~([^~\n]+?)~/g, '$1');
-  if (cmAdapter) {
-    cmAdapter.focus();
-    let { start, end } = cmAdapter.getSelection();
-    const v = cmAdapter.getValue();
-    if (start === end) { const w = wordBounds(v, start); if (w) { start = w.start; end = w.end; } }
-    const cleaned = strip(v.slice(start, end));
-    cmAdapter.setSelection({ start, end });
-    cmAdapter.replaceSelection(cleaned);
-    cmAdapter.setSelection({ start, end: start + cleaned.length });
-    return;
-  }
-  ensureSourceFocus();
-  const ta = srcTextarea;
-  const cleaned = strip(ta.value.slice(ta.selectionStart, ta.selectionEnd));
-  replaceInTextarea(ta, ta.selectionStart, ta.selectionEnd, cleaned);
+    .replace(/\^([^^\s]+?)\^/g, '$1').replace(/~([^~\s]+?)~/g, '$1');
+  if (!editorReady()) return;
+  cmAdapter.focus();
+  let { start, end } = cmAdapter.getSelection();
+  const v = cmAdapter.getValue();
+  if (start === end) { const w = wordBounds(v, start); if (w) { start = w.start; end = w.end; } }
+  const cleaned = strip(v.slice(start, end));
+  cmAdapter.setSelection({ start, end });
+  cmAdapter.replaceSelection(cleaned);
+  cmAdapter.setSelection({ start, end: start + cleaned.length });
 }
-window.clearFormatting = clearFormatting;
 
 // Insert a numbered footnote: a [^N] reference at the caret + a "[^N]: " definition appended at
 // the end of the document, with the caret left after the colon to type the note (R11).
 function insertFootnote() {
-  if (!cmAdapter) { insertText('[^1]', ''); return; }
+  if (readOnlyRefusal()) return;
+  if (!editorReady()) return;
   cmAdapter.focus();
   const v = cmAdapter.getValue();
   const used = [...v.matchAll(/\[\^(\d+)\]/g)].map((m) => parseInt(m[1], 10));
   const n = (used.length ? Math.max(...used) : 0) + 1;
-  const { start, end } = cmAdapter.getSelection();
-  cmAdapter.setSelection({ start, end });
+  // QA M11: the reference goes after the selected text; it never replaces it.
+  const { end } = cmAdapter.getSelection();
+  cmAdapter.setSelection({ start: end, end });
   cmAdapter.replaceSelection(`[^${n}]`);
   const v2 = cmAdapter.getValue();
   const sep = v2.endsWith('\n\n') ? '' : v2.endsWith('\n') ? '\n' : '\n\n';
@@ -5054,12 +5488,13 @@ function insertFootnote() {
   cmAdapter.replaceSelection(`${sep}[^${n}]: `);
   cmAdapter.setSelection({ start: cmAdapter.getValue().length });
 }
-window.insertFootnote = insertFootnote;
+testHooks.insertFootnote = insertFootnote;
 
 // Interactive table editing: apply a structural op (rowAfter/rowBefore/rowDelete/colAfter/
 // colBefore/colDelete/nextCell/prevCell) to the table at the caret. Returns true if a table was
 // found + edited. Pure engine in table-edit.js; here we just splice the result into CM6.
 function tableOp(kind) {
+  if (State.viewMode === 'reading') return false;
   if (!cmAdapter) return false;
   const r = tableEdit(cmAdapter.getValue(), cmAdapter.getSelection().start, kind);
   if (!r) return false;
@@ -5069,7 +5504,6 @@ function tableOp(kind) {
   cmAdapter.setSelection({ start: r.caret });
   return true;
 }
-window.tableOp = tableOp;
 // Tab handler bound in the CM6 keymap: navigate table cells when inside a table, else let Tab
 // fall through to indentWithTab. `shift` = previous cell.
 function tableTab(shift) { return tableOp(shift ? 'prevCell' : 'nextCell'); }
@@ -5082,7 +5516,6 @@ function indentSelection(delta) {
     return delta > 0 ? '  ' + l : l.replace(/^( {1,2}|\t)/, '');
   }));
 }
-window.indentSelection = indentSelection;
 
 const TABLE_TEMPLATE = '| Column | Column |\n| --- | --- |\n| Cell | Cell |\n';
 const CALLOUT_TEMPLATE = '> [!NOTE] Title\n> Body text\n';
@@ -5108,16 +5541,10 @@ function updateToolbarActiveState() {
   const tc = $('tableControls');
   if (tc) tc.classList.toggle('show', m.has('table'));
 }
-window.updateToolbarActiveState = updateToolbarActiveState;
 
-window.wrapSelection = wrapSelection;
-window.insertText = insertText;
-window.lineStart = lineStart;
-window.insertBlock = insertBlock;
-window.insertCodeBlock = insertCodeBlock;
-window.toggleHeading = toggleHeading;
-window.toggleQuote = toggleQuote;
-window.toggleList = toggleList;
+testHooks.wrapSelection = wrapSelection;
+testHooks.insertBlock = insertBlock;
+testHooks.toggleList = toggleList;
 
 // =====================================================================
 // COMMAND PALETTE
@@ -5136,6 +5563,8 @@ const PALETTE_COMMANDS = [
   { sec: 'Files', key: 'palette.loadDemo', icon: 'sparkles', name: 'Load demo notes', meta: 'command', act: loadDemo },
   { sec: 'View', key: 'palette.toggleReading', icon: 'book-open', name: 'Toggle Reading Mode', meta: 'view', sk: 'Ctrl+E', act: toggleViewMode },
   { sec: 'View', key: 'palette.flip', icon: 'flip', name: 'Flip direction (RTL ⇄ LTR)', meta: 'view', sk: 'Ctrl+⇧+L', act: toggleRTL },
+  { sec: 'View', key: 'palette.flipBlock', icon: 'flip', name: 'Flip current block direction', meta: 'view', sk: 'Ctrl+D', act: () => flipCurrentBlock() },
+  { sec: 'View', key: 'palette.resetBlockDirs', icon: 'rotate-ccw', name: 'Reset all block directions to auto', meta: 'view', act: () => resetBlockDirections() },
   { sec: 'View', key: 'palette.themePaper', icon: 'sun', name: 'Theme: Paper', meta: 'view', act: () => setTheme('paper') },
   { sec: 'View', key: 'palette.themeInk', icon: 'moon', name: 'Theme: Ink', meta: 'view', act: () => setTheme('ink') },
   { sec: 'View', key: 'palette.themeSepia', icon: 'palette', name: 'Theme: Sepia', meta: 'view', act: () => setTheme('sepia') },
@@ -5149,8 +5578,8 @@ const PALETTE_COMMANDS = [
   { sec: 'View', key: 'palette.zoomOut', icon: 'zoom-out', name: 'Zoom Out',   meta: 'view', sk: 'Ctrl+-', act: zoomOut },
   { sec: 'View', key: 'palette.resetZoom', icon: 'rotate-ccw', name: 'Reset Zoom', meta: 'view', sk: 'Ctrl+0', act: zoomReset },
   { sec: 'Help', key: 'palette.shortcuts', icon: 'keyboard', name: 'Keyboard Shortcuts', meta: 'help', sk: 'Ctrl+/', act: showShortcuts },
-  { sec: 'View', get key() { return togglePaletteKey('autoHideTitlebar'); }, icon: 'panel-left', get name() { return toggleFallback('autoHideTitlebar'); }, meta: 'view', sk: 'Ctrl+⇧+T', act: () => toggleAutoHideTitlebar() },
-  { sec: 'View', get key() { return togglePaletteKey('hideStatusBar'); }, icon: 'panel-right', get name() { return toggleFallback('hideStatusBar'); }, meta: 'view', sk: 'Ctrl+⇧+B', act: () => toggleHideStatusBar() },
+  { sec: 'View', get key() { return togglePaletteKey('autoHideTitlebar'); }, icon: 'panel-left', get name() { return toggleFallback('autoHideTitlebar'); }, meta: 'view', sk: CHROME_TOGGLES.autoHideTitlebar.paletteShortcut, act: () => toggleAutoHideTitlebar() },
+  { sec: 'View', get key() { return togglePaletteKey('hideStatusBar'); }, icon: 'panel-right', get name() { return toggleFallback('hideStatusBar'); }, meta: 'view', sk: CHROME_TOGGLES.hideStatusBar.paletteShortcut, act: () => toggleHideStatusBar() },
   { sec: 'View', key: 'palette.settings', icon: 'align-justify', name: 'Settings…', meta: 'view', sk: 'Ctrl+,', act: () => showSettings() },
   { sec: 'Help', key: 'palette.about', icon: 'info', name: 'About BP MD RTL Reader', meta: 'help', act: showAbout }
 ];
@@ -5172,13 +5601,13 @@ function closePalette() {
   palInput.value = '';
   if (wasOpen) restoreFocus();
 }
-window.openPalette = openPalette;
-window.closePalette = closePalette;
-window.openFind = openFind;
-window.runFind = runFind;
-window.findStep = findStep;
-window.closeFind = closeFind;
-window.showShortcuts = showShortcuts;
+testHooks.openPalette = openPalette;
+testHooks.closePalette = closePalette;
+testHooks.openFind = openFind;
+testHooks.runFind = runFind;
+testHooks.findStep = findStep;
+testHooks.closeFind = closeFind;
+testHooks.showShortcuts = showShortcuts;
 
 // T-F19: Settings. Built the way showShortcuts()/showAbout() are — a template string
 // through openModal() — so it inherits the app's single modal: the focus stack, the
@@ -5240,7 +5669,7 @@ function showSettings() {
       <div class="set-row">
         <div class="set-text">
           <div class="set-name">${L('settings.autosave', 'Auto-save')}</div>
-          <div class="set-desc">${L('settings.autosaveDesc', 'Automatically saves open files about every 30 seconds. Untitled notes still need Save As.')}</div>
+          <div class="set-desc">${L('settings.autosaveDesc', 'Automatically saves open files about 15 seconds after you stop typing. Untitled notes still need Save As.')}</div>
         </div>
         ${sw('setAutosave', 'settings.autosave', 'Auto-save', State.autosave)}
       </div>
@@ -5265,7 +5694,7 @@ function showSettings() {
       <div class="set-row">
         <div class="set-text">
           <div class="set-name">${L('settings.updateAuto', 'Check for updates automatically')}</div>
-          <div class="set-desc">${L('settings.updateAutoDesc', 'Checks once a day and only tells you when a newer version exists. Nothing is downloaded automatically, no data about you is sent, and it is off by default.')}</div>
+          <div class="set-desc">${L('settings.updateAutoDesc', 'Checks when the app starts, then once a day while it runs, and only tells you when a newer version exists. Nothing is downloaded automatically, no data about you is sent, and it is off by default.')}</div>
         </div>
         ${sw('setUpdateAuto', 'settings.updateAuto', 'Check for updates automatically', State.updateCheck === 'auto')}
       </div>
@@ -5340,10 +5769,7 @@ function showSettings() {
     if (State.themeFollowSystem) {
       const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'ink' : 'paper';
       State.theme = systemTheme;
-      document.documentElement.setAttribute('data-theme', systemTheme);
-      $('themeBtn')?.classList.toggle('active', systemTheme !== 'paper');
-      updateThemeIcon(systemTheme);
-      setThemeLabel(systemTheme);
+      applyThemeToDom(systemTheme);
     }
     sync();
   });
@@ -5381,22 +5807,22 @@ function showSettings() {
     });
   }
 }
-window.showSettings = showSettings;
+testHooks.showSettings = showSettings;
 
-window.newDailyNote = newDailyNote;
-window.renderTree = renderTree;
-window.showWelcome = showWelcome;
-window.parseMarkdown = parseMarkdown;
-window.PALETTE_COMMANDS = PALETTE_COMMANDS;
+testHooks.newDailyNote = newDailyNote;
+testHooks.renderTree = renderTree;
+testHooks.showWelcome = showWelcome;
+testHooks.parseMarkdown = parseMarkdown;
+testHooks.PALETTE_COMMANDS = PALETTE_COMMANDS;
 // T-F19: exposed for the shortcut-drift guard in tests/e2e/click-audit-all.spec.js,
 // mirroring PALETTE_COMMANDS above. A shortcut lives in four places by hand.
-window.MENU_DEFS = MENU_DEFS;
+testHooks.MENU_DEFS = MENU_DEFS;
 // v10 redesign (D1): the context menu's role labels/shortcuts are a fifth hand-copy of the
 // same six Edit-menu chords (CA19) — exposed so click-audit-all.spec.js can guard it too.
-window.CTX_ROLE_DISPLAY = CTX_ROLE_DISPLAY;
+testHooks.CTX_ROLE_DISPLAY = CTX_ROLE_DISPLAY;
 // Exposed for the Electron-lane cross-check in tests/e2e/electron/context-menu.spec.js —
 // main's APP_COMMANDS carries only ids; this is where their display text actually lives.
-window.APP_COMMAND_DISPLAY = APP_COMMAND_DISPLAY;
+testHooks.APP_COMMAND_DISPLAY = APP_COMMAND_DISPLAY;
 
 function filterPalette(q) {
   q = (q || '').trim().toLowerCase();
@@ -5501,8 +5927,8 @@ async function winClose() {
   // is looking at, and — via the first flow's cancel-path abortWindowClose — kill the
   // close failsafe the visible dialog depends on. One close flow at a time; a second
   // request while one runs is a no-op (the failsafe's heartbeat keeps extending).
-  if (window._closeFlowActive) return;
-  window._closeFlowActive = true;
+  if (gates.closeFlowActive) return;
+  gates.closeFlowActive = true;
   // v1.2: Word-style close. One dirty file → Save / Don't Save / Cancel naming it;
   // several → Save All / Close without Saving / Cancel. The old prompt was an
   // English confirm() whose default button discarded everything.
@@ -5540,7 +5966,9 @@ async function winClose() {
         // keep running until the window is really gone and would write / mirror it. State only:
         // no re-render, the window is closing and a re-render would reset the scroll position
         // that is captured and saved right below.
-        for (const f of dirtyFiles) discardEdits(f);
+        // QA-N3: a never-saved note has no saved text to go back to (discardEdits returns
+        // false); it is marked clean so the recovery mirror cannot offer it at next launch.
+        for (const f of dirtyFiles) if (!discardEdits(f)) f.dirty = false;
       }
     }
     // T14 (post-review L5): flush the active note's final reading position — the 1s capture
@@ -5553,7 +5981,7 @@ async function winClose() {
     // recovery decision is still outstanding: a prompt still open, or one the user
     // dismissed this session without choosing, belongs to work the user never answered
     // for — quitting now must leave it re-offerable.
-    if (!window._recoveryPromptOpen && !window._recoveryDismissed) {
+    if (!gates.recoveryPromptOpen && !gates.recoveryDismissed) {
       try { await window.electronAPI?.recoveryClear?.(); } catch (_) { /* best-effort */ }
     } else {
       // The offer stays; this session's own mirror (live.json) holds nothing worth offering
@@ -5563,7 +5991,7 @@ async function winClose() {
     if (window.electronAPI) window.electronAPI.closeWindow();
   } finally {
     if (keepCloseAlive) clearInterval(keepCloseAlive);
-    window._closeFlowActive = false;
+    gates.closeFlowActive = false;
   }
 }
 if (window.electronAPI && typeof window.electronAPI.onCloseRequested === 'function') {
@@ -5583,7 +6011,7 @@ function escapeSurfaceOpen() {
   return palOverlay.classList.contains('open') || modalOverlay.classList.contains('open')
     || $('findBar').classList.contains('open') || dropdown.classList.contains('open')
     || !ctxMenu.hidden || !!(_hlBar && !_hlBar.hidden)
-    || !!(readerControlsPopover && !readerControlsPopover.hidden);
+    || !!(readerControlsPopover && !readerControlsPopover.hidden) || dirMenuOpen();
 }
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') _escapeHadSurface = escapeSurfaceOpen();
@@ -5605,6 +6033,7 @@ document.addEventListener('keydown', e => {
   else if (cmd && e.shiftKey && hitKey(e, 'l')) { e.preventDefault(); toggleRTL(); }
   else if (cmd && !e.shiftKey && hitKey(e, 'e')) { e.preventDefault(); toggleViewMode(); } // T-F17 Reading/Edit
   else if (cmd && e.shiftKey && hitKey(e, 'd')) { e.preventDefault(); cycleTheme(); }
+  else if (cmd && !e.shiftKey && !e.altKey && !inInput && hitKey(e, 'd')) { e.preventDefault(); flipCurrentBlock(); }
   else if (cmd && e.shiftKey && hitKey(e, 'i')) { e.preventDefault(); toggleInspector(); }
   else if (cmd && e.shiftKey && hitKey(e, 'o')) { e.preventDefault(); openVault(); }
   else if (cmd && !e.shiftKey && hitKey(e, 'o')) { e.preventDefault(); openSingleFile(); }
@@ -5709,7 +6138,11 @@ $('winMinBtn').addEventListener('click', winMinimize);
 $('winMaxBtn').addEventListener('click', winMaximize);
 $('winCloseBtn').addEventListener('click', winClose);
 $('modalCloseBtn').addEventListener('click', closeModal);
-$('modalOverlay').addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
+// QA M12: a stray click beside the dialog must not throw away a margin note being typed;
+// Cancel, Escape and the close button still discard it on purpose.
+$('modalOverlay').addEventListener('click', e => {
+  if (e.target === modalOverlay && !($('noteField')?.value || '').trim()) closeModal();
+});
 $('palOverlay').addEventListener('click', e => { if (e.target === palOverlay || e.target.classList.contains('palette')) closePalette(); });
 readerControlsButton?.addEventListener('click', () => setReaderControlsOpen(readerControlsPopover.hidden));
 readerTextScaleDecrease?.addEventListener('click', () => setReaderTextScale(State.readerTextScale - 0.1));
@@ -5730,7 +6163,7 @@ document.addEventListener('keydown', (event) => {
 
 document.querySelectorAll('.tb-menu-item').forEach(btn => {
   // Keep the editor focused/selected when opening a menu — a mousedown would
-  // otherwise blur the textarea, breaking Copy/Cut/Undo run from the Edit menu.
+  // otherwise blur the editor, breaking Copy/Cut/Undo run from the Edit menu.
   btn.addEventListener('mousedown', e => e.preventDefault());
   btn.addEventListener('click', e => openMenu(e, btn.dataset.menu));
 });
@@ -5834,8 +6267,6 @@ document.addEventListener('click', e => {
 // DRAG-DROP (Issue #7)
 // =====================================================================
 function initDragDrop() {
-  const MAX_SIZE = OPEN_FILE_MAX_BYTES; // shared with the file-picker lane (UI-02)
-
   let dragDepth = 0;
   const dropOverlay = $('dropOverlay');
   const carriesFiles = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files');
@@ -5860,29 +6291,23 @@ function initDragDrop() {
     dropOverlay.classList.remove('on');
     const files = Array.from(e.dataTransfer.files || []);
     let loaded = 0;
+    let toldLarge = false; // the "this note is large" message must not be replaced by "Loaded 1 file"
     for (const file of files) {
       if (!isDroppableFile(file.name)) {
         showToast(tl('toast.skippedType', { name: file.name }), 'info');
         continue;
       }
-      if (file.size > MAX_SIZE) {
-        showToast(tl('toast.skippedSize', { name: file.name }), 'error');
-        continue;
-      }
-      try {
-        const decoded = await readFileBytesDecoded(file);
-        addFile({ name: file.name, path: file.name, handle: null, content: decoded.text, dirty: false, meta: decoded.meta });
+      if (await loadLooseFile(file)) { // the same size tiers as the picker lane (UI-02)
         loaded++;
-      } catch {
-        showToast(tl('toast.couldNotRead', { name: file.name }), 'error');
+        if (noteTier(file.size) >= TIER.LARGE) toldLarge = true;
       }
     }
-    if (loaded > 0) showToast(tl('toast.loadedN', { n: loaded }));
+    if (loaded > 0 && !toldLarge) showToast(tl('toast.loadedN', { n: loaded }));
   });
 }
-window.initDragDrop = initDragDrop;
-window.renderTags = renderTags;
-window.escapeHtml = escapeHtml;
+testHooks.initDragDrop = initDragDrop;
+testHooks.renderTags = renderTags;
+testHooks.escapeHtml = escapeHtml;
 
 // =====================================================================
 // PERSISTENT SETTINGS (T-F8 / B5)
@@ -5902,15 +6327,10 @@ settingsController = createSettingsController({
   themes: THEMES,
   getLastSession: workspaceController.buildSession,
   actions: {
-    applyTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      $('themeBtn')?.classList.toggle('active', theme !== 'paper'); updateThemeIcon(theme);
-      setThemeLabel(theme);
-    },
+    applyTheme: applyThemeToDom,
     setZoom,
     setReaderTextScale,
     setReaderWidthCh,
-    setEditorMode,
     setViewMode,
     applyPanelLayout,
     applyChromeLayout,   // T-F19
@@ -5930,9 +6350,9 @@ const {
   restoreSettings,
 } = settingsController;
 settingsController.bind();
-window.persistSettings = persistSettings;
-window.flushSettings = flushSettings;
-window.restoreSettings = restoreSettings;
+testHooks.persistSettings = persistSettings;
+testHooks.flushSettings = flushSettings;
+testHooks.restoreSettings = restoreSettings;
 
 // =====================================================================
 // AUTO-SAVE + CRASH RECOVERY (v1.2 — Word-style data safety)
@@ -5945,7 +6365,7 @@ const AUTOSAVE_IDLE_MS = 15000;
 let _autosaveTimer = null;
 async function autosaveTick() {
   if (!State.autosave || settingsController?.isRestoring()) return;
-  if (window._saveDialogOpen) return; // a pending Save/Don't-Save answer owns the disk
+  if (gates.saveDialogOpen) return; // a pending Save/Don't-Save answer owns the disk
   // audit M10: a note whose conflict banner is unanswered is left alone. Trying again every
   // tick only got 'conflict' again and re-rendered the note under the user's hands.
   const due = State.files.filter((f) => f.dirty && f.documentId && !f.conflict
@@ -5975,7 +6395,7 @@ function startAutosaveLoop() {
   if (_autosaveTimer) return;
   _autosaveTimer = setInterval(() => { autosaveTick(); }, AUTOSAVE_TICK_MS);
 }
-window._autosaveTick = autosaveTick; // e2e hook (same pattern as the other window.* test exports)
+testHooks._autosaveTick = autosaveTick; // e2e hook (same pattern as the other window.* test exports)
 
 // Crash recovery: every 10s the renderer mirrors its dirty in-memory notes into
 // <userData>/recovery/ (main-side, atomic). A crash, a forced shutdown, or the
@@ -5983,24 +6403,40 @@ window._autosaveTick = autosaveTick; // e2e hook (same pattern as the other wind
 // "recover unsaved documents" model. Cleared on a sanctioned close (winClose).
 let _recoveryBusy = false;
 let _recoveryAgain = false; // a mirror was asked for while one was in flight (audit M11)
-async function mirrorDirtyNotes() {
+// A large note is mirrored less often: serialising and writing tens of MB every 10 s would
+// compete with typing. It is mirrored when it changed, at most every LARGE_MIRROR_MIN_MS; a
+// session end or a restore (`force`) does not wait.
+const LARGE_MIRROR_CHARS = 2_500_000;
+const LARGE_MIRROR_MIN_MS = 30_000;
+let _largeMirrorAt = 0;
+let _largeMirrorSig = '';
+async function mirrorDirtyNotes({ force = false } = {}) {
   if (!window.electronAPI || typeof window.electronAPI.recoverySnapshot !== 'function') return;
   if (_recoveryBusy) { _recoveryAgain = true; return; }
   _recoveryBusy = true;
   try {
-    const dirty = State.files.filter((f) => f.dirty)
-      .slice(0, 20)
-      .map((f) => ({ name: f.name, content: String(f.content || '') }));
-    await window.electronAPI.recoverySnapshot(dirty);
+    const dirtyFiles = State.files.filter((f) => f.dirty).slice(0, 20);
+    const hasLarge = dirtyFiles.some((f) => skipsEditPreview(f) || (f.content || '').length > LARGE_MIRROR_CHARS);
+    const sig = hasLarge ? mirrorSignature(dirtyFiles) : ''; // text first, then revision (see mirrorSignature)
+    if (hasLarge && !force && (sig === _largeMirrorSig || Date.now() - _largeMirrorAt < LARGE_MIRROR_MIN_MS)) return;
+    const res = await window.electronAPI.recoverySnapshot(dirtyFiles.map((f) => ({ name: f.name, content: String(f.content || '') })));
+    if (hasLarge && res && res.ok) { _largeMirrorSig = sig; _largeMirrorAt = Date.now(); }
+    // Never silent: a note main could not mirror is named once, so the reader knows to save it.
+    const skipped = res && Array.isArray(res.skipped) ? res.skipped : [];
+    for (const name of skipped) {
+      const f = dirtyFiles.find((x) => x.name === name);
+      if (f && !f._recoverySkipTold) { f._recoverySkipTold = true; showToast(tl('toast.recoverySkipped', { name }), 'error', undefined, { ms: 7000 }); }
+    }
   } catch (_) { /* best-effort; retried next tick */ }
   finally { _recoveryBusy = false; }
   if (_recoveryAgain) { _recoveryAgain = false; await mirrorDirtyNotes(); }
 }
+testHooks._mirrorDirtyNotes = mirrorDirtyNotes; // e2e: the large-note mirror's change check
 function startRecoveryLoop() {
   if (!window.electronAPI || typeof window.electronAPI.recoverySnapshot !== 'function') return;
-  setInterval(mirrorDirtyNotes, 10000);
+  setInterval(() => { void mirrorDirtyNotes(); }, 10000);
   // audit M11: Windows is logging off or shutting down; do not wait for the next tick.
-  if (typeof window.electronAPI.onFlushRecovery === 'function') window.electronAPI.onFlushRecovery(() => { mirrorDirtyNotes(); });
+  if (typeof window.electronAPI.onFlushRecovery === 'function') window.electronAPI.onFlushRecovery(() => { mirrorDirtyNotes({ force: true }); });
 }
 
 // Next-launch prompt: offer the snapshots back. Restore reopens them as dirty,
@@ -6016,44 +6452,31 @@ async function offerRecovery() {
   // The prompt peeks, never deletes: only an explicit Restore/Discard click decides and
   // clears the snapshot. A dismissed prompt (Escape/backdrop) or a quit mid-dialog
   // leaves it in place so the next launch re-offers the crashed-away work.
-  window._recoveryPromptOpen = true;
+  gates.recoveryPromptOpen = true;
   let decision = 'dismiss';
   try {
-    decision = await new Promise((resolve) => {
-      const observer = new MutationObserver(() => {
-        if (!modalOverlay.classList.contains('open')) { observer.disconnect(); resolve('dismiss'); }
-      });
-      observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
-      const html = `
-        <div class="dlg-body">
-          <div class="dlg-badge" id="recoveryBadge"></div>
-          <div class="dlg-title">${escapeHtml(tl('recovery.title'))}</div>
-          <div class="dlg-msg">${escapeHtml(tl('recovery.body', { n: snaps.length }))}</div>
-          <div class="dlg-hint">${escapeHtml(tl('recovery.hint'))}</div>
-        </div>
-        <div class="dlg-actions">
-          <button type="button" class="dlg-btn" id="recoveryDiscardBtn">${escapeHtml(tl('recovery.discard'))}</button>
-          <button type="button" class="dlg-btn dlg-primary" id="recoveryRestoreBtn">${escapeHtml(tl('recovery.restore'))}</button>
-        </div>`;
-      openModal(tl('recovery.title'), html);
-      setBadgeIcon('recoveryBadge');
-      const settle = (v) => {
-        observer.disconnect();
-        pendingModalSettlers.delete(abandoned);
-        closeModal();
-        resolve(v);
-      };
-      const abandoned = () => settle('dismiss');
-      pendingModalSettlers.add(abandoned);
-      $('recoveryRestoreBtn')?.addEventListener('click', () => settle('restore'));
-      $('recoveryDiscardBtn')?.addEventListener('click', () => settle('discard'));
-      setTimeout(() => $('recoveryRestoreBtn')?.focus(), 0);
+    const html = `
+      <div class="dlg-body">
+        <div class="dlg-badge" id="recoveryBadge"></div>
+        <div class="dlg-title">${escapeHtml(tl('recovery.title'))}</div>
+        <div class="dlg-msg">${escapeHtml(tl('recovery.body', { n: snaps.length }))}</div>
+        <div class="dlg-hint">${escapeHtml(tl('recovery.hint'))}</div>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="dlg-btn" id="recoveryDiscardBtn">${escapeHtml(tl('recovery.discard'))}</button>
+        <button type="button" class="dlg-btn dlg-primary" id="recoveryRestoreBtn">${escapeHtml(tl('recovery.restore'))}</button>
+      </div>`;
+    decision = await askModal(tl('recovery.title'), html, {
+      badge: 'recoveryBadge',
+      abandon: 'dismiss',
+      buttons: { recoveryRestoreBtn: 'restore', recoveryDiscardBtn: 'discard' },
+      focus: 'recoveryRestoreBtn',
     });
-  } finally { window._recoveryPromptOpen = false; }
+  } finally { gates.recoveryPromptOpen = false; }
   if (decision === 'dismiss') {
     // Dismissal is not a decision: the snapshot stays, and this session must not
     // clear it on quit either (winClose honours this flag).
-    window._recoveryDismissed = true;
+    gates.recoveryDismissed = true;
     return;
   }
   try { await window.electronAPI?.recoveryClear?.(); } catch (_) { /* best-effort */ }
@@ -6077,10 +6500,10 @@ async function offerRecovery() {
   }
   // Mirror the restored notes now instead of at the next 10s tick: the offered snapshot was
   // just cleared, and until they are mirrored a crash would lose them.
-  await mirrorDirtyNotes();
+  await mirrorDirtyNotes({ force: true });
   showToast(tl('recovery.restored', { n: snaps.length }), 'info');
 }
-window._offerRecovery = offerRecovery;
+testHooks._offerRecovery = offerRecovery;
 
 // =====================================================================
 // INIT
@@ -6089,13 +6512,13 @@ window._offerRecovery = offerRecovery;
   // Detect Electron and apply native-window overrides
   if (window.electronAPI) document.documentElement.classList.add('electron');
 
-  // v1.2: the search button's modifier glyph was a literal ⌘ (macOS) on every platform.
-  // Name the key this machine actually uses.
-  const modKey = $('searchModKey');
-  if (modKey) {
-    const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
-    modKey.textContent = isMac ? '⌘' : 'Ctrl';
-  }
+  // The size thresholds belong to main (main-logic.js); the page starts with its own copy of
+  // them and takes main's as soon as they arrive (well before any note can be opened).
+  try {
+    const asked = window.electronAPI && typeof window.electronAPI.getLimits === 'function' ? window.electronAPI.getLimits() : null;
+    if (asked && typeof asked.then === 'function') asked.then(applyLimits).catch(() => { /* keep the defaults */ });
+  } catch (_) { /* keep the defaults */ }
+
   localizeStateLabels();
 
   // Panel visibility: the static markup starts with `no-sidebar no-inspector` (clean editor-only
@@ -6109,7 +6532,7 @@ window._offerRecovery = offerRecovery;
   // happily showed restored content. The rejection handler starts the same loops and
   // names the failure; only the restore-specific chrome work is skipped.
   const startDataSafetyLoops = () => {
-    // T-F13/A1: mount CM6 — lazy + reversible; textarea on failure.
+    // T-F13/A1: mount CM6 — lazy; on failure notes stay readable and edits say why.
     initCM6Editor().catch(() => { reportCm6Unavailable(); });
     // v1.2: Word-style data safety — auto-save loop, recovery mirror, and the
     // next-launch recovery prompt (after restore, so restored notes sit with the session).
@@ -6118,34 +6541,37 @@ window._offerRecovery = offerRecovery;
     offerRecovery().catch(() => { /* never block boot on recovery */ });
   };
   restoreSettings().then((restored) => {
-    if (!restored) {
-      applyPanelLayout();
-      // T-F19: no bridge here, so the localStorage mirror IS the persisted state. Seed
-      // State from it before applying, or this would overwrite what theme-boot.js just
-      // painted and the choice would be lost on every reload.
-      try {
-        const cached = localStorage.getItem('bpmdrtlreader-chrome') || '';
-        State.autoHideTitlebar = cached.split(' ').includes('autohide');
-        State.hideStatusBar = cached.split(' ').includes('nostatus');
-      } catch (_) { /* storage unavailable — fall through to the defaults */ }
-      applyChromeLayout();
-      const stored = localStorage.getItem('bpmdrtlreader-theme');
-      if (stored && THEMES.includes(stored)) {
-        State.theme = stored;
-        document.documentElement.setAttribute('data-theme', stored);
-        $('themeBtn')?.classList.toggle('active', stored !== 'paper'); updateThemeIcon(stored);
-        setThemeLabel(stored);
+    // APP-24: .then(ok, fail) does not catch a throw inside ok, so the loops start in finally.
+    try {
+      if (!restored) {
+        applyPanelLayout();
+        // T-F19: no bridge here, so the localStorage mirror IS the persisted state. Seed
+        // State from it before applying, or this would overwrite what theme-boot.js just
+        // painted and the choice would be lost on every reload.
+        try {
+          const cached = localStorage.getItem('bpmdrtlreader-chrome') || '';
+          State.autoHideTitlebar = cached.split(' ').includes('autohide');
+          State.hideStatusBar = cached.split(' ').includes('nostatus');
+        } catch (_) { /* storage unavailable — fall through to the defaults */ }
+        applyChromeLayout();
+        let stored = null;
+        try { stored = localStorage.getItem('bpmdrtlreader-theme'); } catch (_) { /* storage off */ }
+        if (stored && THEMES.includes(stored)) {
+          State.theme = stored;
+          applyThemeToDom(stored);
+        }
       }
+      // T-F19: name the way out when the app OPENS with no chrome. restoreSettings() sets
+      // the flags straight from disk and calls applyChromeLayout() — it never goes through
+      // setAutoHideTitlebar(), which is where the "press Ctrl+Shift+T" toast lives. So a
+      // user who quit with the bar hidden got a window with no title bar, no menus and no
+      // window controls, and nothing on screen explaining any of it.
+      if (State.autoHideTitlebar || State.hideStatusBar) {
+        showToast(State.autoHideTitlebar ? tl('toast.topbarHidden') : tl('toast.statusbarHidden'), 'info');
+      }
+    } finally {
+      startDataSafetyLoops();
     }
-    // T-F19: name the way out when the app OPENS with no chrome. restoreSettings() sets
-    // the flags straight from disk and calls applyChromeLayout() — it never goes through
-    // setAutoHideTitlebar(), which is where the "press Ctrl+Shift+T" toast lives. So a
-    // user who quit with the bar hidden got a window with no title bar, no menus and no
-    // window controls, and nothing on screen explaining any of it.
-    if (State.autoHideTitlebar || State.hideStatusBar) {
-      showToast(State.autoHideTitlebar ? tl('toast.topbarHidden') : tl('toast.statusbarHidden'), 'info');
-    }
-    startDataSafetyLoops();
   }, () => {
     showToast(tl('toast.restoreFailed'), 'error');
     startDataSafetyLoops();

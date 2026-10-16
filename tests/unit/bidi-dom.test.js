@@ -5,7 +5,7 @@
  * (built on the pure src/renderer/bidi.js core) against a jsdom document so the
  * per-block direction + inline isolation logic is unit-tested without Playwright.
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { applyBlockDirection, isolateInlineRuns, applyBidi, applyTableDirection } from '../../src/renderer/bidi-dom.js';
 import { escapeHtml } from '../../src/renderer/i18n.js';
 

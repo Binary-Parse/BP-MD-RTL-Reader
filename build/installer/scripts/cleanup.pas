@@ -24,18 +24,7 @@ begin
     DeleteFile(Path);
 end;
 
-{ Remove the fixed per-user data folders BP MD RTL Reader writes to.
-
-  The app persists ALL of its state via Electron app.getPath('userData') =
-  %APPDATA%\bpmdrtlreader (roaming): settings, recent paths, filesystem grants,
-  local logs, window/zoom/theme state, and Chromium profile storage. The three
-  title-cased/local paths are supported legacy aliases.
-  User-authored Markdown remains wherever the user saved it and is never an
-  installer cleanup target.
-
-  KeepUserData mirrors Get-CleanupPlan in logic-sim.ps1:
-    True  -> keep all app-data targets.
-    False -> remove all four fixed current-account targets. }
+{ Delete a folder tree and return its path if it survived, else empty. }
 function CU_DeleteAndCheck(const Path: string): string;
 begin
   CU_DelTree(Path);
@@ -55,6 +44,18 @@ begin
     Failures := Failures + #13#10 + Path;
 end;
 
+{ Remove the fixed per-user data folders BP MD RTL Reader writes to.
+
+  The app persists ALL of its state via Electron app.getPath('userData') =
+  %APPDATA%\bpmdrtlreader (roaming): settings, recent paths, filesystem grants,
+  local logs, window/zoom/theme state, and Chromium profile storage. The three
+  title-cased/local paths are supported legacy aliases.
+  User-authored Markdown remains wherever the user saved it and is never an
+  installer cleanup target.
+
+  KeepUserData mirrors Get-CleanupPlan in logic-sim.ps1:
+    True  -> keep all app-data targets.
+    False -> remove all four fixed current-account targets. }
 function DeleteUserData(KeepUserData: Boolean): string;
 var
   RoamLowerDir, RoamTitleDir, LocalLowerDir, LocalTitleDir: string;

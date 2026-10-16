@@ -9,6 +9,7 @@ const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'ut
 const architectureDocs = [
   readFileSync(path.join(root, 'CONTRIBUTING.md'), 'utf8'),
   readFileSync(path.join(root, 'docs', 'BUILD.md'), 'utf8'),
+  readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'), 'utf8'),
 ].join('\n');
 const styleFiles = [
   'styles/base.css',

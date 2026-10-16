@@ -6,7 +6,7 @@ import { describe, test, expect } from 'vitest';
 import { marked } from 'marked';
 import { Marked } from 'marked';
 import { parseCalloutHeader, CALLOUT_TYPES, parseMarkdown, configureMarked, lastRenderLimited } from '../../src/renderer/markdown/markdown.js';
-import { extractHeadings, activeHeading } from '../../src/renderer/components/outline.js';
+import { activeHeading } from '../../src/renderer/components/outline.js';
 
 describe('callouts (T-F14)', () => {
   test('parses [!TYPE] with and without title', () => {
@@ -26,13 +26,6 @@ describe('callouts (T-F14)', () => {
 });
 
 describe('outline (T-F7)', () => {
-  const md = '# Title\n\n## Section A\n\ntext\n\n## Section A\n\n### في فعل القراءة\n';
-  test('extracts h1–h3 with deduped, Arabic-aware slugs', () => {
-    const h = extractHeadings(md, { marked });
-    expect(h.map(x => `${x.level}:${x.slug}`)).toEqual([
-      '1:title', '2:section-a', '2:section-a-1', '3:في-فعل-القراءة',
-    ]);
-  });
   test('activeHeading scroll-sync', () => {
     const offsets = [0, 200, 600];
     expect(activeHeading(0, offsets)).toBe(0);
@@ -65,7 +58,7 @@ describe('M4: one render cannot stall the window', () => {
     const { html, ms } = timed(repeat(unit, 64 * 1024));
     expect(ms).toBeLessThan(5000);
     expect(lastRenderLimited()).toBe(true);
-    expect(html).toContain(unit.trim().replace('!', '!').slice(0, 2));
+    expect(html).toContain(unit.trim().slice(0, 2));
     expect(html).not.toMatch(/<script/i);
   }, 30000);
 

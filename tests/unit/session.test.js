@@ -2,7 +2,7 @@
  * session.test.js — T-B5/M6 last-session pure helpers.
  */
 import { describe, test, expect } from 'vitest';
-import { buildSession, pickActiveIndex, fileKey } from '../../src/renderer/session.js';
+import { buildSession, pickActiveIndex, fileKey, isCapabilityId } from '../../src/renderer/session.js';
 
 // B2/B4 (multi-folder workspaces): buildSession's return shape is the forest-ready
 // { vaults: [{vaultId, openPaths}], activeVaultId, activePath }. audit UX-04: the vault list
@@ -10,6 +10,21 @@ import { buildSession, pickActiveIndex, fileKey } from '../../src/renderer/sessi
 // vaults[0] used to drop every other open folder. A synthetic (non-`cap-`) id is never
 // persisted: a browser File System Access API pick or the demo set names nothing readVault
 // can re-open on the next launch.
+// REND-17: the renderer used a looser id test (/^cap-/) than main, so it persisted ids that
+// main then dropped at the settings boundary.
+describe('isCapabilityId', () => {
+  test('accepts exactly the shape main issues', () => {
+    for (const id of ['cap-a', 'cap-AZ09_-', `cap-${'x'.repeat(128)}`]) expect(isCapabilityId(id), id).toBe(true);
+    for (const id of ['cap-', 'cap-a b', 'cap-a/b', `cap-${'x'.repeat(129)}`, 'vault', '', null, undefined, 7]) {
+      expect(isCapabilityId(id), String(id)).toBe(false);
+    }
+  });
+
+  test('buildSession keeps no vault whose id main would reject', () => {
+    expect(buildSession([{ path: 'a.md', vaultId: 'cap-a b' }], 0)).toBe(null);
+  });
+});
+
 describe('buildSession', () => {
   const files = [
     { path: 'a.md', vaultId: 'cap-vault' },

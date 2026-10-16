@@ -7,6 +7,7 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { MESSAGES } from '../../src/renderer/locale.js';
 
 const html = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'index.html'),
@@ -24,13 +25,15 @@ describe('designed tooltips replace native title (v10)', () => {
     expect(old).toEqual([]);
   });
 
-  test('every element that previously had a tooltip now carries data-tip', () => {
-    const dataTips = html.match(/\bdata-tip="[^"]*"/g) || [];
-    expect(dataTips.length).toBeGreaterThan(0);
-  });
-
-  test('data-i18n-tip carries at least as many localized tooltips as the old data-i18n-title did', () => {
-    const dataI18nTip = html.match(/data-i18n-tip="[^"]*"/g) || [];
-    expect(dataI18nTip.length).toBeGreaterThanOrEqual(9);
+  test('every localized tooltip has its fallback text and a string in both languages', () => {
+    const tags = html.match(/<[^>]*\bdata-i18n-tip="[^"]*"[^>]*>/g) || [];
+    // at least as many localized tooltips as the old data-i18n-title had
+    expect(tags.length).toBeGreaterThanOrEqual(9);
+    for (const tag of tags) {
+      const key = /data-i18n-tip="([^"]*)"/.exec(tag)[1];
+      expect(tag, key).toMatch(/\bdata-tip="[^"]+"/);
+      expect(MESSAGES.en[key], `en ${key}`).toBeTruthy();
+      expect(MESSAGES.ar[key], `ar ${key}`).toBeTruthy();
+    }
   });
 });

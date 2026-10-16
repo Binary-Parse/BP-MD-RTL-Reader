@@ -76,12 +76,6 @@ test.describe('Zoom controls (Issue #5)', () => {
     await page.keyboard.press('Control+=');
     await page.keyboard.press('Control+=');
 
-    const sbZoom = await page.evaluate(() => {
-      const sb = document.querySelector('.statusbar');
-      const z = getComputedStyle(sb).zoom;
-      return z;
-    });
-    // statusbar should have zoom = 'normal' or '1' — not the editor zoom value
     const factor = await page.evaluate(() => window._appState.zoomFactor);
     expect(factor).toBeGreaterThan(1);
 

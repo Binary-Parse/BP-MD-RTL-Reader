@@ -7,7 +7,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(ROOT, 'config', 'security-lint-baseline.json');
 const PATTERNS = [
-  'src/**/*.js', 'scripts/**/*.{js,mjs}',
+  'src/**/*.js', 'scripts/**/*.{js,mjs,cjs}',
   '*.config.js', '*.config.mjs', 'src/renderer/index.html',
 ];
 

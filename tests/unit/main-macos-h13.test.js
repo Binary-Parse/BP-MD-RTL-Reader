@@ -135,7 +135,7 @@ describe('H13.3 macOS window chrome', () => {
     const controller = createWindowController({
       BrowserWindow, Menu: null, clipboard: {}, screen: null, shell: {}, path: require('node:path'),
       rootDir: '/root', appRendererUrl: 'app://x', approvedCloseWindows: new Set(),
-      getCurrentSettings: () => ({}), persistWindowState: vi.fn(), closeVaultWatcher: vi.fn(),
+      getCurrentSettings: () => ({}), persistWindowState: vi.fn(), closeAllVaults: vi.fn(),
       deliverPendingFiles: vi.fn(), clampWindowBounds: () => ({ w: 1, h: 1 }), isPackaged: false,
       classifyNavigation: vi.fn(), isExternallyOpenable: vi.fn(), buildContextMenuTemplate: vi.fn(),
       writeLog: vi.fn(), ipcMain: { on: vi.fn() }, crypto: {},

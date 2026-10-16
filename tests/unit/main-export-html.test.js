@@ -12,7 +12,7 @@ import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js
 
 const getHandle = (electron, name) => electron.ipcMain.handle.mock.calls.find((c) => c[0] === name)?.[1];
 const HTML = '<!DOCTYPE html>\n<html lang="ar" dir="rtl"><body><p>مرحبا</p></body></html>';
-const MAX_HTML_EXPORT_BYTES = 64 * 1024 * 1024;
+const MAX_HTML_EXPORT_BYTES = 256 * 1024 * 1024;
 
 describe('export:html (audit L3)', () => {
   let electron, fs, handler;

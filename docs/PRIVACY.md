@@ -1,165 +1,131 @@
-# Privacy & Security
+# Privacy
 
-BP MD RTL Reader is **local-first**: reading and writing stay on the local machine, and
-untrusted Markdown is sanitized before it is rendered.
+BP MD RTL Reader is local-first. Reading and writing stay on your computer. This page lists what the app stores, what it can send over the network, what it logs, and how to remove its data. For the security model and how to report a vulnerability, see [the security policy](../SECURITY.md).
+
+## Contents
+
+- [Summary](#summary)
+- [What the app stores](#what-the-app-stores)
+- [Remove the app data](#remove-the-app-data)
+- [Network access](#network-access)
+- [Links, images and fonts](#links-images-and-fonts)
+- [Temporary files](#temporary-files)
+- [Logs and crash dumps](#logs-and-crash-dumps)
+- [What the window title shows](#what-the-window-title-shows)
 
 ## Summary
 
-- **No telemetry.** No analytics, usage tracking, or product metrics.
-- **No accounts, sync, or cloud.** There is nothing to sign in to.
-- **No crash upload.** Crash reporting to any remote server is disabled.
-- **No update download, and no update check unless you asked for one.** Network access
-  occurs when you choose **Help → Check for Updates…**, and — if you turn it on in
-  Settings ▸ Updates — an automatic check at most once a day. Both are described below;
-  neither ever downloads or installs anything.
-- **Local data.** Notes, settings, highlights, and reading stats are stored only on the
-  local machine.
+- **No telemetry.** The app has no analytics, no usage tracking and no product metrics.
+- **No accounts, sync or cloud.** There is nothing to sign in to.
+- **No crash upload.** Crash reporting to a remote server is turned off.
+- **One optional network request.** The app contacts the network only to check for a newer release, and only when you choose **Help → Check for Updates…** or turn on the automatic check in Settings. It never downloads or installs anything. See [Network access](#network-access).
+- **Local data.** Your notes, settings, highlights and reading stats stay on your computer.
+- **No spellcheck download.** The built-in spellchecker is off, so no dictionary is ever fetched.
 
-## Where your data lives
+## What the app stores
 
-| What | Where |
-| ---- | ----- |
-| App settings (`settings.json`), filesystem grants (`capabilities.json`), highlights & margin notes (`annotations.json`), daily reading stats (`reading-stats.json`), crash-recovery snapshots (`recovery\`), Electron profile state, and local diagnostic logs | Windows: `%APPDATA%\bpmdrtlreader`. Linux: `~/.config/bpmdrtlreader` (or `$XDG_CONFIG_HOME/bpmdrtlreader`). Logs are in the `logs` folder inside it |
-| Legacy app-data aliases (older installs; the app reads only the directory above — the uninstaller cleans these up) | `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and `%LOCALAPPDATA%\BP MD RTL Reader` |
-| Your notes | wherever **you** saved them — plain `.md` files |
+Your Markdown notes stay wherever you saved them, as plain `.md` files. The app keeps its own data in a separate profile folder:
 
-This part is about Windows. On Linux, removing the package or deleting the AppImage leaves
-the profile folder in place; delete it yourself to remove the app data.
+| System | Location |
+| ------ | -------- |
+| Windows | `%APPDATA%\bpmdrtlreader` |
+| Linux | `~/.config/bpmdrtlreader`, or `$XDG_CONFIG_HOME/bpmdrtlreader` |
 
-Both Windows installer families offer three actions before an interactive uninstall:
+None of these files is ever sent anywhere. The profile folder holds:
 
-- **Remove app only** preserves app settings and data so they are available after a
-  future reinstall. It is the default selection.
-- **Remove app and all app data** removes `%APPDATA%\bpmdrtlreader`,
-  `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader`, and
-  `%LOCALAPPDATA%\BP MD RTL Reader` for the current Windows account.
+| File or folder | What it holds |
+| -------------- | ------------- |
+| `settings.json` | Preferences, recent files, reading positions, window size and the last session. Details below |
+| `capabilities.json` | Opaque grants mapped to the absolute paths of the files and folders you picked |
+| `annotations.json` | Your highlights and margin notes: the highlighted text, your note text and an anchor. It is keyed by an opaque note id and carries no paths |
+| `reading-stats.json` | Reading minutes per day for up to two years |
+| `recovery\` | Crash-recovery snapshots of unsaved notes. See below |
+| `logs\` | Diagnostic logs. See [Logs and crash dumps](#logs-and-crash-dumps) |
+| Other files | Electron's own profile state |
+
+### What `settings.json` holds
+
+- **Look and layout.** Theme, zoom, Reading or Edit mode, panel visibility, interface language and direction, calendar, kashida, italics color, and the window title and bar settings.
+- **Reading positions.** For each note, the last position as a number from 0 to 1, a timestamp, and the note's name and relative path. Positions and names only, never note content. The app keeps 30 notes.
+- **Recent files.** Up to five names and relative display paths. Never content.
+- **Window geometry.** Size, position and maximized state.
+- **Last session.** An opaque grant for your last folder and its active note path. The app does not store note content, unsaved edits, standalone tabs or open tab state.
+
+### Recovery snapshots hold your text
+
+While you work, the app copies your unsaved notes to `recovery\snapshot.json` and `live.json` in the profile folder. The full text of those notes is stored there as plain, unencrypted JSON. The app copies up to 20 notes, about every 10 seconds. A large note is copied at most every 30 seconds.
+
+The snapshot stays until you choose **Restore** or **Discard** on the recovery prompt. If you work on private notes on a shared computer, remember that this file exists. A normal close that saves or discards your notes does not leave a snapshot to offer.
+
+### Reset your data
+
+If `settings.json` is missing or damaged, the app uses defaults. Your notes are separate files and are not affected. You can delete `settings.json` at any time to reset every preference.
+
+## Remove the app data
+
+On Windows, both installers offer these choices before an interactive uninstall:
+
+- **Remove app only** keeps app settings and data, so they are there after a future reinstall. It is the default.
+- **Remove app and all app data** removes `%APPDATA%\bpmdrtlreader`, `%APPDATA%\BP MD RTL Reader`, `%LOCALAPPDATA%\bpmdrtlreader` and `%LOCALAPPDATA%\BP MD RTL Reader` for the current Windows account.
 - **Cancel** exits before the uninstaller changes anything.
 
-The primary button is labeled **Uninstall** for both choices; the selected option controls
-whether app data is preserved or deleted. Silent uninstall follows the same rule:
-`/S` preserves app data, while `/S /DELETEUSERDATA` explicitly
-requests full app-data cleanup. The electron-builder compatibility switch
-`--delete-app-data` requests the same comprehensive cleanup. Neither installer derives
-cleanup targets from recent paths or filesystem grants, enumerates other Windows
-profiles, or deletes Markdown files and other documents from folders where you saved
-them. If Windows prevents a requested folder from being deleted, the interactive
-uninstaller lists the remaining path instead of reporting complete cleanup.
+The primary button is labeled **Uninstall** for both choices. The selected option controls whether the data is kept or deleted.
 
-## What persists between sessions
+A silent uninstall keeps the app data unless you add `/DELETEUSERDATA`. The silent switch is `/S` for the NSIS uninstaller and `/SILENT` or `/VERYSILENT` for the Inno uninstaller. The NSIS uninstaller also accepts the electron-builder switch `--delete-app-data`. See [Install](INSTALL.md) for the full table.
 
-So the app reopens the way you left it, plain JSON files in the profile folder above
-store your preferences. They are written only by you (via
-the app) and **never transmitted**. `settings.json` holds:
+The uninstallers never use your recent paths or file grants to decide what to delete. They do not look at other Windows accounts, and they do not delete Markdown files or other documents from the folders where you saved them. If Windows prevents a requested folder from being deleted, the interactive uninstaller lists the folder that remains instead of saying cleanup is complete.
 
-- **Appearance & layout** — theme (paper/ink/sepia/oasis), whether the app follows the
-  system colour scheme on first run, editor zoom, Reading/Edit mode, panel visibility,
-  UI language/direction, calendar, Arabic kashida, italic color, and the chrome settings
-  below (window-title mode, auto-hide top bar, hide status bar).
-- **Reading positions** — per note, the last scroll position as a ratio (0–1) with a
-  timestamp, plus the note's name and relative display path, so the welcome screen can
-  offer "Continue reading". Positions and names only — never note content.
-- **Recent files** — a short list (max five) of the **names and relative display paths** of notes you
-  recently opened, so they appear under "Recents". This records *paths only* — never the
-  contents of your notes. Main-process opaque capability IDs provide the authority to
-  reopen them; their absolute path mapping is stored separately in `capabilities.json`.
-- **Window geometry** — the window's last size, position, and maximised state, restored
-  on the next launch (clamped to a currently-visible display).
-- **Last session** — an opaque grant for the last folder plus its active relative note
-  path. On launch the app re-reads the folder from disk; it does not persist note content,
-  unsaved edits, standalone tabs, or each folder tab's open/closed state.
+The last three folders are older locations. The app reads only `%APPDATA%\bpmdrtlreader`. The uninstaller cleans the others up.
 
-Two more local files hold the reading features:
+On Linux, removing the package or deleting the AppImage leaves the profile folder in place. Delete it yourself to remove the app data. See [Install](INSTALL.md#uninstall).
 
-- `annotations.json` — your highlights and margin notes, keyed by an opaque document
-  identifier. The file stores the highlighted text, your note text, and an anchor; it
-  is never transmitted, and the annotations channel carries text only (no paths).
-- `reading-stats.json` — daily reading-minute totals (two years) so the welcome line
-  and the 12-week heat-grid can show your streak against the optional daily goal. Local only.
+## Network access
+
+The app's page makes no network requests. A strict content policy blocks them. Every library and all four font families ship inside the app, so rendering works fully offline.
+
+There is one exception in the app's main process: the update check.
+
+### When it runs
+
+- When you choose **Help → Check for Updates…**. The app limits manual checks to one per minute.
+- If you turn on **Settings → Updates → Check for updates automatically** (off by default): once when the app starts, after the window loads, and then every 24 hours while the app keeps running.
+
+### What it sends
+
+One HTTPS `GET` request to `https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest`, with GitHub's JSON `Accept` header and a `BP-MD-RTL-Reader` User-Agent. It sends no note content, stored path, account identifier or telemetry. GitHub can see ordinary network metadata, such as your IP address and the request headers.
+
+The request has a 15-second timeout and follows no redirects. The app accepts the answer only from a server whose certificate chain contains a public key this version knows. If it does not, the app reads no data, says the check was not made, and offers the releases page.
+
+### What it does with the answer
+
+It reads public release information only. It never downloads or installs an update. When the automatic check finds a newer release, the app shows a notice. Its **View release** button opens the project's releases page, which is one fixed address the app owns. On an offline computer, the request fails and the rest of the app keeps working.
+
+## Links, images and fonts
+
+- **Links open in your system.** When you click an `http:`, `https:`, `mailto:` or `tel:` link in a note, the app hands it to your default program, such as your browser. This happens only when you click. The app itself makes no request. Other kinds of link are blocked.
+- **Remote images never load.** The content policy allows only images from the app, from `data:` addresses and from the folder you opened. A note cannot make your computer fetch an image from a server.
+- **Fonts and libraries are local.** The Markdown engine, the sanitizer, math, syntax highlighting, diagrams and the four font families (Inter, Literata, JetBrains Mono and IBM Plex Sans Arabic) are bundled with the app.
+
+## Temporary files
+
+A PDF export writes a temporary file named `bpmd-export-<id>.html` in your system's temp folder. The app deletes it after the export. If a file is left behind, for example after a crash, the next export removes leftovers older than one hour.
+
+A save writes the note to a temporary file next to it, named like `note.md.tmp-<id>`, and then renames it over the note. That keeps a crash from leaving half a file. If a crash leaves a temporary file behind, the app removes it the next time you open that folder, once it is older than one hour.
+
+## Logs and crash dumps
+
+If the app hits an unexpected error, it writes a line to `bpmdrtlreader.log` in the `logs` folder of the profile folder. The app keeps the current file and three older ones, so up to four files. A file rotates at about 1 MiB.
+
+The logs:
+
+- never leave your computer,
+- hold only error messages and stack traces, written at a limited rate, and
+- exist so you can attach them to a bug report if you choose to.
+
+Crash dumps, if any, are written locally too. The app starts its crash reporter with uploading turned off, so nothing is transmitted.
 
 ## What the window title shows
 
-By default the OS window title is the **name of the note you have open** — so the system
-shows it in the taskbar, in the Alt+Tab switcher, and in window-picker previews. That
-makes a file name visible to anyone who can see your screen, including during a screen
-share or a screen recording. Nothing is transmitted; this is local display only.
+By default, the title of the window is the name of the note you have open. The system shows it in the taskbar, in the Alt+Tab switcher and in window previews. That makes a file name visible to anyone who can see your screen, including during a screen share or recording. Nothing is transmitted.
 
-Set **Settings → Window title → App name** (or View ▸ Settings…) to show only
-"BP MD RTL Reader" instead. The choice is stored in `settings.json` like any other
-preference. Note contents are never placed in the title — only the file name.
-
-If this file is missing or corrupt, the app falls back to default settings. Notes are
-separate `.md` files and are not affected by settings. You can delete `settings.json` at
-any time to reset every preference.
-
-## Diagnostic logs (local only)
-
-If the app hits an unexpected error, it writes a line to a **rotating local log file**
-in your user-data `logs\` folder (capped at ~1 MiB, last three files kept). These logs:
-
-- never leave your machine,
-- contain only error messages and stack traces (rate-limited), and
-- exist purely so you can attach them to a bug report if you choose to.
-
-Crash minidumps, if any, are written locally too — `crashReporter` is started with
-`uploadToServer: false`, so nothing is ever transmitted.
-
-## What the app fetches (and what it doesn't)
-
-The renderer makes **zero outbound network requests**, enforced by its strict
-Content-Security-Policy (`connect-src 'self'`). Every rendering asset ships inside the
-app. Packaged builds load the UI over the privileged `app://ui/…` scheme (HTML, scripts,
-styles, and fonts from `src/renderer/` and `resources/vendor/` inside `app.asar`). Vault
-images use `bpmd://`. Neither scheme talks to the network:
-
-- the Markdown engine ([marked](https://marked.js.org/)) and the HTML sanitiser
-  ([DOMPurify](https://github.com/cure53/DOMPurify)),
-- math, syntax highlighting, and diagrams (KaTeX, highlight.js, Mermaid), and
-- all four font families (Inter, Literata, JetBrains Mono, IBM Plex Sans Arabic), vendored
-  as local `woff2` files under `resources/vendor/fonts/`.
-
-Rendering works fully offline: no font, library, image, or note content is fetched from a
-CDN or remote server.
-
-There is one narrow main-process exception. When you choose **Help → Check for
-Updates…** — and, if you enable **Settings ▸ Updates → Check for updates automatically**,
-at most once a day after that — the app sends an HTTPS `GET` to
-`https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest` with
-GitHub's JSON `Accept` header and a `BP-MD-RTL-Reader` User-Agent. It sends no note content,
-stored path, account identifier, or telemetry; ordinary network metadata such as IP
-address and request headers is visible to GitHub. The command reads public release
-metadata only: it neither downloads nor installs an update — when the automatic check
-finds a newer release it shows a local notice, whose "View release" button opens the
-project's releases page (one fixed URL the app owns). On an offline machine the
-request fails and the rest of the app continues to work. The answer is accepted only from a
-server whose certificate chain contains a public key this version knows; when it does not,
-no data is read, the app says that the check was not made, and it offers the same releases
-page.
-
-The built-in spellchecker is turned off, so no dictionary is ever downloaded.
-
-## Security model
-
-BP MD RTL Reader follows current Electron hardening guidance:
-
-- **Isolated renderer** — `contextIsolation: true`, `nodeIntegration: false`. The page
-  that renders your Markdown has no direct access to Node.js, the filesystem, or the
-  shell. Packaged windows load that page over `app://`, not `file://` inside the asar
-  archive (Electron fuses deny extra `file://` privileges).
-- **Minimal preload bridge** — the renderer can only call a small, explicit set of
-  IPC methods exposed via `contextBridge`. There is no `require`, no `eval`, no
-  arbitrary file write.
-- **Sanitised output** — all rendered Markdown passes through DOMPurify, which strips
-  `<script>`, event handlers, and other active content. Opening a hostile `.md` file
-  cannot run code.
-- **Guarded folder reads** — when you open a folder, reads are restricted to the folder
-  you picked, reject UNC network paths (`\\server\share` and `//server/share`), reject
-  symlinks that escape the folder, and are size-bounded (per-file, file-count, and
-  cumulative caps). One limitation, stated plainly: a **drive-letter mapped share**
-  (e.g. `Z:\notes`) is indistinguishable from a local drive by any pure-Node check, so
-  it is not rejected. On such a share the folder watcher cannot run — the
-  external-change indicator and conflict banner will not appear for edits made by
-  other programs, and saving uses atomic-rename over the network. Keep vaults on a
-  local (or properly local-synced) folder for full data-safety behavior.
-
-If you discover a security issue, please report it privately to **Binary Parse** rather
-than opening a public issue.
+To show only "BP MD RTL Reader", set **Settings → Window title → App name**. Note contents are never placed in the title.

@@ -1,4 +1,5 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -11,7 +12,6 @@ test.describe('real Electron runtime boundary @electron', () => {
   let tempRoot;
   let profile;
   let notePath;
-  let launchElapsed;
 
   test.beforeEach(async () => {
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bpmd-electron-test-'));
@@ -20,7 +20,6 @@ test.describe('real Electron runtime boundary @electron', () => {
     fs.mkdirSync(profile);
     fs.writeFileSync(notePath, '# Runtime boundary\n\nreal preload and IPC', 'utf8');
 
-    const started = Date.now();
     electronApp = await electron.launch({
       args: ['--user-data-dir=' + profile, ROOT, notePath],
       env: {
@@ -31,19 +30,10 @@ test.describe('real Electron runtime boundary @electron', () => {
     });
     page = await electronApp.firstWindow();
     await page.locator('#app').waitFor({ state: 'visible' });
-    launchElapsed = Date.now() - started;
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      // Approve the production close handshake first; calling the harness'
-      // process close directly would otherwise hit src/main/index.js's native-close
-      // interception and wait for the renderer response.
-      if (page && !page.isClosed()) {
-        await page.evaluate(() => window.electronAPI.closeWindow());
-      }
-      await electronApp.close();
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

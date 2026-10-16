@@ -7,7 +7,7 @@ import {
   resolveActiveAfterMerge,
 } from '../../src/renderer/components/workspace-controller.js';
 
-function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard, confirmEncodingUpgrade } = {}) {
+function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard, confirmEncodingUpgrade, carryOverNoteData } = {}) {
   const activeState = state || { files: [], activeFile: null, vaultName: null, recents: [] };
   const calls = {
     addFile: [], renderFile: [], renderTree: [], renderTabs: 0, vaultUi: [],
@@ -25,6 +25,7 @@ function harness({ state, electronAPI, hostWindow, hostDocument, confirmDiscard,
     showWelcome: () => { calls.welcome++; },
     confirmDiscard: confirmDiscard || vi.fn(() => true),
     confirmEncodingUpgrade,
+    carryOverNoteData,
     addFile: (file) => calls.addFile.push(file),
     renderFile: (index) => calls.renderFile.push(index),
     renderTree: (files) => calls.renderTree.push(files),
@@ -78,7 +79,7 @@ describe('workspace controller', () => {
     expect(controller.getVaultId()).toBe('cap-vault');
     expect(controller.getVaultGeneration()).toBe(0);
     expect(await controller.mayAbandonWorkspace()).toBe(false);
-    expect(confirmDiscard).toHaveBeenCalledWith('2 unsaved files. Discard changes and continue?');
+    expect(confirmDiscard).toHaveBeenCalledWith('2 unsaved files. Discard changes and continue?', expect.any(Array));
     expect(controller.buildSession()).toEqual({
       vaults: [{ vaultId: 'cap-vault', openPaths: ['a.md', 'b.md'] }],
       activeVaultId: 'cap-vault',
@@ -224,6 +225,14 @@ describe('workspace controller', () => {
     await denied.controller.openVault();
     expect(denied.calls.toasts).toContainEqual(['Could not open folder', 'error']);
     expect(denied.calls.renderFile).toEqual([]);
+
+    // MAIN-5: a grant main could not save says so, never "could not open folder".
+    const unsaved = harness({ electronAPI: {
+      openFolder: vi.fn(async () => ({ error: 'persist-failed' })),
+      readVault: vi.fn(),
+    } });
+    await unsaved.controller.openVault();
+    expect(unsaved.calls.toasts).toContainEqual(['Could not open it: the app cannot write to its settings folder', 'error']);
 
     const noId = harness({ electronAPI: {
       openFolder: vi.fn(async () => ({})),
@@ -387,6 +396,8 @@ describe('workspace controller', () => {
     await web.controller.openSingleFile();
     expect(web.calls.addFile[0]).toMatchObject({ name: 'web.md', handle, content: 'web', dirty: false });
     expect(web.calls.toasts).toContainEqual(['Opened web.md']);
+    // QA-L3: the browser picker offers .txt, like drag and drop
+    expect(web.hostWindow.showOpenFilePicker.mock.calls[0][0].types[0].accept['text/plain']).toEqual(['.txt']);
 
     const aborted = harness({ hostWindow: {
       showOpenFilePicker: vi.fn(async () => { throw { name: 'AbortError' }; }),
@@ -811,6 +822,31 @@ describe('workspace controller', () => {
     });
     expect(current.calls.renderFile).toEqual([0]);
     expect(current.calls.toasts).toContainEqual(['Saved as saved.md']);
+  });
+
+  test('QA-M9: a folder note saved elsewhere carries its data, becomes a loose tab, and the folder is re-read', async () => {
+    const state = {
+      files: [{
+        name: 'a.md', path: 'notes/a.md', vaultId: 'cap-v', inventory: true, open: true,
+        content: 'body', dirty: false, revision: 0, meta: {},
+      }],
+      activeFile: 0, recents: [],
+    };
+    const saveFileAs = vi.fn(async () => ({ ok: true, name: 'copy.md', documentId: 'cap-new', meta: {} }));
+    const readVault = vi.fn(async () => ({ vault: { id: 'cap-v', name: 'V', generation: 1 }, entries: [
+      { name: 'a.md', relPath: 'notes/a.md', documentId: 'cap-a', content: 'body' },
+    ] }));
+    const openFolder = vi.fn(async () => ({ canceled: false, vault: { id: 'cap-v', name: 'V', generation: 1 } }));
+    const seen = [];
+    const carryOverNoteData = vi.fn(async (oldKey, file) => { seen.push([oldKey, file.documentId, file.inventory]); });
+    const current = harness({ state, electronAPI: { saveFileAs, readVault, openFolder }, carryOverNoteData });
+    await current.controller.openVault();
+    const note = state.files.find((f) => f.path === 'notes/a.md');
+    await current.controller.saveAs(note);
+    expect(seen).toEqual([['vault:cap-v notes/a.md', 'cap-new', false]]);
+    expect(note).toMatchObject({ name: 'copy.md', vaultId: null, inventory: false, open: true });
+    // the original note is back in the folder after the re-read
+    expect(state.files.some((f) => f.vaultId === 'cap-v' && f.path === 'notes/a.md')).toBe(true);
   });
 
   test('handles canceled, rejected, and failed Electron Save As results', async () => {
@@ -1596,8 +1632,22 @@ describe('closeVault / getOpenVaults (B4)', () => {
     state.files.find((f) => f.vaultId === 'cap-a').dirty = true;
     const ok = await controller.closeVault('cap-a');
     expect(ok).toBe(false);
-    expect(confirmDiscard).toHaveBeenCalledWith('1 unsaved file in this folder. Discard changes and continue?');
+    // QA M4: the prompt is handed exactly the closing folder's dirty notes.
+    expect(confirmDiscard).toHaveBeenCalledWith('1 unsaved file in this folder. Discard changes and continue?', [state.files.find((f) => f.vaultId === 'cap-a')]);
     expect(state.files.map((f) => f.path)).toEqual(['a.md', 'b.md']); // untouched
+  });
+
+  test('QA M4: saveAllDirty with a file list saves only those files', async () => {
+    const writeFile = vi.fn(async () => ({ ok: true, meta: { hash: 'h' } }));
+    const state = { files: [
+      { name: 'a.md', path: 'a.md', content: 'a', dirty: true, revision: 0, documentId: 'd-a', meta: {} },
+      { name: 'b.md', path: 'b.md', content: 'b', dirty: true, documentId: 'd-b', meta: {} },
+    ], activeFile: 0, recents: [] };
+    const { controller } = harness({ state, electronAPI: { writeFile } });
+    expect(await controller.saveAllDirty({ files: [state.files[0]] })).toBe(true);
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(writeFile.mock.calls[0][0].documentId).toBe('d-a');
+    expect(state.files[1].dirty).toBe(true);
   });
 
   test('closing an unknown vaultId is a harmless no-op', async () => {
@@ -1765,6 +1815,23 @@ describe('encoding upgrade on unmappable-character saves', () => {
     await controller.saveAs(file);
     expect(saveFileAs).toHaveBeenCalledTimes(2);
     expect(saveFileAs.mock.calls[1][0]).toMatchObject({ encoding: 'utf8', bom: false });
+    expect(file.meta.encoding).toBe('windows-1256');
+    expect(file.documentId).toBe('doc-1');
+    expect(file.dirty).toBe(true);
+  });
+
+  // QA H4: a failed write (not only a cancel) used to leave UTF-8 behind, and the next
+  // Ctrl+S re-encoded the original Windows-1256 file without asking.
+  test('accepting the upgrade then failing the write rolls the encoding back', async () => {
+    const saveFileAs = vi.fn()
+      .mockResolvedValueOnce({ error: 'unmappable-character', count: 1, samples: ['😀'] })
+      .mockResolvedValueOnce({ error: 'write-failed' });
+    const { controller } = harness({
+      electronAPI: { saveFileAs },
+      confirmEncodingUpgrade: vi.fn(async () => true),
+    });
+    const file = legacyFile();
+    await controller.saveAs(file);
     expect(file.meta.encoding).toBe('windows-1256');
     expect(file.documentId).toBe('doc-1');
     expect(file.dirty).toBe(true);

@@ -8,6 +8,7 @@
  * the human click is the production path.
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -55,10 +56,7 @@ test.describe('EPUB export @electron', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) await page.evaluate(() => window.electronAPI.closeWindow());
-      await electronApp.close();
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

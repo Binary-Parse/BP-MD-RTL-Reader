@@ -8,6 +8,7 @@
  * be proven to succeed rather than being silently refused.
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -36,12 +37,7 @@ test.describe('fullscreen toggle @electron', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) {
-        await page.evaluate(() => window.electronAPI.closeWindow());
-      }
-      await electronApp.close();
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -75,7 +71,7 @@ test.describe('fullscreen toggle @electron', () => {
     // intermittently fail with "not a function", as if app.js hadn't finished loading —
     // reproduced consistently across full-suite runs, never in isolation). Give it a
     // beat before the afterEach hook tears the window down.
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(300); // deliberate: no observable end of the DWM animation
   });
 
   test('[M25] Esc leaves fullscreen, but first closes what is open', async () => {
@@ -88,7 +84,7 @@ test.describe('fullscreen toggle @electron', () => {
     await expect(page.locator('#palOverlay')).toHaveClass(/open/);
     await page.keyboard.press('Escape');
     await expect(page.locator('#palOverlay')).not.toHaveClass(/open/);
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(400); // deliberate: a wrong exit from fullscreen would have started by now
     expect(await isFull()).toBe(true);
 
     // Nothing is open: this Esc leaves fullscreen.
@@ -98,8 +94,8 @@ test.describe('fullscreen toggle @electron', () => {
 
     // And outside fullscreen Esc does not enter it.
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(400); // deliberate: a wrong entry would have started by now
     expect(await isFull()).toBe(false);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(300); // deliberate: the exit animation, as in the test above
   });
 });

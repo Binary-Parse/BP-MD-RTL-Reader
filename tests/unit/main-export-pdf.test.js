@@ -16,6 +16,7 @@ import { buildMockElectron, buildMockFs, buildMockProc } from './main-harness.js
 
 const getHandle = (electron, name) => electron.ipcMain.handle.mock.calls.find((c) => c[0] === name)?.[1];
 const HTML = '<!DOCTYPE html><html><body><h1>Note</h1></body></html>';
+const MAX_PDF_EXPORT_BYTES = 64 * 1024 * 1024;
 
 describe('export:pdf (T-B6)', () => {
   let electron, fs, handler;
@@ -39,12 +40,21 @@ describe('export:pdf (T-B6)', () => {
     expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled();
   });
 
-  test('oversized html → { error: "file-too-large" }, no dialog, no temp file (SEC-04)', async () => {
+  test('html past the 64 MiB PDF cap → { error: "too-large" }, no dialog, no temp file (SEC-04)', async () => {
     electron.dialog.showSaveDialog.mockClear();
-    const res = await handler({}, { html: 'x'.repeat(10 * 1024 * 1024 + 1) });
-    expect(res).toEqual({ error: 'file-too-large' });
+    const res = await handler({}, { html: 'x'.repeat(MAX_PDF_EXPORT_BYTES + 1) });
+    expect(res).toEqual({ error: 'too-large' });
     expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled();
     expect(fs.promises.open).not.toHaveBeenCalled();
+  });
+
+  test('html of exactly 64 MiB is accepted: the save dialog is asked for; the cap counts bytes', async () => {
+    electron.dialog.showSaveDialog.mockClear();
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
+    expect(await handler({}, { html: 'x'.repeat(MAX_PDF_EXPORT_BYTES) })).toEqual({ canceled: true });
+    expect(electron.dialog.showSaveDialog).toHaveBeenCalledTimes(1);
+    // An Arabic letter is two bytes: half the cap in letters, plus one, is over it.
+    expect(await handler({}, { html: 'م'.repeat(MAX_PDF_EXPORT_BYTES / 2 + 1) })).toEqual({ error: 'too-large' });
   });
 
   test('sweeps hour-old bpmd-export temp orphans on every export (HYG-01)', async () => {
@@ -161,6 +171,8 @@ describe('export:pdf (T-B6)', () => {
     const res = await handler({}, { html: HTML, defaultName: 'note.pdf' });
     expect(res).toEqual({ error: 'export-failed' });
     expect(electron._mockWin.close).toHaveBeenCalled();
+    const logged = fs.appendFileSync.mock.calls.map(([, line]) => JSON.parse(line));
+    expect(logged).toContainEqual(expect.objectContaining({ level: 'warn', source: 'ipc:export:pdf', message: 'boom' }));
     // The temp html handle was opened, but the PDF write to the chosen path never happened.
     expect(fs.promises.open).toHaveBeenCalledTimes(1);
     expect(fs.promises.open.mock.calls.some((c) => c[0] === '/out/note.pdf')).toBe(false);
@@ -189,7 +201,7 @@ describe('export:pdf (T-B6)', () => {
     expect(res).toEqual({ ok: true });
   });
 
-  // L326: defaultName fallback — a missing/non-string defaultName → 'document.pdf'.
+  // defaultName fallback — a missing/non-string defaultName → 'document.pdf'.
   test('missing defaultName → save dialog defaultPath is "document.pdf"', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
     await handler({}, { html: HTML }); // no defaultName
@@ -206,14 +218,14 @@ describe('export:pdf (T-B6)', () => {
     expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[1].defaultPath).toBe('document.pdf');
   });
 
-  // L328: the save-dialog title literal.
+  // the save-dialog title literal.
   test('save dialog title is exactly "Export PDF"', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined });
     await handler({}, { html: HTML, defaultName: 'n.pdf' });
     expect(electron.dialog.showSaveDialog.mock.calls.at(-1)[1].title).toBe('Export PDF');
   });
 
-  // L332: `result.canceled || !result.filePath` — NOT canceled but an empty filePath
+  // `result.canceled || !result.filePath` — NOT canceled but an empty filePath
   // must STILL be treated as cancel (kills the || → && mutant).
   test('not canceled but empty filePath → { canceled: true }, nothing rendered', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '' });
@@ -223,7 +235,7 @@ describe('export:pdf (T-B6)', () => {
     expect(electron._mockWin.webContents.printToPDF).not.toHaveBeenCalled();
   });
 
-  // L341: the temp html is written with the 'utf8' encoding — now through the exclusive
+  // the temp html is written with the 'utf8' encoding — now through the exclusive
   // file handle (audit SEC-04) rather than fs.promises.writeFile.
   test('temp html is written with utf8 encoding through the exclusive handle', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
@@ -232,7 +244,7 @@ describe('export:pdf (T-B6)', () => {
     expect(handle.writeFile.mock.calls[0][1]).toBe('utf8');
   });
 
-  // L344: contextIsolation:true on the offscreen window (not asserted elsewhere here).
+  // contextIsolation:true on the offscreen window (not asserted elsewhere here).
   test('offscreen window has contextIsolation:true', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
     await handler({}, { html: HTML, defaultName: 'n.pdf' });
@@ -240,7 +252,7 @@ describe('export:pdf (T-B6)', () => {
     expect(opts.webPreferences.contextIsolation).toBe(true);
   });
 
-  // L346: setWindowOpenHandler returns exactly { action: 'deny' } (kills ()=>undefined).
+  // setWindowOpenHandler returns exactly { action: 'deny' } (kills ()=>undefined).
   test('offscreen window-open handler denies all popups ({ action: "deny" })', async () => {
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
     await handler({}, { html: HTML, defaultName: 'n.pdf' });
@@ -249,7 +261,7 @@ describe('export:pdf (T-B6)', () => {
     expect(denyHandler()).toEqual({ action: 'deny' });
   });
 
-  // L354: `if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close()` — when the offscreen
+  // `if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close()` — when the offscreen
   // window is ALREADY destroyed, close() must NOT be called again (kills &&→|| and
   // the forced-true mutant, which would call close on a destroyed window).
   test('a destroyed offscreen window is not close()d again in the finally', async () => {
@@ -263,11 +275,11 @@ describe('export:pdf (T-B6)', () => {
     electron._mockWin.isDestroyed.mockReturnValue(false); // restore for other tests
   });
 
-  // L43-44 (withTimeout): a loadFile that NEVER resolves must be rejected by the
+  // a loadFile that NEVER resolves must be rejected by the
   // 30s timeout → { error: "export-failed" }, and the window is still cleaned up.
   // Kills the setTimeout(()=>reject) ArrowFunction/BlockStatement mutants (without
   // the reject the race would hang forever, timing the test out).
-  test('a hung loadFile is bounded by the 30s timeout → export-failed', async () => {
+  test('a hung loadFile is bounded by the 30s timeout (small note) → { error: "timeout" }', async () => {
     vi.useFakeTimers();
     try {
       electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: '/out/note.pdf' });
@@ -277,14 +289,14 @@ describe('export:pdf (T-B6)', () => {
       // Let the temp-html writeFile microtask flush, then trip the 30s timer.
       await vi.advanceTimersByTimeAsync(30000);
       const res = await p;
-      expect(res).toEqual({ error: 'export-failed' });
+      expect(res).toEqual({ error: 'timeout' });
       expect(electron._mockWin.close).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  // L338 / audit SEC-04: the temp filename is now a random UUID, so the old
+  // audit SEC-04: the temp filename is now a random UUID, so the old
   // Date.now()+counter sequence is gone. Two exports must still draw DIFFERENT
   // unguessable names, and every create must be exclusive ('wx').
   test('each export uses a distinct random temp filename, always created with wx', async () => {

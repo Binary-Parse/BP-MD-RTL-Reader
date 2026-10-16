@@ -16,7 +16,7 @@ function createWindowController({
   approvedCloseWindows,
   getCurrentSettings,
   persistWindowState,
-  closeVaultWatcher,
+  closeAllVaults,
   deliverPendingFiles,
   clampWindowBounds,
   isPackaged,
@@ -105,6 +105,19 @@ function createWindowController({
       closeFailsafeBySender.delete(sender);
     }
   }
+  function windowOf(sender) {
+    return BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
+      ? BrowserWindow.fromWebContents(sender)
+      : null;
+  }
+  // Close without asking the renderer: mark the close approved, save the bounds, close
+  // every vault, then close the window.
+  function forceClose(win) {
+    approvedCloseWindows.add(win);
+    persistWindowState(win);
+    closeAllVaults();
+    if (!win.isDestroyed()) win.close();
+  }
   function armCloseFailsafe(win, sender) {
     clearCloseFailsafe(sender);
     const failsafe = setTimeout(() => {
@@ -112,10 +125,7 @@ function createWindowController({
       if (win.isDestroyed() || approvedCloseWindows.has(win)) return;
       const dirtyAtForceClose = (dirtyCountBySender.get(sender) || 0);
       log('warn', 'window:close-failsafe', `renderer never answered app:request-close within ${CLOSE_FAILSAFE_MS}ms — force closing (${dirtyAtForceClose} unsaved file(s) at last report; recovery snapshots cap the loss)`);
-      approvedCloseWindows.add(win);
-      persistWindowState(win);
-      closeVaultWatcher();
-      win.close();
+      forceClose(win);
     }, CLOSE_FAILSAFE_MS);
     closeFailsafeBySender.set(sender, failsafe);
   }
@@ -135,17 +145,13 @@ function createWindowController({
     // the window is destroyed / already approved.
     ipcMain.on('window-close-aborted', (event) => clearCloseFailsafe(event.sender));
     ipcMain.on('window-close-extend', (event) => {
-      const win = BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
-        ? BrowserWindow.fromWebContents(event.sender)
-        : null;
+      const win = windowOf(event.sender);
       if (win && !win.isDestroyed() && closeFailsafeBySender.has(event.sender)) {
         armCloseFailsafe(win, event.sender);
       }
     });
     ipcMain.on('window-set-fullscreen', (event, flag) => {
-      const win = BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
-        ? BrowserWindow.fromWebContents(event.sender)
-        : null;
+      const win = windowOf(event.sender);
       if (win && !win.isDestroyed() && typeof win.setFullScreen === 'function') {
         win.setFullScreen(flag === true);
       }
@@ -193,9 +199,7 @@ function createWindowController({
       if (!entry.sender || entry.sender !== event.sender) return; // foreign sender: ignore
       const combinedLength = entry.descriptors.length + APP_COMMANDS.length;
       if (!Number.isInteger(index) || index < 0 || index >= combinedLength) return;
-      const win = BrowserWindow && typeof BrowserWindow.fromWebContents === 'function'
-        ? BrowserWindow.fromWebContents(event.sender)
-        : null;
+      const win = windowOf(event.sender);
       if (!win || win.isDestroyed()) return;
       if (index >= entry.descriptors.length) {
         const command = APP_COMMANDS[index - entry.descriptors.length];
@@ -323,15 +327,12 @@ function createWindowController({
       if (approvedCloseWindows.has(win)) {
         approvedCloseWindows.delete(win);
         persistWindowState(win);
-        closeVaultWatcher();
+        closeAllVaults();
         return;
       }
       if (event && typeof event.preventDefault === 'function') event.preventDefault();
       if (!rendererLoaded || !win.webContents || win.webContents.isDestroyed()) {
-        approvedCloseWindows.add(win);
-        persistWindowState(win);
-        closeVaultWatcher();
-        if (win && !win.isDestroyed()) win.close();
+        forceClose(win);
         return;
       }
       win.webContents.send('app:request-close');
@@ -348,7 +349,9 @@ function createWindowController({
       win.on('leave-full-screen', () => { if (!win.isDestroyed()) win.webContents.send('window-fullscreen-changed', false); });
     }
 
-    win.loadURL(appRendererUrl);
+    // QA-L2: the page exposes its test hooks on `window` only when asked; a development run
+    // under the Electron test lane (BPMD_TEST=1) asks. A packaged build never does.
+    win.loadURL(!isPackaged && process.env.BPMD_TEST === '1' ? `${appRendererUrl}?bpmdTest=1` : appRendererUrl);
     win.webContents.on('did-finish-load', () => {
       rendererLoaded = true;
       loadedWindows.add(win);

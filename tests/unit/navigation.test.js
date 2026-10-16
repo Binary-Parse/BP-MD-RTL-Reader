@@ -61,42 +61,41 @@ describe('isExternallyOpenable', () => {
 });
 
 // ── Mutation-hardening (audit F-3): every guard clause + scheme anchoring. ──
-import { classifyNavigation as _cn, isExternallyOpenable as _ico } from '../../src/main/navigation.js';
 describe('classifyNavigation — guard clauses (mutation kills)', () => {
   const APP = 'file:///app/index.html';
   test('non-string OR empty url → block (both clauses of the OR)', () => {
-    expect(_cn(42, APP)).toEqual({ action: 'block' });
-    expect(_cn(null, APP)).toEqual({ action: 'block' });
-    expect(_cn('', APP)).toEqual({ action: 'block' });
-    expect(_cn({ toString: () => 'https://example.com' }, APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation(42, APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation(null, APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation('', APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation({ toString: () => 'https://example.com' }, APP)).toEqual({ action: 'block' });
   });
   test('the app URL is blocked whatever the second argument is (B5)', () => {
-    expect(_cn(APP, APP)).toEqual({ action: 'block' });
-    expect(_cn(APP + '#x', APP)).toEqual({ action: 'block' });
-    expect(_cn(APP, '')).toEqual({ action: 'block' });
-    expect(_cn('https://x', '')).toEqual({ action: 'external' });
-    expect(_cn('https://x', 42)).toEqual({ action: 'external' });
+    expect(classifyNavigation(APP, APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation(APP + '#x', APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation(APP, '')).toEqual({ action: 'block' });
+    expect(classifyNavigation('https://x', '')).toEqual({ action: 'external' });
+    expect(classifyNavigation('https://x', 42)).toEqual({ action: 'external' });
   });
   test('external schemes route external; everything else blocks', () => {
-    for (const u of ['https://x', 'http://x', 'mailto:a@b', 'tel:+1']) expect(_cn(u, APP)).toEqual({ action: 'external' });
-    for (const u of ['file:///other', 'data:x', 'javascript:x', 'blob:x', 'custom:x']) expect(_cn(u, APP)).toEqual({ action: 'block' });
+    for (const u of ['https://x', 'http://x', 'mailto:a@b', 'tel:+1']) expect(classifyNavigation(u, APP)).toEqual({ action: 'external' });
+    for (const u of ['file:///other', 'data:x', 'javascript:x', 'blob:x', 'custom:x']) expect(classifyNavigation(u, APP)).toEqual({ action: 'block' });
   });
   test('scheme must be ANCHORED at the start (^) — embedded scheme blocks', () => {
-    expect(_cn('xhttps://evil', APP)).toEqual({ action: 'block' });
-    expect(_cn('  https://x', APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation('xhttps://evil', APP)).toEqual({ action: 'block' });
+    expect(classifyNavigation('  https://x', APP)).toEqual({ action: 'block' });
   });
 });
 describe('isExternallyOpenable — guard + anchoring', () => {
   test('non-string → false (typeof guard)', () => {
-    expect(_ico(42)).toBe(false);
-    expect(_ico(null)).toBe(false);
-    expect(_ico(undefined)).toBe(false);
-    expect(_ico({ toString: () => 'https://example.com' })).toBe(false);
+    expect(isExternallyOpenable(42)).toBe(false);
+    expect(isExternallyOpenable(null)).toBe(false);
+    expect(isExternallyOpenable(undefined)).toBe(false);
+    expect(isExternallyOpenable({ toString: () => 'https://example.com' })).toBe(false);
   });
   test('only anchored http(s)/mailto/tel → true', () => {
-    expect(_ico('https://x')).toBe(true);
-    expect(_ico('mailto:a@b')).toBe(true);
-    expect(_ico('xhttps://x')).toBe(false); // anchoring
-    expect(_ico('javascript:x')).toBe(false);
+    expect(isExternallyOpenable('https://x')).toBe(true);
+    expect(isExternallyOpenable('mailto:a@b')).toBe(true);
+    expect(isExternallyOpenable('xhttps://x')).toBe(false); // anchoring
+    expect(isExternallyOpenable('javascript:x')).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Stage 5b adversarial + white-box tests for the 9-bug fix (run_id=20260516T060914Z-1721).
+ * Adversarial and white-box tests for a batch of nine bug fixes (May 2026).
  *
  * Phases covered:
  *   Phase 1 — Black-box tests derived from spec.md acceptance criteria.
@@ -115,10 +115,7 @@ test.describe('[AC1] openVault feature-detect', () => {
     expect(toastError).toBe(false);
 
     // No JS errors
-    const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
-    );
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0); // everything is vendored: no font/CDN noise to filter
   });
 
   test('[AC1-error] empty folder shows info toast, no tree render', async ({ page }) => {
@@ -178,10 +175,7 @@ test.describe('[AC1] openVault feature-detect', () => {
     });
     expect(threw).toBe(false);
 
-    const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
-    );
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0); // everything is vendored: no font/CDN noise to filter
   });
 });
 
@@ -313,7 +307,13 @@ test.describe('[AC3] Outline-click: statusbar position invariance', () => {
     const tocCount = await tocItems.count();
     if (tocCount > 1) {
       await tocItems.nth(1).click();
-      await page.waitForTimeout(600); // allow smooth scroll to settle
+      // the smooth scroll has settled when two frames apart read the same position
+      await expect.poll(() => page.evaluate(async () => {
+        const pos = () => (document.querySelector('.preview-pane') || document.scrollingElement).scrollTop;
+        const a = pos();
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        return a === pos();
+      })).toBe(true);
     }
 
     // Measure after
@@ -419,18 +419,6 @@ test.describe('[AC4] Side-panel font-size >= 13px', () => {
 
     const fontSize = await page.evaluate(() => {
       const el = document.querySelector('.toc-item.h2');
-      return el ? parseFloat(getComputedStyle(el).fontSize) : 0;
-    });
-    expect(fontSize).toBeGreaterThanOrEqual(13);
-  });
-
-  test('[AC9-happy] .source-textarea computed font-size >= 13px', async ({ page }) => {
-    await goto(page);
-    await injectFile(page, 'src.md', '# Source\n\nContent.');
-    await page.evaluate(() => window.setEditorMode('source'));
-
-    const fontSize = await page.evaluate(() => {
-      const el = document.querySelector('.source-textarea');
       return el ? parseFloat(getComputedStyle(el).fontSize) : 0;
     });
     expect(fontSize).toBeGreaterThanOrEqual(13);
@@ -621,6 +609,15 @@ test.describe('[AC5] Zoom controls', () => {
 
 test.describe('[AC7] Drag-drop file loading', () => {
 
+  test('QA DROP: two different files with one name get two tabs; the same file reuses its tab', async ({ page }) => {
+    await goto(page);
+    await dropFiles(page, [{ name: 'notes.md', content: '# First' }]);
+    await dropFiles(page, [{ name: 'notes.md', content: '# Second' }]);
+    await dropFiles(page, [{ name: 'notes.md', content: '# First' }]);
+    const files = await page.evaluate(() => window._appState.files.map((f) => [f.name, f.content, !!f.conflict]));
+    expect(files).toEqual([['notes.md', '# First', false], ['notes (2).md', '# Second', false]]);
+  });
+
   test('[AC7-happy] .md file drop loads into State.files and renders', async ({ page }) => {
     await goto(page);
 
@@ -674,13 +671,12 @@ test.describe('[AC7] Drag-drop file loading', () => {
     expect(toastVisible).toBe(true);
   });
 
-  test('[AC7-error] oversized file (>10 MB) shows error toast and is not loaded', async ({ page }) => {
+  test('[AC7-error] oversized file (>100 MB) shows error toast and is not loaded', async ({ page }) => {
     await goto(page);
 
     await page.evaluate(async () => {
-      // Create an 11 MB file (>10 MB limit)
-      const bigContent = 'x'.repeat(11 * 1024 * 1024);
-      const file = new File([bigContent], 'huge.md', { type: 'text/markdown' });
+      // Create a file one byte over the 100 MB open limit
+      const file = new File([new Uint8Array(100 * 1024 * 1024 + 1)], 'huge.md', { type: 'text/markdown' });
       const dt = new DataTransfer();
       dt.items.add(file);
       const ev = new DragEvent('drop', { cancelable: true, bubbles: true, dataTransfer: dt });
@@ -856,9 +852,8 @@ test.describe('[ADV] Adversarial tests', () => {
 
   // CWE-79: XSS via search snippet — query contains HTML injection attempt
   test('[ADV-XSS-query] search query with HTML injection does not execute script', async ({ page }) => {
-    const jsExecuted = await page.evaluate(() => {
+    await page.evaluate(() => {
       window.__advXss = false;
-      return false;
     });
 
     await goto(page);
@@ -959,10 +954,7 @@ test.describe('[ADV] Adversarial tests', () => {
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBe(1); // Empty file is still a valid file
 
-    const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
-    );
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0); // everything is vendored: no font/CDN noise to filter
   });
 
   // CWE-400: search on large file (many occurrences) — only 5 hits, no hang
@@ -1069,8 +1061,9 @@ test.describe('[ADV] Adversarial tests', () => {
     expect(fileCount).toBe(1);
   });
 
-  // Adversarial: drop of .MD file exactly at 10 MB boundary (10485760 bytes) — should be rejected
-  test('[ADV-drag-size-exactly-10mb] file at exactly 10 MB (10485760 bytes) is rejected', async ({ page }) => {
+  // The old 10 MB limit is gone: a note of exactly 10 MB (10485760 bytes) opens like any other
+  // (the open limit is 100 MB, see tests/e2e/large-files.spec.js for the tier edges).
+  test('[ADV-drag-size-exactly-10mb] file at exactly 10 MB (10485760 bytes) is accepted', async ({ page }) => {
     await goto(page);
 
     await page.evaluate(async () => {
@@ -1083,11 +1076,8 @@ test.describe('[ADV] Adversarial tests', () => {
       await new Promise(r => setTimeout(r, 300));
     });
 
-    // At exactly 10MB (not exceeding), behavior depends on implementation.
-    // The spec says "> 10 MB" triggers rejection (file.size > MAX_SIZE).
-    // Exactly 10 MB (10485760) is NOT > 10485760, so should be ACCEPTED.
     const fileCount = await page.evaluate(() => window._appState.files.length);
-    expect(fileCount).toBe(1); // exactly 10 MB should be accepted (not > MAX_SIZE)
+    expect(fileCount).toBe(1);
   });
 
   // Adversarial: Ctrl+A in a focused INPUT (e.g., find bar) should not override native select-all

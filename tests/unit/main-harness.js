@@ -44,7 +44,7 @@ export function buildMockElectron() {
   const crashReporter = { start: vi.fn() };
   const BrowserWindow = vi.fn(function (opts) { mockWin._options = opts; return mockWin; });
   BrowserWindow.getAllWindows = vi.fn(() => []);
-      BrowserWindow.getFocusedWindow = vi.fn(() => mockWin);
+  BrowserWindow.getFocusedWindow = vi.fn(() => mockWin);
   BrowserWindow.fromWebContents = vi.fn(() => mockWin);
   const ipcMain = { handle: vi.fn(), on: vi.fn() };
   // Isolated offline session for the T-B6 offscreen PDF window: records the registered

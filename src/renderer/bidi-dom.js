@@ -60,14 +60,37 @@ function blockText(el) {
  * auto-detection. When null (default/AUTO), each block resolves its own dominant-script
  * direction as before.
  */
+// A block's pin (a `<!-- dir: … -->` line above it in the note) covers the block and all it
+// contains, and wins over the note's forced direction.
+const pinOf = (el) => el.closest('[data-pinned]')?.getAttribute('data-pinned') || null;
+
+/**
+ * Moves each pin placeholder (`p.bpmd-dir`, block-direction.js) onto the block after it as
+ * `data-pinned` and removes the placeholder. Code keeps its own direction (left to right).
+ */
+export function applyPins(root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return root;
+  for (const marker of root.querySelectorAll('p.bpmd-dir')) {
+    const dir = marker.getAttribute('dir');
+    let next = marker.nextElementSibling;
+    while (next && next.matches('p.bpmd-dir')) next = next.nextElementSibling;
+    if (next && (dir === 'rtl' || dir === 'ltr') && !next.matches('pre, .mermaid')) {
+      next.setAttribute('data-pinned', dir);
+      next.setAttribute('dir', dir);
+    }
+    marker.remove();
+  }
+  return root;
+}
+
 export function applyBlockDirection(root, baseDir = 'ltr', forceDir = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return root;
   root.querySelectorAll(BLOCK_SELECTOR).forEach((el) => {
     const text = blockText(el);
-    // Forced direction wins for the dir attribute; otherwise dominant-script (T-R1 fix): an
+    // A pin wins, then a forced direction; otherwise dominant-script (T-R1 fix): an
     // Arabic heading/para that opens with an English word/number must stay RTL.
     const autoDir = resolveBlockDirection(text, baseDir);
-    const dir = forceDir || autoDir;
+    const dir = pinOf(el) || forceDir || autoDir;
     el.setAttribute('dir', dir);
     el.setAttribute('data-dir', dir);
     // Font selection is script-driven. Never invent or overwrite `lang`: Arabic,
@@ -93,7 +116,7 @@ function applyListDirection(root, baseDir, forceDir) {
     let rtl = 0;
     for (const item of items) if (item.getAttribute('dir') === 'rtl') rtl++;
     const ltr = items.length - rtl;
-    const dir = forceDir || (rtl > ltr ? 'rtl' : rtl < ltr ? 'ltr' : baseDir);
+    const dir = pinOf(list) || forceDir || (rtl > ltr ? 'rtl' : rtl < ltr ? 'ltr' : baseDir);
     list.setAttribute('dir', dir);
   });
 }
@@ -111,7 +134,7 @@ export function applyTableDirection(root, baseDir = 'ltr', forceDir = null) {
     // RTL-M1: count the SAME text the per-block pass counts — blockText strips
     // pre/code/.mermaid/.katex, so a Latin identifier in one cell no longer flips an
     // otherwise-Arabic table to LTR (unmirrored columns, unswapped arrow traversal).
-    const dir = forceDir || resolveBlockDirection(blockText(t) || t.textContent || '', baseDir);
+    const dir = pinOf(t) || forceDir || resolveBlockDirection(blockText(t) || t.textContent || '', baseDir);
     t.setAttribute('dir', dir);
     t.setAttribute('data-dir', dir);
   });
@@ -197,6 +220,7 @@ export function isolateInlineRuns(root, baseDir = 'ltr', escape = (s) => s) {
  * each block's applied dir, so English/number runs inside a forced-RTL block stay isolated.
  */
 export function applyBidi(root, { baseDir = 'ltr', escape = (s) => s, forceDir = null } = {}) {
+  applyPins(root);
   applyBlockDirection(root, baseDir, forceDir);
   applyTableDirection(root, baseDir, forceDir); // T-R9: mirror RTL table columns (after cells get their dir)
   isolateInlineRuns(root, baseDir, escape);

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Adversarial tests for the heading RTL alignment fix (run_id=20260512T184517Z-5378).
+ * Adversarial tests for the heading RTL alignment fix.
  *
  * The implementer added `text-align: end` to #editor[dir="rtl"] h1/h2/h3 and
  * .doc-meta rules.  These tests go beyond the AC6/AC7/AC8 keyword-only checks
@@ -39,12 +39,6 @@ async function injectMarkdown(page, content) {
     // measure the RTL render pipeline that export ships.
     document.getElementById('editorArea').classList.remove('cm-single', 'welcome');
   }, content);
-}
-
-async function getEditorComputedDirection(page) {
-  return page.evaluate(() =>
-    getComputedStyle(document.getElementById('editor')).direction
-  );
 }
 
 /**

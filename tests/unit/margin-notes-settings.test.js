@@ -24,7 +24,7 @@ describe('marginNotesCollapsed (main settings)', () => {
 describe('marginNotesCollapsed (renderer settings controller)', () => {
   function makeState(extra = {}) {
     return {
-      theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'edit',
+      theme: 'paper', zoomFactor: 1, viewMode: 'edit',
       sidebarVisible: true, inspectorVisible: true, recents: [], calendar: 'gregorian',
       arabicKashida: false, italicRecolor: true, uiLocale: 'en', uiDirection: 'ltr',
       readerTextScale: 1, readerWidthCh: 72, windowTitleMode: 'file', autoHideTitlebar: false,
@@ -34,7 +34,7 @@ describe('marginNotesCollapsed (renderer settings controller)', () => {
     };
   }
   const actions = () => ({
-    applyTheme: vi.fn(), setZoom: vi.fn(), setEditorMode: vi.fn(), setViewMode: vi.fn(),
+    applyTheme: vi.fn(), setZoom: vi.fn(), setViewMode: vi.fn(),
     applyPanelLayout: vi.fn(), renderRecents: vi.fn(), renderContinue: vi.fn(), applyKashida: vi.fn(),
     applyItalicRecolor: vi.fn(), setUiLocale: vi.fn(), setUiDirection: vi.fn(),
     setReaderTextScale: vi.fn(), setReaderWidthCh: vi.fn(), restoreLastSession: vi.fn(async () => {}),

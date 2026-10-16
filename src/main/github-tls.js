@@ -24,7 +24,7 @@ const { URL } = require('url');
  *    not match today. Each value is the SPKI of the certificate of that NAME in the root store
  *    bundled with Node (`tls.rootCertificates`); tests/unit/github-tls.test.js proves every one.
  *
- * Accepted consequence (DECISIONS.md, 2026-10-12): a certificate for api.github.com issued
+ * Accepted consequence (owner decision, 2026-10-12): a certificate for api.github.com issued
  * under any of these roots is accepted, not only GitHub's own key. The check only ever reads
  * a version number and the app opens one fixed URL, so this is the price of surviving a
  * rotation. When nothing matches, the app says so and points at the releases page.

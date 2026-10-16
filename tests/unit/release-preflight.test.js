@@ -19,27 +19,14 @@ const pkg = require('../../package.json');
 const changelog = readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
 
 describe('v1 release preflight', () => {
-  test('accepts private validation but refuses private publication and wrong tags', () => {
+  test('accepts this release and refuses a version that is not stable SemVer', () => {
     const base = {
       packageVersion: pkg.version,
       changelog,
       repository: 'Binary-Parse/BP-MD-RTL-Reader',
-      visibility: 'private',
-      publish: false,
-      refType: 'branch',
-      refName: 'release/v1.0.0-readiness',
       skipArtifactCheck: true,
     };
     expect(validateRelease(base)).toEqual([]);
-    expect(validateRelease({ ...base, publish: true, refType: 'tag', refName: 'v1.0.0' })).toContain(
-      'publishing requires a public repository',
-    );
-    expect(validateRelease({ ...base, visibility: 'public', publish: true, refType: 'tag', refName: 'v1.0.2' })).toContain(
-      `release tag v1.0.2 does not match package version ${pkg.version}`,
-    );
-    expect(validateRelease({ ...base, visibility: 'public', publish: true, refType: 'branch', refName: 'main' })).toContain(
-      `publishing is allowed only from an annotated v${pkg.version} tag`,
-    );
     expect(validateRelease({ ...base, packageVersion: '01.0.0' })).toContain(
       'package version 01.0.0 is not a stable SemVer release',
     );
@@ -62,10 +49,6 @@ describe('SBOM staleness gate (audit CMP-05)', () => {
     packageVersion: pkg.version,
     changelog,
     repository: 'Binary-Parse/BP-MD-RTL-Reader',
-    visibility: 'private',
-    publish: false,
-    refType: 'branch',
-    refName: 'main',
     skipArtifactCheck: true,
   };
   // B9 / M39: freshness is proven by the lockfile's SHA-256 recorded at scan time, never by
@@ -193,13 +176,11 @@ describe('SBOM staleness gate (audit CMP-05)', () => {
 
   test('parseArgs takes the new flag and still rejects unknown arguments', () => {
     expect(parseArgs(['--skip-sbom-staleness'])).toEqual({
-      writeNotes: '', skipSbomStaleness: true, skipArtifactCheck: false,
+      skipSbomStaleness: true, skipArtifactCheck: false,
     });
-    expect(parseArgs(['--write-notes', 'out.md'])).toEqual({
-      writeNotes: 'out.md', skipSbomStaleness: false, skipArtifactCheck: false,
-    });
+    expect(() => parseArgs(['--write-notes', 'out.md'])).toThrow('Unknown argument: --write-notes');
     expect(parseArgs(['--skip-artifact-check'])).toEqual({
-      writeNotes: '', skipSbomStaleness: false, skipArtifactCheck: true,
+      skipSbomStaleness: false, skipArtifactCheck: true,
     });
     expect(() => parseArgs(['--nope'])).toThrow('Unknown argument: --nope');
   });
@@ -213,10 +194,6 @@ describe('release artifact gate (--skip-artifact-check)', () => {
     packageVersion: pkg.version,
     changelog,
     repository: 'Binary-Parse/BP-MD-RTL-Reader',
-    visibility: 'private',
-    publish: false,
-    refType: 'branch',
-    refName: 'main',
     skipArtifactCheck: false,
   };
   const CHECKSUM_FILE = 'SHA256SUMS.txt';

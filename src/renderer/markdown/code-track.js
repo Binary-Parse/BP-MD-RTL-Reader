@@ -13,12 +13,15 @@
  * @param {Array<{top: number}>} blocks ascending content-coordinate tops
  * @param {number} scrollTop  scroller's content coordinate at the viewport top
  * @param {number} viewportH  visible height of the scroller
+ * @param {number} [scrollHeight]  full content height; at the end of the note the midline
+ *   can never reach a block in the lower half, so there the bottom edge counts (QA-N7)
  * @returns {number}
  */
-export function activeCodeBlock(blocks, scrollTop, viewportH) {
+export function activeCodeBlock(blocks, scrollTop, viewportH, scrollHeight = Infinity) {
   if (!Array.isArray(blocks) || blocks.length === 0) return -1;
   if (!Number.isFinite(scrollTop) || !Number.isFinite(viewportH) || viewportH <= 0) return -1;
-  const mid = scrollTop + viewportH / 2;
+  const atEnd = scrollTop + viewportH >= scrollHeight - 1;
+  const mid = scrollTop + (atEnd ? viewportH : viewportH / 2);
   let idx = -1;
   for (let i = 0; i < blocks.length; i++) {
     const top = blocks[i] && typeof blocks[i].top === 'number' ? blocks[i].top : NaN;

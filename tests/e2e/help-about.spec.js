@@ -4,9 +4,6 @@
  *  - Help menu offers ONLY Keyboard Shortcuts + About BP MD RTL Reader
  *    (the placeholder "Documentation" / "Report an Issue" items were removed).
  *  - The About dialog credits publisher "Binary Parse" and the "MIT License".
- *
- * These assertions go RED against the pre-change index.html (which had the two
- * extra Help items and an About without attribution) — verified during authoring.
  */
 const { test, expect } = require('@playwright/test');
 const path = require('path');

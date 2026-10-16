@@ -6,11 +6,18 @@
  * real configured marked + DOMPurify are exercised by the e2e).
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { buildExportDoc, buildExportDocAsync } from '../../src/renderer/markdown/export.js';
+import { buildExportDoc, buildExportDocAsync, rtlLanguage } from '../../src/renderer/markdown/export.js';
 
 const md = (s) => `<p>${s}</p>`; // a trivial fake parseMarkdown
 
 describe('buildExportDoc (T-F12)', () => {
+  test('QA-L3: headings carry the same unique ids as the reading view, so #links work', () => {
+    const parse = () => '<h2>Notes</h2><p><a href="#notes-1">next</a></p><h2>Notes</h2>';
+    const { fullHtml } = buildExportDoc({ name: 'a.md', content: 'x' }, { parseMarkdown: parse });
+    expect(fullHtml).toMatch(/<h2[^>]*id="notes"/);
+    expect(fullHtml).toMatch(/<h2[^>]*id="notes-1"/);
+  });
+
   test('returns a standalone HTML doc + the extension-stripped base name', () => {
     const { fullHtml, baseName } = buildExportDoc({ name: 'Report.md', content: 'hi' }, { parseMarkdown: md });
     expect(baseName).toBe('Report');
@@ -61,6 +68,16 @@ describe('buildExportDoc (T-F12)', () => {
     const content = '---\nlang: fa\ndirection: rtl\n---\nمتن فارسی';
     expect(buildExportDoc({ name: 'fa', content }, { parseMarkdown: md }).fullHtml)
       .toMatch(/<html lang="fa" dir="rtl">/);
+  });
+
+  // QA-M22: every RTL note without `lang:` used to be exported as Arabic.
+  test('an RTL note without lang: is tagged by its letters (he / fa / ur / ar)', () => {
+    const lang = (content) => buildExportDoc({ name: 'x', content }, { parseMarkdown: md }).fullHtml.match(/<html lang="([^"]*)"/)[1];
+    expect(lang('שלום עולם, זה טקסט')).toBe('he');
+    expect(lang('این یک متن فارسی است که گفتگو دارد')).toBe('fa');
+    expect(lang('یہ اردو کا ایک جملہ ہے')).toBe('ur');
+    expect(lang('هذا نص عربي خالص')).toBe('ar');
+    expect(rtlLanguage('')).toBe('ar');
   });
 
   test('neutralizes remote and local images so opening an export cannot request them', () => {

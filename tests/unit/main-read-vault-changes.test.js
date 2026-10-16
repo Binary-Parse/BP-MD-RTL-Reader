@@ -307,7 +307,7 @@ describe('fs:readVaultChanges (H15 step 3)', () => {
     test('an oversized note is skipped and counted', async () => {
       await openVault({ 'a.md': 'A\n' });
       files[abs('huge.md')] = 'x';
-      sizes[abs('huge.md')] = 10 * MB + 1;
+      sizes[abs('huge.md')] = 20 * MB + 1;
       const r = await readChanges({ sender }, vaultId, ['huge.md']);
       expect(r.entries).toEqual([]);
       expect(r.skipped.oversized).toBe(1);
@@ -401,7 +401,7 @@ describe('fs:readVaultChanges (H15 step 3)', () => {
       const entries = ['a.md', 'gone.md', 'huge.md', 'out.md'].map((name) => ({
         name, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false,
       }));
-      files[abs('huge.md')] = 'x'; sizes[abs('huge.md')] = 10 * MB + 1;
+      files[abs('huge.md')] = 'x'; sizes[abs('huge.md')] = 20 * MB + 1;
       files[abs('out.md')] = 'x'; links[abs('out.md')] = path.resolve('/outside/o.md');
       fsMock.promises.readdir.mockResolvedValueOnce(entries);
       const origLstat = fsMock.promises.lstat;

@@ -1,9 +1,9 @@
 /**
  * list-continuation.js — the PURE Obsidian-style list/blockquote continuation logic (T-F13).
  *
- * Extracted from codemirror-adapter.js so it lives in a file the coverage + mutation gates
- * SEE (the adapter is gate-excluded as e2e-only). The CM6 Enter keymap in the adapter wraps
- * this; the logic itself needs no editor and is unit/mutation-tested directly.
+ * Extracted from codemirror-adapter.js so it lives in a file the coverage gate
+ * SEES (the adapter is gate-excluded as e2e-only). The CM6 Enter keymap in the adapter wraps
+ * this; the logic itself needs no editor and is unit-tested directly.
  *
  * Given a single line's text, decide what happens when Enter is pressed on it:
  *   - returns null  → the line is not a list/quote item; Enter behaves normally.

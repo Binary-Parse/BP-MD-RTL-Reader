@@ -15,6 +15,7 @@
  * `did-navigate` (a new document was committed), and the tests wait on those records.
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -97,11 +98,8 @@ test.describe('a link in a note never reloads the app @electron', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      // The window holds unsaved work on purpose; close without the Save dialog.
-      await electronApp.evaluate(({ app }) => app.exit(0)).catch(() => {});
-      await electronApp.close().catch(() => {});
-    }
+    // The window holds unsaved work on purpose; close without the Save dialog.
+    await closeApp(electronApp, page, { exit: true });
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

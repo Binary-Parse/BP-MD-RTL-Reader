@@ -9,7 +9,6 @@
 import { describe, test, expect } from 'vitest';
 import {
   buildEpub,
-  buildEpubFromNote,
   buildEpubFromNoteAsync,
   splitChapters,
   serializeXhtml,
@@ -261,13 +260,13 @@ describe('buildEpub — direction, language and identity (T6.1b)', () => {
   });
 });
 
-describe('buildEpubFromNote (T6.1b)', () => {
-  test('splits the rendered note into chapters and carries the image policy of export.js', () => {
+describe('buildEpubFromNoteAsync (T6.1b)', () => {
+  test('splits the rendered note into chapters and carries the image policy of export.js', async () => {
     const file = {
       name: 'Report.md',
       content: '# Chapter One\n\nText with an image.\n\n![a diagram](bpmd://vault/cap-v/diagram.png)\n\n## Chapter Two\n\nMore text.\n',
     };
-    const { bytes, baseName, dir } = buildEpubFromNote(file, { parseMarkdown: md, modified: FIXED });
+    const { bytes, baseName, dir } = await buildEpubFromNoteAsync(file, { parseMarkdown: md, modified: FIXED });
     expect(baseName).toBe('Report');
     expect(dir).toBe('ltr');
 
@@ -284,14 +283,14 @@ describe('buildEpubFromNote (T6.1b)', () => {
     expect(one).not.toContain('bpmd://');
   });
 
-  test('Arabic content derives RTL and the title from front matter when present', () => {
-    const arabic = buildEpubFromNote({ name: 'n.md', content: '# عنوان\n\nنص عربي طويل بما يكفي لتحديد الاتجاه.\n' }, { parseMarkdown: md, modified: FIXED });
+  test('Arabic content derives RTL and the title from front matter when present', async () => {
+    const arabic = await buildEpubFromNoteAsync({ name: 'n.md', content: '# عنوان\n\nنص عربي طويل بما يكفي لتحديد الاتجاه.\n' }, { parseMarkdown: md, modified: FIXED });
     expect(arabic.dir).toBe('rtl');
     const opf = parseXml(readZip(arabic.bytes).find('OEBPS/content.opf').text, 'opf');
     expect(opf.querySelector('metadata > language')?.textContent).toBe('ar');
     expect(opf.documentElement.getAttribute('dir')).toBe('rtl');
 
-    const titled = buildEpubFromNote({
+    const titled = await buildEpubFromNoteAsync({
       name: 'n.md',
       content: '---\ntitle: Declared Title\nlang: fr\n---\n\n# Heading\n\nFrench text.\n',
     }, { parseMarkdown: md, modified: FIXED });
@@ -300,13 +299,13 @@ describe('buildEpubFromNote (T6.1b)', () => {
     expect(opf2.querySelector('metadata > language')?.textContent).toBe('fr');
   });
 
-  test('a manual direction override beats the content script, and the file name is the last title fallback', () => {
-    const forced = buildEpubFromNote(
+  test('a manual direction override beats the content script, and the file name is the last title fallback', async () => {
+    const forced = await buildEpubFromNoteAsync(
       { name: 'n.md', content: '# عنوان\n\nنص عربي طويل.\n' },
       { parseMarkdown: md, direction: 'ltr', modified: FIXED }
     );
     expect(forced.dir).toBe('ltr');
-    const plain = buildEpubFromNote({ name: 'no-headings.md', content: 'Just a paragraph.' }, { parseMarkdown: md, modified: FIXED });
+    const plain = await buildEpubFromNoteAsync({ name: 'no-headings.md', content: 'Just a paragraph.' }, { parseMarkdown: md, modified: FIXED });
     const opf = parseXml(readZip(plain.bytes).find('OEBPS/content.opf').text, 'opf');
     expect(opf.querySelector('metadata > title')?.textContent).toBe('no-headings');
   });
@@ -331,18 +330,25 @@ describe('EPUB link + anchor hygiene (audit 3)', () => {
     return { title: '', nodes: Array.from(el.childNodes) };
   };
 
-  test('a relative (local-file) link is neutralized to inert text; web links survive', () => {
+  test('a relative (local-file) link is neutralized to inert text; web links survive', async () => {
     const parseMarkdown = () => '<p>See <a href="README.md">docs</a> and <a href="https://ok.test/x">web</a>.</p>';
-    const { bytes } = buildEpubFromNote({ name: 'n.md', content: '# H\n\nbody' }, { parseMarkdown, modified: FIXED });
+    const { bytes } = await buildEpubFromNoteAsync({ name: 'n.md', content: '# H\n\nbody' }, { parseMarkdown, modified: FIXED });
     const one = readZip(bytes).find('OEBPS/chapter-1.xhtml').text;
     expect(one).not.toContain('README.md');
     expect(one).toContain('<span>docs</span>');
     expect(one).toContain('<a href="https://ok.test/x">web</a>');
   });
 
-  test('a kept data: image loses any srcset naming local variants', () => {
+  test('QA-L3: a link to a heading in another chapter points at that chapter', async () => {
+    const parseMarkdown = () => '<h1>One</h1><p><a href="#two">go</a></p><h1>Two</h1><p>body</p>';
+    const { bytes } = await buildEpubFromNoteAsync({ name: 'n.md', content: 'x' }, { parseMarkdown, modified: FIXED });
+    const one = readZip(bytes).find('OEBPS/chapter-1.xhtml').text;
+    expect(one).toContain('href="chapter-2.xhtml#two"');
+  });
+
+  test('a kept data: image loses any srcset naming local variants', async () => {
     const parseMarkdown = () => '<p><img src="data:image/png;base64,AA" alt="e" srcset="local-2x.png 2x"></p>';
-    const { bytes } = buildEpubFromNote({ name: 'n.md', content: '# H\n\nbody' }, { parseMarkdown, modified: FIXED });
+    const { bytes } = await buildEpubFromNoteAsync({ name: 'n.md', content: '# H\n\nbody' }, { parseMarkdown, modified: FIXED });
     const one = readZip(bytes).find('OEBPS/chapter-1.xhtml').text;
     expect(one).toContain('src="data:image/png;base64,AA"');
     expect(one).not.toContain('local-2x.png');
@@ -381,7 +387,7 @@ describe('EPUB link + anchor hygiene (audit 3)', () => {
       name: 'refs.md',
       content: '# Chapter One\n\nAlpha[^1] and beta[^1].\n\n[^1]: The body.\n',
     };
-    const { bytes } = buildEpubFromNote(file, { parseMarkdown: (src) => inst.parse(src), modified: FIXED });
+    const { bytes } = await buildEpubFromNoteAsync(file, { parseMarkdown: (src) => inst.parse(src), modified: FIXED });
     const one = readZip(bytes).find('OEBPS/chapter-1.xhtml').text;
     expect(one).toContain('id="fnref-1"');
     expect(one).toContain('id="fnref-1-2"');

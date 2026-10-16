@@ -18,7 +18,7 @@
  * dropped — so the result is well-formed XHTML that epubcheck and real readers accept.
  */
 import { zipStore } from './zip-store.js';
-import { renderExportBody, isLanguageTag, stripKatexHtml } from './export.js';
+import { renderExportBody, isLanguageTag, stripKatexHtml, TABLE_ALIGN_CSS } from './export.js';
 import { renderMermaid } from './mermaid.js';
 import { sanitizeSvg } from './trusted.js';
 
@@ -37,7 +37,7 @@ const VOID_ELEMENTS = new Set([
 // The paper theme's own tokens (base.css :root), reduced to what a reflowable EPUB needs.
 // System font stacks only: an EPUB bundles no font files, so naming Literata would only make
 // readers fall back differently per device.
-export const PAPER_CSS = `body { font-family: Georgia, "Times New Roman", serif; font-size: 1em; line-height: 1.7; margin: 5%; color: #2B2620; background: #F6F2E7; }
+const PAPER_CSS = `body { font-family: Georgia, "Times New Roman", "Noto Naskh Arabic", "Geeza Pro", Tahoma, serif; font-size: 1em; line-height: 1.7; margin: 5%; color: #2B2620; background: #F6F2E7; }
 h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; }
 h1 { font-size: 1.6em; } h2 { font-size: 1.3em; } h3 { font-size: 1.1em; }
 a { color: #35578C; }
@@ -47,9 +47,7 @@ blockquote { border-inline-start: 3px solid #35578C; padding-block: 4px; padding
 img { max-width: 100%; height: auto; }
 hr { border: none; border-top: 1px solid #D9D0BA; }
 table { border-collapse: collapse; } td, th { border: 1px solid #D9D0BA; padding: 4px 8px; }
-th[align="left"], td[align="left"] { text-align: start; }
-th[align="right"], td[align="right"] { text-align: end; }
-th[align="center"], td[align="center"] { text-align: center; }
+${TABLE_ALIGN_CSS}
 .callout { border-inline-start: 3px solid #35578C; background: #EEE8D8; padding: 10px 14px; margin: 16px 0; }
 .export-image-placeholder { color: #544C40; font-style: italic; }
 mark.user-hl { background: rgba(168, 132, 44, 0.20); }
@@ -174,13 +172,14 @@ function identifierFor(seed) {
   return `urn:uuid:${a}-${b.slice(0, 4)}-4${b.slice(4, 7)}-8${a.slice(0, 3)}-${a.slice(0, 4)}${b.slice(0, 8)}`;
 }
 
-function buildXhtmlDocument({ title, lang, dir, body, stylesheet = true }) {
+function buildXhtmlDocument({ title, lang, dir, body }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${escapeXmlAttribute(lang)}" lang="${escapeXmlAttribute(lang)}" dir="${dir}">
 <head>
 <meta charset="utf-8"/>
-<title>${escapeXmlText(title)}</title>${stylesheet ? `\n<link rel="stylesheet" type="text/css" href="style.css"/>` : ''}
+<title>${escapeXmlText(title)}</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body dir="${dir}">
 ${body}
@@ -314,19 +313,14 @@ function renderNoteBody(file, {
 }
 
 /**
- * Render a note's markdown and wrap it in an EPUB: the renderer-facing entry point used by the
- * Export EPUB menu item. Takes the same injected globals as the HTML/PDF export.
- * @returns {{bytes: Uint8Array, baseName: string, dir: 'ltr'|'rtl'}}
- */
-export function buildEpubFromNote(file, options = {}) {
-  return packageRenderedNote(file, options, renderNoteBody(file, options));
-}
-
-/**
+ * Render a note's markdown and wrap it in an EPUB: the entry point of the Export EPUB menu
+ * item. Takes the same injected globals as the HTML/PDF export.
+ *
  * Mermaid parity with the HTML export: the SAME async render stage (with the same SVG
  * sanitizer) runs BEFORE splitChapters, so a rendered diagram can never straddle a
  * chapter split. A missing/failing engine falls back to the sync result — the code
  * blocks stay as the visible source, exactly like the HTML export's fallback.
+ * @returns {Promise<{bytes: Uint8Array, baseName: string, dir: 'ltr'|'rtl'}>}
  */
 export async function buildEpubFromNoteAsync(file, options = {}) {
   const rendered = renderNoteBody(file, options);

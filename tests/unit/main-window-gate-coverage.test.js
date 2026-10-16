@@ -17,7 +17,7 @@ async function boot(electron = buildMockElectron()) {
 }
 
 describe('window-controller lanes (GATE-01)', () => {
-  test('installs nothing when Menu is unavailable', async () => {
+  test('still boots and registers the IPC handlers when Menu is unavailable', async () => {
     const electron = buildMockElectron();
     electron.Menu = undefined;
     await boot(electron);
@@ -27,10 +27,9 @@ describe('window-controller lanes (GATE-01)', () => {
   test('doc:dirty-state accepts a count in range and refuses junk', async () => {
     const { electron } = await boot();
     const handler = onHandler(electron.ipcMain, 'doc:dirty-state');
-    handler({ sender: electron._mockWin.webContents }, 4);
-    handler({ sender: electron._mockWin.webContents }, -1);
-    handler({ sender: electron._mockWin.webContents }, 'many');
-    handler({ sender: electron._mockWin.webContents }, 999999);
+    for (const count of [4, -1, 'many', 999999]) {
+      expect(() => handler({ sender: electron._mockWin.webContents }, count)).not.toThrow();
+    }
   });
 
   test('window-set-fullscreen applies only a strict boolean', async () => {
@@ -74,9 +73,10 @@ describe('window-controller lanes (GATE-01)', () => {
 
   test('load failures and renderer crashes are logged, never thrown', async () => {
     const { electron } = await boot();
-    onHandler(electron._mockWin.webContents, 'did-fail-load')({}, -3, 'aborted', 'app://ui/x', true);
-    onHandler(electron._mockWin.webContents, 'did-fail-provisional-load')({}, -3, 'aborted', 'app://ui/x', false);
-    onHandler(electron._mockWin.webContents, 'render-process-gone')({}, { reason: 'oom' });
+    const wc = electron._mockWin.webContents;
+    expect(() => onHandler(wc, 'did-fail-load')({}, -3, 'aborted', 'app://ui/x', true)).not.toThrow();
+    expect(() => onHandler(wc, 'did-fail-provisional-load')({}, -3, 'aborted', 'app://ui/x', false)).not.toThrow();
+    expect(() => onHandler(wc, 'render-process-gone')({}, { reason: 'oom' })).not.toThrow();
   });
 
   test('a webview attach is always prevented', async () => {
@@ -88,14 +88,13 @@ describe('window-controller lanes (GATE-01)', () => {
 
   test('a destroyed window drops its context-menu stash entries', async () => {
     const { electron } = await boot();
-    onHandler(electron._mockWin.webContents, 'destroyed')();
-    expect(true).toBe(true); // the sweep must simply not throw
+    expect(() => onHandler(electron._mockWin.webContents, 'destroyed')()).not.toThrow();
   });
 
   test('a display change re-clamps an off-screen window', async () => {
     const electron = buildMockElectron();
     const setBounds = vi.fn();
-    const boot0 = bootstrap({ electron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
+    bootstrap({ electron, fs: buildMockFs(), proc: buildMockProc(['node', 'src/main/index.js']) });
     await new Promise((r) => setTimeout(r, 20));
     electron._mockWin.setBounds = setBounds;
     electron._mockWin.getNormalBounds = () => ({ x: -5000, y: -5000, width: 1200, height: 800 });

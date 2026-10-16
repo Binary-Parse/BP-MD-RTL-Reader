@@ -88,6 +88,41 @@ test.describe('index.html — ALL exported functions', () => {
     expect(state.wikilink).toBe(true);
   });
 
+  // REND-20: the wikilink pill beats the generic `.editor a` rule by specificity, not !important.
+  test('a wikilink in reading view is an accent pill without an underline; hover inverts it to white on the accent fill', async ({ page }) => {
+    await page.goto(INDEX_URL);
+    await page.waitForSelector('#app');
+    await page.evaluate(() => {
+      window.newNote();
+      const index = window._appState.activeFile;
+      window._appState.files[index].content = 'A [[Wiki Note]] link and a [plain](https://example.com) one.';
+      window.renderFile(index);
+      window.setViewMode('reading');
+    });
+    const link = page.locator('#noteContent a.wikilink');
+    await expect(link).toBeVisible();
+    const look = () => link.evaluate((el) => {
+      const s = getComputedStyle(el);
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--accent)';
+      probe.style.backgroundColor = 'var(--accent-fill)';
+      document.body.appendChild(probe);
+      const accent = getComputedStyle(probe).color;
+      const fill = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { color: s.color, accent, fill, line: s.textDecorationLine, bg: s.backgroundColor };
+    });
+    const rest = await look();
+    expect(rest.color).toBe(rest.accent);
+    expect(rest.line).toBe('none');
+    await link.hover();
+    const hover = await look();
+    expect(hover.color).toBe('rgb(255, 255, 255)');
+    expect(hover.line).toBe('none');
+    // white text needs the solid fill; the generic link hover tint behind it was unreadable
+    expect(hover.bg).toBe(hover.fill);
+  });
+
   // audit M1: the note sits before the find bar and the dialogs in the page, so an id
   // written in a note used to answer the app's own lookups.
   test('M1: a note cannot take the place of the find bar, a dialog button or an app element', async ({ page }) => {
@@ -232,27 +267,6 @@ test.describe('index.html — ALL exported functions', () => {
     await page.evaluate(() => { window.toggleRTL(); window.toggleRTL(); });
     const dir = await page.evaluate(() => document.getElementById('editor').getAttribute('dir'));
     expect(dir).toBeNull();
-  });
-
-  // === EDITOR MODE ===
-
-  // CM6 is now the sole editor (T-F13) — there are no source/split view modes. The textarea
-  // stays hidden as a load-failure fallback, and setEditorMode is a vestigial no-op kept only
-  // so legacy callers/persisted state can't crash; it must never reintroduce a second pane.
-  test('window.setEditorMode live keeps the single CM6 surface (no source/split classes)', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('live'));
-    const classes = await page.evaluate(() => document.getElementById('editorArea').className);
-    expect(classes).not.toContain('source');
-    expect(classes).not.toContain('split');
-  });
-
-  test('window.setEditorMode invalid does not crash', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode('invalid'));
-    // Should not throw
-  });
-
-  test('window.setEditorMode null does not crash', async ({ page }) => {
-    await page.evaluate(() => window.setEditorMode(null));
   });
 
   // === ZOOM FUNCTIONS ===

@@ -125,6 +125,22 @@ describe('preload bridge surface', () => {
     expect(webFrame.setZoomFactor).toHaveBeenCalledTimes(3);
   });
 
+  // QA-L2: ipcRenderer.on returns ipcRenderer, which the page must never get hold of.
+  test('a subscription returns only an unsubscribe function, never the ipcRenderer emitter', () => {
+    ipcRenderer.on.mockReturnValue(ipcRenderer);
+    ipcRenderer.removeListener = vi.fn();
+    const subs = ['onFullscreenChanged', 'onContextMenu', 'onAppCommand', 'onOpenFile', 'onVaultChanged',
+      'onCloseRequested', 'onFlushRecovery', 'onUpdateAvailable', 'onUpdateUnverified'];
+    for (const name of subs) {
+      const off = api[name](() => {});
+      expect(off, name).not.toBe(ipcRenderer);
+      expect(typeof off, name).toBe('function');
+      const [channel, deliver] = ipcRenderer.on.mock.calls.at(-1);
+      off();
+      expect(ipcRenderer.removeListener).toHaveBeenLastCalledWith(channel, deliver);
+    }
+  });
+
   test('main→renderer subscriptions register once and unwrap events', () => {
     const handlers = {};
     ipcRenderer.on.mockImplementation((channel, fn) => { handlers[channel] = fn; });

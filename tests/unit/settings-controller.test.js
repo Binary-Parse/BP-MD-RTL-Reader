@@ -8,7 +8,7 @@ afterEach(() => vi.useRealTimers());
 
 function state() {
   return {
-    theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'edit',
+    theme: 'paper', zoomFactor: 1, viewMode: 'edit',
     sidebarVisible: true, inspectorVisible: true, recents: [], calendar: 'gregorian',
     arabicKashida: false, italicRecolor: true, marginNotesCollapsed: false,
     uiLocale: 'en', uiDirection: 'ltr', readerTextScale: 1, readerWidthCh: 72,
@@ -26,7 +26,7 @@ function state() {
 
 function actions() {
   return {
-    applyTheme: vi.fn(), setZoom: vi.fn(), setEditorMode: vi.fn(), setViewMode: vi.fn(),
+    applyTheme: vi.fn(), setZoom: vi.fn(), setViewMode: vi.fn(),
     applyPanelLayout: vi.fn(), renderRecents: vi.fn(), renderContinue: vi.fn(), applyKashida: vi.fn(),
     applyItalicRecolor: vi.fn(), setUiLocale: vi.fn(), setUiDirection: vi.fn(),
     setReaderTextScale: vi.fn(), setReaderWidthCh: vi.fn(),
@@ -46,7 +46,7 @@ describe('settings controller', () => {
     expect(activeState.theme).toBe('ink');
     expect(controller.isRestoring()).toBe(false);
     expect([...PERSISTED_KEYS]).toEqual([
-      'theme', 'zoomFactor', 'editorMode', 'viewMode', 'sidebarVisible',
+      'theme', 'zoomFactor', 'viewMode', 'sidebarVisible',
       'inspectorVisible', 'recents', 'calendar', 'arabicKashida',
       'italicRecolor', 'uiLocale', 'uiDirection', 'readerTextScale', 'readerWidthCh',
       // T-F19 chrome settings
@@ -75,7 +75,6 @@ describe('settings controller', () => {
     expect(controller.settingsPayload()).toEqual({
       theme: 'paper',
       zoomFactor: 1,
-      editorMode: 'live',
       viewMode: 'edit',
       sidebarVisible: true,
       inspectorVisible: true,
@@ -217,7 +216,7 @@ describe('settings controller', () => {
     const activeState = state();
     const apply = actions();
     const bridge = { getSettings: vi.fn(async () => ({
-      theme: 'ink', zoomFactor: 1.2, editorMode: 'source', viewMode: 'reading',
+      theme: 'ink', zoomFactor: 1.2, viewMode: 'reading',
       sidebarVisible: false, inspectorVisible: false,
       recents: [
         { name: 'valid', path: 'a.md', documentId: 'doc-1' },
@@ -247,7 +246,6 @@ describe('settings controller', () => {
     });
     expect(apply.applyTheme).toHaveBeenCalledWith('ink');
     expect(apply.setZoom).toHaveBeenCalledWith(1.2);
-    expect(apply.setEditorMode).toHaveBeenCalledWith('live');
     expect(apply.setViewMode).toHaveBeenCalledWith('reading');
     expect(apply.applyPanelLayout).toHaveBeenCalledTimes(1);
     expect(apply.renderRecents).toHaveBeenCalledTimes(1);

@@ -39,7 +39,7 @@ function dirent(name, { file = true, symlink = false } = {}) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// dialog:openFolder — L106-117
+// dialog:openFolder
 // ────────────────────────────────────────────────────────────────────────────
 describe('dialog:openFolder', () => {
   let mockElectron;
@@ -62,9 +62,9 @@ describe('dialog:openFolder', () => {
     await openFolder();
     expect(mockElectron.dialog.showOpenDialog).toHaveBeenCalledTimes(1);
     const [winArg, opts] = mockElectron.dialog.showOpenDialog.mock.calls[0];
-    // win is the focused window (L107) — must be the actual mock window object.
+    // win is the focused window — must be the actual mock window object.
     expect(winArg).toBe(mockElectron._mockWin);
-    // L109-110: kill literal mutations of the options object.
+    // kill literal mutations of the options object.
     expect(opts.properties).toEqual(['openDirectory']);
     expect(opts.title).toBe('Open Folder');
   });
@@ -90,7 +90,7 @@ describe('dialog:openFolder', () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: ['/should-be-ignored'] });
     const r = await openFolder();
     expect(r).toEqual({ canceled: true });
-    // Even though filePaths had an entry, canceled short-circuits the add (L112).
+    // Even though filePaths had an entry, canceled short-circuits the add.
     expect(await readVault({}, '/should-be-ignored')).toEqual({ error: 'unauthorized-capability' });
   });
 
@@ -112,12 +112,12 @@ describe('dialog:openFolder', () => {
       filePaths: ['/authz-vault', '/second-ignored'],
     });
     const r = await openFolder();
-    // L116: returns filePaths[0] (the FIRST), not [1], not the array.
+    // returns filePaths[0] (the FIRST), not [1], not the array.
     expect(r.canceled).toBe(false);
     expect(r.vault).toMatchObject({ name: 'authz-vault', generation: 1 });
     expect(JSON.stringify(r)).not.toContain('/authz-vault');
 
-    // L115: filePaths[0] was added to the allowlist → readVault no longer
+    // filePaths[0] was added to the allowlist → readVault no longer
     // rejects it as unauthorized. (readdir returns [] → result is []).
     mockFs.promises.readdir.mockResolvedValueOnce([]);
     expect((await readVault({}, r.vault.id)).entries).toEqual([]);
@@ -171,7 +171,7 @@ describe('dialog:openFile', () => {
 
   test('oversized file → {error:"file-too-large"}', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/big.md'] });
-    mockFs.statSync.mockReturnValueOnce({ isFile: () => true, isDirectory: () => false, size: 11 * 1024 * 1024 });
+    mockFs.statSync.mockReturnValueOnce({ isFile: () => true, isDirectory: () => false, size: 100 * 1024 * 1024 + 1 });
     expect(await openFile()).toEqual({ error: 'file-too-large' });
   });
 
@@ -225,7 +225,7 @@ describe('fs:readFile (reopen a recent single file)', () => {
     expect(await readFile({}, '\\\\nas\\a.md')).toEqual({ error: 'unauthorized-capability' });
   });
 
-  test('unauthorized path → {error:"unauthorized-path"}', async () => {
+  test('a path that was never authorized → {error:"unauthorized-capability"}', async () => {
     expect(await readFile({}, '/never-opened.md')).toEqual({ error: 'unauthorized-capability' });
   });
 
@@ -245,8 +245,8 @@ describe('fs:readFile (reopen a recent single file)', () => {
 
   test('oversized → {error:"file-too-large"}', async () => {
     const opened = await authorizeFile('/docs/big.md');
-    mockFs.statSync.mockReturnValueOnce({ isFile: () => true, size: 11 * 1024 * 1024 });
-    expect(await readFile({}, opened.documentId)).toEqual({ error: 'file-too-large' });
+    mockFs.statSync.mockReturnValueOnce({ isFile: () => true, size: 100 * 1024 * 1024 + 1 });
+    expect(await readFile({}, opened.documentId)).toMatchObject({ error: 'file-too-large', size: 100 * 1024 * 1024 + 1, name: 'big.md' });
   });
 
   test('read failure → {error:"read-failed"}', async () => {
@@ -257,7 +257,7 @@ describe('fs:readFile (reopen a recent single file)', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// fs:readVault — L119-170
+// fs:readVault
 // ────────────────────────────────────────────────────────────────────────────
 describe('fs:readVault', () => {
   let mockElectron;
@@ -288,14 +288,14 @@ describe('fs:readVault', () => {
     };
   });
 
-  // ── L120-122: invalid input guard (non-string / empty) ──
+  // ── invalid input guard (non-string / empty) ──
   test('invalid or forged capability IDs are rejected without filesystem access', async () => {
     for (const value of ['', null, undefined, 123, {}]) {
       expect(await readVault({}, value)).toEqual({ error: 'unauthorized-capability' });
     }
   });
 
-  // ── L124-126: network paths ──
+  // ── network paths ──
   test('a raw UNC path cannot act as a capability', async () => {
     expect(await readVault({}, '\\\\server\\share')).toEqual({ error: 'unauthorized-capability' });
   });
@@ -306,13 +306,13 @@ describe('fs:readVault', () => {
 
   test('network check runs BEFORE authorization: a network path is never reached for auth even if authorized', async () => {
     // Authorize the literal UNC string; network rejection must STILL win,
-    // proving isNetworkPath is checked first (L124 before L128) and returns
+    // proving isNetworkPath is checked first and returns
     // the network error, not unauthorized-path and not a file listing.
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['\\\\server\\auth'] });
     expect(await openFolder()).toEqual({ error: 'network-path-not-allowed' });
   });
 
-  // ── L128-130: authorization ──
+  // ── authorization ──
   test('a non-network, non-authorized local path → exactly {error:"unauthorized-path"}', async () => {
     expect(await readVault({}, '/never-authorized')).toEqual({ error: 'unauthorized-capability' });
   });
@@ -341,7 +341,7 @@ describe('fs:readVault', () => {
     expect(typeof sent[1].generation).toBe('number');
   });
 
-  // ── L274: vault:changed only fires for a LIVE sender (sender && !isDestroyed) ──
+  // ── vault:changed only fires for a LIVE sender (sender && !isDestroyed) ──
   test('a destroyed sender → vault:changed is NOT sent (kills && → || and forced-true)', async () => {
     await authorize('/watch-dead');
     mockFs.promises.readdir.mockResolvedValueOnce([]);
@@ -375,7 +375,7 @@ describe('fs:readVault', () => {
     expect(firstClose).not.toHaveBeenCalled();
   });
 
-  // ── L271: re-reading the SAME vault still closes its OWN previous watcher (no leak) ──
+  // ── re-reading the SAME vault still closes its OWN previous watcher (no leak) ──
   test('re-reading the same vault closes its own previous watcher (no fs.watch leak)', async () => {
     await authorize('/watch-same-vault');
     mockFs.promises.readdir.mockResolvedValueOnce([]);
@@ -388,7 +388,7 @@ describe('fs:readVault', () => {
     expect(firstClose).toHaveBeenCalledTimes(1);
   });
 
-  // ── L455: closing the window closes the live vault watcher (T-B9 teardown) ──
+  // ── closing the window closes the live vault watcher (T-B9 teardown) ──
   test('the window "close" handler closes the active vault watcher', async () => {
     await authorize('/watch-onclose');
     mockFs.promises.readdir.mockResolvedValueOnce([]);
@@ -407,7 +407,7 @@ describe('fs:readVault', () => {
     expect(closeFn).toHaveBeenCalledTimes(1);
   });
 
-  // ── L549: app 'before-quit' closes the active vault watcher (no fs.watch leak) ──
+  // ── app 'before-quit' closes the active vault watcher (no fs.watch leak) ──
   test('app "before-quit" closes the active vault watcher', async () => {
     await authorize('/watch-quit');
     mockFs.promises.readdir.mockResolvedValueOnce([]);
@@ -419,7 +419,7 @@ describe('fs:readVault', () => {
     expect(closeFn).toHaveBeenCalledTimes(1);
   });
 
-  // ── L553: app 'window-all-closed' closes the active vault watcher ──
+  // ── app 'window-all-closed' closes the active vault watcher ──
   test('app "window-all-closed" closes the active vault watcher', async () => {
     await authorize('/watch-allclosed');
     mockFs.promises.readdir.mockResolvedValueOnce([]);
@@ -431,7 +431,7 @@ describe('fs:readVault', () => {
     expect(closeFn).toHaveBeenCalledTimes(1);
   });
 
-  // ── L132 + L134-136: readdir + too-many-files boundary ──
+  // ── readdir + too-many-files boundary ──
   test('readdir is called with the folderPath and {withFileTypes:true}', async () => {
     await authorize('/readdir-vault');
     mockFs.promises.readdir.mockClear();
@@ -457,7 +457,7 @@ describe('fs:readVault', () => {
     expect(await readVault({}, '/cap-over')).toEqual([]);
   });
 
-  // ── L146-151: symlink escape detection ──
+  // ── symlink escape detection ──
   test('symlink whose realpath ESCAPES the vault is skipped', async () => {
     await authorize('/sym-vault');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('evil.md', { file: false, symlink: true })]);
@@ -480,7 +480,7 @@ describe('fs:readVault', () => {
     expect(r[0].documentId).toMatch(/^cap-/);
   });
 
-  test('a NON-symlink .md never calls realpath (L146 guard) and uses lstat size directly', async () => {
+  test('a NON-symlink .md never calls realpath (isSymbolicLink guard) and uses lstat size directly', async () => {
     await authorize('/plain');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('plain.md')]);
     // mtimeMs rides on the walk's own lstat (readAsync reuses it — no extra stat call).
@@ -491,14 +491,14 @@ describe('fs:readVault', () => {
     const r = await readVault({}, '/plain');
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ name: 'plain.md', relPath: 'plain.md', content: 'plain-content', meta: { mtimeMs: 77 } });
-    // L146 isSymbolicLink() false → neither realpath nor the symlink-stat branch runs,
+    // isSymbolicLink() false → neither realpath nor the symlink-stat branch runs,
     // and the read consumes the walk's stat instead of issuing a fresh promises.stat.
     expect(mockFs.promises.realpath).not.toHaveBeenCalled();
     expect(mockFs.promises.stat).not.toHaveBeenCalled();
   });
 
-  // ── L156-158: per-file oversize cap ──
-  test('oversized file (>10 MiB) is skipped; the next normal file is still returned', async () => {
+  // ── per-file oversize cap ──
+  test('oversized file (>20 MiB, the folder-read cap) is skipped; the next normal file is still returned', async () => {
     await authorize('/oversize');
     mockFs.promises.readdir.mockResolvedValueOnce([
       dirent('a-huge.md'),
@@ -506,7 +506,7 @@ describe('fs:readVault', () => {
     ]);
     // a-huge sorts before b-tiny via localeCompare → lstat order is deterministic.
     mockFs.promises.lstat
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 * 1024 * 1024 + 1 }) // 1 byte over
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 20 * 1024 * 1024 + 1 }) // 1 byte over
       .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 100 });
     mockFs.readFileSync.mockReturnValueOnce('kept');
     const r = await readVault({}, '/oversize');
@@ -514,17 +514,17 @@ describe('fs:readVault', () => {
     expect(r[0]).toMatchObject({ name: 'b-tiny.md', relPath: 'b-tiny.md', content: 'kept' });
   });
 
-  test('a file at EXACTLY 10 MiB is NOT oversized (boundary kept)', async () => {
+  test('a file at EXACTLY 20 MiB is NOT oversized (boundary kept)', async () => {
     await authorize('/exact');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('exact.md')]);
-    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 10 * 1024 * 1024 });
+    mockFs.promises.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 20 * 1024 * 1024 });
     mockFs.readFileSync.mockReturnValueOnce('exactly-10mib');
     const r = await readVault({}, '/exact');
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ name: 'exact.md', relPath: 'exact.md', content: 'exactly-10mib' });
   });
 
-  // ── L160-163: cumulative cap + partial ──
+  // ── cumulative cap + partial ──
   test('cumulative >100 MiB returns an explicit truncated partial scan', async () => {
     await authorize('/cumul');
     // Three 60 MiB files (each under the 10 MiB? NO — use 60 MiB which is > 10 MiB).
@@ -552,7 +552,7 @@ describe('fs:readVault', () => {
     expect(r.entries[0]).toMatchObject({ name: 'f00.md', relPath: 'f00.md', content: 'content-0' });
   });
 
-  // ── L165-167: readFile + BOM strip + result shape ──
+  // ── readFile + BOM strip + result shape ──
   test('a normal .md → result item {name, relPath, content} with content read utf8 + BOM stripped', async () => {
     await authorize('/bom-vault');
     mockFs.promises.readdir.mockResolvedValueOnce([dirent('doc.md')]);
@@ -566,7 +566,7 @@ describe('fs:readVault', () => {
     const [readArg, encArg] = mockFs.readFileSync.mock.calls[0];
     expect(readArg).toContain('doc.md');
     expect(encArg).toBeUndefined();
-    // L166-167: BOM stripped, exact result shape.
+    // BOM stripped, exact result shape.
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ name: 'doc.md', relPath: 'doc.md', content: '# Heading\nbody', meta: { bom: true } });
     // Defensive: leading char must NOT be the BOM.
@@ -602,7 +602,7 @@ describe('fs:readVault', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// edit:command — L172-183
+// edit:command
 // ────────────────────────────────────────────────────────────────────────────
 describe('edit:command', () => {
   let mockElectron;
@@ -634,7 +634,7 @@ describe('edit:command', () => {
     const wc = freshSender();
     editCmd({ sender: wc }, cmd);
     expect(wc[method]).toHaveBeenCalledTimes(1);
-    // No OTHER editing method fired — kills "swap method" mutants (e.g. L181
+    // No OTHER editing method fired — kills "swap method" mutants (e.g.
     // selectAll() → some other call, or a dispatch falling through to the wrong arm).
     for (const other of ['copy', 'cut', 'paste', 'undo', 'redo', 'selectAll']) {
       if (other !== method) expect(wc[other]).not.toHaveBeenCalled();
@@ -683,7 +683,7 @@ describe('edit:command', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// deliverPendingFile — L89-102 (driven via app.on('open-file') + did-finish-load)
+// deliverPendingFile (driven via app.on('open-file') + did-finish-load)
 // ────────────────────────────────────────────────────────────────────────────
 describe('deliverPendingFile (via open-file + did-finish-load)', () => {
   let mockElectron;
@@ -721,7 +721,7 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     // v1.2: readFileSync called with the EXACT path and NO encoding (raw bytes, the
     // encoding is detected by document-store).
     expect(mockFs.readFileSync).toHaveBeenCalledWith('/abs/dir/My Note.md');
-    // L96-100: channel + payload pinned exactly.
+    // channel + payload pinned exactly.
     expect(mockElectron._mockWin.webContents.send).toHaveBeenCalledTimes(1);
     const [channel, payload] = mockElectron._mockWin.webContents.send.mock.calls[0];
     expect(channel).toBe('open-external-file');
@@ -769,12 +769,12 @@ describe('deliverPendingFile (via open-file + did-finish-load)', () => {
     mockElectron._mockWin.webContents.send.mockClear();
     const ev = { preventDefault: vi.fn() };
     openFile(ev, '/nowin.md');
-    // preventDefault still runs (open-file handler L301), but deliver never fires.
+    // preventDefault still runs (open-file handler), but deliver never fires.
     expect(ev.preventDefault).toHaveBeenCalled();
     expect(mockElectron._mockWin.webContents.send).not.toHaveBeenCalled();
   });
 
-  test('empty filePath is a no-op after preventDefault (open-file L302 guard)', () => {
+  test('empty filePath is a no-op after preventDefault (open-file guard)', () => {
     mockElectron.BrowserWindow.getAllWindows.mockReturnValueOnce([mockElectron._mockWin]);
     mockElectron._mockWin.webContents.send.mockClear();
     const ev = { preventDefault: vi.fn() };
@@ -839,7 +839,7 @@ describe('text:decode — encoding-aware byte lane for dropped/picked files', ()
     expect(await decode({}, null)).toEqual({ error: 'invalid' });
     expect(await decode({}, 'str')).toEqual({ error: 'invalid' });
     expect(await decode({}, new Uint8Array(0))).toEqual({ error: 'invalid' });
-    expect(await decode({}, new Uint8Array(10 * 1024 * 1024 + 1))).toEqual({ error: 'file-too-large' });
+    expect(await decode({}, new Uint8Array(100 * 1024 * 1024 + 1))).toEqual({ error: 'file-too-large' });
   });
 });
 

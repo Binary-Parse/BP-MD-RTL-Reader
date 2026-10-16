@@ -1,7 +1,6 @@
 // @ts-check
 /**
- * Stage 5b adversarial + white-box tests for the 7-bug fix run
- * (run_id=20260516T085804Z-1659).
+ * Adversarial and white-box tests for a batch of seven bug fixes (May 2026).
  *
  * Phases covered:
  *   Phase 1 — Black-box tests derived from spec.md acceptance criteria (AC1-AC10).
@@ -35,18 +34,6 @@ async function injectFile(page, name, content) {
   }, { name, content });
 }
 
-async function injectFiles(page, files) {
-  await page.evaluate((files) => {
-    const S = window._appState;
-    S.files = files.map(f => ({ name: f.name, path: f.name, handle: null, content: f.content, dirty: false }));
-    window.renderFile(0);
-  }, files);
-}
-
-async function switchToSourceMode(page) {
-  await page.evaluate(() => window.setEditorMode('source'));
-}
-
 // ===========================================================================
 // AC1 — Open Folder IPC bridge (Bug 1)
 // ===========================================================================
@@ -61,7 +48,7 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     await page.evaluate(() => {
       window.electronAPI = {
         openFolder: () => Promise.resolve({ canceled: false, vault: { id: 'cap-notes', name: 'Notes', generation: 1 } }),
-        readVault: (fp) => Promise.resolve([
+        readVault: () => Promise.resolve([
           { name: 'alpha.md', relPath: 'alpha.md', content: '# Alpha\n\nContent of alpha.' },
           { name: 'beta.md',  relPath: 'beta.md',  content: '# Beta\n\nContent of beta.' }
         ])
@@ -147,18 +134,12 @@ test.describe('[AC1] Open Folder IPC bridge', () => {
     expect(toastText.toLowerCase()).toContain('folder');
 
     // No unhandled JS error should leak out
-    const jsErrors = errors.filter(e =>
-      !e.includes('fonts.googleapis') && !e.includes('cdn.jsdelivr')
-    );
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0); // everything is vendored: no font/CDN noise to filter
   });
 
   // White-box: electronAPI check is the FIRST branch in openVault — FSA branch not reached when electronAPI present
   test('[AC1-wb-ipc-first] IPC branch taken before FSA when electronAPI is present', async ({ page }) => {
     await goto(page);
-
-    let fsaCalled = false;
-    let ipcCalled = false;
 
     await page.evaluate(() => {
       window.electronAPI = {
@@ -528,10 +509,6 @@ test.describe('[AC4] Tags pane populates and is interactive', () => {
     await goto(page);
     await injectFile(page, 'tagged.md', '# Tagged\n\nNote with #test tag.');
 
-    // Tags pane not yet switched to
-    const tagsBefore = await page.locator('.tag').count();
-    // (could be 0 or non-zero depending on initial pane)
-
     await page.click('.sb-tab[data-pane="tags"]');
 
     const tagsAfter = await page.locator('.tag').count();
@@ -641,10 +618,6 @@ test.describe('[AC5] Tab overflow ellipsis and close-X visibility', () => {
     const tabTip = await page.evaluate(() => {
       const tab = document.querySelector('.tab');
       return tab ? tab.getAttribute('data-tip') : null;
-    });
-    const spanTip = await page.evaluate(() => {
-      const span = document.querySelector('.tab .tab-name');
-      return span ? span.getAttribute('data-tip') : null;
     });
 
     expect(tabTip).toBe('my-note.md');
@@ -797,11 +770,6 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await goto(page);
     await injectFile(page, 'long.md', LONG_DOC);
 
-    const previewScrollBefore = await page.evaluate(() => {
-      const pane = document.querySelector('.preview-pane');
-      return pane ? pane.scrollTop : -1;
-    });
-
     await page.evaluate(() => {
       window.openFind();
       window.runFind('findme');
@@ -870,8 +838,7 @@ test.describe('[AC7] Find bar scroll does not shift statusbar', () => {
     await page.click('#findNextBtn');
     await page.click('#findPrevBtn');
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0);
   });
 });
 
@@ -1002,8 +969,7 @@ test.describe('[AC9] Interactive elements respond correctly', () => {
 
     await page.keyboard.press('Control+Shift+O');
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0);
   });
 });
 
@@ -1029,8 +995,7 @@ test.describe('[ADV] Adversarial tests', () => {
 
     await page.evaluate(() => window.openVault());
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0);
   });
 
   // AC1 adversarial: a hostile relative entry name should not crash the renderer.
@@ -1051,8 +1016,6 @@ test.describe('[ADV] Adversarial tests', () => {
     // The renderer should just store whatever name comes from main — no crash
     const fileCount = await page.evaluate(() => window._appState.files.length);
     expect(fileCount).toBeGreaterThanOrEqual(0);
-    // No unhandled error
-    const jsErrors = [];
     // We just verify page is still alive
     const appVisible = await page.locator('.app').isVisible();
     expect(appVisible).toBe(true);
@@ -1098,14 +1061,14 @@ test.describe('[ADV] Adversarial tests', () => {
   test('[ADV-paste-no-clipboard] paste with no clipboard API shows info toast', async ({ page }) => {
     await goto(page);
     await injectFile(page, 'edit.md', '# Edit\n\nContent.');
-    await page.evaluate(() => window.setEditorMode('source'));
+    await page.waitForFunction(() => !!window.getActiveCmAdapter?.());
 
     // Remove clipboard API
     await page.evaluate(() => {
       Object.defineProperty(navigator, 'clipboard', {
         value: null, writable: true, configurable: true
       });
-      document.getElementById('srcTextarea').focus();
+      window.getActiveCmAdapter().focus();
     });
 
     await page.evaluate(() => window.execEditCmd('paste'));
@@ -1144,30 +1107,7 @@ test.describe('[ADV] Adversarial tests', () => {
     // findNextBtn click triggers findStep internally — should not throw
     await page.click('#findNextBtn');
 
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
-    expect(jsErrors).toHaveLength(0);
-  });
-
-  // AC8 adversarial: blockquote with backslash in prefix (> \) — handler does not break
-  test('[ADV-bq-backslash] blockquote with backslash in line does not crash handler', async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', e => errors.push(e.message));
-
-    await goto(page);
-    await injectFile(page, 'bq.md', '# BQ\n\n');
-    await page.evaluate(() => window.setEditorMode('source'));
-
-    await page.evaluate(() => {
-      const ta = document.getElementById('srcTextarea');
-      ta.value = '> backslash \\ here';
-      ta.selectionStart = ta.selectionEnd = ta.value.length;
-      ta.focus();
-    });
-
-    await page.keyboard.press('Enter');
-
-    const jsErrors = errors.filter(e => !e.includes('fonts.') && !e.includes('cdn.'));
-    expect(jsErrors).toHaveLength(0);
+    expect(errors).toHaveLength(0);
   });
 
   // General adversarial: search result mark with <script> in file content is escaped

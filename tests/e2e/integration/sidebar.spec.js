@@ -67,7 +67,6 @@ test.describe('Sidebar integration tests', () => {
     await page.click('.sb-tab[data-pane="tags"]');
 
     // Check tags rendered (demo notes have #reading, #prose etc.)
-    const tagCloud = page.locator('.tag-cloud');
     const tagCount = await page.locator('.tag').count();
     expect(tagCount).toBeGreaterThan(0);
   });

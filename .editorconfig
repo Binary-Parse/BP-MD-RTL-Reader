@@ -14,6 +14,10 @@ indent_size = 2
 [*.{bat,cmd,ps1}]
 end_of_line = crlf
 
+# The installer licence is CRLF by contract (.gitattributes *.rtf eol=crlf)
+[*.rtf]
+end_of_line = crlf
+
 # Markdown uses trailing spaces for hard line breaks
 [*.md]
 trim_trailing_whitespace = false

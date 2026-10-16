@@ -16,8 +16,12 @@ const ROOT = process.cwd();
 const NODE_COVERAGE = path.join(ROOT, 'coverage', 'node', 'coverage-final.json');
 const RENDERER_COVERAGE = path.join(ROOT, 'coverage', 'renderer-report', 'coverage-final.json');
 const MERGED_DIR = path.join(ROOT, 'coverage', 'merged');
-const MIN_STATEMENTS = Number(process.env.MIN_COMBINED_STMT_PCT || 80);
-const MIN_FUNCTIONS = Number(process.env.MIN_COMBINED_FUNC_PCT || 75);
+// QA-M27: measured 92.37 % statements / 92.03 % functions on 2026-10-13; the floor sits about
+// two points below, so a real drop fails and run-to-run noise does not. Raise it, never lower it.
+// The floor lives in config/coverage-thresholds.json (`combined`); the env vars override it.
+const COMBINED = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'coverage-thresholds.json'), 'utf8')).combined;
+const MIN_STATEMENTS = Number(process.env.MIN_COMBINED_STMT_PCT || COMBINED.statements);
+const MIN_FUNCTIONS = Number(process.env.MIN_COMBINED_FUNC_PCT || COMBINED.functions);
 
 function mergeCoverageInputs(nodeInput, rendererInput) {
   const coverageMap = libCoverage.createCoverageMap();

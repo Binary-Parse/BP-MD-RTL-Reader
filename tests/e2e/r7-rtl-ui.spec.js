@@ -153,15 +153,14 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
     await expect(page).toHaveScreenshot('rtl-ui-chrome-1440x900.png', { maxDiffPixels: 8000, threshold: 0.2 });
   });
 
-  test('M21: the theme, the editor mode and the folder state are named in Arabic', async ({ page }) => {
+  test('M21: the theme and the folder state are named in Arabic', async ({ page }) => {
     const labels = () => page.evaluate(() => ({
       theme: document.getElementById('themeLabel').textContent,
-      mode: document.getElementById('propMode').textContent,
       folder: document.getElementById('sbVault').textContent,
     }));
-    expect(await labels()).toEqual({ theme: 'paper', mode: 'Live', folder: 'no folder' });
+    expect(await labels()).toEqual({ theme: 'paper', folder: 'no folder' });
     await page.evaluate(() => window.setArabicUI(true));
-    expect(await labels()).toEqual({ theme: 'ورقي', mode: 'مباشر', folder: 'لا مجلد' });
+    expect(await labels()).toEqual({ theme: 'ورقي', folder: 'لا مجلد' });
 
     await page.evaluate(() => window.cycleTheme());
     expect((await labels()).theme).toBe('حبر');
@@ -169,7 +168,7 @@ test.describe('[T-R7] full RTL/Arabic UI', () => {
 
     // Back to English: the id-like names of before, and the capitalised name in the toast.
     await page.evaluate(() => window.setArabicUI(false));
-    expect(await labels()).toEqual({ theme: 'ink', mode: 'Live', folder: 'no folder' });
+    expect(await labels()).toEqual({ theme: 'ink', folder: 'no folder' });
     await page.evaluate(() => window.cycleTheme());
     await expect(page.locator('.toast').last()).toHaveText('Theme: Sepia');
   });

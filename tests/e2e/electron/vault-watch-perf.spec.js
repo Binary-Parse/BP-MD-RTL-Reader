@@ -15,6 +15,7 @@
  *   4. an external delete still removes the note from the tree (marked missing, tab kept).
  */
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -22,7 +23,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const NOTE_COUNT = 500;
 // trailing debounce 300 ms, max-wait 2 s: wait comfortably longer than both
-const SETTLE_MS = 3500;
+const SETTLE_MS = 3500; // deliberate windows: they prove that no event or re-read arrives
 
 test.describe('vault watcher cost against real Electron @electron', () => {
   let electronApp;
@@ -91,10 +92,7 @@ test.describe('vault watcher cost against real Electron @electron', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) await page.evaluate(() => window.electronAPI.closeWindow()).catch(() => {});
-      await electronApp.close().catch(() => {});
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 

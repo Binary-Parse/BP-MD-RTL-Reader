@@ -10,10 +10,8 @@ const { writeCoverageMetadata } = require('./coverage-metadata');
 
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'coverage', 'node');
-const directOutput = path.join(root, 'coverage', 'direct-unit');
 const thresholds = JSON.parse(fs.readFileSync(path.join(root, 'config', 'coverage-thresholds.json'), 'utf8')).unit;
 fs.rmSync(output, { recursive: true, force: true });
-fs.rmSync(directOutput, { recursive: true, force: true });
 
 const vitestManifestPath = require.resolve('vitest/package.json');
 const vitestManifest = require(vitestManifestPath);

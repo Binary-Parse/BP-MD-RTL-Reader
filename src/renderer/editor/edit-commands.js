@@ -1,11 +1,11 @@
 /**
  * edit-commands.js — pure dispatcher for the Edit menu (audit Edit-Menu fix).
  *
- * Why extracted: the inline version inside index.html cannot be Stryker-mutated
- * and is hard to unit-test. This module takes ALL its dependencies via a `deps`
+ * Why extracted: the inline version inside index.html is hard to unit-test.
+ * This module takes ALL its dependencies via a `deps`
  * object — no module-level `document`, no `window.electronAPI` access, no
  * `navigator.clipboard` import — so vitest can exercise every branch with a
- * synthetic `deps` and Stryker can score mutation cleanly.
+ * synthetic `deps`.
  *
  * Contract:
  *   execEditCmd(cmd, deps) → Promise<{ok, reason?}>
@@ -17,7 +17,6 @@
  *                   'unknown-cmd'      — cmd not in the 6 valid commands
  *                   'no-editor'        — no editable surface in scope
  *                   'no-selection'     — cut/copy with empty selection
- *                   'preview-readonly' — cut/paste attempted on live preview
  *                   'no-clipboard'     — paste with no navigator.clipboard
  *                   'ipc'              — forwarded to electronAPI.editCommand
  *
@@ -26,7 +25,7 @@
  *     ENTIRE renderer DOM including titlebar/sidebar/statusbar). Always scoped
  *     in renderer to the active editor surface.
  *   - cut/copy/paste/undo/redo always restore focus to the saved editable
- *     BEFORE calling the IPC, so webContents.<cmd> targets the textarea and
+ *     BEFORE calling the IPC, so webContents.<cmd> targets the field and
  *     not the just-closed menu div.
  */
 
@@ -35,8 +34,8 @@ const VALID_CMDS = ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'];
 /* ALL_DEPS reference (for tests/docs — not used at runtime):
    {
      electronAPI:   { editCommand(cmd): void } | null,
-     getMode():     'source' | 'live' | 'split',
-     getSrcTextarea(): HTMLTextAreaElement | null,
+     getViewMode(): 'reading' | 'edit',
+     getCmAdapter(): EditorPort | null,
      getNoteContent(): HTMLElement | null,
      getLastFocusedEditable(): HTMLElement | null,
      getActiveElement(): Element | null,
@@ -54,9 +53,9 @@ function isField(el) {
 
 /**
  * CM6 path (T-F13): CodeMirror is the sole editor, so the Edit menu must act on IT — not the
- * old textarea (a hidden fallback) nor the hidden rendered preview. Returns a result object
- * when CM6 is active and handled the command, or `null` when there is no CM6 adapter (the
- * caller then runs the legacy textarea/preview path — i.e. the CM6-failed-to-load fallback).
+ * hidden rendered preview. Returns a result object when CM6 is active and handled the
+ * command, or `null` when there is no CM6 adapter (the caller then acts on a focused text
+ * field, e.g. the find box, or on the rendered selection).
  */
 // CM6's replaceSelection deletes EVERY selection range, so the clipboard must carry
 // every range's slice too — joined in document order ('\n', matching CM6's own
@@ -139,7 +138,7 @@ function resolveTarget(deps) {
 }
 
 // Scope the DOM Selection to the rendered #noteContent — used both for the actual Reading
-// view and as the legacy live-preview fallback when CM6 never mounted.
+// view and when CM6 never mounted (the rendered note is what is on screen then).
 function selectAllNoteContent(deps) {
   const content = deps.getNoteContent && deps.getNoteContent();
   const sel = deps.getSelection && deps.getSelection();
@@ -152,11 +151,9 @@ function selectAllNoteContent(deps) {
 }
 
 // v10 redesign fix: selectAll is dispatched by VIEW mode (deps.getViewMode — 'reading' vs
-// 'edit', State.viewMode), never by editor mode (deps.getMode — 'source'/'split'/'live',
-// State.editorMode — a different field entirely). CM6 mounts unconditionally at launch
-// (T-F13), so a CM6 adapter can exist while Reading mode has it hidden behind #noteContent
-// — checking editor mode first (the old bug) would focus and select-all a document nobody
-// can see. Never call webContents.selectAll(), which would select the entire page
+// 'edit', State.viewMode). CM6 mounts unconditionally at launch (T-F13), so a CM6 adapter
+// can exist while Reading mode has it hidden behind #noteContent — selecting in it first
+// (the old bug) would focus and select-all a document nobody can see. Never call webContents.selectAll(), which would select the entire page
 // (titlebar/sidebar/statusbar) — see this module's header.
 function selectAll(deps) {
   if (deps.closeMenu) deps.closeMenu();
@@ -184,17 +181,7 @@ function selectAll(deps) {
     return { ok: true };
   }
 
-  // CM6-failed-to-load fallback, by editor mode.
-  const mode = deps.getMode ? deps.getMode() : 'source';
-  if (mode === 'source' || mode === 'split') {
-    const ta = deps.getSrcTextarea && deps.getSrcTextarea();
-    if (!ta) return { ok: false, reason: 'no-editor' };
-    ta.focus();
-    ta.select();
-    return { ok: true };
-  }
-
-  // mode === 'live', no CM6, not Reading — the original live-preview fallback.
+  // No CM6 (still loading, or failed to load): the rendered note is what is on screen.
   return selectAllNoteContent(deps);
 }
 
@@ -213,7 +200,7 @@ function forwardOrFallback(cmd, deps) {
 
   // ── Renderer fallback (Playwright / file:// / non-Electron) ──────────
   if (!target) {
-    // For live-mode copy via window.getSelection (no editable focus required).
+    // Copy from the rendered selection (no editable focus required).
     if (cmd === 'copy') return copyFromSelection(deps);
     return { ok: false, reason: 'no-editor' };
   }
@@ -254,11 +241,6 @@ function copyField(target, deps) {
 }
 
 function cutField(target, deps) {
-  const mode = deps.getMode ? deps.getMode() : 'source';
-  if (mode === 'live') {
-    if (deps.showToast) deps.showToast('Cut not supported in preview', 'info');
-    return { ok: false, reason: 'preview-readonly' };
-  }
   const s = target.selectionStart;
   const e = target.selectionEnd;
   const txt = target.value.substring(s, e);
@@ -276,11 +258,6 @@ function cutField(target, deps) {
 }
 
 function pasteField(target, deps) {
-  const mode = deps.getMode ? deps.getMode() : 'source';
-  if (mode === 'live') {
-    if (deps.showToast) deps.showToast('Paste not supported in preview', 'info');
-    return { ok: false, reason: 'preview-readonly' };
-  }
   if (!deps.clipboard || !deps.clipboard.readText) {
     if (deps.showToast) deps.showToast('Paste not supported in this context', 'info');
     return { ok: false, reason: 'no-clipboard' };
@@ -310,9 +287,8 @@ export function execEditCmd(cmd, deps) {
   // and must run BEFORE cmEdit — cmEdit would focus + select-all CM6 unconditionally,
   // even while Reading mode has it hidden.
   if (cmd === 'selectAll') return selectAll(deps);
-  // T-F13: when CM6 is the active editor, route every other command to it. Falls through
-  // to the legacy textarea/preview path only when no CM6 adapter is present (CM6 failed
-  // to load).
+  // T-F13: when CM6 is the active editor, route every other command to it. With no CM6
+  // adapter (still loading, or failed to load) the command acts on a focused text field.
   const viaCm = cmEdit(cmd, deps);
   if (viaCm) return viaCm;
   return forwardOrFallback(cmd, deps);

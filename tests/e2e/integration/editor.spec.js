@@ -72,58 +72,6 @@ test('renderFile sets dirty=false tab without dirty indicator', async ({ page })
   expect(tabClass).not.toContain('dirty');
 });
 
-test('setEditorMode source hides preview-pane, shows source-pane', async ({ page }) => {
-  await page.goto(FILE_URL);
-  await page.waitForSelector('.app', { state: 'visible' });
-
-  await injectAndRender(page, 'mode.md', '# Mode test');
-
-  // Switch to source mode
-  await page.evaluate(() => {
-    if (typeof window.setEditorMode !== 'function') throw new Error('setEditorMode not exported');
-    window.setEditorMode('source');
-  });
-
-  const editorArea = page.locator('#editorArea');
-  const areaClass = await editorArea.getAttribute('class');
-  expect(areaClass).toContain('source');
-
-  // Source pane should be visible
-  const sourcePaneDisplay = await page.evaluate(() => {
-    const sp = document.querySelector('.source-pane');
-    return sp ? window.getComputedStyle(sp).display : 'none';
-  });
-  expect(sourcePaneDisplay).not.toBe('none');
-});
-
-test('setEditorMode split shows both panes', async ({ page }) => {
-  await page.goto(FILE_URL);
-  await page.waitForSelector('.app', { state: 'visible' });
-
-  await injectAndRender(page, 'split.md', '# Split test');
-
-  await page.evaluate(() => window.setEditorMode('split'));
-
-  const editorArea = page.locator('#editorArea');
-  const areaClass = await editorArea.getAttribute('class');
-  expect(areaClass).toContain('split');
-});
-
-test('setEditorMode preview (live) shows preview-pane', async ({ page }) => {
-  await page.goto(FILE_URL);
-  await page.waitForSelector('.app', { state: 'visible' });
-
-  await injectAndRender(page, 'preview.md', '# Preview test');
-
-  // First go to source, then back to live
-  await page.evaluate(() => window.setEditorMode('source'));
-  await page.evaluate(() => window.setEditorMode('live'));
-
-  const editorArea = page.locator('#editorArea');
-  const areaClass = await editorArea.getAttribute('class');
-  expect(areaClass).not.toContain('source');
-});
-
 test('saveCurrent falls back to <a download> when showSaveFilePicker absent', async ({ page }) => {
   await page.goto(FILE_URL);
   await page.waitForSelector('.app', { state: 'visible' });
@@ -261,12 +209,9 @@ test('[T3] toggleRTL() sets dir on document.documentElement not #appBody', async
   // Toggle RTL on
   await page.evaluate(() => window.toggleRTL());
 
-  // html element must NOT receive dir — scoping is to #srcTextarea and #editor only
+  // html element must NOT receive dir — scoping is to #editor only
   const htmlDir = await page.locator('html').getAttribute('dir');
   expect(htmlDir).toBeNull();
-
-  const srcTextareaDir = await page.locator('#srcTextarea').getAttribute('dir');
-  expect(srcTextareaDir).toBe('auto');
 
   const editorDir = await page.locator('#editor').getAttribute('dir');
   expect(editorDir).toBe('rtl');

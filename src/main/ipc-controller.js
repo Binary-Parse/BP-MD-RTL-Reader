@@ -6,8 +6,15 @@ const {
   hashContent, decodeBuffer, detectEol, hasMixedEol, normalize, sweepStaleTempFiles, REOPEN_ENCODINGS,
 } = require('./document-store');
 const { createOwnWriteTracker } = require('./own-write-tracker');
+const { STALE_TEMP_AGE_MS } = require('./atomic-rename');
+const {
+  MAX_FILE_BYTES, CONFIRM_NOTE_BYTES, MAX_VAULT_FILE_BYTES, MAX_PDF_EXPORT_BYTES, MAX_HTML_EXPORT_BYTES,
+  MAX_EPUB_BYTES, pdfTimeoutMs, getLimits,
+} = require('./main-logic');
 const { turnSpellcheckOff } = require('./spellcheck-off');
+const { dialogText } = require('./dialog-text');
 const nodeCrypto = require('crypto');
+const { pathToFileURL } = require('url');
 
 const DEFAULT_UPDATE_MANIFEST_URL =
   'https://api.github.com/repos/Binary-Parse/BP-MD-RTL-Reader/releases/latest';
@@ -19,14 +26,16 @@ const RELEASES_PAGE_URL = 'https://github.com/Binary-Parse/BP-MD-RTL-Reader/rele
 
 // T7.1: opt-in auto update check — notify only, at most once a day.
 const AUTO_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// MAIN-5: the capability registry throws this when it cannot write its file (an unwritable
+// or full profile). The user is told that, not that the folder or file is missing.
+const persistFailed = (error) => !!error && error.message === 'persist-failed';
 
 const UPDATE_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 
-// T6.1c: an EPUB the renderer built is a few hundred KB at most; anything past this cap is a
-// bug or a hostile renderer, and refusing it keeps a single IPC call from filling the disk.
-const MAX_EPUB_BYTES = 64 * 1024 * 1024;
-// A standalone HTML export carries its images inline, so it gets the EPUB ceiling.
-const MAX_HTML_EXPORT_BYTES = 64 * 1024 * 1024;
+// T6.1c: an EPUB the renderer built is a few hundred KB at most; anything past MAX_EPUB_BYTES
+// (main-logic.js, with the other size limits) is a bug or a hostile renderer, and refusing it
+// keeps a single IPC call from filling the disk. The same file holds the PDF and HTML export
+// ceilings: HTML carries its images inline, and a note can now be 100 MB of text.
 
 // H15 step 3: fs:readVaultChanges limits. 50 notes per call (the renderer falls back to a full
 // read above that), and the same nesting depth the full walk goes to.
@@ -103,6 +112,11 @@ function createIpcController({
       readingStatsStore = createReadingStatsStore({ fs, path, userDataDir: app.getPath('userData') });
     }
     return readingStatsStore;
+  }
+  // QA-L2: native dialog titles in the interface language (English unless it is Arabic).
+  function uiText() {
+    const settings = typeof getCurrentSettings === 'function' ? getCurrentSettings() : null;
+    return dialogText(settings && settings.uiLocale);
   }
   // T7.1: the opt-in auto update check. Notify-only, at most once a day, and only while the
   // saved setting says 'auto' — the timer and the first check are both re-validated against
@@ -247,6 +261,13 @@ function createIpcController({
     return base && base !== '.' && base !== '..' ? base : fallback;
   }
 
+  // QA-L2: the line ending is written between every line of the file, so it must be one of
+  // the two the app knows; any other string from the page would be planted throughout.
+  function validWriteFormat({ eol, bom, finalNewline }) {
+    const optionalBool = (v) => v === undefined || typeof v === 'boolean';
+    return (eol === undefined || eol === '\n' || eol === '\r\n') && optionalBool(bom) && optionalBool(finalNewline);
+  }
+
   function withTimeout(promise, ms) {
     let timer;
     const timeout = new Promise((_, reject) => {
@@ -309,7 +330,7 @@ function createIpcController({
     }
   }
 
-  function readDocumentCapability(documentId, { encoding } = {}) {
+  function readDocumentCapability(documentId, { encoding, confirmLarge = false } = {}) {
     const capabilityRegistry = getCapabilityRegistry();
     const record = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
     if (!record) return { error: 'unauthorized-capability' };
@@ -347,7 +368,12 @@ function createIpcController({
     try {
       const stat = fs.statSync(realPath);
       if (!stat.isFile()) return { error: 'not-regular-file' };
-      if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
+      if (isOversizedFile(stat.size)) return { error: 'file-too-large', size: stat.size, name: path.basename(record.path) };
+      // Large-file mode: a note above CONFIRM_NOTE_BYTES is only read once the user said yes
+      // (the renderer asks, then reads again with confirmLarge). Nothing but the size leaves.
+      if (!confirmLarge && stat.size > CONFIRM_NOTE_BYTES) {
+        return { error: 'confirm-large', documentId: record.id, name: path.basename(record.path), size: stat.size };
+      }
       const read = encoding == null
         ? withConfirmedEncoding(record.id, realPath, docStore.read(realPath))
         : docStore.read(realPath, { encoding });
@@ -361,6 +387,7 @@ function createIpcController({
         name: path.basename(record.path),
         content,
         meta,
+        size: stat.size, // bytes on disk: the renderer picks the note's size tier from it
       };
       // audit M9: a document that belongs to a folder is identified in the renderer by
       // (vaultId, path inside the folder). Without the path, sub/README.md opened by
@@ -387,12 +414,12 @@ function createIpcController({
     // Strict isFile (audit follow-up): a stat that cannot say "regular file" is NOT one —
     // the same rule as the walk guard, which classifies that shape as special and skips it.
     if (!stat || typeof stat.isFile !== 'function' || !stat.isFile()) return { error: 'not-regular-file' };
-    if (isOversizedFile(stat.size)) return { error: 'file-too-large' };
+    if (stat.size > MAX_VAULT_FILE_BYTES) return { error: 'file-too-large' };
     try {
       const { content, meta } = withConfirmedEncoding(record.id, record.path, await docStore.readAsync(record.path, stat));
       if (meta && meta.hash) lastReadHashes.set(record.id, meta.hash);
       noteEncodingCertainty(record.id, meta);
-      return { documentId: record.id, vaultId: record.vaultId, name: path.basename(record.path), content, meta };
+      return { documentId: record.id, vaultId: record.vaultId, name: path.basename(record.path), content, meta, size: stat.size };
     } catch (_) {
       return { error: 'read-failed' };
     }
@@ -408,10 +435,10 @@ function createIpcController({
     openVaults.delete(vaultId);
   }
 
-  // Full teardown (app quit / window close) — keeps its original name and signature
-  // since window-controller.js and index.js already call it at three teardown sites.
+  // Full teardown (app quit / window close): close every open vault, watcher included. The
+  // bpmd:// asset handler reads openVaults, so after this no vault asset is served.
   let resetRecoveryForReload = () => {}; // set once the recovery handlers exist (audit M11)
-  function closeVaultWatcher() {
+  function closeAllVaults() {
     for (const vaultId of [...openVaults.keys()]) closeVault(vaultId);
   }
 
@@ -455,7 +482,7 @@ function createIpcController({
         stat = await fs.promises.stat(canonical);
       }
       if (!stat || typeof stat.isFile !== 'function' || !stat.isFile()) return { skipped: 'special' };
-      if (isOversizedFile(stat.size)) return { skipped: 'oversized' };
+      if (stat.size > MAX_VAULT_FILE_BYTES) return { skipped: 'oversized' };
       if (wouldExceedCumulative(cumulativeBytes, stat.size)) return { truncated: true };
       counted = stat.size;
       const capability = capabilityRegistry.grantDocument(canonical, {
@@ -519,7 +546,7 @@ function createIpcController({
       const win = windowForEvent(event);
       const result = await dialog.showOpenDialog(win, {
         properties: ['openDirectory'],
-        title: 'Open Folder',
+        title: uiText().openFolder,
       });
       if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
         return { canceled: true };
@@ -533,8 +560,9 @@ function createIpcController({
           canceled: false,
           vault: granted,
         };
-      } catch (_) {
-        return { error: 'invalid-vault' };
+      } catch (error) {
+        writeLog('warn', 'ipc:dialog:openFolder', error?.message);
+        return { error: persistFailed(error) ? 'persist-failed' : 'invalid-vault' };
       }
     });
 
@@ -542,8 +570,8 @@ function createIpcController({
       const win = windowForEvent(event);
       const result = await dialog.showOpenDialog(win, {
         properties: ['openFile'],
-        title: 'Open File',
-        filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+        title: uiText().openFile,
+        filters: [{ name: uiText().markdown, extensions: ['md', 'markdown'] }],
       });
       if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
         return { canceled: true };
@@ -560,14 +588,18 @@ function createIpcController({
         const capability = getCapabilityRegistry().grantDocument(filePath);
         sessionDocumentGrants.add(capability.id);
         return { canceled: false, ...readDocumentCapability(capability.id) };
-      } catch (_) {
-        return { error: 'read-failed' };
+      } catch (error) {
+        writeLog('warn', 'ipc:dialog:openFile', error?.message);
+        return { error: persistFailed(error) ? 'persist-failed' : 'read-failed' };
       }
     });
 
-    ipcMain.handle('fs:readFile', async (_event, documentId) => (
-      readDocumentCapability(documentId)
+    ipcMain.handle('fs:readFile', async (_event, documentId, options) => (
+      readDocumentCapability(documentId, { confirmLarge: !!options && options.confirmLarge === true })
     ));
+
+    // The size thresholds, from the one place that defines them (main-logic.js). Plain data.
+    ipcMain.handle('app:limits', () => getLimits());
 
     // audit M7 (decision D10): the user's answer to "the encoding of this note is a guess".
     // reopen: false — keep the guess: only lifts the hold on saving.
@@ -578,7 +610,7 @@ function createIpcController({
       const { documentId, encoding, reopen } = payload || {};
       if (typeof documentId !== 'string' || !REOPEN_ENCODINGS.includes(encoding)) return { error: 'invalid' };
       if (reopen === true) {
-        const snapshot = readDocumentCapability(documentId, { encoding });
+        const snapshot = readDocumentCapability(documentId, { encoding, confirmLarge: true }); // already open: already confirmed
         if (!snapshot.error && !snapshot.meta.encodingUncertain) {
           confirmedEncodings.set(documentId, { encoding, hash: snapshot.meta.hash });
         }
@@ -599,7 +631,7 @@ function createIpcController({
     // in its original encoding via Save As). No paths, no fs authority.
     ipcMain.handle('text:decode', async (_event, bytes) => {
       if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) return { error: 'invalid' };
-      if (bytes.byteLength > 10 * 1024 * 1024) return { error: 'file-too-large' };
+      if (bytes.byteLength > MAX_FILE_BYTES) return { error: 'file-too-large' };
       const dec = decodeBuffer(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
       return {
         ok: true,
@@ -792,8 +824,9 @@ function createIpcController({
         }
         sessionVaultGrants.add(record.id);
         return { ok: true, name: path.basename(real) };
-      } catch (_) {
-        return { error: 'missing-folder' };
+      } catch (error) {
+        writeLog('warn', 'ipc:fs:reopenVault', error?.message);
+        return { error: persistFailed(error) ? 'persist-failed' : 'missing-folder' };
       }
     });
     ipcMain.handle('fs:reopenDocument', (_event, documentId) => {
@@ -824,8 +857,9 @@ function createIpcController({
         }
         sessionDocumentGrants.add(record.id);
         return { ok: true };
-      } catch (_) {
-        return { error: 'missing-file' };
+      } catch (error) {
+        writeLog('warn', 'ipc:fs:reopenDocument', error?.message);
+        return { error: persistFailed(error) ? 'persist-failed' : 'missing-file' };
       }
     });
 
@@ -848,10 +882,10 @@ function createIpcController({
       const {
         documentId, content, baseHash, bom, eol, finalNewline, revision, encoding,
       } = payload;
-      if (typeof content !== 'string') return { error: 'invalid' };
-      if (Buffer.byteLength(content, 'utf8') > 10 * 1024 * 1024) {
-        return { error: 'file-too-large' };
-      }
+      if (typeof content !== 'string' || !validWriteFormat(payload)) return { error: 'invalid' };
+      // Every supported encoding takes at least one byte per UTF-16 unit, so this cheap bound
+      // never refuses a note that fits; docStore.write checks the exact bytes it would write.
+      if (content.length > MAX_FILE_BYTES) return { error: 'file-too-large' };
       const capabilityRegistry = getCapabilityRegistry();
       const document = capabilityRegistry && capabilityRegistry.resolveDocument(documentId);
       if (!document) return { error: 'unauthorized-capability' };
@@ -860,16 +894,18 @@ function createIpcController({
       if (unconfirmedEncodings.has(documentId)) return { error: 'encoding-unconfirmed' };
       // audit SEC-02: only a hash MAIN itself read counts. An omitted (or tampered) baseHash
       // for a document main already read is a conflict, never a silent overwrite. When main
-      // has not read the document this session, hash the disk state here so the check can
-      // never be skipped — a grant without a read confers no overwrite authority.
+      // has not read the document this session, hash the disk state here so a grant without
+      // a read confers no overwrite authority. A disk copy that cannot be hashed (oversized or
+      // unreadable, see currentDiskHash) is refused: it would otherwise be overwritten blind.
       let expectedHash = lastReadHashes.get(documentId);
       if (expectedHash == null && fs.existsSync(document.path)) {
-        try {
-          expectedHash = currentDiskHash(document.path);
-          lastReadHashes.set(documentId, expectedHash);
-        } catch (_) {
-          return { error: 'read-failed' };
+        expectedHash = currentDiskHash(document.path);
+        if (expectedHash == null) {
+          let oversized = false;
+          try { oversized = isOversizedFile(fs.statSync(document.path).size); } catch (_) { /* unreadable */ }
+          return { error: oversized ? 'file-too-large' : 'read-failed' };
         }
+        lastReadHashes.set(documentId, expectedHash);
       }
       if (expectedHash != null && baseHash !== expectedHash) {
         return { error: 'conflict' };
@@ -885,6 +921,8 @@ function createIpcController({
         finalNewline,
         // v1.2: re-encode in the file's original encoding (UTF-8/UTF-16/Windows-1256).
         encoding: typeof encoding === 'string' ? encoding : 'utf8',
+        // The open cap, counted the same way: any note that opened saves unchanged.
+        maxBytes: MAX_FILE_BYTES,
       });
       if (result.ok && result.meta && result.meta.hash) {
         lastReadHashes.set(documentId, result.meta.hash);
@@ -894,14 +932,12 @@ function createIpcController({
     });
 
     ipcMain.handle('dialog:saveFile', async (event, payload) => {
-      if (!payload || typeof payload.content !== 'string') return { error: 'invalid' };
-      if (Buffer.byteLength(payload.content, 'utf8') > 10 * 1024 * 1024) {
-        return { error: 'file-too-large' };
-      }
+      if (!payload || typeof payload.content !== 'string' || !validWriteFormat(payload)) return { error: 'invalid' };
+      if (payload.content.length > MAX_FILE_BYTES) return { error: 'file-too-large' };
       const result = await dialog.showSaveDialog(windowForEvent(event), {
-        title: 'Save Markdown File',
+        title: uiText().saveMarkdown,
         defaultPath: sanitizeSuggestedName(payload.suggestedName, 'Untitled.md'),
-        filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+        filters: [{ name: uiText().markdown, extensions: ['md', 'markdown'] }],
       });
       if (result.canceled || !result.filePath) return { canceled: true };
       if (isNetworkPath(result.filePath)) return { error: 'network-path-not-allowed' };
@@ -910,8 +946,11 @@ function createIpcController({
         eol: payload.eol === '\r\n' ? '\r\n' : '\n',
         finalNewline: payload.finalNewline !== false,
         encoding: typeof payload.encoding === 'string' ? payload.encoding : 'utf8',
+        maxBytes: MAX_FILE_BYTES,
       });
       if (!written.ok) return written;
+      // Not recorded as an own write (unlike fs:writeFile): a Save As into an open folder must
+      // reach the renderer as vault:changed, which is what lists the new file in that tree.
       try {
         const capability = getCapabilityRegistry().grantDocument(result.filePath);
         sessionDocumentGrants.add(capability.id);
@@ -922,9 +961,11 @@ function createIpcController({
           documentId: capability.id,
           name: capability.name,
           meta: written.meta,
+          size: written.size,
           revision: payload.revision,
         };
-      } catch (_) {
+      } catch (error) {
+        writeLog('warn', 'ipc:dialog:saveFile', error?.message);
         return { error: 'write-failed' };
       }
     });
@@ -968,7 +1009,7 @@ function createIpcController({
     function sweepStaleExportHtmls() {
       try {
         const dir = app.getPath('temp');
-        const cutoff = Date.now() - 60 * 60 * 1000;
+        const cutoff = Date.now() - STALE_TEMP_AGE_MS;
         for (const name of fs.readdirSync(dir)) {
           if (!/^bpmd-export-[0-9a-f-]{36}\.html$/.test(name)) continue;
           try {
@@ -984,16 +1025,15 @@ function createIpcController({
       // SEC-04 (2026-09-26): every sibling content channel caps its payload; this was
       // the one unbounded string — a multi-hundred-MB html would be cloned into main,
       // written to %TEMP% and loaded into the print window before anything refused it.
-      if (Buffer.byteLength(payload.html, 'utf8') > 10 * 1024 * 1024) {
-        return { error: 'file-too-large' };
-      }
+      const htmlBytes = Buffer.byteLength(payload.html, 'utf8');
+      if (htmlBytes > MAX_PDF_EXPORT_BYTES) return { error: 'too-large' };
       sweepStaleExportHtmls();
       const parent = windowForEvent(event);
       const defaultPath = sanitizeSuggestedName(payload.defaultName, 'document.pdf');
       const result = await dialog.showSaveDialog(parent, {
-        title: 'Export PDF',
+        title: uiText().exportPdf,
         defaultPath,
-        filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+        filters: [{ name: uiText().pdfDocument, extensions: ['pdf'] }],
       });
       if (result.canceled || !result.filePath) return { canceled: true };
 
@@ -1019,9 +1059,9 @@ function createIpcController({
       // squatted name/symlink can never win, and the write either owns the file or fails.
       const tmpHtml = path.join(
         app.getPath('temp'),
-        `bpmd-export-${require('crypto').randomUUID()}.html`,
+        `bpmd-export-${nodeCrypto.randomUUID()}.html`,
       );
-      activePdfSourceUrls.add(require('url').pathToFileURL(tmpHtml).href);
+      activePdfSourceUrls.add(pathToFileURL(tmpHtml).href);
       let pdfWin = null;
       try {
         const handle = await fs.promises.open(tmpHtml, 'wx');
@@ -1039,18 +1079,21 @@ function createIpcController({
           },
         });
         pdfWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-        await withTimeout(pdfWin.loadFile(tmpHtml), 30000);
+        // Each of the two steps gets the size-scaled budget (30 s + 10 s per MiB, 5 min at most).
+        const budgetMs = pdfTimeoutMs(htmlBytes);
+        await withTimeout(pdfWin.loadFile(tmpHtml), budgetMs);
         const data = await withTimeout(
           pdfWin.webContents.printToPDF({ printBackground: true }),
-          30000,
+          budgetMs,
         );
         const written = atomicWriteFile(fs, result.filePath, data);
         if (!written.ok) throw new Error(written.error);
         return { ok: true };
-      } catch (_) {
-        return { error: 'export-failed' };
+      } catch (error) {
+        writeLog('warn', 'ipc:export:pdf', error?.message);
+        return { error: error && error.message === 'timeout' ? 'timeout' : 'export-failed' };
       } finally {
-        activePdfSourceUrls.delete(require('url').pathToFileURL(tmpHtml).href);
+        activePdfSourceUrls.delete(pathToFileURL(tmpHtml).href);
         if (pdfWin && !pdfWin.isDestroyed()) pdfWin.close();
         fs.promises.unlink(tmpHtml).catch(() => { /* best-effort temp cleanup */ });
       }
@@ -1067,9 +1110,9 @@ function createIpcController({
       const parent = windowForEvent(event);
       const defaultPath = sanitizeSuggestedName(payload.defaultName, 'document.epub');
       const result = await dialog.showSaveDialog(parent, {
-        title: 'Export EPUB',
+        title: uiText().exportEpub,
         defaultPath,
-        filters: [{ name: 'EPUB Book', extensions: ['epub'] }],
+        filters: [{ name: uiText().epubBook, extensions: ['epub'] }],
       });
       if (result.canceled || !result.filePath) return { canceled: true };
       const written = atomicWriteFile(
@@ -1090,9 +1133,9 @@ function createIpcController({
       const parent = windowForEvent(event);
       const defaultPath = sanitizeSuggestedName(payload.defaultName, 'document.html');
       const result = await dialog.showSaveDialog(parent, {
-        title: 'Export HTML',
+        title: uiText().exportHtml,
         defaultPath,
-        filters: [{ name: 'HTML Document', extensions: ['html'] }],
+        filters: [{ name: uiText().htmlDocument, extensions: ['html'] }],
       });
       if (result.canceled || !result.filePath) return { canceled: true };
       const written = atomicWriteFile(fs, result.filePath, Buffer.from(payload.html, 'utf8'));
@@ -1191,7 +1234,25 @@ function createIpcController({
     //   live.json      this session's mirror while an offer is unanswered. If this session
     //                  crashes too, the next launch offers both.
     const RECOVERY_MAX_FILES = 20;
-    const RECOVERY_MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+    // Recovery stores UTF-8. A note that opens is at most MAX_FILE_BYTES on disk, and one
+    // Windows-1256 or UTF-16 byte pair can become up to three UTF-8 bytes, so an entry of an
+    // open note may be three times the open cap; a smaller cap dropped such notes silently.
+    const RECOVERY_MAX_ENTRY_BYTES = 3 * MAX_FILE_BYTES;
+    // The total is the largest single entry: the biggest note that opens is always mirrored,
+    // and the mirror as a whole stays bounded (a 20-note mirror can no longer fill the disk).
+    // A note that still does not fit is NOT dropped quietly: it is named in the reply's
+    // `skipped` list and the renderer tells the user it is not covered by crash recovery.
+    const RECOVERY_MAX_TOTAL_BYTES = RECOVERY_MAX_ENTRY_BYTES;
+    // Above this many bytes, "unchanged since the last mirror" is decided from a digest kept in
+    // memory instead of reading the previous mirror file back and parsing it (hundreds of MB of
+    // work in main every 10 s for a big note). The file's size is checked as a guard.
+    const RECOVERY_DIGEST_MIN_BYTES = 8 * 1024 * 1024;
+    const recoveryDigests = new Map(); // snapshot path -> { digest, size }
+    const recoveryDigest = (entries) => {
+      const hash = nodeCrypto.createHash('sha256');
+      for (const entry of entries) { hash.update(entry.name); hash.update('\0'); hash.update(entry.content); hash.update('\0'); }
+      return hash.digest('hex');
+    };
     const recoveryDir = () => path.join(app.getPath('userData'), 'recovery');
     const recoveryFilePath = () => path.join(recoveryDir(), 'snapshot.json');
     const recoveryLivePath = () => path.join(recoveryDir(), 'live.json');
@@ -1234,13 +1295,16 @@ function createIpcController({
     ipcMain.handle('recovery:snapshot', async (_event, files) => {
       if (!Array.isArray(files)) return { error: 'invalid' };
       const clean = [];
+      const skipped = []; // names of valid notes that were not mirrored: too big, or the mirror is full
       let total = 0;
       for (const entry of files.slice(0, RECOVERY_MAX_FILES)) {
         if (!entry || typeof entry.name !== 'string' || typeof entry.content !== 'string') continue;
         if (entry.name.length === 0 || entry.name.length > 200) continue;
         const bytes = Buffer.byteLength(entry.content, 'utf8');
-        if (bytes > 10 * 1024 * 1024) continue;
-        if (total + bytes > RECOVERY_MAX_TOTAL_BYTES) break;
+        if (bytes > RECOVERY_MAX_ENTRY_BYTES || total + bytes > RECOVERY_MAX_TOTAL_BYTES) {
+          skipped.push(entry.name);
+          continue;
+        }
         total += bytes;
         clean.push({ name: entry.name, content: entry.content, at: Date.now() });
       }
@@ -1250,26 +1314,47 @@ function createIpcController({
         return { error: 'write-failed' };
       }
       await prepareRecovery();
-      const payload = Buffer.from(JSON.stringify({ files: clean }), 'utf8');
+      const snapshotPath = recoveryOfferPending ? recoveryLivePath() : recoveryFilePath();
+      const bigMirror = total > RECOVERY_DIGEST_MIN_BYTES;
+      const digest = bigMirror ? recoveryDigest(clean) : null;
+      const reply = (extra) => ({ ok: true, ...extra, ...(skipped.length ? { skipped } : {}) });
+      if (bigMirror) {
+        const last = recoveryDigests.get(snapshotPath);
+        if (last && last.digest === digest) {
+          try {
+            if ((await fs.promises.stat(snapshotPath)).size === last.size) return reply({ unchanged: true, count: clean.length });
+          } catch (_) { /* the mirror file is gone — write it again */ }
+        }
+      }
+      let payload;
+      try {
+        payload = Buffer.from(JSON.stringify({ files: clean }), 'utf8');
+      } catch (_) {
+        return { error: 'write-failed' }; // beyond the engine's string length: cannot be mirrored
+      }
       // audit PERF-10: the autosave loop mirrors the recovery snapshot every 10s, and an
       // unchanged document set used to replace identical bytes every time. Compare the
       // STABLE part (name+content) — the per-entry `at` stamp is volatile by design, so a
       // byte-for-byte check could never fire. Absent/unreadable is the normal first-write
       // path; it just falls through to the write.
-      const snapshotPath = recoveryOfferPending ? recoveryLivePath() : recoveryFilePath();
-      const stable = JSON.stringify(clean.map((entry) => [entry.name, entry.content]));
-      try {
-        const existing = JSON.parse(await fs.promises.readFile(snapshotPath, 'utf8'));
-        const existingFiles = existing && Array.isArray(existing.files) ? existing.files : [];
-        const existingStable = JSON.stringify(existingFiles.map((entry) => [entry.name, entry.content]));
-        if (existingStable === stable) return { ok: true, unchanged: true, count: clean.length };
-      } catch (_) { /* no snapshot yet, or unreadable — write it */ }
+      if (!bigMirror) {
+        const stable = JSON.stringify(clean.map((entry) => [entry.name, entry.content]));
+        try {
+          const existing = JSON.parse(await fs.promises.readFile(snapshotPath, 'utf8'));
+          const existingFiles = existing && Array.isArray(existing.files) ? existing.files : [];
+          const existingStable = JSON.stringify(existingFiles.map((entry) => [entry.name, entry.content]));
+          if (existingStable === stable) return reply({ unchanged: true, count: clean.length });
+        } catch (_) { /* no snapshot yet, or unreadable — write it */ }
+      }
       const result = atomicWriteFile(
         fs,
         snapshotPath,
         payload,
       );
-      return result && result.ok ? { ok: true, count: clean.length } : { error: 'write-failed' };
+      if (!(result && result.ok)) return { error: 'write-failed' };
+      if (bigMirror) recoveryDigests.set(snapshotPath, { digest, size: payload.length });
+      else recoveryDigests.delete(snapshotPath);
+      return reply({ count: clean.length });
     });
 
     ipcMain.handle('recovery:pop', async () => {
@@ -1429,12 +1514,12 @@ function createIpcController({
     registerIpcHandlers,
     readDocumentCapability,
     sessionGrantDocument,
-    closeVaultWatcher,
+    closeAllVaults,
     closeVault,
     resetRecoveryForReload: () => resetRecoveryForReload(),
     // Full teardown for app quit / last-window-closed: the vault watchers AND the daily update
     // timer, so a quit can never leave a pending timer (or a network call) behind.
-    dispose: () => { closeVaultWatcher(); stopAutoUpdateCheck(); },
+    dispose: () => { closeAllVaults(); stopAutoUpdateCheck(); },
     getOpenVault: (vaultId) => openVaults.get(vaultId) || null,
     listOpenVaultRoots: () => [...openVaults.values()].map((entry) => entry.path),
   };

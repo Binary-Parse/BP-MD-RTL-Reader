@@ -95,10 +95,10 @@ describe('settings:get / settings:set IPC (T-F8 / B5)', () => {
     expect((await get()).theme).toBe('ink');
   });
 
-  test('settings:set sanitizes/migrates (invalid mode → default, zoom clamped, junk dropped)', async () => {
-    await set({}, { editorMode: 'bogus', zoomFactor: 99, evil: true });
+  test('settings:set sanitizes/migrates (invalid view mode → default, zoom clamped, junk dropped)', async () => {
+    await set({}, { viewMode: 'bogus', zoomFactor: 99, evil: true });
     const got = await get();
-    expect(got.editorMode).toBe('live'); // invalid → default
+    expect(got.viewMode).toBe('reading'); // invalid → default
     expect(got.zoomFactor).toBe(2.0);    // clamped to max
     expect('evil' in got).toBe(false);   // unknown key dropped
     expect(got.version).toBe(5); // T0.1 bumped the schema

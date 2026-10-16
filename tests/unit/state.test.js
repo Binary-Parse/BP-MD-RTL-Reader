@@ -5,10 +5,6 @@
 import { describe, test, expect } from 'vitest';
 import { createState } from '../../src/renderer/state.js';
 
-function toggleDirectionLogic(current) {
-  return current === 'rtl' ? 'ltr' : 'rtl';
-}
-
 describe('Proxy State store', () => {
   test('subscriber fires when State.theme is mutated', () => {
     const { state, subscribe } = createState({ theme: 'paper', direction: 'ltr' });
@@ -91,12 +87,5 @@ describe('Proxy State store', () => {
     delete state.notThere;
     expect(calls).toEqual([]);
     expect(state.theme).toBe('paper');
-  });
-});
-
-describe('direction toggle logic', () => {
-  test('toggles ltr -> rtl and back', () => {
-    expect(toggleDirectionLogic('ltr')).toBe('rtl');
-    expect(toggleDirectionLogic('rtl')).toBe('ltr');
   });
 });

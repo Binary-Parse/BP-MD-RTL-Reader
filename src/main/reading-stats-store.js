@@ -19,7 +19,7 @@
 
 'use strict';
 
-const { atomicWriteJson, readJsonFile } = require('./json-store');
+const { atomicWriteJson, readJsonFileChecked, setAsideCorruptFile } = require('./json-store');
 
 const STATS_VERSION = 1;
 const MAX_DAYS = 730;                 // two years of history
@@ -82,13 +82,18 @@ function createReadingStatsStore({ fs, path, userDataDir, now = () => new Date()
   /** @type {Map<string, number>} */
   let days = new Map();
   let loaded = false;
+  let writable = true;     // false while a damaged file still sits at `file` (B3)
 
   function load() {
     if (loaded) return days;
     loaded = true;
     // Missing/corrupt/foreign-version all degrade to "no history" (never throw here).
-    const parsed = readJsonFile(fs, file, (value) => value && value.version === STATS_VERSION);
-    if (parsed) days = sanitizeDays(parsed.days);
+    const read = readJsonFileChecked(fs, file, (value) => value && value.version === STATS_VERSION);
+    // B3, as in annotations-store: move a damaged file aside before a save can replace it,
+    // and refuse to save while it (or an unreadable one) is still in place.
+    if (read.status === 'corrupt') writable = setAsideCorruptFile(fs, file, now()) !== null;
+    if (read.status === 'unreadable') writable = false;
+    if (read.status === 'ok') days = sanitizeDays(read.value.days);
     return days;
   }
 
@@ -118,6 +123,7 @@ function createReadingStatsStore({ fs, path, userDataDir, now = () => new Date()
       return { error: 'invalid-minutes' };
     }
     load();
+    if (!writable) return { error: 'store-unreadable' };
     const key = dateKey(now());
     const previous = days.get(key) || 0;
     days.set(key, Math.min(MAX_MINUTES_PER_DAY, previous + minutes));

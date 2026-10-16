@@ -1,16 +1,18 @@
 /**
  * document-store.js — transactional repository over the filesystem (T-AI1).
  * The single authority for reading/writing notes: preserves encoding (BOM/EOL),
- * writes atomically, detects external-modification conflicts, and lists a vault
- * recursively with cycle/size guards. fs/path/crypto are injected for testing.
+ * writes atomically and detects external-modification conflicts.
+ * fs/path/crypto are injected for testing.
  */
 
-const MAX_FILES = 5000;
 const MAX_DEPTH = 12;
-const MAX_CONFLICT_HASH_BYTES = 10 * 1024 * 1024;
+const { MAX_FILE_BYTES } = require('./main-logic');
+// The conflict check hashes the copy on disk up to the open limit: a note that opened is never
+// larger, so no note the app can hold is saved over without being compared (sha256 of 100 MiB
+// is about 30 ms). A copy that has grown past the limit since is a change, hence a conflict.
+const MAX_CONFLICT_HASH_BYTES = MAX_FILE_BYTES;
 
-const nodeCrypto = require('crypto');
-const { renameWithRetry, isLockError } = require('./atomic-rename');
+const { atomicWriteFile, STALE_TEMP_AGE_MS } = require('./atomic-rename');
 
 // ── Pure encoding helpers (EC-A1) ──────────────────────────────────────────
 function hasBOM(content) {
@@ -64,10 +66,10 @@ function splitLines(text) {
 }
 
 /**
- * Give LF-normalized \`content\` the line endings of \`original\` (the file on disk).
+ * Give LF-normalized `content` the line endings of `original` (the file on disk).
  * Lines of the unchanged head and tail keep their own ending. Between them: when no line
  * was added or removed, each line keeps the ending at its position; otherwise the changed
- * lines get \`eol\`, the file's dominant ending.
+ * lines get `eol`, the file's dominant ending.
  */
 function applyEolPreserving(content, original, eol) {
   const old = splitLines(original);
@@ -101,6 +103,16 @@ function applyEolPreserving(content, original, eol) {
 function isValidUtf8(buf) {
   const text = buf.toString('utf8');
   return Buffer.from(text, 'utf8').equals(buf);
+}
+
+// A copy of `input` with each byte pair swapped (UTF-16BE <-> LE). Unlike Buffer#swap16 it
+// accepts an odd length and leaves the last byte as it is.
+function swapBytes16(input) {
+  const out = Buffer.from(input);
+  for (let i = 0; i + 1 < out.length; i += 2) {
+    const t = out[i]; out[i] = out[i + 1]; out[i + 1] = t;
+  }
+  return out;
 }
 
 // BOM-less UTF-16 detection: in UTF-16 one byte of every pair is the code unit's HIGH
@@ -300,10 +312,7 @@ function decodeBuffer(input) {
     return { text: input.toString('utf16le').slice(1), encoding: 'utf16le', bom: true, hashKey: input };
   }
   if (input.length >= 2 && input[0] === 0xFE && input[1] === 0xFF) {
-    const swapped = Buffer.from(input);
-    for (let i = 0; i + 1 < swapped.length; i += 2) {
-      const t = swapped[i]; swapped[i] = swapped[i + 1]; swapped[i + 1] = t;
-    }
+    const swapped = swapBytes16(input);
     return { text: swapped.toString('utf16le').slice(1), encoding: 'utf16be', bom: true, hashKey: input };
   }
   if (input.length >= 3 && input[0] === 0xEF && input[1] === 0xBB && input[2] === 0xBF) {
@@ -333,10 +342,7 @@ function decodeBuffer(input) {
     return { text: input.toString('utf16le'), encoding: 'utf16le', bom: false, hashKey: input };
   }
   if (isUtf16Parity(input, 0)) {
-    const swapped = Buffer.from(input);
-    for (let i = 0; i + 1 < swapped.length; i += 2) {
-      const t = swapped[i]; swapped[i] = swapped[i + 1]; swapped[i + 1] = t;
-    }
+    const swapped = swapBytes16(input);
     return { text: swapped.toString('utf16le'), encoding: 'utf16be', bom: false, hashKey: input };
   }
   const utf16 = guessUtf16(input);
@@ -373,10 +379,7 @@ function encodeBuffer(text, encoding, bom) {
       return bom ? Buffer.concat([Buffer.from([0xFF, 0xFE]), body]) : body;
     }
     case 'utf16be': {
-      const body = Buffer.from(text, 'utf16le');
-      for (let i = 0; i + 1 < body.length; i += 2) {
-        const t = body[i]; body[i] = body[i + 1]; body[i + 1] = t;
-      }
+      const body = swapBytes16(Buffer.from(text, 'utf16le'));
       return bom ? Buffer.concat([Buffer.from([0xFE, 0xFF]), body]) : body;
     }
     case 'windows-1256':
@@ -432,7 +435,7 @@ function validateWriteTarget(fs, path, absPath, root) {
  * when older than maxAgeMs, so a concurrent writer's in-flight temp can never be swept.
  * @returns {number} count removed
  */
-function sweepStaleTempFiles(fs, path, dir, { maxAgeMs = 60 * 60 * 1000, now = Date.now(), maxDepth = MAX_DEPTH } = {}) {
+function sweepStaleTempFiles(fs, path, dir, { maxAgeMs = STALE_TEMP_AGE_MS, now = Date.now(), maxDepth = MAX_DEPTH } = {}) {
   // HYG-02: the sweep walks the same depth the vault read walks — notes live in
   // subdirectories (a 12-level walk), and a root-only listing never saw the crash
   // orphans beside the notes it exists to clean.
@@ -454,41 +457,6 @@ function sweepStaleTempFiles(fs, path, dir, { maxAgeMs = 60 * 60 * 1000, now = D
     } catch (_) { /* in use or already gone — leave it */ }
   }
   return removed;
-}
-
-/**
- * Atomically replace a destination with text or binary data.
- * @returns {{ok:true}|{error:'locked'|'enospc'|'gone'|'write-failed'}} `locked`: the target
- *   stayed held by another program (or is read-only) through every retry (audit M14).
- */
-function atomicWriteFile(fs, absPath, data, encoding, { sleep } = {}) {
-  const tmp = `${absPath}.tmp-${nodeCrypto.randomUUID()}`;
-  let mode = null;
-  try {
-    const stat = fs.statSync(absPath);
-    if (stat && typeof stat.mode === 'number') mode = stat.mode & 0o7777;
-  } catch (_) { /* new file — default mode */ }
-  try {
-    const options = encoding === undefined ? { flag: 'wx' } : { encoding, flag: 'wx' };
-    fs.writeFileSync(tmp, data, options);
-    if (fs.fsyncSync) {
-      try { const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd); } catch (_) { /* best effort */ }
-    }
-    // Re-apply the target's mode so a 0600 note does not widen to the umask default via
-    // the fresh temp file. On Windows chmod only toggles the read-only bit (the rename
-    // below tolerates it); a failed chmod is best-effort and never blocks the write.
-    if (mode != null && typeof fs.chmodSync === 'function') {
-      try { fs.chmodSync(tmp, mode); } catch (_) { /* best effort */ }
-    }
-    renameWithRetry(fs, tmp, absPath, sleep ? { sleep } : undefined);
-    return { ok: true };
-  } catch (e) {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) { /* ignore */ }
-    if (isLockError(e)) return { error: 'locked' };
-    if (e && e.code === 'ENOSPC') return { error: 'enospc' };
-    if (e && e.code === 'ENOENT') return { error: 'gone' };
-    return { error: 'write-failed' };
-  }
 }
 
 function createDocumentStore({ fs, path, crypto } = {}) {
@@ -557,26 +525,30 @@ function createDocumentStore({ fs, path, crypto } = {}) {
 
   /**
    * Atomically write `content`, preserving the original encoding, with a
-   * conflict check against the last-known hash.
+   * conflict check against the last-known hash. `maxBytes` caps the bytes that reach the
+   * disk, in the file's own encoding: a Windows-1256 note is one byte per Arabic letter on
+   * disk but two in UTF-8, so a UTF-8 measure refused notes the app had just opened.
    * @returns {{ok:true, meta}}|{error}
    */
   function write(absPath, content, opts = {}) {
-    const { root, baseHash, bom = false, eol = '\n', finalNewline = true, encoding = 'utf8' } = opts;
+    const {
+      root, baseHash, bom = false, eol = '\n', finalNewline = true, encoding = 'utf8', maxBytes = Infinity,
+    } = opts;
     const validated = validateWriteTarget(fs, path, absPath, root);
     if (validated.error) return validated;
 
     // Conflict detection (EC-A2): the file changed since we last read it.
     // SEC-01 (2026-09-26): stat before hashing — a target swapped for a multi-GB file
-    // was read whole here just to compute the conflict hash. An oversized target skips
-    // the check; the write itself replaces it with the (capped) incoming content.
+    // was read whole here just to compute the conflict hash. Past the limit (or a stat that
+    // fails on a file that exists) the copy on disk is not the one that was read.
     let onDisk = null; // the bytes this save replaces, once they are known to be the bytes that were read
     if (baseHash != null && fs.existsSync(absPath)) {
       let size = Infinity;
-      try { size = fs.statSync(absPath).size; } catch (_) { /* unreadable — skip the hash */ }
-      if (size <= MAX_CONFLICT_HASH_BYTES) {
-        onDisk = fs.readFileSync(absPath);
-        if (hashContent(onDisk, crypto) !== baseHash) return { error: 'conflict' };
-      }
+      try { size = fs.statSync(absPath).size; } catch (_) { /* unreadable — treated as changed below */ }
+      // A target swapped for a file past the limit is not what was read: refuse, never overwrite.
+      if (size > MAX_CONFLICT_HASH_BYTES) return { error: 'conflict' };
+      onDisk = fs.readFileSync(absPath);
+      if (hashContent(onDisk, crypto) !== baseHash) return { error: 'conflict' };
     }
 
     // Re-apply original encoding (EC-A1).
@@ -594,9 +566,12 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     const eolMixed = hasMixedEol(out);
     let written;
     let hashKey;
+    let size; // bytes that reach the disk: the renderer sets the note's size tier from it
     if (!encoding || encoding === 'utf8') {
       // UTF-8 keeps the legacy string-write path (BOM as the U+FEFF character).
       if (bom) out = '\uFEFF' + out;
+      size = Buffer.byteLength(out, 'utf8');
+      if (size > maxBytes) return { error: 'file-too-large' };
       written = atomicWriteFile(fs, absPath, out, 'utf8');
       hashKey = out;
     } else {
@@ -609,42 +584,15 @@ function createDocumentStore({ fs, path, crypto } = {}) {
       }
       // v1.2: UTF-16 / Windows-1256 go out as real bytes.
       const bytes = encodeBuffer(out, encoding, bom);
+      size = bytes.length;
+      if (size > maxBytes) return { error: 'file-too-large' };
       written = atomicWriteFile(fs, absPath, bytes);
       hashKey = bytes;
     }
     if (written.error) return written;
     let mtimeMs;
     try { mtimeMs = fs.statSync(absPath).mtimeMs; } catch (_) { /* optional metadata */ }
-    return { ok: true, meta: { hash: hashContent(hashKey, crypto), bom, eol, eolMixed, finalNewline, encoding, mtimeMs } };
-  }
-
-  /**
-   * Recursively list markdown files under `root`, cycle-safe and bounded.
-   * @returns {Array<{relPath:string}>}
-   */
-  function listMarkdown(root, { maxFiles = MAX_FILES, maxDepth = MAX_DEPTH } = {}) {
-    const out = [];
-    const visited = new Set();
-    function walk(dir, depth) {
-      if (depth > maxDepth || out.length >= maxFiles) return;
-      let real;
-      try { real = fs.realpathSync(dir); } catch (_) { return; }
-      if (visited.has(real)) return;             // cycle guard (EC-A5)
-      visited.add(real);
-      let entries;
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
-      for (const e of entries) {
-        if (out.length >= maxFiles) return;
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) walk(full, depth + 1);
-        else if ((e.isFile() || e.isSymbolicLink()) && /\.(md|markdown)$/i.test(e.name)) {
-          out.push({ relPath: path.relative(root, full) });
-        }
-      }
-    }
-    walk(root, 0);
-    out.sort((a, b) => a.relPath.localeCompare(b.relPath));
-    return out;
+    return { ok: true, size, meta: { hash: hashContent(hashKey, crypto), bom, eol, eolMixed, finalNewline, encoding, mtimeMs } };
   }
 
   /**
@@ -708,15 +656,15 @@ function createDocumentStore({ fs, path, crypto } = {}) {
     return { close() { if (timer) clearTimeout(timer); try { watcher.close(); } catch (_) { /* already gone */ } } };
   }
 
-  return { read, readAsync, write, listMarkdown, watch };
+  return { read, readAsync, write, watch };
 }
 
 module.exports = {
   createDocumentStore,
-  // pure helpers exported for unit/mutation testing
+  // pure helpers exported for unit testing
   hasBOM, stripBOM, detectEol, applyEol, hasMixedEol, applyEolPreserving, normalize, hashContent, isInsideRoot,
   validateWriteTarget, atomicWriteFile, sweepStaleTempFiles,
   decodeBuffer, decodeBufferAs, utf8Profile, REOPEN_ENCODINGS, encodeBuffer, encodeWindows1256, firstUnmappableWindows1256Char,
   unmappableWindows1256Summary,
-  MAX_FILES, MAX_DEPTH,
+  MAX_DEPTH,
 };

@@ -3,7 +3,7 @@
  * Integration tests for drag-and-drop file loading (Issue #7).
  * Validates: dragover preventDefault, drop preventDefault,
  * .md file loads into State.files, non-.md triggers toast,
- * >10MB file rejected with toast.
+ * >100MB file rejected with toast.
  */
 const { test, expect } = require('@playwright/test');
 const path = require('path');

@@ -99,10 +99,6 @@ test.describe('[F3] Layout — both panels hidden does not blank the editor', ()
     await goto(page);
     await injectFile(page, '# heading\n\nbody');
     // Hide both
-    await page.evaluate(() => {
-      if (window._appState.sidebarVisible)   window.toggleSidebar = window.toggleSidebar || (()=>{});
-      // Use button clicks for reliability
-    });
     await page.click('#sidebarToggleBtn');
     // Now click the inspector toggle
     await page.click('#inspectorToggleBtn');

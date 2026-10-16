@@ -15,19 +15,19 @@ import { createBlockPreview } from './block-preview.js';
 import { createMathPreview } from './math-preview.js';
 import { createWikilinkPreview } from './wikilink-preview.js';
 import { createInlineMarksPreview } from './inline-marks-preview.js';
-// listContinuation lives in its own module so the coverage + mutation gates SEE it (this
-// adapter file is gate-excluded as e2e-only). Re-exported for back-compat with importers.
+// listContinuation lives in its own module so the coverage gate SEES it (this
+// adapter file is gate-excluded as e2e-only).
 import { listContinuation } from './list-continuation.js';
 import { withoutAppOwnedKeys } from './keymap-ownership.js';
 import { createHistoryStore } from './history-store.js';
-export { listContinuation };
+import { hasLongLine } from '../components/large-file.js';
 
 /**
  * @param {HTMLElement} parent  where the editor mounts
  * @param {object} opts  { CM6, doc, onChange, dir }
  * @returns an EditorPort (+ setDirection/focus/destroy/_view) backed by a CM6 EditorView
  */
-export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', forceDir = null, livePreview = true, renderBlock = null, renderMath = null, onWikilink = null, onSelectionChange = null, onTab = null } = {}) {
+export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null, dir = 'ltr', forceDir = null, livePreview = true, largeMode = false, renderBlock = null, renderMath = null, onWikilink = null, onSelectionChange = null, onTab = null, onDeferredChange = null } = {}) {
   const {
     EditorState, EditorSelection, EditorView, keymap, Prec, highlightActiveLine, drawSelection,
     defaultKeymap, history, historyKeymap, indentWithTab,
@@ -98,8 +98,38 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
   let changeCb = onChange;
   const fire = () => { if (changeCb) changeCb(view.state.doc.toString()); };
 
+  // Large-file mode: `doc.toString()` copies the whole note, which costs ~95 ms per keystroke at
+  // 100 MB (measured in the app). There the copy is made at most once per LARGE_CHANGE_MS burst
+  // of typing: the first change of a burst calls `onDeferredChange` at once (so the note is
+  // marked unsaved immediately), and the text is handed to `onChange` when the timer fires or
+  // when someone needs it first (flushChanges, called by the app before it reads the note).
+  const LARGE_CHANGE_MS = 400;
+  let pendingChange = false;
+  let changeTimer = null;
+  const flushChange = () => {
+    clearTimeout(changeTimer);
+    changeTimer = null;
+    if (!pendingChange) return false;
+    pendingChange = false;
+    fire();
+    return true;
+  };
+  const discardPendingChange = () => {
+    clearTimeout(changeTimer);
+    changeTimer = null;
+    pendingChange = false;
+  };
+
   const listener = EditorView.updateListener.of((u) => {
-    if (u.docChanged && changeCb) changeCb(view.state.doc.toString());
+    if (u.docChanged && changeCb && inLarge) {
+      if (!pendingChange) {
+        pendingChange = true;
+        changeTimer = setTimeout(flushChange, LARGE_CHANGE_MS);
+        if (typeof onDeferredChange === 'function') {
+          try { onDeferredChange(); } catch (_) { /* never let the unsaved marker break typing */ }
+        }
+      }
+    } else if (u.docChanged && changeCb) fire();
     // Active-state: notify when the caret/selection moves (or the doc changes) so the toolbar
     // can highlight the construct the cursor is inside. Wrapped so a callback error can't break typing.
     if ((u.selectionSet || u.docChanged) && typeof onSelectionChange === 'function') {
@@ -119,18 +149,22 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
   let findQuery = '';
   let findMatches = [];
   let findStamp = 0; // changes when the query does; the plugin compares it (no StateEffect in the bundle)
-  const findIn = (text, query, caseSensitive = false) => {
+  // Large-file mode: Arabic folding builds a position map as long as the document, and a common
+  // word can match millions of times; the plain search below stops at LARGE_FIND_LIMIT hits.
+  const LARGE_FIND_LIMIT = 10000;
+  const findIn = (text, query, caseSensitive = false, large = false) => {
     const matches = [];
     if (!query) return matches;
     // RTL-M3: Arabic queries search the NORMALIZED document (tashkeel folded), with
     // match offsets mapped back to source positions — the same model as the Reading
     // pane, so 'محمد' finds 'مُحَمَّد' in Edit mode too instead of silently missing it.
-    const arabicMatches = arabicFindMatches(text, query);
+    const arabicMatches = large ? null : arabicFindMatches(text, query);
     if (arabicMatches) return arabicMatches;
     const re = new RegExp(escapeReg(query), caseSensitive ? 'g' : 'gi');
     let m;
     while ((m = re.exec(text)) !== null) {
       matches.push({ start: m.index, end: m.index + m[0].length });
+      if (large && matches.length >= LARGE_FIND_LIMIT) break;
       if (m.index === re.lastIndex) re.lastIndex++;
     }
     return matches;
@@ -158,7 +192,11 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     { decorations: (v) => v.decorations },
   ) : null;
 
-  const makeState = (text) => EditorState.create({
+  // Large-file mode (a note of 20-100 MB): no live-preview decorations of any kind and no find
+  // marks, which recompute over the whole document on every change. `inLarge` is the mode of
+  // the note in the view; makeState(text, large) builds a state for one note.
+  let inLarge = !!largeMode;
+  const makeState = (text, large = false, wrap = true) => EditorState.create({
     doc: text,
     extensions: [
       history(),
@@ -176,32 +214,42 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       // GFM via the `extended` parser (markdownLanguage) — strikethrough + tables parse,
       // matching the preview pipeline (marked is GFM). markdownLanguage is already vendored,
       // so this needs no bundle rebuild. Guarded so the fake-CM6 unit path stays safe.
-      markdown(markdownLanguage ? { base: markdownLanguage } : undefined),
+      // Large-file mode has no markdown parser: parsing a 100 MB note costs 6 s to load and 6-10 s on
+      // EVERY keystroke (a 25-million-character line, 1.5 s), against a millisecond without it (measured);
+      // all it would give is colour, and the live preview that uses the tree is off in this mode.
+      ...(large ? [] : [markdown(markdownLanguage ? { base: markdownLanguage } : undefined)]),
       // prose styling first → higher precedence than the default token colours below
-      ...(proseHighlight ? [syntaxHighlighting(proseHighlight)] : []),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      ...(livePreview ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
-      ...(livePreview && renderBlock ? [createBlockPreview(CM6, renderBlock, () => `${liveDir}|${liveForce || ''}`)] : []), // T-F13: render BLOCKS (tables…) off the active line; dirKey rebuilds widgets on a direction flip
-      ...(livePreview && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
-      ...(livePreview ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
-      ...(livePreview ? [createInlineMarksPreview(CM6)] : []), // ==highlight==/<u>/~sub~/^sup^ rendered off the active line
+      ...(proseHighlight && !large ? [syntaxHighlighting(proseHighlight)] : []),
+      ...(large ? [] : [syntaxHighlighting(defaultHighlightStyle, { fallback: true })]),
+      ...(livePreview && !large ? [createLivePreview(CM6), livePreviewTheme(CM6)] : []), // T-F13: rewrite markers off the active line
+      ...(livePreview && !large && renderBlock ? [createBlockPreview(CM6, renderBlock, () => `${liveDir}|${liveForce || ''}`)] : []), // T-F13: render BLOCKS (tables…) off the active line; dirKey rebuilds widgets on a direction flip
+      ...(livePreview && !large && renderMath ? [createMathPreview(CM6, renderMath)] : []), // T-F13: render $…$ KaTeX off the active line
+      ...(livePreview && !large ? [createWikilinkPreview(CM6, onWikilink)] : []), // R09: [[wikilinks]] → clickable anchors off the active line
+      ...(livePreview && !large ? [createInlineMarksPreview(CM6)] : []), // ==highlight==/<u>/~sub~/^sup^ rendered off the active line
       ...createLineDirection(CM6, () => liveDir, () => liveForce), // R1/R2 in CM6: per-line dir (forced or auto) + logical caret
       // F13 Find: every hit of the find-bar query is drawn as .cm-searchMatch (see findMarks).
-      ...(findMarks ? [findMarks] : []),
+      ...(findMarks && !large ? [findMarks] : []),
       highlightActiveLine(),
       drawSelection(),
-      EditorView.lineWrapping,
+      ...(wrap ? [EditorView.lineWrapping] : []), // a line CodeMirror cannot wrap (hasLongLine) is shown unwrapped
       // a11y (T-F2): the contenteditable surface is a role=textbox; give it an accessible
       // name so screen readers + axe (aria-input-field-name) recognise it as the note editor.
       ...(EditorView.contentAttributes ? [EditorView.contentAttributes.of({ 'aria-label': 'Markdown note editor' })] : []),
       listener,
     ],
   });
-  const view = new EditorView({ state: makeState(doc == null ? '' : String(doc)), parent });
+  const initialText = doc == null ? '' : String(doc);
+  const view = new EditorView({ state: makeState(initialText, inLarge, !hasLongLine(initialText)), parent });
   view.dom.setAttribute('dir', liveForce || liveDir); // forced direction wins for the surface base
 
   const store = createHistoryStore((s) => s.doc.toString());
   let liveKey = null;      // the file whose state is live in the view (null: none / not tracked)
+  // How the live state was built ({ large, wrap }), and how each parked one was. A state's
+  // extensions are fixed when it is made, so a parked state is reused only when the note is
+  // wanted in the same mode (a save can move a note into another size tier, a text edit can
+  // remove its long line).
+  let liveFlags = { large: inLarge, wrap: !hasLongLine(initialText) };
+  const parkedFlags = new Map();
 
   const clamp = (n, len) => Math.max(0, Math.min(n == null ? 0 : n, len));
 
@@ -212,15 +260,30 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
      * a fresh one with an empty history. `key` identifies the file (see historyKeyOf); without
      * one the text is simply loaded into a fresh state.
      */
-    load(content, key = null) {
+    load(content, key = null, { large = false } = {}) {
       const text = content == null ? '' : String(content);
-      if (liveKey != null) store.put(liveKey, view.state);
-      const parked = key != null ? store.take(key, text) : null;
+      discardPendingChange(); // the app flushes before it switches notes; whatever is left belonged to the old text
+      const flags = { large: !!large, wrap: !hasLongLine(text) };
+      if (liveKey != null) { store.put(liveKey, view.state); parkedFlags.set(liveKey, liveFlags); }
+      let parked = key != null ? store.take(key, text) : null;
+      const builtAs = key != null ? parkedFlags.get(key) : null;
+      if (key != null) parkedFlags.delete(key);
+      if (parked && !(builtAs && builtAs.large === flags.large && builtAs.wrap === flags.wrap)) parked = null;
       // a file always opens with the caret at the start, as it did when load() replaced the document
-      const next = parked ? parked.update({ selection: { anchor: 0 } }).state : makeState(text);
+      const next = parked ? parked.update({ selection: { anchor: 0 } }).state : makeState(text, flags.large, flags.wrap);
+      inLarge = flags.large;
+      findMatches = inLarge ? [] : findIn(text, findQuery); // the marks follow the note that is shown (none in large-file mode)
+      try {
+        view.setState(next);
+      } catch (error) {
+        // CodeMirror's layout can fail on text it cannot measure; the note is shown without
+        // wrapping rather than not at all (an editor left on the previous note would be edited by mistake).
+        if (!flags.wrap) throw error;
+        flags.wrap = false;
+        view.setState(makeState(text, flags.large, false));
+      }
       liveKey = key;
-      findMatches = findIn(text, findQuery); // the marks follow the note that is shown
-      view.setState(next);
+      liveFlags = flags;
       fire();
       // setState raises no update event; the toolbar + caret readout used to hear about a load
       // through the docChanged update, so tell them explicitly.
@@ -231,12 +294,21 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
     /** A closed file's history is freed. */
     releaseHistory(key) {
       store.release(key);
+      parkedFlags.delete(key);
       if (liveKey === key) liveKey = null;
     },
     /** Free the history of every file whose key is not listed (files that are gone). */
-    retainHistory(keys) { store.retain(keys); },
+    retainHistory(keys) {
+      store.retain(keys);
+      for (const key of [...parkedFlags.keys()]) if (!keys.includes(key)) parkedFlags.delete(key);
+    },
     _historySize() { return store.size(); },
     getValue() { return view.state.doc.toString(); },
+    /** Hand a deferred change (large-file mode) to onChange now; true when there was one. */
+    flushChanges() { return flushChange(); },
+    /** Forget a deferred change: the app replaced the note's text itself and will reload the editor. */
+    discardPendingChange() { discardPendingChange(); },
+    hasPendingChange() { return pendingChange; },
     // `ranges` feeds edit-commands' multi-selection cut/copy (the clipboard must carry
     // every range replaceSelection will delete); start/end stay the main-range shape
     // every existing consumer reads.
@@ -244,22 +316,36 @@ export function createCodeMirrorAdapter(parent, { CM6, doc = '', onChange = null
       const s = view.state.selection;
       return { start: s.main.from, end: s.main.to, ranges: s.ranges.map((r) => ({ start: r.from, end: r.to })) };
     },
-    setSelection({ start, end }) {
+    // `scroll`: bring the range into view without taking focus (Find keeps the keyboard in
+    // its own field, QA H2).
+    setSelection({ start, end }, { scroll = false } = {}) {
       const len = view.state.doc.length;
       const s = clamp(start, len);
       const e = clamp(end == null ? start : end, len);
-      view.dispatch({ selection: EditorSelection.range(s, e) });
+      view.dispatch({ selection: EditorSelection.range(s, e), scrollIntoView: !!scroll });
     },
-    replaceSelection(text) { view.dispatch(view.state.replaceSelection(String(text))); fire(); },
+    replaceSelection(text) { view.dispatch(view.state.replaceSelection(String(text))); }, // the update listener reports the change
+    // One undoable edit anywhere in the note; the caret maps through it. The update listener
+    // reports the change. The user event is outside CM6's joinable set (input.type / delete),
+    // so a quick second edit next to this one is never merged into the same undo step.
+    replaceRange(from, to, text) {
+      const len = view.state.doc.length;
+      view.dispatch({ changes: { from: clamp(from, len), to: clamp(to, len), insert: String(text) }, userEvent: 'edit.app' });
+    },
+    // Several edits as one transaction (one undo step); offsets are in the current text.
+    applyChanges(changes) {
+      const len = view.state.doc.length;
+      view.dispatch({ changes: changes.map((c) => ({ from: clamp(c.from, len), to: clamp(c.to, len), insert: String(c.insert || '') })), userEvent: 'edit.app' });
+    },
     onChange(cb) { changeCb = cb; return () => { if (changeCb === cb) changeCb = null; }; },
     find(query, { caseSensitive = false } = {}) {
-      return findIn(view.state.doc.toString(), query, caseSensitive);
+      return findIn(view.state.doc.toString(), query, caseSensitive, inLarge);
     },
     // F13 Find: mark ALL matches of `query` (drawn as .cm-searchMatch by findMarks above).
     // An empty/falsy query clears the marks. No-op in the fake-CM6 unit harness, which has
     // no ViewPlugin (this path is e2e-covered).
     setSearchHighlight(query) {
-      if (!findMarks) return;
+      if (!findMarks || inLarge) return; // large-file mode: no marks, so no whole-document search per change
       findQuery = query == null ? '' : String(query);
       findMatches = findIn(view.state.doc.toString(), findQuery);
       findStamp += 1;

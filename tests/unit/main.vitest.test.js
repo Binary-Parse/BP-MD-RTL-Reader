@@ -7,12 +7,10 @@
  * and only auto-run their real Electron bootstrap when loaded as the
  * Electron entry / preload (guarded inside each file). That lets these tests
  * drive the real code with plain mock objects — no Module._resolveFilename
- * hijack — so Stryker's per-test coverage can instrument both files and they
- * are now included in `stryker.config.json` `mutate`.
+ * hijack — so V8 coverage instruments both files.
  */
 
-import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
-import path from 'node:path';
+import { describe, test, expect, vi, beforeAll } from 'vitest';
 import { bootstrap } from '../../src/main/index.js';
 import { setupBridge } from '../../src/preload/index.js';
 
@@ -189,7 +187,7 @@ describe('src/main/index.js — standalone Save As boundary', () => {
 
     await expect(save({}, null)).resolves.toEqual({ error: 'invalid' });
     await expect(save({}, { content: 7 })).resolves.toEqual({ error: 'invalid' });
-    await expect(save({}, { content: 'x'.repeat(10 * 1024 * 1024 + 1) }))
+    await expect(save({}, { content: 'x'.repeat(100 * 1024 * 1024 + 1) }))
       .resolves.toEqual({ error: 'file-too-large' });
     expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled();
 
@@ -742,7 +740,7 @@ describe('src/main/index.js — handler behaviour (audit #1)', () => {
     expect(result.entries).toHaveLength(5000);
   });
 
-  test('readVault skips a single oversized file (> 10 MiB) but continues', async () => {
+  test('readVault skips a single oversized file (> 20 MiB, the folder-read cap) but continues', async () => {
     mockElectron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/mixed-vault'] });
     await openFolder();
     mockFs.promises.readdir.mockResolvedValueOnce([
@@ -750,7 +748,7 @@ describe('src/main/index.js — handler behaviour (audit #1)', () => {
       { name: 'tiny.md', isFile: () => true, isSymbolicLink: () => false },
     ]);
     mockFs.promises.lstat
-      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 11 * 1024 * 1024 })
+      .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 21 * 1024 * 1024 })
       .mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true, size: 100 });
 
     const r = await readVault({}, '/mixed-vault');

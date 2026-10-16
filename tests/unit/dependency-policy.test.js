@@ -39,8 +39,15 @@ describe('dependency overrides', () => {
   });
 
   test('every override is a resolvable version specifier', () => {
+    const VERSION = /^[\^~]?\d+(?:\.\d+){2}(?:[-+][0-9A-Za-z.-]+)?$/;
     for (const [name, spec] of Object.entries(pkg.overrides ?? {})) {
-      expect(spec, name).toMatch(/^[\^~]?\d+(?:\.\d+){2}(?:[-+][0-9A-Za-z.-]+)?$/);
+      if (typeof spec === 'string') { expect(spec, name).toMatch(VERSION); continue; }
+      // A nested override (D11: what mermaid bundles) names a version or a pinned direct
+      // dependency by reference ("$katex"), so the two cannot drift apart.
+      for (const [child, childSpec] of Object.entries(spec)) {
+        if (childSpec.startsWith('$')) expect(pkg.devDependencies[childSpec.slice(1)], `${name} > ${child}`).toMatch(VERSION);
+        else expect(childSpec, `${name} > ${child}`).toMatch(VERSION);
+      }
     }
   });
 });

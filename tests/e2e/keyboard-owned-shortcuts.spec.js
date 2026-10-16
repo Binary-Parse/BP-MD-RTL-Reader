@@ -107,7 +107,7 @@ test.describe('[M25] the shortcuts the menus and the document promise', () => {
     await open(page, 'hello');
     await caret(page, 5);
     await page.keyboard.type(' one');
-    await page.waitForTimeout(700); // past CodeMirror's 500 ms grouping of typed text
+    await page.waitForTimeout(700); // deliberate: past CodeMirror's 500 ms grouping of typed text
     await page.keyboard.type(' two');
     expect(await val(page)).toBe('hello one two');
     await page.keyboard.press('Control+z');

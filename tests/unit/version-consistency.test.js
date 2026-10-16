@@ -9,8 +9,9 @@
  * less: nothing in CI is left to catch one going stale.
  *
  * A literal is acceptable where a build-time substitution is unavailable (the About-dialog
- * fallback in the renderer). The Inno script carries no version literal at all: a compile
- * that omits /DAppVersion fails instead of silently mislabeling the installer.
+ * fallback and the welcome card's first paint in the renderer). The Inno script carries no
+ * version literal at all: a compile that omits /DAppVersion fails instead of silently
+ * mislabeling the installer.
  */
 import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -41,8 +42,13 @@ describe('the release version has exactly one source of truth', () => {
     expect(about, 'could not find the about-version fallback literal in src/renderer/app.js').toBeTruthy();
     expect(about[1]).toBe(VERSION);
 
-    expect(read('src/preload/index.js')).toContain("getAppVersion: () => ipcRenderer.invoke('app:version')");
-    expect(read('src/main/ipc-controller.js')).toContain("ipcMain.handle('app:version'");
+    // The welcome card's first paint shows the HTML text until the same IPC answer replaces it.
+    const welcome = /id="welcomeVersion">([0-9]+\.[0-9]+\.[0-9]+)</.exec(read('src/renderer/index.html'));
+    expect(welcome, 'could not find the welcome-card version in src/renderer/index.html').toBeTruthy();
+    expect(welcome[1]).toBe(VERSION);
+
+    // The bridge and the handler are tested by behaviour: preload-bridge.test.js (getAppVersion
+    // invokes app:version) and main-ipc-gate-coverage.test.js (app:version serves the version).
   });
 
   test("the Inno script has no version literal and rejects a compile without /DAppVersion", () => {

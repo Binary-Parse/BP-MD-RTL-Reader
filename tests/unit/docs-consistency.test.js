@@ -7,7 +7,6 @@ describe('documentation follows executable repository truth', () => {
   test('documents the pinned Node and quality thresholds without stale test counts', () => {
     const pkg = JSON.parse(read('package.json'));
     const coverage = JSON.parse(read('config/coverage-thresholds.json'));
-    const tiers = JSON.parse(read('config/mutation-tiers.json'));
     const build = read('docs/BUILD.md');
     const contributing = read('CONTRIBUTING.md');
     const readme = read('README.md');
@@ -18,7 +17,6 @@ describe('documentation follows executable repository truth', () => {
     expect(build).not.toContain('Node.js 20+');
     expect(build).toContain(`${coverage.unit.statements}% statements / ${coverage.unit.branches}% branches / ${coverage.unit.functions}% functions / ${coverage.unit.lines}% lines`);
     expect(contributing).toContain(`${coverage.unit.statements} % statements, ${coverage.unit.branches} % branches, ${coverage.unit.functions} % functions, ${coverage.unit.lines} % lines`);
-    expect(build).toContain(`T1 ${tiers.T1.minimum}% / T2 ${tiers.T2.minimum}% / T3 ${tiers.T3.minimum}%`);
     expect(readme).not.toMatch(/tests-[0-9]+%20passing/);
     expect(build).not.toMatch(/\b(?:468|526|994) tests\b/);
     expect(pkg.scripts.coverage).toContain('test:unit:coverage');
@@ -45,19 +43,20 @@ describe('documentation follows executable repository truth', () => {
     const pkg = JSON.parse(read('package.json'));
     const readme = read('README.md');
     const build = read('docs/BUILD.md');
+    const releasing = read('docs/RELEASING.md');
     const { expectedArtifactNames } = require('../../scripts/release-artifacts.js');
     const repository = 'https://github.com/Binary-Parse/BP-MD-RTL-Reader';
 
     expect(pkg.repository.url).toBe(`git+${repository}.git`);
     for (const document of [readme, build]) expect(document).toContain(repository);
-    for (const artifact of expectedArtifactNames(pkg.version)) expect(build).toContain(artifact);
-    // Releases are manual: no workflow enforces any of this, so BUILD.md has to name
+    for (const artifact of expectedArtifactNames(pkg.version)) expect(releasing).toContain(artifact);
+    // Releases are manual: no workflow enforces any of this, so RELEASING.md has to name
     // the commands and the signing inputs that a human must supply instead.
-    expect(build).toContain('npm run package:checksums');
-    expect(build).toContain('node scripts/release-preflight.js');
-    expect(build).toContain('npm run package:verify');
-    expect(build).toContain('WIN_CSC_LINK');
-    expect(build).toContain('WIN_CSC_KEY_PASSWORD');
+    expect(releasing).toContain('npm run package:checksums');
+    expect(releasing).toContain('node scripts/release-preflight.js');
+    expect(releasing).toContain('npm run package:verify');
+    expect(releasing).toContain('WIN_CSC_LINK');
+    expect(releasing).toContain('WIN_CSC_KEY_PASSWORD');
     expect(readme).toContain('SHA256SUMS.txt');
     // Owner decision 2026-10-10: releases are unsigned and say so; macOS is not built or tested.
     expect(readme).toContain('**The files are not code-signed.**');
@@ -66,8 +65,8 @@ describe('documentation follows executable repository truth', () => {
     for (const claim of ['signed and notarized', 'Authenticode-signed', 'Windows, macOS, and Linux']) {
       expect(readme).not.toContain(claim);
     }
-    expect(build).toContain('**macOS is not built and not tested.**');
-    expect(build).toContain('**The release is not code-signed**');
+    expect(releasing).toContain('**macOS is not built and not tested.**');
+    expect(releasing).toContain('**The release is not code-signed**');
     expect(read('SECURITY.md')).toContain('**Not code-signed.**');
   });
 

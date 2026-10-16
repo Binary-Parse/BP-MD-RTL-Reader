@@ -61,7 +61,7 @@ describe('isArabicHeavy()', () => {
     expect(isArabicHeavy('   \n\t  ')).toBe(false);
   });
 
-  // ─ Mutation-killer for L8: .slice(0, 500) (audit #13) ────────────────
+  // ─ Mutation-killer for .slice(0, 500) (audit #13) ────────────────
   // Original: scans first 500 chars only → 500 Arabic / 500 = 100% Arabic → true
   // Mutant `.slice` removed: scans all 1500 chars → 500/1500 = 33% < 0.5 → false
   test('mutation killer: only first 500 chars are sampled (slice(0,500) intact)', () => {

@@ -16,7 +16,6 @@ const directCopies = [
   ['katex', 'dist/katex.min.js', 'resources/vendor/katex/katex.min.js'],
   ['katex', 'dist/katex.min.css', 'resources/vendor/katex/katex.min.css'],
   ['marked', 'lib/marked.umd.js', 'resources/vendor/marked/marked.umd.js'],
-  ['mermaid', 'dist/mermaid.min.js', 'resources/vendor/mermaid/mermaid.min.js'],
 ];
 
 const iconMap = {
@@ -81,8 +80,8 @@ function put(targetRelative, content) {
 function buildBundles() {
   const cmOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'resources/vendor/codemirror/codemirror.min.js');
   const highlightOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'resources/vendor/highlight/highlight.min.js');
-  fs.mkdirSync(path.dirname(cmOutput), { recursive: true });
-  fs.mkdirSync(path.dirname(highlightOutput), { recursive: true });
+  const mermaidOutput = path.join(CHECK ? TEMP_ROOT : ROOT, 'resources/vendor/mermaid/mermaid.min.js');
+  for (const output of [cmOutput, highlightOutput, mermaidOutput]) fs.mkdirSync(path.dirname(output), { recursive: true });
 
   buildSync({
     entryPoints: [path.join(ROOT, 'scripts/codemirror-entry.mjs')], bundle: true,
@@ -92,10 +91,17 @@ function buildBundles() {
     entryPoints: [path.join(ROOT, 'scripts/highlight-entry.mjs')], bundle: true,
     format: 'iife', minify: true, outfile: highlightOutput,
   });
+  // D11: mermaid from its ESM entry, so its KaTeX and DOMPurify are the overridden versions.
+  // No splitting: every diagram type's dynamic import() is inlined into the one file.
+  buildSync({
+    entryPoints: [path.join(ROOT, 'scripts/mermaid-entry.mjs')], bundle: true,
+    format: 'iife', minify: true, target: 'es2024', outfile: mermaidOutput,
+  });
 
   if (CHECK) {
     put('resources/vendor/codemirror/codemirror.min.js', fs.readFileSync(cmOutput));
     put('resources/vendor/highlight/highlight.min.js', fs.readFileSync(highlightOutput));
+    put('resources/vendor/mermaid/mermaid.min.js', fs.readFileSync(mermaidOutput));
   }
 }
 
@@ -187,13 +193,6 @@ function sourceMapsUnder(dir) {
   return entries.map(String).filter((file) => file.endsWith('.map')).sort().map((file) => path.join(dir, file));
 }
 
-/**
- * Every package whose code is inside a prebuilt file of one of `packageDirs`, read from the
- * source maps those packages ship in `dist/`. This is where @mermaid-js/parser reveals the
- * chevrotain and langium code it carries. All dist variants are read, so the result can name
- * a package our own bundle does not contain; an extra licence text does no harm.
- * @returns {Map<string, Set<string|null>>} name -> versions seen (null when the map has none)
- */
 const sourceMapCache = new Map(); // map file -> packages; the maps are tens of megabytes
 
 function packagesInSourceMap(mapFile) {
@@ -204,6 +203,13 @@ function packagesInSourceMap(mapFile) {
   return sourceMapCache.get(mapFile);
 }
 
+/**
+ * Every package whose code is inside a prebuilt file of one of `packageDirs`, read from the
+ * source maps those packages ship in `dist/`. This is where @mermaid-js/parser reveals the
+ * chevrotain and langium code it carries. All dist variants are read, so the result can name
+ * a package our own bundle does not contain; an extra licence text does no harm.
+ * @returns {Map<string, Set<string|null>>} name -> versions seen (null when the map has none)
+ */
 function inlinedPackages(packageDirs) {
   const result = new Map();
   for (const dir of packageDirs) {
@@ -275,6 +281,7 @@ function generateManifest() {
     ...directCopies.map(([, , target]) => target),
     'resources/vendor/codemirror/codemirror.min.js',
     'resources/vendor/highlight/highlight.min.js',
+    'resources/vendor/mermaid/mermaid.min.js',
     ...fs.readdirSync(path.join(packageDir('katex'), 'dist/fonts')).filter((file) => file.endsWith('.woff2'))
       .sort().map((file) => 'resources/vendor/katex/fonts/' + file),
     ...fs.readdirSync(path.join(ROOT, 'resources/vendor/fonts')).filter((file) => file.endsWith('.woff2'))
@@ -286,11 +293,7 @@ function generateManifest() {
     if (!fs.existsSync(file)) throw new Error('Missing generated vendor asset: ' + target);
     assets.push({ file: target, sha256: sha256(fs.readFileSync(file)) });
   }
-  const sources = [...new Set([
-    ...directCopies.map(([name]) => name), 'highlight.js', 'lucide-static',
-    '@codemirror/state', '@codemirror/view', '@codemirror/commands', '@codemirror/language',
-    '@codemirror/lang-markdown', '@codemirror/search', '@lezer/highlight',
-  ])].sort().map((name) => {
+  const sources = [...RUNTIME_ROOTS].sort().map((name) => {
     const { manifest } = readPackage(name);
     return { package: name, version: manifest.version };
   });

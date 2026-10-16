@@ -281,6 +281,28 @@ describe('main-owned filesystem capability registry', () => {
     expect(registry.listDocuments()[0]).toMatchObject({ id: first.id, path: '/notes/a.md', vaultId: vault.id });
   });
 
+  // QA-L4: on Windows `c:\notes` and `C:\Notes` are one folder; the JS realpath kept the
+  // caller's spelling and minted a second grant.
+  test('a differently-cased spelling of one folder reuses its grant (native realpath)', () => {
+    const fs = memFs();
+    const onDisk = (p) => p.toLowerCase().replace('/notes', '/Notes');
+    fs.realpathSync = Object.assign((p) => p, { native: onDisk });
+    let n = 0;
+    const registry = createCapabilityRegistry({ fs, path: path.posix, userDataDir: '/user', randomId: () => 'cap-' + (++n) });
+    const a = registry.grantVault('/notes');
+    const b = registry.grantVault('/NOTES');
+    expect(b.id).toBe(a.id);
+    expect(registry.listVaults()).toEqual([expect.objectContaining({ path: '/Notes' })]);
+  });
+
+  test('a mapped drive that resolves to a network path keeps its drive-letter spelling', () => {
+    const fs = memFs();
+    fs.realpathSync = Object.assign((p) => p, { native: () => '\\\\server\\share\\notes' });
+    const registry = createCapabilityRegistry({ fs, path: path.posix, userDataDir: '/user', randomId: () => 'cap-1' });
+    registry.grantVault('/z/notes');
+    expect(registry.listVaults()[0].path).toBe('/z/notes');
+  });
+
   // The path index must also serve a registry that LOADED its records from disk, not only
   // ones granted in this process.
   test('a path index built by load() reuses persisted records', () => {
@@ -309,37 +331,6 @@ describe('capability revocation and pruning (audit SEC-01)', () => {
       fs, path: path.posix, userDataDir: '/user', randomId: () => 'cap-' + (++n),
     });
   }
-
-  test('revokeVault removes the vault and every document it contained', () => {
-    const fs = memFs();
-    const registry = makeRegistry(fs);
-    const vault = registry.grantVault('/notes');
-    const inside = registry.grantDocument('/notes/a.md', { vaultId: vault.id });
-    const otherVault = registry.grantVault('/other');
-    const loose = registry.grantDocument('/loose/b.md');
-
-    registry.revokeVault(vault.id);
-
-    expect(registry.resolveVault(vault.id)).toBeNull();
-    expect(registry.resolveDocument(inside.id)).toBeNull();
-    expect(registry.resolveVault(otherVault.id)).not.toBeNull();
-    expect(registry.resolveDocument(loose.id)).not.toBeNull();
-    // The path index forgot the revoked path, so a re-grant mints a NEW id.
-    expect(registry.grantVault('/notes').id).not.toBe(vault.id);
-  });
-
-  test('revokeDocument removes exactly one document', () => {
-    const fs = memFs();
-    const registry = makeRegistry(fs);
-    const first = registry.grantDocument('/loose/a.md');
-    const second = registry.grantDocument('/loose/b.md');
-    registry.revokeDocument(first.id);
-    expect(registry.resolveDocument(first.id)).toBeNull();
-    expect(registry.resolveDocument(second.id)).not.toBeNull();
-    expect(registry.listDocuments()).toHaveLength(1);
-    // Revoked document paths are re-grantable under a fresh id.
-    expect(registry.grantDocument('/loose/a.md').id).not.toBe(first.id);
-  });
 
   test('prune keeps referenced records and drops everything else, with counts', () => {
     const fs = memFs();
@@ -434,9 +425,9 @@ describe('relocate refuses to re-pin records onto network paths (grant-time UNC 
     });
     const vault = registry.grantVault('/notes');
     const document = registry.grantDocument('/notes/a.md', { vaultId: vault.id });
-    expect(registry.relocateVault(vault.id, '\\srv\share')).toBe(false);
+    expect(registry.relocateVault(vault.id, '\\\\srv\\share')).toBe(false);
     expect(registry.relocateVault(vault.id, '//srv/share')).toBe(false);
-    expect(registry.relocateDocument(document.id, '\\srv\share\a.md')).toBe(false);
+    expect(registry.relocateDocument(document.id, '\\\\srv\\share\\a.md')).toBe(false);
     expect(registry.listVaults().find((r) => r.id === vault.id).path).toBe('/notes');
     expect(registry.listDocuments().find((r) => r.id === document.id).path).toBe('/notes/a.md');
   });

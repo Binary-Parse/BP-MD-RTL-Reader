@@ -14,14 +14,14 @@
  */
 
 import { isEscaped } from '../limits.js';
-import { syntaxRangeAllowed } from './syntax-guards.js';
+import { activeLineSpan, atomicDecorationPlugin, forEachVisibleChunk, syntaxRangeAllowed } from './syntax-guards.js';
 
 // Mirror of the wikilink tokenizer in markdown.js: [[target]] or [[target|alias]],
 // no newlines/pipes inside the target, no newline inside the alias.
 const WIKILINK_RE = /\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g;
 
 export function createWikilinkPreview(CM6, onNavigate) {
-  const { ViewPlugin, Decoration, EditorView, WidgetType } = CM6;
+  const { Decoration, WidgetType } = CM6;
 
   class WikilinkWidget extends WidgetType {
     constructor(target, alias) { super(); this.target = target; this.alias = alias; }
@@ -53,11 +53,8 @@ export function createWikilinkPreview(CM6, onNavigate) {
   function build(view) {
     if (view.visibleRanges.length === 0) return Decoration.set([], true);
     const ranges = [];
-    const sel = view.state.selection.main;
-    const activeFrom = view.state.doc.lineAt(sel.from).from;
-    const activeTo = view.state.doc.lineAt(sel.to).to;
-    for (const { from, to } of view.visibleRanges) {
-      const text = view.state.doc.sliceString(from, to);
+    const { activeFrom, activeTo } = activeLineSpan(view);
+    forEachVisibleChunk(view, (from, text) => {
       WIKILINK_RE.lastIndex = 0;
       let m;
       while ((m = WIKILINK_RE.exec(text))) {
@@ -70,24 +67,10 @@ export function createWikilinkPreview(CM6, onNavigate) {
         const alias = (m[2] && m[2].trim()) || target;
         ranges.push(Decoration.replace({ widget: new WikilinkWidget(target, alias) }).range(start, end));
       }
-    }
+    });
     return Decoration.set(ranges, true);
   }
 
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) { this.decorations = build(view); }
-      update(u) {
-        if (u.docChanged || u.selectionSet || u.viewportChanged) this.decorations = build(u.view);
-      }
-    },
-    {
-      decorations: (v) => v.decorations,
-      // Atomic so the caret steps OVER a collapsed wikilink rather than landing inside it
-      // (same companion as live-preview.js's hidden markers).
-      provide: (plugin) => EditorView.atomicRanges.of(
-        (view) => view.plugin(plugin)?.decorations || Decoration.set([]),
-      ),
-    },
-  );
+  // Atomic so the caret steps OVER a collapsed wikilink rather than landing inside it.
+  return atomicDecorationPlugin(CM6, build);
 }

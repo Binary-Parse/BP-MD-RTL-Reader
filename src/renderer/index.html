@@ -546,7 +546,7 @@
        over an IPC bridge instead of Electron's native Menu.popup() so it can be themed. -->
   <div class="ctx" id="ctxMenu" role="menu" hidden></div>
 
-  <input type="file" id="fileInput" accept=".md,.markdown,text/markdown" style="display:none;" multiple>
+  <input type="file" id="fileInput" accept=".md,.markdown,.txt,text/markdown,text/plain" style="display:none;" multiple>
 
   <!-- APP BODY -->
   <!-- Start with both side panels collapsed → clean editor-first view on first paint (no flash).
@@ -572,12 +572,12 @@
         <div class="sb-pane active" data-pane="files">
           <div class="sb-empty" id="sbEmpty">
             <div class="ico">⌂</div>
-            <div class="ttl">No folder opened</div>
-            <p>Open a folder of <code style="font-family: var(--mono); font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px;">.md</code> files, or open a single file.</p>
+            <div class="ttl" data-i18n="sidebar.emptyTitle">No folder opened</div>
+            <p data-i18n-html="sidebar.emptyBody">Open a folder of <code>.md</code> files, or open a single file.</p>
             <div class="actions">
-              <button id="emptyOpenVault"><svg class="ic"><use href="#ic-folder"/></svg> Open Folder…</button>
-              <button id="emptyOpenFile"><svg class="ic"><use href="#ic-file"/></svg> Open File…</button>
-              <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> Try Demo Notes</button>
+              <button id="emptyOpenVault"><svg class="ic"><use href="#ic-folder"/></svg> <span data-i18n="menu.openFolder">Open Folder…</span></button>
+              <button id="emptyOpenFile"><svg class="ic"><use href="#ic-file"/></svg> <span data-i18n="menu.openFile">Open File…</span></button>
+              <button id="emptyLoadDemo"><svg class="ic"><use href="#ic-sparkles"/></svg> <span data-i18n="sidebar.tryDemo">Try Demo Notes</span></button>
             </div>
           </div>
           <div class="tree" id="tree" role="tree" aria-label="Files" data-i18n-aria-label="panel.files" style="display: none;"></div>
@@ -585,14 +585,14 @@
 
         <div class="sb-pane" data-pane="tags">
           <div class="tags-pane" id="tagsPane">
-            <div class="search-empty">No tags yet. Open a folder to see tags.</div>
+            <div class="search-empty" data-i18n="tags.noFolder">No tags yet. Open a folder to see tags.</div>
           </div>
         </div>
 
         <div class="sb-pane" data-pane="search">
           <div class="search-pane">
             <div class="search-input-wrap">
-              <label class="visually-hidden" for="sbSearchInput">Search in all files</label>
+              <label class="visually-hidden" for="sbSearchInput" data-i18n="search.label">Search in all files</label>
               <input type="text" class="search-input" id="sbSearchInput" placeholder="Search in all files…" data-i18n-placeholder="search.placeholder">
             </div>
             <div class="search-results" id="searchResults">
@@ -672,18 +672,15 @@
       <div id="conflictBar"></div>
 
       <div class="editor-area" id="editorArea">
-        <div class="source-pane">
-          <label class="visually-hidden" for="srcTextarea" data-i18n="src.label">Markdown source</label>
-          <textarea class="source-textarea" id="srcTextarea" placeholder="# Start writing…"></textarea>
-        </div>
+        <div class="source-pane"></div>
         <div class="preview-pane">
-          <aside class="margin-notes" id="marginNotes" aria-label="Margin notes" hidden></aside>
+          <aside class="margin-notes" id="marginNotes" aria-label="Margin notes" data-i18n-aria-label="aria.marginNotes" hidden></aside>
           <article class="editor" id="editor">
             <div class="editor-welcome" id="welcome">
               <div class="welcome-card">
                 <div class="wl-col">
                 <div class="logo" aria-hidden="true"><span class="la">A<span>a</span></span><i class="rule"></i><span class="ar">أب</span></div>
-                <div class="wk">BP MD RTL Reader · <span id="welcomeVersion">2.0.0</span></div>
+                <div class="wk">BP MD RTL Reader · <span id="welcomeVersion">2.1.0</span></div>
                 <h1 data-i18n-html="welcome.title">Welcome to <em>BP MD RTL Reader</em></h1>
                 <p class="lede" data-i18n-html="welcome.lede">A markdown reader that treats prose like a literary object. Bilingual to its core. Open a folder of <code style="font-family: var(--mono); font-size: 14px; color: var(--accent);">.md</code> files — or open a single file — to begin.</p>
                 <div class="welcome-actions">
@@ -733,19 +730,18 @@
                 </div>
               </div>
             </div>
-            <div id="noteContent" tabindex="0" aria-label="Reading view" style="display: none;"></div>
+            <div id="noteContent" tabindex="0" aria-label="Reading view" data-i18n-aria-label="aria.readingView" style="display: none;"></div>
           </article>
         </div>
         <!-- v1.2.2: empty-note hint. Pure DOM overlay — the document itself starts empty,
             so a saved untouched note writes no placeholder text to disk. Lives on
-            #editorArea (toggled via .doc-empty) so it overlays whichever surface is active
-            — classic textarea, Live preview, Reading, or the opt-in CM6 editor. -->
+            #editorArea (toggled via .doc-empty) so it overlays whichever surface is active. -->
         <div class="editor-empty-hint" dir="auto" aria-hidden="true" data-i18n="editor.emptyHint">Start writing…</div>
       </div>
 
       <!-- Find bar -->
       <div class="find-bar" id="findBar">
-        <label class="visually-hidden" for="findInput">Find in note</label>
+        <label class="visually-hidden" for="findInput" data-i18n="find.label">Find in note</label>
         <input type="text" id="findInput" placeholder="Find in note…" data-i18n-placeholder="find.placeholder">
         <span class="find-info" id="findInfo" aria-live="polite">0/0</span>
         <button class="find-btn" id="findPrevBtn" data-tip="Previous" aria-label="Previous match" data-i18n-tip="find.prev" data-i18n-aria-label="find.prev">↑</button>
@@ -779,7 +775,6 @@
           <div class="prop-row"><span class="prop-key" data-i18n="prop.words">Words</span><span class="prop-val" id="propWords">0</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.read">Read</span><span class="prop-val" id="propRead">—</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.direction">Direction</span><span class="prop-val" id="propDir">LTR</span></div>
-          <div class="prop-row"><span class="prop-key" data-i18n="prop.mode">Mode</span><span class="prop-val" id="propMode">Live</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.encoding">Encoding</span><span class="prop-val mono" id="propEncoding">—</span></div>
           <div class="prop-row"><span class="prop-key" data-i18n="prop.eol">Line endings</span><span class="prop-val mono" id="propEol">—</span></div>
         </div>
@@ -795,7 +790,7 @@
       <div>
         <div class="di"><span>.md</span><span>.markdown</span><span>.txt</span></div>
         <div class="dt" data-i18n="drop.title">Drop to open</div>
-        <div class="ds" data-i18n="drop.sub">Drop .md, .markdown or .txt files to open them as tabs (up to 10 MB each).</div>
+        <div class="ds" data-i18n="drop.sub">Drop .md, .markdown or .txt files to open them as tabs (up to 100 MB each).</div>
       </div>
     </div>
 

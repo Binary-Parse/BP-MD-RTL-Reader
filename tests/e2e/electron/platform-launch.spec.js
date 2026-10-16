@@ -1,4 +1,5 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
+const { closeApp } = require('./helpers');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -26,10 +27,7 @@ test.describe('platform launch behaviour @electron', () => {
   }
 
   test.afterEach(async () => {
-    if (electronApp) {
-      if (page && !page.isClosed()) await page.evaluate(() => window.electronAPI.closeWindow());
-      await electronApp.close();
-    }
+    await closeApp(electronApp, page);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -45,7 +43,7 @@ test.describe('platform launch behaviour @electron', () => {
 
   test('H14: a file:// URL with a remote host is not opened', async () => {
     await launch(() => ['file://server/share/remote.md']);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500); // deliberate: the file would have opened by now
     expect(await page.evaluate(() => (window._appState?.files || []).map((f) => f.name))).not.toContain('remote.md');
   });
 

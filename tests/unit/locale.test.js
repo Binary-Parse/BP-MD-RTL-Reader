@@ -3,7 +3,7 @@
  * and the direction implied by a locale.
  */
 import { describe, test, expect } from 'vitest';
-import { t, tPlural, pluralCategory, formatMessage, localeDirection, MESSAGES } from '../../src/renderer/locale.js';
+import { t, tPlural, pluralCategory, formatMessage, localeDirection, MESSAGES, isolateLatinVars } from '../../src/renderer/locale.js';
 
 const plainKeys = (table) => [...new Set(Object.keys(table).map((k) => k.split('#')[0]))].sort();
 
@@ -33,7 +33,7 @@ describe('t (translate) — T-R7', () => {
       'menu.closeTab', 'menu.closeWindow',
       'menu.undo', 'menu.redo', 'menu.cut', 'menu.copy', 'menu.paste', 'menu.selectAll',
       'menu.find', 'menu.bold', 'menu.italic', 'menu.insertLink', 'menu.insertWikilink',
-      'menu.mode', 'menu.livePreview', 'menu.splitView', 'menu.sourceMode', 'menu.panels',
+      'menu.panels',
       'menu.showSidebar', 'menu.showInspector', 'menu.theme', 'menu.themePaper', 'menu.themeInk',
       'menu.themeSepia', 'menu.flipDirection', 'menu.calendar', 'menu.gregorian', 'menu.hijri',
       'menu.arabic', 'menu.arabicInterface', 'menu.kashida', 'menu.typography', 'menu.recolourItalics',
@@ -47,7 +47,7 @@ describe('t (translate) — T-R7', () => {
 
   test('catalog covers the inspector + status chrome (T-R7 expansion)', () => {
     for (const key of ['panel.inspector', 'panel.outline', 'panel.properties',
-      'prop.file', 'prop.words', 'prop.read', 'prop.direction', 'prop.mode', 'status.markdown']) {
+      'prop.file', 'prop.words', 'prop.read', 'prop.direction', 'status.markdown']) {
       expect(MESSAGES.en[key], `en missing ${key}`).toBeTruthy();
       expect(MESSAGES.ar[key], `ar missing ${key}`).toBeTruthy();
       expect(MESSAGES.ar[key]).not.toBe(MESSAGES.en[key]); // actually translated
@@ -101,6 +101,13 @@ describe('localeDirection — T-R7', () => {
     expect(localeDirection('en')).toBe('ltr');
     expect(localeDirection('fr')).toBe('ltr');
   });
+});
+
+// QA-L7: a Latin value inside an Arabic sentence keeps its own order.
+test('isolateLatinVars wraps only strings with a Latin letter in FSI…PDI', () => {
+  expect(isolateLatinVars({ name: 'notes v2.md', n: 3, ar: 'ملاحظة', num: '12' }))
+    .toEqual({ name: '\u2068notes v2.md\u2069', n: 3, ar: 'ملاحظة', num: '12' });
+  expect(isolateLatinVars(undefined)).toBeUndefined();
 });
 
 test('unknown locale falls back to the English catalog before returning the key', () => {

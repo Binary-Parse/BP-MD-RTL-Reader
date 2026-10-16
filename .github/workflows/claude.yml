@@ -62,7 +62,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Run Claude Code #name: Run Claude Code Action
+      - name: Run Claude Code
         uses: anthropics/claude-code-action@af0559ee4f514d1ef21826982bed13f7edc3c35e # v1.0.178
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

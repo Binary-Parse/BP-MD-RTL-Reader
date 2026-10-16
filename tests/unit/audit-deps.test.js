@@ -151,6 +151,7 @@ describe('the committed acceptance file', () => {
   });
 
   test('marks nothing above low as shipped, and every entry carries a review date', () => {
+    expect(Array.isArray(acceptance.accepted)).toBe(true); // empty since D7 and D11 were fixed
     for (const e of acceptance.accepted) {
       expect(e.reviewed).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       if (shipped.has(e.package)) expect(e.scope).toBe('shipped');

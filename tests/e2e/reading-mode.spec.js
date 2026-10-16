@@ -15,7 +15,7 @@ async function boot(page, settings = {}) {
   // viewMode defaults to 'reading' here (the packaged app's default, set in src/main/settings.js);
   // the renderer's in-memory default is 'edit', so this spec sets it explicitly. Individual tests
   // override with { viewMode: 'edit' }.
-  const merged = { theme: 'paper', zoomFactor: 1, editorMode: 'live', viewMode: 'reading', recents: [], lastSession: null, ...settings };
+  const merged = { theme: 'paper', zoomFactor: 1, viewMode: 'reading', recents: [], lastSession: null, ...settings };
   await page.addInitScript((s) => {
     window.__setSettingsCalls = [];
     window.electronAPI = {
@@ -84,6 +84,21 @@ test.describe('Reading mode (T-F17)', () => {
     });
 
     await expect.poll(() => page.evaluate(() => document.querySelector('.toc-item.active')?.textContent)).toBe('Three');
+  });
+
+  // QA H1: the formatting chords reached the hidden editor and changed the note.
+  test('Reading mode is read-only: formatting shortcuts and the Edit menu leave the note alone', async ({ page }) => {
+    await boot(page);
+    await injectNote(page);
+    await page.click('#noteContent');
+    for (const chord of ['Control+b', 'Control+i', 'Control+l', 'Control+1', 'Control+3']) {
+      await page.keyboard.press(chord);
+    }
+    await page.evaluate(() => { window.insertBlock('---\n'); window.toggleList('bullet'); window.insertFootnote(); });
+    const f = await page.evaluate(() => window._appState.files[0]);
+    expect(f.content).toBe(FIX);
+    expect(!!f.dirty).toBe(false);
+    await expect(page.locator('.toast', { hasText: 'read-only' }).first()).toBeVisible();
   });
 
   test('Ctrl+E toggles Reading ⇄ Edit', async ({ page }) => {
@@ -326,6 +341,37 @@ test.describe('Reading highlights + margin notes (T5.1c)', () => {
     await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
     await expect(page.locator('#noteList .note-row .n-text')).toHaveText('Ask about this image');
     expect(await page.evaluate(() => window.__annotations['loose:r.md'][0].note)).toBe('Ask about this image');
+  });
+
+  test('QA-M9: Save As keeps the highlights on the new file and on the original', async ({ page }) => {
+    await bootWithAnnotations(page);
+    await injectNote(page, HL_NOTE);
+    await selectInNote(page, 'lazy dog');
+    await page.click('#hlBtn');
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
+    await page.evaluate(() => {
+      window.electronAPI.saveFileAs = async () => ({ ok: true, name: 'copy.md', documentId: 'cap-copy', meta: {} });
+    });
+    await page.locator('#noteContent').focus();
+    await page.keyboard.press('Control+Shift+S');
+    await expect(page.locator('.tab.active .tab-name')).toHaveText('copy.md');
+    await expect(page.locator('#noteContent mark.user-hl')).toHaveCount(1);
+    const keys = await page.evaluate(() => Object.keys(window.__annotations).sort());
+    expect(keys).toEqual(['doc:cap-copy', 'loose:r.md']);
+  });
+
+  test('QA M12: a click beside the note dialog keeps the typed note', async ({ page }) => {
+    await bootWithAnnotations(page);
+    await injectNote(page, HL_NOTE);
+
+    await selectInNote(page, 'lazy dog');
+    await page.click('#hlNoteBtn');
+    await page.fill('#noteField', 'half typed');
+    await page.locator('#modalOverlay').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#modalOverlay')).toHaveClass(/open/);
+    await expect(page.locator('#noteField')).toHaveValue('half typed');
+    await page.click('#noteSaveBtn');
+    await expect(page.locator('#noteList .note-row .n-text')).toHaveText('half typed');
   });
 
   // T10 BUG-2: the note modal can outlive its document — a keyboard shortcut fires while

@@ -5,10 +5,70 @@
 
 const { fileURLToPath } = require('url');
 
-const MAX_OPEN_FILE_BYTES = 10 * 1024 * 1024;
+// ── Note size tiers (large-file mode) — the ONE source of truth for every size number. ──
+// The renderer receives these through the `app:limits` channel (see getLimits() below); its
+// own fallback copy (src/renderer/components/large-file.js) is pinned to them by a unit test.
+//   <= LARGE_NOTE_BYTES            opens as before
+//   <= CONFIRM_NOTE_BYTES          opens; the user is told once the note is large
+//   <= MAX_FILE_BYTES              asks first, then opens in large-file mode
+//   >  MAX_FILE_BYTES              refused (open and save alike)
+const MIB = 1024 * 1024;
+const LARGE_NOTE_BYTES = 5 * MIB;
+const CONFIRM_NOTE_BYTES = 20 * MIB;
+const MAX_FILE_BYTES = 100 * MIB;
+const MAX_OPEN_FILE_BYTES = MAX_FILE_BYTES;
+// A folder read sends every note's text to the renderer at once, with no per-note question, so
+// a note the single-file lane would ask about (above CONFIRM_NOTE_BYTES) is skipped there and
+// opened on its own with Open File. The folder total stays at 100 MiB: it bounds renderer
+// memory (a JS string is up to two bytes per character), and it still fits five 20 MiB notes.
+const MAX_VAULT_FILE_BYTES = CONFIRM_NOTE_BYTES;
+const MAX_CUMULATIVE_BYTES = 100 * MIB;
 const MAX_FILES_PER_DIR = 5000;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_CUMULATIVE_BYTES = 100 * 1024 * 1024;
+
+// Export ceilings, enforced in main. PDF: the print window lays the whole HTML out, so it is
+// the tightest. HTML: a plain file write, but images are inlined. EPUB: an opaque archive.
+const MAX_PDF_EXPORT_BYTES = 64 * MIB;
+const MAX_HTML_EXPORT_BYTES = 256 * MIB;
+const MAX_EPUB_BYTES = 64 * MIB;
+// Export timeouts for the print window: 30 s + 10 s per MiB of HTML, at most 5 minutes. A
+// small note keeps today's 30 s. The slope comes from a layout rate of roughly 0.2-0.5 MiB/s
+// on a modest laptop, with 2-3x headroom; the ceiling stops a stuck print from hanging forever.
+const PDF_TIMEOUT_BASE_MS = 30000;
+const PDF_TIMEOUT_PER_MIB_MS = 10000;
+const PDF_TIMEOUT_MAX_MS = 5 * 60 * 1000;
+// Above this many bytes of export HTML the renderer says "large export, may take a while".
+const LARGE_EXPORT_BYTES = 5 * MIB;
+
+/** @param {number} htmlBytes @returns {number} milliseconds the print window may take */
+function pdfTimeoutMs(htmlBytes) {
+  const mib = Math.max(0, Number(htmlBytes) || 0) / MIB;
+  return Math.min(PDF_TIMEOUT_MAX_MS, Math.floor(PDF_TIMEOUT_BASE_MS + PDF_TIMEOUT_PER_MIB_MS * mib));
+}
+
+/** The numbers the renderer needs, as plain data for the `app:limits` channel. */
+function getLimits() {
+  return {
+    largeNoteBytes: LARGE_NOTE_BYTES,
+    confirmNoteBytes: CONFIRM_NOTE_BYTES,
+    maxFileBytes: MAX_FILE_BYTES,
+    maxVaultFileBytes: MAX_VAULT_FILE_BYTES,
+    maxPdfExportBytes: MAX_PDF_EXPORT_BYTES,
+    maxHtmlExportBytes: MAX_HTML_EXPORT_BYTES,
+    maxEpubBytes: MAX_EPUB_BYTES,
+    largeExportBytes: LARGE_EXPORT_BYTES,
+  };
+}
+
+/**
+ * Which tier an on-disk size falls in: 'normal' | 'large' | 'confirm' | 'refused'.
+ * @param {number} bytes
+ */
+function noteSizeTier(bytes) {
+  if (bytes > MAX_FILE_BYTES) return 'refused';
+  if (bytes > CONFIRM_NOTE_BYTES) return 'confirm';
+  if (bytes > LARGE_NOTE_BYTES) return 'large';
+  return 'normal';
+}
 
 /**
  * H14: Linux desktop entries end in "%U", so a file manager's "Open with" passes a
@@ -50,7 +110,10 @@ function parseFileArg(argv, fs) {
     try {
       const real = fs.realpathSync(a);
       const stat = fs.statSync(real);
-      if (stat.isFile() && stat.size <= MAX_OPEN_FILE_BYTES) return real;
+      // Any size is returned: a note past the open limit (or one that needs the large-file
+      // question) is answered by the delivery step with a message the user can see, instead
+      // of "Open with" silently doing nothing.
+      if (stat.isFile()) return real;
     } catch (_) { /* try next candidate */ }
   }
   return null;
@@ -82,9 +145,13 @@ function parseFileArgs(argv, fs) {
       const real = fs.realpathSync(a);
       if (seen.has(real)) continue;
       const stat = fs.statSync(real);
-      if (stat.isFile() && stat.size <= MAX_OPEN_FILE_BYTES) {
-        if (wouldExceedCumulative(cumulativeBytes, stat.size)) break;
-        cumulativeBytes += stat.size;
+      if (stat.isFile()) {
+        // Only a note that is read straight away counts toward the batch cap: one above the
+        // confirm size is answered with a question or a refusal, without reading its bytes.
+        if (stat.size <= CONFIRM_NOTE_BYTES) {
+          if (wouldExceedCumulative(cumulativeBytes, stat.size)) break;
+          cumulativeBytes += stat.size;
+        }
         seen.add(real);
         out.push(real);
       }
@@ -168,18 +235,6 @@ function isSymlinkEscape(realPath, folderPath, path) {
 }
 
 /**
- * Strip UTF-8 BOM if present.
- * @param {string} content
- * @returns {string}
- */
-function stripBOM(content) {
-  if (content.charCodeAt(0) === 0xFEFF) {
-    return content.slice(1);
-  }
-  return content;
-}
-
-/**
  * Filter markdown files from directory entries and sort by localeCompare.
  * @param {Array<{name:string, isFile:()=>boolean, isSymbolicLink:()=>boolean}>} entries
  * @returns {string[]}
@@ -195,14 +250,10 @@ function filterAndSortMdFiles(entries) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-// ── File-type predicates (T-B10) ───────────────────────────────────────────
-// Single source of truth so the vault filter and drag-drop agree on extensions.
-// Vault = notes only (.md/.markdown); drag-drop additionally accepts .txt.
+// ── File-type predicate (T-B10) ────────────────────────────────────────────
+// A note is a .md or .markdown file. (Drag-drop also takes .txt: renderer file-predicates.js.)
 function isVaultFile(name) {
   return typeof name === 'string' && /\.(md|markdown)$/i.test(name);
-}
-function isDroppableFile(name) {
-  return typeof name === 'string' && /\.(md|markdown|txt)$/i.test(name);
 }
 
 /**
@@ -229,17 +280,29 @@ module.exports = {
   mergePendingFiles,
   shouldResetChrome,
   isVaultFile,
-  isDroppableFile,
   isAuthorizedPath,
   isNetworkPath,
   isTooManyFiles,
   isOversizedFile,
   wouldExceedCumulative,
   isSymlinkEscape,
-  stripBOM,
   filterAndSortMdFiles,
+  noteSizeTier,
+  getLimits,
+  pdfTimeoutMs,
+  MIB,
+  LARGE_NOTE_BYTES,
+  CONFIRM_NOTE_BYTES,
   MAX_OPEN_FILE_BYTES,
   MAX_FILES_PER_DIR,
   MAX_FILE_BYTES,
+  MAX_VAULT_FILE_BYTES,
   MAX_CUMULATIVE_BYTES,
+  MAX_PDF_EXPORT_BYTES,
+  MAX_HTML_EXPORT_BYTES,
+  MAX_EPUB_BYTES,
+  LARGE_EXPORT_BYTES,
+  PDF_TIMEOUT_BASE_MS,
+  PDF_TIMEOUT_PER_MIB_MS,
+  PDF_TIMEOUT_MAX_MS,
 };

@@ -39,6 +39,17 @@ describe('write() error mapping + fsync + crypto', () => {
       .toEqual({ error: 'gone' });
   });
 
+  test('a save reports the bytes it wrote, in the encoding of the file', () => {
+    const run = (content, opts) => createDocumentStore({ fs: fsWith({}), path: path.posix })
+      .write('/v/x.md', content, { root: '/v', eol: '\n', finalNewline: false, ...opts });
+    expect(run('abc', {})).toMatchObject({ ok: true, size: 3 });
+    expect(run('مرحبا', {}).size).toBe(10); // five Arabic letters, two bytes each in UTF-8
+    expect(run('a\nb', { eol: '\r\n' }).size).toBe(4); // the line ending is counted as written
+    expect(run('abc', { bom: true }).size).toBe(6); // U+FEFF is three bytes in UTF-8
+    expect(run('مرحبا', { encoding: 'windows-1256' }).size).toBe(5);
+    expect(run('abc', { encoding: 'utf16le' }).size).toBe(6);
+  });
+
   test('fsync path runs when fsyncSync present', () => {
     const calls = { fsync: 0 };
     const fs = fsWith({
@@ -60,30 +71,5 @@ describe('write() error mapping + fsync + crypto', () => {
     const fs = fsWith({});
     createDocumentStore({ fs, path: path.posix }).write('/v/x.md', 'a\nb', { root: '/v', eol: '\n', finalNewline: false });
     expect(fs._files['/v/x.md']).toBe('a\nb');
-  });
-});
-
-describe('listMarkdown() branches', () => {
-  const dirent = (name, kind) => ({ name, isDirectory: () => kind === 'd', isFile: () => kind === 'f', isSymbolicLink: () => kind === 's' });
-
-  test('readdir throw is caught (returns what it had)', () => {
-    const fs = { realpathSync: (p) => p, readdirSync: () => { throw new Error('EACCES'); } };
-    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v')).toEqual([]);
-  });
-
-  test('realpath throw on a subdir is caught', () => {
-    const tree = { '/v': [dirent('a.md', 'f'), dirent('bad', 'd')] };
-    const fs = {
-      realpathSync: (p) => { if (p === '/v/bad') throw new Error('x'); return p; },
-      readdirSync: (p) => tree[p] || [],
-    };
-    expect(createDocumentStore({ fs, path: path.posix }).listMarkdown('/v').map(x => x.relPath)).toEqual(['a.md']);
-  });
-
-  test('maxDepth halts recursion', () => {
-    const tree = { '/v': [dirent('sub', 'd')], '/v/sub': [dirent('deep.md', 'f')] };
-    const fs = { realpathSync: (p) => p, readdirSync: (p) => tree[p] || [] };
-    const store = createDocumentStore({ fs, path: path.posix });
-    expect(store.listMarkdown('/v', { maxDepth: 0 })).toEqual([]); // never descends
   });
 });

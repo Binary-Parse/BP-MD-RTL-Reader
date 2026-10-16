@@ -6,8 +6,8 @@ import path from 'node:path';
 // binary .gitignore/.gitattributes/.mailmap diffs as "Binary files differ" —
 // silently unreviewable in a PR. These files are hand-edited often enough (and
 // by tooling that can paste raw control characters) that the invariant is worth
-// pinning. See scripts/rem-convert.mjs for the escaped-sentinel pattern that
-// keeps deliberate NULs out of source.
+// pinning. Source that needs a NUL writes it as an escape (`\u0000`), never a
+// raw byte.
 const GIT_CONFIG_FILES = ['.gitignore', '.gitattributes', '.mailmap'];
 
 // Built, never written literally: a raw NUL in this file would be the very bug

@@ -4,5 +4,18 @@
     "branches": 90,
     "functions": 95,
     "lines": 95
+  },
+  "combined": {
+    "statements": 90,
+    "functions": 90
+  },
+  "renderer": {
+    "statements": 70,
+    "functions": 40,
+    "files": {
+      "src/renderer/app.js": 45,
+      "src/renderer/theme-boot.js": 80,
+      "src/renderer/editor/codemirror-adapter.js": 35
+    }
   }
 }

@@ -23,9 +23,7 @@ import {
   isOversizedFile,
   wouldExceedCumulative,
   isSymlinkEscape,
-  stripBOM,
   isVaultFile,
-  isDroppableFile,
   filterAndSortMdFiles,
   MAX_OPEN_FILE_BYTES,
   MAX_FILES_PER_DIR,
@@ -33,10 +31,8 @@ import {
   MAX_CUMULATIVE_BYTES,
 } from '../../src/main/main-logic.js';
 
-// T-B10 file-type predicates. Statically imported here (not via createRequire as the old
-// file-predicates.test.js did) so Stryker's per-test coverage actually instruments them —
-// these cases exercise every branch to kill the type-guard / anchor / logical-operator mutants.
-describe('isVaultFile / isDroppableFile (T-B10)', () => {
+// T-B10 file-type predicate: every branch (type guard, anchor, alternation).
+describe('isVaultFile (T-B10)', () => {
   test('isVaultFile: .md/.markdown only, anchored, string-guarded', () => {
     expect(isVaultFile('a.md')).toBe(true);
     expect(isVaultFile('a.MARKDOWN')).toBe(true);
@@ -46,15 +42,6 @@ describe('isVaultFile / isDroppableFile (T-B10)', () => {
     expect(isVaultFile(['a.md'])).toBe(false);       // non-string that coerces to a match → still false
     expect(isVaultFile(42)).toBe(false);
     expect(isVaultFile(null)).toBe(false);
-  });
-  test('isDroppableFile: .md/.markdown/.txt, anchored, string-guarded', () => {
-    expect(isDroppableFile('a.md')).toBe(true);
-    expect(isDroppableFile('notes.txt')).toBe(true);
-    expect(isDroppableFile('a.markdown')).toBe(true);
-    expect(isDroppableFile('a.pdf')).toBe(false);
-    expect(isDroppableFile('a.md.exe')).toBe(false); // anchored
-    expect(isDroppableFile(['a.txt'])).toBe(false);   // type guard
-    expect(isDroppableFile(42)).toBe(false);
   });
 });
 
@@ -135,12 +122,12 @@ describe('parseFileArg()', () => {
     expect(parseFileArg(['node', 'src/main/index.js', 'dir.md'], fs)).toBeNull();
   });
 
-  test('skips oversized files', () => {
+  test('a file past the open limit is still returned: the delivery step shows the reason (no silent drop)', () => {
     const fs = {
       realpathSync: vi.fn(() => '/abs/huge.md'),
       statSync: vi.fn(() => ({ isFile: () => true, size: MAX_OPEN_FILE_BYTES + 1 }))
     };
-    expect(parseFileArg(['node', 'src/main/index.js', 'huge.md'], fs)).toBeNull();
+    expect(parseFileArg(['node', 'src/main/index.js', 'huge.md'], fs)).toBe('/abs/huge.md');
   });
 
   test('exactly at size limit is allowed', () => {
@@ -308,24 +295,6 @@ describe('isSymlinkEscape() [JB4]', () => {
   });
 });
 
-describe('stripBOM()', () => {
-  test('strips UTF-8 BOM', () => {
-    expect(stripBOM('\uFEFFhello')).toBe('hello');
-  });
-
-  test('leaves content without BOM unchanged', () => {
-    expect(stripBOM('hello')).toBe('hello');
-  });
-
-  test('handles empty string', () => {
-    expect(stripBOM('')).toBe('');
-  });
-
-  test('strips BOM only at start', () => {
-    expect(stripBOM('hello\uFEFFworld')).toBe('hello\uFEFFworld');
-  });
-});
-
 describe('filterAndSortMdFiles()', () => {
   test('filters only .md and .markdown files', () => {
     const entries = [
@@ -379,7 +348,7 @@ describe('filterAndSortMdFiles()', () => {
 });
 
 describe('parseFileArg() mutant killers', () => {
-  test('mutation killer: argv[0] is always skipped (kills L20 slice(1) removal)', () => {
+  test('mutation killer: argv[0] is always skipped (kills slice(1) removal)', () => {
     // Mutant `Array.from(argv)` (no slice) would treat argv[0] as a candidate.
     // Test: pass a valid .md path at index 0. Original skips → null; mutant
     // returns the resolved path.
@@ -406,16 +375,16 @@ describe('parseFileArg() mutant killers', () => {
 });
 
 describe('constant boundary values', () => {
-  test('MAX_OPEN_FILE_BYTES is exactly 10 MiB', () => {
-    expect(MAX_OPEN_FILE_BYTES).toBe(10 * 1024 * 1024);
+  test('MAX_OPEN_FILE_BYTES is exactly 100 MiB', () => {
+    expect(MAX_OPEN_FILE_BYTES).toBe(100 * 1024 * 1024);
   });
 
   test('MAX_FILES_PER_DIR is exactly 5000', () => {
     expect(MAX_FILES_PER_DIR).toBe(5000);
   });
 
-  test('MAX_FILE_BYTES is exactly 10 MiB', () => {
-    expect(MAX_FILE_BYTES).toBe(10 * 1024 * 1024);
+  test('MAX_FILE_BYTES is exactly 100 MiB', () => {
+    expect(MAX_FILE_BYTES).toBe(100 * 1024 * 1024);
   });
 
   test('MAX_CUMULATIVE_BYTES is exactly 100 MiB', () => {
@@ -472,7 +441,7 @@ describe('parseFileArgs batch caps (argv / open-with / second-instance)', () => 
     expect(parseFileArgs(argv, fsOfSize(10))).toHaveLength(MAX_FILES_PER_DIR);
   });
 
-  test('per-file size and non-file rejections still apply inside a batch', () => {
+  test('non-file rejections still apply inside a batch; a note past the limit is kept for its message', () => {
     const fs = {
       realpathSync: (p) => p,
       statSync: (p) => (
@@ -483,7 +452,7 @@ describe('parseFileArgs batch caps (argv / open-with / second-instance)', () => 
             : { isFile: () => true, size: 16 }
       ),
     };
-    expect(parseFileArgs(['electron', '/big.md', '/dir.md', '/ok.md'], fs)).toEqual(['/ok.md']);
+    expect(parseFileArgs(['electron', '/big.md', '/dir.md', '/ok.md'], fs)).toEqual(['/big.md', '/ok.md']);
   });
 });
 
@@ -630,10 +599,10 @@ describe('parseFileArg() / parseFileArgs() — file:// URL arguments (H14)', () 
     expect(parseFileArg(['electron', 'file://[bad.md', url], fs)).toBe(abs);
     expect(parseFileArgs(['electron', 'file://[bad.md', url], fs)).toEqual([abs]);
   });
-  test('size and file-type checks still apply to URL arguments', () => {
+  test('file-type checks still apply to URL arguments (a big note is kept for its message)', () => {
     const big = { realpathSync: (p) => p, statSync: () => ({ isFile: () => true, size: MAX_OPEN_FILE_BYTES + 1 }) };
-    expect(parseFileArg(['electron', url], big)).toBeNull();
-    expect(parseFileArgs(['electron', url], big)).toEqual([]);
+    expect(parseFileArg(['electron', url], big)).toBe(abs);
+    expect(parseFileArgs(['electron', url], big)).toEqual([abs]);
     const dir = { realpathSync: (p) => p, statSync: () => ({ isFile: () => false, size: 1 }) };
     expect(parseFileArg(['electron', url], dir)).toBeNull();
   });

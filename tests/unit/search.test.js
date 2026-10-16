@@ -5,14 +5,6 @@
 import { describe, test, expect } from 'vitest';
 import { vaultSearch, warmSearchIndexSlice } from '../../src/renderer/components/search.js';
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 function createVaultSearch(files) {
   return (query) => vaultSearch(query, files);
 }

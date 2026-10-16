@@ -1,6 +1,6 @@
 ﻿; ============================================================================
 ;  BP MD RTL Reader — pinned Inno Setup 6.3.3 installer
-;  Compiler: ISCC.exe   |   Output: dist\BP MD RTL Reader Setup.exe   |   x64-only
+;  Compiler: ISCC.exe   |   Output: dist\BP-MD-RTL-Reader-<ver>-Windows-Inno-x64.exe   |   x64-only
 ;
 ;  Build:   build\installer\build-installer.ps1 (the only supported entry point)
 ;
@@ -76,6 +76,7 @@ UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExe}
 
 ; ---- Output -----------------------------------------------------------------
+; Defaults for a direct ISCC run; build-installer.ps1 overrides both with /O and /F.
 OutputDir=..\dist
 OutputBaseFilename=BP-MD-RTL-Reader-{#AppVersion}-Windows-Inno-x64
 SetupIconFile=assets\icon.ico
@@ -154,6 +155,8 @@ const
     an app already installed by the electron-builder NSIS installer. Stable unless
     the appId changes; verify with: reg query HKLM\...\Uninstall /s /f "BP MD RTL Reader" }
   EB_NSIS_KEY   = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\4f0623fc-2d71-59f2-b165-b36fb9982268';
+  { Where electron-builder records that install's folder (its INSTALL_REGISTRY_KEY). }
+  EB_INSTALL_KEY = 'Software\4f0623fc-2d71-59f2-b165-b36fb9982268';
   APP_VERSION   = '{#AppVersion}';
 
 var
@@ -169,9 +172,9 @@ var
       privilege mode. Registry command strings are never read or executed. ---- }
 function DetectInstalled: string;
 begin
-  Result := GetInstalledVersion(UNINSTALL_KEY, IsAdminInstallMode);
+  Result := GetPresentInstalledVersion(UNINSTALL_KEY, UNINSTALL_KEY, '{#MyAppExe}', IsAdminInstallMode);
   if Result <> '' then Exit;
-  Result := GetInstalledVersion(EB_NSIS_KEY, IsAdminInstallMode);
+  Result := GetPresentInstalledVersion(EB_NSIS_KEY, EB_INSTALL_KEY, '{#MyAppExe}', IsAdminInstallMode);
 end;
 
 { --- MANDATORY version detection before any file copy. --------------------- }

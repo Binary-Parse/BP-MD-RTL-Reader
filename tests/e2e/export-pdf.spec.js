@@ -46,6 +46,23 @@ test.describe('[T-F6] Export PDF action', () => {
     await expect(page.locator('#toast')).toContainText('on-reading.pdf');
   });
 
+  test('QA M13: a note that fails to build says so instead of failing silently', async ({ page }) => {
+    await page.evaluate(() => {
+      window.__pdf = null;
+      window.electronAPI = { exportPDF: (payload) => { window.__pdf = payload; return Promise.resolve({ ok: true }); } };
+      window.loadDemo();
+      window.renderFile(0);
+      window.DOMPurify.sanitize = () => { throw new Error('boom'); };
+    });
+    const res = await page.evaluate(() => window.exportPDF());
+    expect(res).toEqual({ error: 'build-failed' });
+    expect(await page.evaluate(() => window.__pdf)).toBeNull();
+    await expect(page.locator('#toast')).toHaveClass(/error/);
+    await expect(page.locator('#toast')).toContainText('PDF export failed');
+    await page.evaluate(() => window.exportHTML());
+    await expect(page.locator('#toast')).toContainText('HTML export failed');
+  });
+
   test('a success toast uses the note basename, not an absolute save path', async ({ page }) => {
     await page.evaluate(() => {
       window.electronAPI = { exportPDF: () => Promise.resolve({ ok: true }) };
@@ -81,6 +98,26 @@ test.describe('[T-F6] Export PDF action', () => {
     });
     await page.evaluate(() => { window.renderFile(0); return window.exportPDF(); });
     await expect(page.locator('#toast')).toContainText('PDF export failed');
+  });
+
+  // APP-29: the toast says it failed; the local log keeps why.
+  test('a failed build and a rejecting bridge each leave an export line in the local log', async ({ page }) => {
+    await page.evaluate(() => {
+      window.__logged = [];
+      window.electronAPI = {
+        exportPDF: () => Promise.reject(new Error('ipc boom')),
+        logError: (entry) => { window.__logged.push(entry); },
+      };
+      window.loadDemo();
+      window.renderFile(0);
+    });
+    await page.evaluate(() => window.exportPDF());
+    await page.evaluate(() => {
+      window.DOMPurify.sanitize = () => { throw new Error('build boom'); };
+      return window.exportPDF();
+    });
+    const logged = await page.evaluate(() => window.__logged.map((e) => e.message).filter((m) => m.startsWith('export-')));
+    expect(logged).toEqual(['export-pdf-failed: ipc boom', 'export-pdf-failed: build boom']);
   });
 
   test('with no active file → "No file to export" and the bridge is NOT called', async ({ page }) => {

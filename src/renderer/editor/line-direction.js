@@ -13,6 +13,7 @@
  */
 
 import { resolveBlockDirection } from '../bidi.js';
+import { markerDirection, pinnedLines } from '../markdown/block-direction.js';
 
 // RTL-M6: inline code spans are stripped before the dominant-script count, mirroring
 // the rendered preview's blockText() — `` استخدم `Array.prototype.flatMap` هنا `` must
@@ -25,11 +26,46 @@ function stripCodeSpans(text) {
   return text.replace(CODE_SPANS, ' ');
 }
 
+/**
+ * How much of a line is read to decide its direction. The direction of a line is settled by its
+ * leading text; reading the whole of a 25-million-character line (every keystroke redraws the
+ * decorations of the visible lines) took 1.2 to 2 seconds. A line shorter than this is read whole,
+ * so for it nothing changes.
+ */
+export const MAX_DIRECTION_CHARS = 8192;
+
+/** The part of a line that decides its direction. */
+export function directionSample(text) {
+  return text.length > MAX_DIRECTION_CHARS ? text.slice(0, MAX_DIRECTION_CHARS) : text;
+}
+
+/** The direction of a line of ordinary text (not in a code block, not pinned, not forced). */
+export function autoLineDirection(text, base = 'ltr') {
+  return resolveBlockDirection(stripCodeSpans(directionSample(text)), base);
+}
+
 // audit M18: the lines of a fenced or indented code block are code, and code is written
 // left-to-right. Without this an Arabic comment inside a fence turned its own line
 // right-to-left while the code around it stayed left-to-right, and a forced RTL note
 // mirrored the whole block. The reading pane already keeps `pre` left-to-right.
 const CODE_BLOCKS = new Set(['FencedCode', 'CodeBlock']);
+
+// How far above the first visible line to look for the pin of the block it belongs to.
+const PIN_LOOKBACK_LINES = 400;
+
+/**
+ * The pin (`<!-- dir: … -->`, block-direction.js) the line at `lineNo` is under when the
+ * line opens a view: walk up to the blank line or pin line that starts its block.
+ */
+function pinAbove(doc, lineNo) {
+  for (let n = lineNo - 1; n >= 1 && n >= lineNo - PIN_LOOKBACK_LINES; n--) {
+    const text = doc.line(n).text;
+    const dir = markerDirection(text);
+    if (dir) return dir;
+    if (text.trim() === '') return null;
+  }
+  return null;
+}
 
 function codeRanges(CM6, view) {
   const ranges = [];
@@ -67,13 +103,19 @@ export function createLineDirection(CM6, getBaseDir = () => 'ltr', getForceDir =
     const inCode = (line) => code.some((r) => line.from >= r.from && line.from <= r.to);
     for (const { from, to } of view.visibleRanges) {
       let pos = from;
+      let pin = pinAbove(doc, doc.lineAt(from).number);
       while (pos <= to) {
         const line = doc.lineAt(pos);
+        // A pin line pins the lines of the block under it, up to the next blank line, over
+        // the forced direction; the pin line itself is markup, shown left to right and dimmed.
+        const sample = directionSample(line.text); // a pin is one short line; the rest is read for direction only
+        const [state] = inCode(line) ? [null] : pinnedLines([sample], pin);
+        if (!inCode(line)) pin = state === 'marker' ? markerDirection(sample) : state;
         if (!seen.has(line.from)) {
           seen.add(line.from);
-          const dir = inCode(line) ? 'ltr'
-            : forced || resolveBlockDirection(stripCodeSpans(line.text), baseDir());
-          ranges.push(Decoration.line({ attributes: { dir } }).range(line.from));
+          const attributes = state === 'marker' ? { dir: 'ltr', class: 'cm-dir-pin' }
+            : { dir: inCode(line) ? 'ltr' : state || forced || autoLineDirection(sample, baseDir()) };
+          ranges.push(Decoration.line({ attributes }).range(line.from));
         }
         pos = line.to + 1;
       }

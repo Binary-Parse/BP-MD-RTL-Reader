@@ -80,14 +80,6 @@ test.describe('Edit commands (Issue #8)', () => {
     expect(isError).toBe(false);
   });
 
-  test('font size of .source-textarea is >= 13px', async ({ page }) => {
-    const fontSize = await page.evaluate(() => {
-      const el = document.querySelector('.source-textarea');
-      return parseFloat(getComputedStyle(el).fontSize);
-    });
-    expect(fontSize).toBeGreaterThanOrEqual(13);
-  });
-
   test('font size of .editor (preview) is >= 13px', async ({ page }) => {
     const fontSize = await page.evaluate(() => {
       const el = document.querySelector('.editor');

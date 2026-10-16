@@ -9,7 +9,7 @@
  */
 
 import { isEscaped } from '../limits.js';
-import { syntaxRangeAllowed } from './syntax-guards.js';
+import { activeLineSpan, atomicDecorationPlugin, forEachVisibleChunk, syntaxRangeAllowed } from './syntax-guards.js';
 
 const MARKS = [
   { re: /==(?=\S)([\s\S]*?\S)==/g, open: '==', close: '==', cls: 'cm-hl' },
@@ -20,17 +20,14 @@ const MARKS = [
 ];
 
 export function createInlineMarksPreview(CM6) {
-  const { ViewPlugin, Decoration, EditorView } = CM6;
+  const { Decoration } = CM6;
   const HIDE = Decoration.replace({});
 
   function build(view) {
     if (view.visibleRanges.length === 0) return Decoration.set([], true);
-    const sel = view.state.selection.main;
-    const activeFrom = view.state.doc.lineAt(sel.from).from;
-    const activeTo = view.state.doc.lineAt(sel.to).to;
+    const { activeFrom, activeTo } = activeLineSpan(view);
     const ranges = [];
-    for (const { from, to } of view.visibleRanges) {
-      const text = view.state.doc.sliceString(from, to);
+    forEachVisibleChunk(view, (from, text) => {
       for (const { re, open, close, cls } of MARKS) {
         re.lastIndex = 0;
         let m;
@@ -45,20 +42,9 @@ export function createInlineMarksPreview(CM6) {
           ranges.push(HIDE.range(innerE, e));
         }
       }
-    }
+    });
     return Decoration.set(ranges, true); // true → CM6 sorts the mixed mark/replace ranges
   }
 
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) { this.decorations = build(view); }
-      update(u) { if (u.docChanged || u.selectionSet || u.viewportChanged) this.decorations = build(u.view); }
-    },
-    {
-      decorations: (v) => v.decorations,
-      provide: (plugin) => EditorView.atomicRanges.of(
-        (view) => view.plugin(plugin)?.decorations || Decoration.set([]),
-      ),
-    },
-  );
+  return atomicDecorationPlugin(CM6, build);
 }

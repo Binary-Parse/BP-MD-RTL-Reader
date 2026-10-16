@@ -85,6 +85,9 @@ module.exports = defineConfig({
   // isolated below so it runs only through playwright.electron.config.js.
 
   testIgnore: ['**/electron/**'],
+  // QA-N7: timing budgets depend on how busy the machine is, so they are their own lane:
+  // npm run test:perf (playwright.perf.config.js).
+  grepInvert: /@perf/,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

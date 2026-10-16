@@ -231,3 +231,42 @@ begin
     if VC_TryKey(HKCU32, SubKey, V) then begin Result := V; Exit; end;
   end;
 end;
+
+{ One registry view: its DisplayVersion counts only when the program file is in the
+  install folder that view records. Location is only tested with FileExists. }
+function VC_TryPresent(const Root: Integer; const SubKey, LocationKey, ExeName: string; var V: string): Boolean;
+var
+  Location: string;
+begin
+  Result := False;
+  if not VC_TryKey(Root, SubKey, V) then Exit;
+  Location := '';
+  if RegQueryStringValue(Root, LocationKey, 'InstallLocation', Location) and (Location <> '')
+    and FileExists(AddBackslash(Location) + ExeName) then
+    Result := True
+  else
+  begin
+    Log(Format('Ignoring a leftover registration (version "%s"): no %s in "%s".', [V, ExeName, Location]));
+    V := '';
+  end;
+end;
+
+{ Like GetInstalledVersion, but an uninstall that stopped part-way (or a copy deleted
+  by hand) leaves the version behind without the program: that is not an installation,
+  and the setup must not offer to repair it. }
+function GetPresentInstalledVersion(const SubKey, LocationKey, ExeName: string; const PerMachine: Boolean): string;
+var
+  V: string;
+begin
+  Result := '';
+  if PerMachine then
+  begin
+    if VC_TryPresent(HKLM64, SubKey, LocationKey, ExeName, V) then begin Result := V; Exit; end;
+    if VC_TryPresent(HKLM32, SubKey, LocationKey, ExeName, V) then begin Result := V; Exit; end;
+  end
+  else
+  begin
+    if VC_TryPresent(HKCU64, SubKey, LocationKey, ExeName, V) then begin Result := V; Exit; end;
+    if VC_TryPresent(HKCU32, SubKey, LocationKey, ExeName, V) then begin Result := V; Exit; end;
+  end;
+end;

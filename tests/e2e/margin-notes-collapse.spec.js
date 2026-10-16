@@ -18,7 +18,7 @@ async function boot(page, { width, height, theme = 'paper', sidebar = false, rtl
   await page.setViewportSize({ width, height });
   await page.addInitScript(({ theme, sidebar }) => {
     const KEY = 'mn-test-settings';
-    const base = { theme, zoomFactor: 1, editorMode: 'live', viewMode: 'reading', recents: [], lastSession: null, sidebarVisible: sidebar, inspectorVisible: false };
+    const base = { theme, zoomFactor: 1, viewMode: 'reading', recents: [], lastSession: null, sidebarVisible: sidebar, inspectorVisible: false };
     window.electronAPI = {
       getSettings: async () => ({ ...base, ...JSON.parse(sessionStorage.getItem(KEY) || '{}') }),
       setSettings: async (s) => { sessionStorage.setItem(KEY, JSON.stringify(s)); return { ok: true }; },

@@ -1,7 +1,7 @@
 /**
  * Unit tests for i18n.js — isArabicHeavy() + escapeHtml() + escapeReg().
  *
- * Focus (audit #10): the two surviving mutants on i18n.js:14
+ * Focus (audit #10): the two surviving mutants on the isArabicHeavy return line
  *   return letters > 0 && arabic / letters >= threshold;
  *
  *   M1) "letters > 0"  ->  "true"   (drop the guard)
@@ -46,7 +46,7 @@ describe('isArabicHeavy()', () => {
     expect(isArabicHeavy(long, 1.0)).toBe(true);
   });
 
-  // ─ Mutation killer for L8: .slice(0, 500) ───────────────────────────
+  // ─ Mutation killer for .slice(0, 500) ───────────────────────────
   // Original: scans first 500 chars only → 500 Arabic / 500 = 100% → true
   // Mutant (slice removed): scans all 1500 chars → 500/1500 = 33% → false
   test('mutation killer: only first 500 chars are sampled (slice(0,500) intact)', () => {
@@ -57,13 +57,13 @@ describe('isArabicHeavy()', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// Audit #10 — survivors on i18n.js:14
+// Audit #10 — survivors on the isArabicHeavy return line
 //   return letters > 0 && arabic / letters >= threshold;
 // ─────────────────────────────────────────────────────────────────────
-describe('isArabicHeavy() L14 — audit #10 mutants (zero-letters + boundary)', () => {
+describe('isArabicHeavy() return line — audit #10 mutants (zero-letters + boundary)', () => {
   // ── ZERO-LETTERS inputs (required by the task) ──────────────────────
   // No Unicode letters → `letters` stays 0 → must return false, no throw.
-  // These cover the early-`!text` guard AND the letters===0 path on L14.
+  // These cover the early-`!text` guard AND the letters===0 path on the return line.
   test.each([
     ['empty string', ''],
     ['null', null],

@@ -1,6 +1,6 @@
 // ==== INJECTABLE BRIDGE SETUP (audit #3) ====
 // The contextBridge wiring lives inside setupBridge() so this file can be
-// imported (by Vitest/Stryker) WITHOUT exposing anything and WITHOUT a
+// imported (by Vitest) WITHOUT exposing anything and WITHOUT a
 // Module._resolveFilename hijack. The real preload entry calls setupBridge()
 // with the live electron contextBridge/ipcRenderer at the bottom of this file,
 // so runtime behaviour is identical to before.
@@ -26,6 +26,12 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
     }
     return bytes;
   };
+  // QA-L2: ipcRenderer.on returns ipcRenderer itself, so every on* call used to hand the page
+  // the privileged emitter. A subscription now returns only a function that removes it.
+  const listen = (channel, deliver) => {
+    ipcRenderer.on(channel, deliver);
+    return () => { ipcRenderer.removeListener(channel, deliver); };
+  };
   contextBridge.exposeInMainWorld('electronAPI', {
     closeWindow:    () => ipcRenderer.send('window-close-confirmed'),
     // v1.2: the close prompt resolved WITHOUT closing (Cancel, or a Save As declined
@@ -44,7 +50,7 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
     // v1.2: fullscreen moves to the real OS window (F11 / titlebar toggle); main
     // echoes enter/leave back over 'window-fullscreen-changed'.
     setFullscreen: (flag) => ipcRenderer.send('window-set-fullscreen', flag === true),
-    onFullscreenChanged: (cb) => ipcRenderer.on('window-fullscreen-changed', (_e, flag) => cb(flag)),
+    onFullscreenChanged: (cb) => listen('window-fullscreen-changed', (_e, flag) => cb(flag)),
     // v1.2: crash-recovery mirror. The renderer periodically snapshots its dirty
     // in-memory notes; main stores them under <userData>/recovery/. Pop returns the
     // previous session's snapshots (and clears them); clear drops them without reading.
@@ -55,7 +61,6 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
     // server-side — the renderer still never learns filesystem paths.
     revealFile: (documentId) => ipcRenderer.invoke('fs:reveal', documentId),
     copyFilePath: (documentId) => ipcRenderer.invoke('fs:copy-path', documentId),
-    // Open Folder IPC bridge (Bug 1 / AC1)
     // Renderer-local Chromium zoom; no privileged main-process IPC is needed.
     setAppZoom: (factor) => {
       if (typeof factor !== 'number' || !Number.isFinite(factor)) return null;
@@ -63,6 +68,7 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
       if (webFrame && typeof webFrame.setZoomFactor === 'function') webFrame.setZoomFactor(applied);
       return applied;
     },
+    // Open Folder IPC bridge (Bug 1 / AC1)
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     readVault:  (vaultId) => ipcRenderer.invoke('fs:readVault', vaultId),
     // H15: re-read only the notes the watcher reported (vault-relative paths, at most 50);
@@ -76,7 +82,12 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
     closeVault: (vaultId) => ipcRenderer.invoke('fs:closeVault', vaultId),
     // Main-issued opaque IDs are the only filesystem authority exposed here.
     openFile:   () => ipcRenderer.invoke('dialog:openFile'),
-    readFile:   (documentId) => ipcRenderer.invoke('fs:readFile', documentId),
+    // `options.confirmLarge`: the user already said yes to opening a note in large-file mode.
+    readFile:   (documentId, options) => (options === undefined
+      ? ipcRenderer.invoke('fs:readFile', documentId)
+      : ipcRenderer.invoke('fs:readFile', documentId, options)),
+    // The note-size and export-size thresholds, owned by main (main-logic.js). Plain data.
+    getLimits:  () => ipcRenderer.invoke('app:limits'),
     // audit M7: answer to "the encoding of this note is a guess" — keep it, or reopen as another.
     confirmEncoding: (payload) => ipcRenderer.invoke('fs:confirmEncoding', payload),
     writeFile:  (payload) => ipcRenderer.invoke('fs:writeFile', payload),
@@ -120,22 +131,22 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
     // Electron's native Menu. Main sends the descriptor array to draw under a single-use
     // nonce; the renderer echoes back only { nonce, index } — never a label, url or role —
     // so a compromised renderer can only ever pick an item main itself already offered.
-    onContextMenu: (cb) => ipcRenderer.on('context-menu:show', (_e, payload) => cb(payload)),
+    onContextMenu: (cb) => listen('context-menu:show', (_e, payload) => cb(payload)),
     contextAction: (payload) => ipcRenderer.send('context-menu:action', payload),
     contextMenuClosed: (nonce) => ipcRenderer.send('context-menu:closed', { nonce }),
     // The context menu's six app-local commands (New Note, Find, Palette, …) have no main-
     // side effect of their own; main just echoes them back so there is one dispatch path.
-    onAppCommand: (cb) => ipcRenderer.on('app:command', (_e, command) => cb(command)),
+    onAppCommand: (cb) => listen('app:command', (_e, command) => cb(command)),
     // Receives file content when the user double-clicked a .md file in Explorer
     // (file association) or dropped one on the macOS dock. The renderer wraps
     // this in addFile() to surface the content immediately.
-    onOpenFile: (cb) => ipcRenderer.on('open-external-file', (_e, data) => cb(data)),
+    onOpenFile: (cb) => listen('open-external-file', (_e, data) => cb(data)),
     // T-B9: the main process watches the open vault; this fires (debounced) when files
     // change on disk externally so the renderer can refresh + surface conflicts (EC-A2).
-    onVaultChanged: (cb) => ipcRenderer.on('vault:changed', (_e, data) => cb(data)),
-    onCloseRequested: (cb) => ipcRenderer.on('app:request-close', () => cb()),
+    onVaultChanged: (cb) => listen('vault:changed', (_e, data) => cb(data)),
+    onCloseRequested: (cb) => listen('app:request-close', () => cb()),
     // audit M11: the Windows session is ending (logoff, shutdown): mirror unsaved notes now.
-    onFlushRecovery: (cb) => ipcRenderer.on('app:flush-recovery', () => cb()),
+    onFlushRecovery: (cb) => listen('app:flush-recovery', () => cb()),
     // T-Q6: opt-in update check — only ever called from an explicit "Check for Updates…"
     // user action (plus T7.1's opt-in daily auto check, which main itself re-validates
     // against the saved setting). No auto-download, no identifiers.
@@ -146,10 +157,10 @@ function setupBridge({ contextBridge, ipcRenderer, webFrame, doc, platform }) {
     // channel; `openReleasePage` takes no argument — main holds the one fixed URL.
     autoUpdateCheck: () => ipcRenderer.invoke('update:auto-check'),
     openReleasePage: () => ipcRenderer.invoke('update:release-page'),
-    onUpdateAvailable: (cb) => ipcRenderer.on('update:available', (_e, data) => cb(data)),
+    onUpdateAvailable: (cb) => listen('update:available', (_e, data) => cb(data)),
     // audit M37: the automatic check met a certificate this version does not know. Receive-only,
     // no payload.
-    onUpdateUnverified: (cb) => ipcRenderer.on('update:unverified', () => cb()),
+    onUpdateUnverified: (cb) => listen('update:unverified', () => cb()),
     // One-way error reporter: forwards renderer-side errors (window.onerror,
     // unhandledrejection) to the main process, which appends a JSON line to
     // <userData>/logs/bpmdrtlreader.log. NO network, NO third party — local only.
@@ -161,14 +172,13 @@ module.exports = { setupBridge };
 
 // ==== REAL PRELOAD ENTRY ====
 // Only run the live bridge setup when loaded by Electron as a preload script.
-// Under Vitest/Stryker the file is imported as a dependency (the vitest worker
+// Under Vitest the file is imported as a dependency (the vitest worker
 // global is present), so the guard is false and nothing auto-runs — the tests
 // drive setupBridge() with a mock contextBridge/ipcRenderer instead.
-// Stryker disable all — this preload entry guard fires ONLY in the real Electron
-// preload (the Vitest worker global is absent there), so the lines are
-// unreachable by unit tests. setupBridge() itself is fully mutation-tested.
+// This guard fires ONLY in the real Electron preload (the Vitest worker global is
+// absent there), so the lines are unreachable by unit tests; setupBridge() itself is
+// unit-tested.
 if (typeof globalThis.__vitest_worker__ === 'undefined') {
   const { contextBridge, ipcRenderer, webFrame } = require('electron');
   setupBridge({ contextBridge, ipcRenderer, webFrame, doc: document, platform: process.platform });
 }
-// Stryker restore all

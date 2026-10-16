@@ -11,13 +11,14 @@
  *   1. Titlebar (menu / theme / RTL / tab+ / search-palette / win min/max/close)
  *   2. Welcome screen (4 entry cards: Open Folder, Open File, New Note, Try Demo)
  *   3. Sidebar tabs (Files / Tags / Search)
- *   4. Sidebar empty-state buttons (Open Folder, Open File, New Note)
- *   5. Editor mode buttons (Live / Split / Source)
+ *   4. Sidebar empty-state buttons (Open Folder, Open File, Try Demo Notes)
  *   6. Editor toolbar (Bold, Italic, Strike, H1, H2, H3, Link, Quote, List, Code, Wikilink, Find)
  *   7. Find bar (input + Prev + Next + Close)
  *   8. File menu items (Open Folder, Open File, New Note, New Daily Note, Save, Save As, Export, Try Demo, Close Tab)
  *   9. Edit menu items (Undo, Redo, Cut, Copy, Paste, Select All, Find)
- *  10. View menu items (Toggle Sidebar, Toggle Inspector, Cycle Theme, Toggle RTL, Live/Split/Source, Zoom In/Out/Reset, Command Palette)
+ *  10. View menu items (Toggle Sidebar, Toggle Inspector, Cycle Theme, Toggle RTL, Zoom In/Out/Reset, Command Palette)
+ *
+ * (There is no category 5: the Live / Split / Source mode buttons are gone; CM6 is the one editor.)
  *  11. Help menu items (Shortcuts, About)
  *  12. Tabs (label click + close X)
  *  13. Inspector outline items (heading click)
@@ -682,6 +683,23 @@ test('[CA19] the T-F19 chords are wired in the menu, the palette and the shortcu
   expect(sheet).toContain('Auto-hide Top Bar');
   expect(sheet).toContain('Hide Bottom Status Bar');
   expect(sheet).toContain('Settings');
+});
+
+// APP-6: chords the keydown chain handles and KEYBOARD_SHORTCUTS.md documents, but the
+// in-app sheet used to leave out.
+test('[CA19c] the shortcut sheet lists headings, full screen and the second redo chord', async ({ page }) => {
+  await goto(page);
+  const rows = await page.evaluate(async () => {
+    window.showShortcuts();
+    await new Promise((r) => setTimeout(r, 150));
+    return [...document.querySelectorAll('#modalBody .shortcut-row')].map((row) => ({
+      name: row.querySelector('.shortcut-name').textContent,
+      keys: [...row.querySelectorAll('.kbd')].map((k) => k.textContent).join('+'),
+    }));
+  });
+  expect(rows).toContainEqual({ name: 'Heading level', keys: 'Ctrl+1–6' });
+  expect(rows).toContainEqual({ name: 'Full screen', keys: 'F11' });
+  expect(rows).toContainEqual({ name: 'Redo', keys: 'Ctrl+Y+Ctrl+Shift+Z' });
 });
 
 // v10 redesign: the two chrome-visibility labels now NAME THE DIRECTION a click will go

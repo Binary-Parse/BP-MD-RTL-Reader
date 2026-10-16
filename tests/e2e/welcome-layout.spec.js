@@ -19,7 +19,7 @@ const VERY_LONG_RTL = 'خلطة-فيديو-الذكاء-الاصطناعي-ال�
 const CAP = (n) => `cap-${n}`;
 
 const SETTINGS = {
-  theme: 'paper', zoomFactor: 1, editorMode: 'live',
+  theme: 'paper', zoomFactor: 1,
   sidebarVisible: true, inspectorVisible: true,
   uiDirection: 'ltr', uiLocale: 'en',
   calendar: 'gregorian', arabicKashida: false, italicRecolor: true,

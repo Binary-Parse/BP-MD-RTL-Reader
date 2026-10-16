@@ -27,7 +27,7 @@ export const CALLOUT_ICONS = Object.freeze({
 // callout that name is Arabic: content follows its own direction, not the interface language
 // (the same rule as table alignment, decision D9). Hebrew text is right-to-left too and keeps
 // the English name.
-export const CALLOUT_TITLES_AR = Object.freeze({
+const CALLOUT_TITLES_AR = Object.freeze({
   note: 'ملاحظة',
   tip: 'نصيحة',
   important: 'مهم',
@@ -179,6 +179,8 @@ export function transformCallouts(root, { parseCalloutHeader, resolveDirection }
     titleRow.append(icon, titleText);
 
     wrap.append(titleRow, body);
+    // The reading view's direction badge finds the callout's source line here (block-direction.js).
+    if (bq.hasAttribute('data-src-line')) wrap.setAttribute('data-src-line', bq.getAttribute('data-src-line'));
     bq.replaceWith(wrap);
   });
   return root;

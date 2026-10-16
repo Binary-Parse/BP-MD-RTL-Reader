@@ -1,69 +1,9 @@
 /**
- * Unit tests for theme cycling and persistence logic
+ * Unit tests for the theme list, theme cycling and zoom clamping (theme.js)
  */
 
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { THEMES, getNextTheme, clampZoom } from '../../src/renderer/theme.js';
-
-let mockStorage = {};
-const localStorage = {
-  getItem: (k) => mockStorage[k] || null,
-  setItem: (k, v) => { mockStorage[k] = v; }
-};
-
-let currentTheme = 'paper';
-const documentElement = {
-  getAttribute: (attr) => attr === 'data-theme' ? currentTheme : null,
-  setAttribute: (attr, val) => { if (attr === 'data-theme') currentTheme = val; }
-};
-
-function cycleTheme() {
-  const current = documentElement.getAttribute('data-theme') || 'paper';
-  const next = getNextTheme(current);
-  documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('bpmdrtlreader-theme', next);
-  return next;
-}
-
-function foucPreventionLogic(storedTheme) {
-  const VALID_THEMES = ['paper', 'ink', 'sepia', 'oasis'];
-  if (storedTheme && VALID_THEMES.includes(storedTheme)) {
-    return storedTheme;
-  }
-  return 'paper';
-}
-
-describe('cycleTheme', () => {
-  beforeEach(() => {
-    mockStorage = {};
-    currentTheme = 'paper';
-  });
-
-  test('paper -> ink', () => {
-    const next = cycleTheme();
-    expect(next).toBe('ink');
-    expect(documentElement.getAttribute('data-theme')).toBe('ink');
-    expect(localStorage.getItem('bpmdrtlreader-theme')).toBe('ink');
-  });
-
-  test('ink -> sepia', () => {
-    currentTheme = 'ink';
-    const next = cycleTheme();
-    expect(next).toBe('sepia');
-    expect(localStorage.getItem('bpmdrtlreader-theme')).toBe('sepia');
-  });
-
-  test('oasis -> paper (wraps)', () => {
-    currentTheme = 'oasis';
-    const next = cycleTheme();
-    expect(next).toBe('paper');
-  });
-
-  test('sepia -> oasis', () => {
-    currentTheme = 'sepia';
-    expect(cycleTheme()).toBe('oasis');
-  });
-});
 
 describe('getNextTheme pure logic', () => {
   test('cycles through all 4 themes', () => {
@@ -75,22 +15,6 @@ describe('getNextTheme pure logic', () => {
 
   test('handles unknown theme by falling back via indexOf', () => {
     expect(getNextTheme('unknown')).toBe('paper');
-  });
-});
-
-describe('FOUC prevention', () => {
-  test('valid stored theme applied', () => {
-    expect(foucPreventionLogic('ink')).toBe('ink');
-    expect(foucPreventionLogic('sepia')).toBe('sepia');
-  });
-
-  test('null falls back to paper', () => {
-    expect(foucPreventionLogic(null)).toBe('paper');
-  });
-
-  test('invalid theme falls back to paper', () => {
-    expect(foucPreventionLogic('invalid')).toBe('paper');
-    expect(foucPreventionLogic('')).toBe('paper');
   });
 });
 

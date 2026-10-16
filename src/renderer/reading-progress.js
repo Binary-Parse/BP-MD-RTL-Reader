@@ -9,10 +9,9 @@
  *
  * No DOM: scrollRatio() takes any {scrollTop, scrollHeight, clientHeight} reader.
  */
-import { fileKey } from './session.js';
+import { fileKey, isCapabilityId } from './session.js';
 
 export const PROGRESS_CAP = 30;
-const CAPABILITY_ID = /^cap-[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * Fraction scrolled (0..1), or null when the element cannot scroll at all (short note /
@@ -42,8 +41,8 @@ export function progressEntryFor(file, ratio, at) {
   if (!file || typeof ratio !== 'number' || !Number.isFinite(ratio)) return null;
   const key = fileKey(file);
   if (!key) return null;
-  const vaultId = CAPABILITY_ID.test(file.vaultId || '') ? file.vaultId : null;
-  const documentId = CAPABILITY_ID.test(file.documentId || '') ? file.documentId : null;
+  const vaultId = isCapabilityId(file.vaultId) ? file.vaultId : null;
+  const documentId = isCapabilityId(file.documentId) ? file.documentId : null;
   if (vaultId == null && documentId == null) return null;
   const stamp = typeof at === 'number' && Number.isFinite(at) && at > 0 ? at : Date.now();
   return {
@@ -70,13 +69,13 @@ export function sanitizeProgress(raw) {
       && typeof entry.ratio === 'number' && Number.isFinite(entry.ratio)
       && entry.ratio >= 0 && entry.ratio <= 1
       && typeof entry.at === 'number' && Number.isFinite(entry.at) && entry.at > 0
-      && (CAPABILITY_ID.test(entry.vaultId || '') || CAPABILITY_ID.test(entry.documentId || '')))
+      && (isCapabilityId(entry.vaultId) || isCapabilityId(entry.documentId)))
     .map((entry) => ({
       key: typeof entry.key === 'string' ? entry.key : '',
       name: String(entry.name || ''),
       path: entry.path,
-      vaultId: CAPABILITY_ID.test(entry.vaultId || '') ? entry.vaultId : null,
-      documentId: CAPABILITY_ID.test(entry.documentId || '') ? entry.documentId : null,
+      vaultId: isCapabilityId(entry.vaultId) ? entry.vaultId : null,
+      documentId: isCapabilityId(entry.documentId) ? entry.documentId : null,
       ratio: entry.ratio,
       at: entry.at,
     }))

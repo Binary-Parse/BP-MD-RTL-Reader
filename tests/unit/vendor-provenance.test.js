@@ -26,7 +26,7 @@ describe('vendored runtime provenance (DEP-001, DEP-002)', () => {
     expect(pkg.build.files).toEqual(expect.arrayContaining([
       'LICENSE', 'THIRD-PARTY-NOTICES.md', 'resources/vendor/**',
     ]));
-    expect(read('resources/vendor/THIRD-PARTY-LICENSES.txt').toString()).toContain('mermaid@11.16.1');
+    expect(read('resources/vendor/THIRD-PARTY-LICENSES.txt').toString()).toContain('mermaid@12.1.0');
     expect(read('resources/vendor/fonts/OFL-1.1.txt').toString()).toContain(
       'SIL OPEN FONT LICENSE Version 1.1',
     );
@@ -168,16 +168,14 @@ describe('bundled licence texts cover the whole dependency closure (B10)', { tim
     const without = new Map(tracked);
     without.delete('langium');
     expect(() => collectRuntimeLicenses(RUNTIME_ROOTS, { supplements: without }))
-      .toThrow(/No license text for langium \(4\.2\.0\)/);
+      .toThrow(/No license text for langium \(4\.4\.0\)/);
     const wrongVersion = new Map(tracked).set('langium', { ...tracked.get('langium'), version: '3.0.0' });
     expect(() => collectRuntimeLicenses(RUNTIME_ROOTS, { supplements: wrongVersion }))
-      .toThrow(/License supplement for langium is 3\.0\.0 but the bundle inlines 4\.2\.0/);
+      .toThrow(/License supplement for langium is 3\.0\.0 but the bundle inlines 4\.4\.0/);
     const tampered = new Map(tracked).set('langium', { ...tracked.get('langium'), sha256: '0'.repeat(64) });
     expect(() => collectRuntimeLicenses(RUNTIME_ROOTS, { supplements: tampered }))
-      .toThrow(/License supplement changed: langium@4\.2\.0\.txt/);
+      .toThrow(/License supplement changed: langium@4\.4\.0\.txt/);
   }, 60000); // reads every source map of 137 packages
-
-
 
   test('packages without a main entry are located (the cause of the gap)', () => {
     for (const name of ['@mermaid-js/parser', '@upsetjs/venn.js']) {

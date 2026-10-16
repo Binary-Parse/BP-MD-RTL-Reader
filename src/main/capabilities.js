@@ -99,7 +99,13 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
   function canonical(candidate) {
     if (typeof candidate !== 'string' || !path.isAbsolute(candidate)) throw new Error('Invalid absolute path');
     if (candidate.startsWith('\\\\') || candidate.startsWith('//')) throw new Error('Network paths are not supported');
-    return fs.realpathSync(candidate);
+    // QA-L4: the JS realpath keeps the caller's spelling, so `c:\notes\a.md` and
+    // `C:\Notes\a.md` (one file on Windows) became two grants. The native call returns the
+    // name as stored on disk. It also resolves a mapped drive to its \\server path, which
+    // validRecord drops on the next load, so that case keeps the drive-letter spelling.
+    const real = fs.realpathSync(candidate);
+    const native = typeof fs.realpathSync.native === 'function' ? fs.realpathSync.native(candidate) : real;
+    return native.startsWith('\\\\') || native.startsWith('//') ? real : native;
   }
 
   function nextId() {
@@ -165,20 +171,6 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     return record ? { ...record } : null;
   }
 
-  function revokeDocument(id) {
-    const record = documents.get(id);
-    if (record) { documents.delete(id); documentsByPath.delete(record.path); }
-  }
-  function revokeVault(id) {
-    const record = vaults.get(id);
-    if (record) {
-      vaults.delete(id);
-      vaultsByPath.delete(record.path);
-      for (const [docId, doc] of [...documents.entries()]) {
-        if (doc.vaultId === id) revokeDocument(docId);
-      }
-    }
-  }
   // Audit SEC-01: the registry used to accumulate every path ever granted, forever.
   // Prune to what settings still reference (recents + lastSession); returns counts.
   function prune({ keepVaultIds, keepDocumentIds } = {}) {
@@ -220,8 +212,6 @@ function createCapabilityRegistry({ fs, path, userDataDir, randomId } = {}) {
     promoteDocuments,
     resolveVault,
     resolveDocument,
-    revokeDocument,
-    revokeVault,
     relocateVault,
     relocateDocument,
     prune,

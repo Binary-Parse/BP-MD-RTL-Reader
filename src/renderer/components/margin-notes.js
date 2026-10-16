@@ -1,6 +1,6 @@
 const DEFAULT_GAP = 12;
 /** Width of a note card in rem; must match `#marginNotes { width }` in components.css. */
-export const MARGIN_CARD_REM = 14.5;
+const MARGIN_CARD_REM = 14.5;
 /** Width of the collapsed marker column in rem; must match `#marginNotes.collapsed { width }`. */
 export const MARGIN_MARKER_REM = 1.75;
 

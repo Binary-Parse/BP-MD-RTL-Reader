@@ -115,6 +115,20 @@ test.describe('[T-F7] document outline', () => {
     }, before)).toBe(true);
   });
 
+  test('QA-L3: the second of two same-text headings jumps to the second one in Edit mode', async ({ page }) => {
+    const md = '# Same\n\nfirst\n\n# Other\n\nmiddle\n\n# Same\n\nsecond\n';
+    await page.evaluate((c) => {
+      window._appState.files = [{ name: 'd.md', path: 'd.md', handle: null, content: c, dirty: false }];
+      window.renderFile(0);
+      window.setViewMode('edit');
+      document.getElementById('editorArea').classList.add('cm-single'); // the beforeEach strips it
+    }, md);
+    await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });
+    await page.evaluate(() => window.buildTOC());
+    await page.locator('#tocList .toc-item').nth(2).click();
+    await expect.poll(() => page.evaluate(() => window.getActiveCmAdapter().getSelection().start)).toBe(md.lastIndexOf('# Same'));
+  });
+
   test('scroll-sync highlights the active heading as the editor scrolls', async ({ page }) => {
     await page.evaluate(() => { document.getElementById('editorArea').classList.add('cm-single'); window.buildTOC && window.buildTOC(); });
     await page.waitForSelector('.cm-mount .cm-editor', { timeout: 8000 });

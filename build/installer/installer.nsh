@@ -3,7 +3,8 @@
 ; electron-builder owns same-product upgrades. This include deliberately does
 ; not read or execute uninstall COMMANDS from the registry: an elevated setup
 ; must never turn user-writable ARP metadata into a command-execution boundary.
-; v1.2.1 added a READ-ONLY inspection of the same keys' DisplayVersion values;
+; v1.2.1 added a READ-ONLY inspection of the same keys' DisplayVersion values
+; (and their InstallLocation, only to check that the program file is there);
 ; T13 presents that state on a maintenance wizard PAGE with radio choices
 ; (never a modal MessageBox), and its remove choice OPENS the Windows
 ; "Installed apps" settings page (a shell constant, never a registry command).
@@ -146,7 +147,7 @@ Var BpmdMaintRadioB
     ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BPMD_EB_UNINSTALL_KEY}" "DisplayVersion"
     ${If} $0 != ""
       StrCpy $BpmdDetectedVersion $0
-      StrCpy $BpmdDetectedSource "nsis"
+      StrCpy $BpmdDetectedSource "nsis-user"
     ${Else}
       ; Inno installs — reported, not raced: the Inno installer manages its own.
       ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BPMD_INNO_UNINSTALL_KEY}" "DisplayVersion"
@@ -157,9 +158,32 @@ Var BpmdMaintRadioB
         ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BPMD_INNO_UNINSTALL_KEY}" "DisplayVersion"
         ${If} $0 != ""
           StrCpy $BpmdDetectedVersion $0
-          StrCpy $BpmdDetectedSource "inno"
+          StrCpy $BpmdDetectedSource "inno-user"
         ${EndIf}
       ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+  ; A registration is an installation only if its program file is there. An uninstall that
+  ; stopped part-way (or a copy deleted by hand) leaves the uninstall key and its
+  ; DisplayVersion behind, and the setup offered "Repair" for an app that was not installed.
+  ; The InstallLocation VALUE of the same hive is read (read-only, never executed); a
+  ; registration without its program counts as no installation, so the wizard installs fresh.
+  StrCpy $1 ""
+  ${If} $BpmdDetectedSource == "nsis"
+    ReadRegStr $1 HKLM "Software\${BPMD_EB_UNINSTALL_KEY}" "InstallLocation"
+  ${ElseIf} $BpmdDetectedSource == "nsis-user"
+    ReadRegStr $1 HKCU "Software\${BPMD_EB_UNINSTALL_KEY}" "InstallLocation"
+  ${ElseIf} $BpmdDetectedSource == "inno"
+    ReadRegStr $1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BPMD_INNO_UNINSTALL_KEY}" "InstallLocation"
+  ${ElseIf} $BpmdDetectedSource == "inno-user"
+    ReadRegStr $1 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BPMD_INNO_UNINSTALL_KEY}" "InstallLocation"
+  ${EndIf}
+  ${If} $BpmdDetectedVersion != ""
+    ${IfNot} ${FileExists} "$1\${PRODUCT_FILENAME}.exe"
+      DetailPrint "Ignoring a leftover registration of BP MD RTL Reader $BpmdDetectedVersion ($BpmdDetectedSource): no program at '$1'."
+      StrCpy $BpmdDetectedVersion ""
+      StrCpy $BpmdDetectedSource ""
     ${EndIf}
   ${EndIf}
 !macroend

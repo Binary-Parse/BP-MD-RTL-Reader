@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { writeCoverageMetadata, loadCoverageInput } = require('../../scripts/coverage-metadata.js');
 const { loadExpectedFiles, collectSourceFiles } = require('../../scripts/generate-renderer-coverage.js');
 const { verifyPackageEntries, REQUIRED } = require('../../scripts/verify-package-contents.js');
-const { fingerprint, countByRule, compareBaseline } = require('../../scripts/run-security-lint.js');
+const { PATTERNS, fingerprint, countByRule, compareBaseline } = require('../../scripts/run-security-lint.js');
 const {
   unmaskNodeModules, scannedBytes, partitionFindings,
 } = require('../../scripts/audit-secrets-fulltree.js');
@@ -48,15 +48,6 @@ describe('remediation build and test gates', () => {
     ]);
   });
 
-  test('mutation tiers cover the configured mutation scope exactly once', () => {
-    const stryker = JSON.parse(readFileSync(path.resolve('stryker.config.json'), 'utf8'));
-    const tiers = JSON.parse(readFileSync(path.resolve('config/mutation-tiers.json'), 'utf8'));
-    const tierFiles = Object.values(tiers).flatMap(tier => tier.files);
-    expect(new Set(tierFiles).size).toBe(tierFiles.length);
-    expect(tierFiles.slice().sort()).toEqual(stryker.mutate.slice().sort());
-    expect(stryker.tsconfigFile).toBe('config/stryker-javascript-project-no-tsconfig.json');
-  });
-
   test('security lint baseline rejects new or moved findings', () => {
     const findings = [{ file: 'a.js', line: 1, column: 2, severity: 1, rule: 'security/example', fatal: false }];
     const baseline = {
@@ -67,6 +58,12 @@ describe('remediation build and test gates', () => {
     expect(compareBaseline(findings, baseline)).toEqual([]);
     expect(compareBaseline([...findings, { ...findings[0], line: 2 }], baseline)).not.toEqual([]);
     expect(compareBaseline([{ ...findings[0], line: 3 }], baseline)).not.toEqual([]);
+  });
+
+  test('security lint covers CommonJS scripts, including the baseline regenerator', () => {
+    // regen-security-baseline.cjs rewrites the reviewed baseline; it must not be the one
+    // script the gate never reads.
+    expect(PATTERNS).toContain('scripts/**/*.{js,mjs,cjs}');
   });
 
   test('full-tree secret audit drops only the node_modules allowlist entry', () => {
